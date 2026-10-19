@@ -1,5 +1,11 @@
 # KiloKlustaKwik — Linux Installation, NVIDIA CUDA
 
+KiloKlustaKwik is part of the top-level neurosuite-3 build: install the CUDA
+toolkit (Step 1), then follow **[doc/INSTALL.md → Linux](../../INSTALL.md#linux)**;
+CUDA is auto-detected. To build KiloKlustaKwik alone, use the `NS_SKIP_*`
+flags shown in [linux-cpu.md](linux-cpu.md) (without `-DUSE_CUDA=OFF`). The
+build steps below are for `src/kiloklustakwik` on its own.
+
 ## Step 1 — Install CUDA Toolkit
 
 Follow **[doc/gpu/README.md — NVIDIA CUDA](../../gpu/README.md#nvidia-cuda)** for complete installation instructions, including CUDA 12.8 for RTX 5000 series (Blackwell / sm_120) and Secure Boot MOK key signing.
@@ -7,8 +13,10 @@ Follow **[doc/gpu/README.md — NVIDIA CUDA](../../gpu/README.md#nvidia-cuda)** 
 ## Step 2 — System packages
 
 ```bash
-sudo apt install cmake build-essential libgomp1
+sudo apt install cmake build-essential libyaml-cpp-dev libgomp1
 ```
+
+yaml-cpp is required; configure fails without it.
 
 ## Step 3 — Build
 

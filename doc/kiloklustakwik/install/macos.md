@@ -1,5 +1,11 @@
 # KiloKlustaKwik — macOS Installation
 
+KiloKlustaKwik is part of the top-level neurosuite-3 build: follow
+**[doc/INSTALL.md → macOS](../../INSTALL.md#macos)** (`-DNS_INSTALL_DEPS=ON`
+installs yaml-cpp and libomp with Homebrew). To build KiloKlustaKwik alone,
+add the `NS_SKIP_*` flags shown in [linux-cpu.md](linux-cpu.md). The rest of
+this page builds `src/kiloklustakwik` on its own.
+
 ## GPU acceleration on macOS
 
 NVIDIA dropped macOS support for CUDA after CUDA 10.2 (2019). AMD ROCm/HIP has no macOS support. Intel oneAPI SYCL is available on macOS in limited form but does not support GPU dispatch on Apple hardware. **macOS builds are CPU / OpenMP only.**
@@ -17,10 +23,10 @@ Install [Homebrew](https://brew.sh):
 ## System packages
 
 ```bash
-brew install cmake ninja libomp
+brew install cmake ninja yaml-cpp libomp
 ```
 
-`libomp` is required because Apple Clang does not bundle the OpenMP runtime.
+yaml-cpp is required; configure fails without it. `libomp` is required because Apple Clang does not bundle the OpenMP runtime.
 
 ## Build
 
@@ -57,7 +63,8 @@ KiloKlustaKwik --help
 ldd KiloKlustaKwik 2>/dev/null || otool -L $(which KiloKlustaKwik) | grep -i omp
 ```
 
-The `otool` output should show a reference to `libomp.dylib`.
+The `otool` output should show a reference to `libomp.dylib`. A CPU-only build
+produces `KiloKlustaKwik_cpu`; the install also copies it as `KiloKlustaKwik`.
 
 ## Note on parallelism
 
@@ -71,5 +78,5 @@ export OMP_NUM_THREADS=$(sysctl -n hw.logicalcpu)
 To run on a subset of cores:
 
 ```bash
-OMP_NUM_THREADS=8 KiloKlustaKwik session 1 -ChunkMinutes 5 -SamplingRate 32552 ...
+OMP_NUM_THREADS=8 KiloKlustaKwik session 1 ...   # SamplingRate comes from session.yaml
 ```

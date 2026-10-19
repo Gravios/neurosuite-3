@@ -11,7 +11,7 @@
 
 Install in this order:
 
-1. **Visual Studio 2022** with the **Desktop development with C++** workload (or at minimum MSVC v143 build tools and Windows SDK). CMake and Ninja are included — tick them in the installer. Download: https://visualstudio.microsoft.com/downloads/
+1. **Visual Studio 2022** with the **Desktop development with C++** workload (or at minimum MSVC v143 build tools and Windows SDK). CMake (≥ 3.22) and Ninja are included — tick them in the installer. Download: https://visualstudio.microsoft.com/downloads/
 
 2. **Intel oneAPI Base Toolkit** (≥ 2023.1). The quickest install:
    ```powershell
@@ -21,9 +21,15 @@ Install in this order:
 
 3. **Intel GPU driver** — install via the Intel Driver & Support Assistant or from https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html. Minimum required version: **31.0.101.4887**.
 
+4. **yaml-cpp** — required (`find_package(yaml-cpp REQUIRED)`); install it with vcpkg:
+   ```bat
+   C:\vcpkg\vcpkg install yaml-cpp:x64-windows
+   ```
+   and pass `-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake` to `cmake`. `scripts\install-deps-windows.bat` installs vcpkg and yaml-cpp ([BUILD.md §1](../../BUILD.md#1-toolchain)).
+
 ## Open the oneAPI command prompt
 
-The oneAPI installer adds a Start Menu shortcut: **Intel oneAPI command prompt for Intel oneAPI Toolkit 2025**. Opening it runs `setvars.bat` automatically. All subsequent steps must run inside this prompt.
+The oneAPI installer adds a Start Menu shortcut: **Intel oneAPI command prompt for Intel 64 for Visual Studio 2022**. Opening it runs `setvars.bat` automatically. All subsequent steps must run inside this prompt.
 
 To activate manually:
 ```bat
@@ -54,25 +60,34 @@ Inside the oneAPI command prompt, from the KiloKlustaKwik source directory:
 cd path\to\neurosuite-3\src\kiloklustakwik
 rmdir /s /q build
 mkdir build && cd build
-cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_HIP=OFF -DCMAKE_BUILD_TYPE=Release
+cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_HIP=OFF -DCMAKE_BUILD_TYPE=Release ^
+         -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 ninja
 ```
 
-CMake auto-detects `icpx` from PATH when inside the oneAPI prompt. No `-DCMAKE_CXX_COMPILER=icpx` flag needed.
+In this standalone build CMake does not take `icpx` from `PATH`: it searches the
+oneAPI locations in `NS_GPU_SYCL_HINTS` (`%CMPLR_ROOT%\bin`,
+`%ONEAPI_ROOT%\compiler\latest\bin`, …), which the oneAPI prompt sets, and
+selects it as the compiler unless `-DCMAKE_CXX_COMPILER` or `CXX` is set. The
+top-level `windows-sycl` preset builds Klusters with SYCL but skips
+KiloKlustaKwik ([INSTALL.md → Intel GPU (SYCL)](../../INSTALL.md#intel-gpu-sycl)).
 
 To add AOT targets (avoids JIT compilation delay at first run):
 
 ```bat
 cmake .. -G "Ninja" -DUSE_CUDA=OFF -DUSE_HIP=OFF ^
-         -DKK_SYCL_DEVICES="mtl-m,acm-g10,bmg-g21"
+         -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake ^
+         -DKK_EXP_SYCL_DEVICES="mtl-m,acm-g10,bmg-g21"
 ```
 
-The default build includes AOT targets for `mtl-m` (Meteor Lake), `acm-g10/g11` (Arc Alchemist), `dg2`, and `pvc`. Other devices fall back to JIT at first run.
+When `ocloc` is found, the default build includes AOT targets for `mtl-m` (Meteor Lake), `acm-g10/g11` (Arc Alchemist), `dg2`, and `pvc` (`KK_EXP_SYCL_DEVICES`). Other devices fall back to JIT at first run.
 
 ## Verify
 
 ```bat
 set ONEAPI_DEVICE_SELECTOR=level_zero:gpu
-KiloKlustaKwik.exe --help
+KiloKlustaKwik_sycl.exe --help
 KiloKlustaKwik_cpu.exe --help
 ```
+
+The build names the SYCL binary `KiloKlustaKwik_sycl.exe`; `cmake --install` also copies it as `KiloKlustaKwik.exe`.

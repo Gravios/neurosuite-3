@@ -1,5 +1,9 @@
 # KiloKlustaKwik — WSL2 Installation, Intel Arc / SYCL
 
+On Windows, KiloKlustaKwik runs under WSL2: set up WSL2 and the neurosuite-3
+build as in **[doc/INSTALL.md → KiloKlustaKwik and the full pipeline: WSL2](../../INSTALL.md#kiloklustakwik-and-the-full-pipeline-wsl2)**.
+This page adds the Intel GPU (SYCL) part.
+
 Under WSL2 the GPU driver lives on the Windows host. The Linux side only needs the Level-Zero and OpenCL runtime packages — not the Windows GPU driver. The oneAPI compiler (`icpx`) is installed inside WSL exactly as on bare-metal Ubuntu.
 
 WSL2 GPU passthrough requires Intel GPU driver version **31.0.101.4887 or newer** on the Windows host. Check in Windows Device Manager → Display Adapters → Intel GPU → Properties → Driver tab.
@@ -17,7 +21,9 @@ sycl-ls   # should show ext_oneapi_level_zero:gpu:0
 
 ## Step 2 — Build
 
-Identical to bare-metal Linux — see [linux-sycl.md Step 2–3](linux-sycl.md).
+Identical to bare-metal Linux — see [linux-sycl.md](linux-sycl.md): the
+top-level build needs `-DCMAKE_CXX_COMPILER=icpx -DCMAKE_C_COMPILER=icx`, and
+yaml-cpp (`libyaml-cpp-dev`) must be installed.
 
 ## Verify
 
