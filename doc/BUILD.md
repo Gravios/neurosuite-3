@@ -74,6 +74,7 @@ All are passed with `-D` at configure time.
 | `NS_SKIP_<COMPONENT>` | `OFF` | skip one component (§5) |
 | `NS_INSTALL_DEPS` | `OFF` | install system dependencies first (apt/Homebrew/vcpkg) |
 | `NS_VCPKG_ROOT` | `$VCPKG_ROOT` or `C:/vcpkg` | vcpkg root for Windows `NS_INSTALL_DEPS` |
+| `NS_DEPLOY_RUNTIME` | `ON` | Windows: `cmake --install` also copies the Qt DLLs and plugins (windeployqt), vcpkg's DLLs and the oneAPI runtime next to the programs, so the install folder runs as it is |
 | `NS_ZEN_OPT` | (optional module) | host tuning (`-march=native`, fast-math, LTO) via `cmake/ZenOptimizations.cmake`; pass `OFF` when cross-compiling |
 
 ---

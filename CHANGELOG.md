@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Windows: `cmake --install` gives a folder that runs](#2026-10-19--windows-cmake---install-gives-a-folder-that-runs) |
 | 2026-10-19 | [CI: GitHub actions moved to their Node.js 24 releases](#2026-10-19--ci-github-actions-moved-to-their-nodejs-24-releases) |
 | 2026-10-19 | [Windows: fixes from the first Windows configure](#2026-10-19--windows-fixes-from-the-first-windows-configure) |
 | 2026-10-18 | [Klusters: the Intel GPU (SYCL) backend can be configured with icx on Windows](#2026-10-18--klusters-the-intel-gpu-sycl-backend-can-be-configured-with-icx-on-windows) |
@@ -78,6 +79,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Windows: `cmake --install` gives a folder that runs
+
+<details>
+<summary>Details</summary>
+
+- On Windows the installed Klusters, NeuroScope and NDManager did not start:
+  the install put the programs and the project's two DLLs in `bin`, but not
+  Qt, yaml-cpp or the oneAPI runtime. `cmake --install` now also runs Qt's
+  `windeployqt` on the installed programs, copies the other DLLs they link
+  (vcpkg's yaml-cpp; with `icx`, the oneAPI runtime) and, for a SYCL build,
+  the SYCL runtime adapters (`ur_*.dll`), which are loaded by name and found
+  by no dependency scan.
+- `cmake/NsWindowsDeploy.cmake` (configure time) and
+  `NsWindowsDeployInstall.cmake` (install time). Windows only; off with
+  `-DNS_DEPLOY_RUNTIME=OFF`. A missing tool or DLL is a warning, never an
+  install failure.
+- Checked on Linux: configure unchanged (the step is not added); the
+  install-time script, run in script mode on the Linux Klusters and NeuroScope
+  binaries, copied their libraries from the given directories and the adapter
+  files, skipped the program not installed, and warned for the missing
+  `windeployqt`. Not yet run on Windows.
+
+</details>
 
 ## 2026-10-19 — CI: GitHub actions moved to their Node.js 24 releases
 

@@ -444,6 +444,12 @@ ns_add_subdir(kiloklustakwik src/kiloklustakwik)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/NsDesktopCaches.cmake)
 ns_refresh_desktop_caches()
 
+# Windows: the install prefix's bin also gets the Qt, vcpkg and oneAPI runtime
+# DLLs, so the installed programs start without further steps.  After every
+# subproject's install rules (declaration order); a no-op elsewhere.
+include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/NsWindowsDeploy.cmake)
+ns_windows_deploy()
+
 # ---------------------------------------------------------------------------
 # Explicit build-time dependencies for parallel builds (belt-and-suspenders)
 #
