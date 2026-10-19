@@ -1,10 +1,12 @@
 # neuroscope — Signal Visualiser
 
-NeuroScope is a Qt6 viewer for multi-channel electrophysiology data. It displays wideband, LFP, and high-pass filtered signals as scrollable traces and simultaneously overlays spike waveforms, cluster assignments, event markers, and animal position. Session state is stored in `.yaml` parameter files; YAML I/O is handled by `NeuroscopeYamlReader` / `NeuroscopeYamlWriter` within the neuroscope component and by `SessionYamlReader` / `SessionYamlWriter` for the viewer's own session state.
+NeuroScope is a Qt6 viewer for multi-channel electrophysiology data. It displays one wideband, LFP or high-pass filtered file as scrollable traces and overlays spike times and waveforms, cluster assignments, event markers and animal position. Acquisition settings, groups and display defaults come from the `.yaml` parameter file (read with `NeuroscopeYamlReader`, written with `ParameterYamlModifier` from `libklustersshared`); the viewer's own state is kept in the `.nrs` session file (`SessionYamlReader` / `SessionYamlWriter`).
 
-> **XML support has been removed.** Legacy `.xml` parameter files must be converted with `ndm_xml2yaml` (from ndmanager-plugins) before opening in neuroscope-3.
+The full user manual is the [NeuroScope Handbook](../site/docs/handbook/01-introduction.md) (**Help → Handbook**, `F1`, in the program).
 
-**Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [Files consumed](#files-consumed) · [Interface overview](#interface-overview) · [Navigation](#navigation) · [Signal layers](#signal-layers) · [Loading cluster files](#loading-cluster-files) · [Waveform display](#waveform-display) · [Event files](#event-files) · [Position file (`.pos`)](#position-file-pos) · [Channel panel and amplitude controls](#channel-panel-and-amplitude-controls) · [Display options](#display-options) · [Multiple display tabs](#multiple-display-tabs) · [Printing](#printing) · [Session file (`.nrs`)](#session-file-nrs) · [YAML parameter file — neuroscope section](#yaml-parameter-file--neuroscope-section) · [Preferences](#preferences) · [Installation](#installation)
+> **XML support has been removed.** Legacy `.xml` parameter files must be converted with `ndm_xml2yaml` (from ndmanager-plugins) before opening in neuroscope-3. A legacy XML `.nrs` session file is ignored (the data opens with default display settings).
+
+**Contents:** [Dependencies](#dependencies) · [Launching](#launching) · [Files consumed](#files-consumed) · [Interface overview](#interface-overview) · [Navigation](#navigation) · [Trace files and overlays](#trace-files-and-overlays) · [Spectral view](#spectral-view) · [Loading cluster files](#loading-cluster-files) · [Waveform display](#waveform-display) · [Event files](#event-files) · [Position file (`.pos`)](#position-file-pos) · [Channel panel and amplitude controls](#channel-panel-and-amplitude-controls) · [Display options](#display-options) · [Multiple display tabs](#multiple-display-tabs) · [Printing](#printing) · [Saving](#saving) · [Session file (`.nrs`)](#session-file-nrs) · [YAML parameter file — neuroscope section](#yaml-parameter-file--neuroscope-section) · [Preferences](#preferences) · [Keyboard shortcuts](#keyboard-shortcuts) · [Installation](#installation)
 
 ---
 
@@ -12,29 +14,30 @@ NeuroScope is a Qt6 viewer for multi-channel electrophysiology data. It displays
 
 | Dependency | Purpose | Required |
 |---|---|---|
-| Qt6 (Core, Gui, Widgets) | UI framework | Yes |
-| yaml-cpp | YAML parameter file reading/writing | Yes |
-| FFmpeg (libavcodec, libavformat, libavutil, libswscale) | Video display for position overlay | Optional |
+| Qt6 (Core, Gui, Widgets, PrintSupport, Concurrent) | UI framework, printing, background computation | Yes |
+| `libklustersshared` (neurosuite-3) | Shared widgets, YAML parameter file reader/writer, `.clu`/`.res` readers | Yes |
+| `Neurosuite::spectral` (neurosuite-3) | Multitaper engine for the spectral view | Yes |
+| yaml-cpp | YAML parsing (through `libklustersshared`) | Yes |
 
-NeuroScope does **not** depend on `libklustersshared` and builds independently of ndmanager and klusters.
+NeuroScope is built with the rest of neurosuite-3 in one CMake build; see [Installation](#installation).
 
 ---
 
 ## Launching
 
 ```bash
-# Preferred — loads all associated files automatically from the parameter file
-neuroscope session.yaml
-
-# Open directly from any signal file; neuroscope infers the base name
+# Open a trace file; neuroscope derives the base name and reads session.yaml / session.nrs
 neuroscope session.dat
 neuroscope session.lfp
 
-# Open from a spike file to inspect a specific electrode group
-neuroscope session.spk.1
+# Open the session file; neuroscope then asks which trace file to show
+# (session.dat if the dialog is cancelled)
+neuroscope session.nrs
 ```
 
-NeuroScope searches the same directory for all companion files (`.lfp`, `.fil`, `.spk.N`, `.clu.N`, `.evt.*`, `.pos`) and loads whichever it finds alongside the base session.
+Any other file is opened as a trace file with that extension (its sampling rate is looked up in the parameter file, or asked for). Command-line options (`neuroscope --help`): `-r` resolution, `-c` number of channels, `-o` offset, `-m` voltage range, `-a` amplification, `-g` screen gain, `-s` sampling rate, `-t` initial time window (ms). They are ignored when a parameter file exists.
+
+From the trace file name, NeuroScope looks for only two companion files in the same directory: the parameter file `session.yaml` (or `session.yml`) and the session file `session.nrs`. It does **not** search for cluster, event or position files: those are loaded from the **File** menu, and the files listed in `session.nrs` are reloaded on the next open.
 
 ---
 
@@ -44,26 +47,24 @@ NeuroScope searches the same directory for all companion files (`.lfp`, `.fil`, 
 |---|---|
 | `session.yaml` | Parameter file — channel count, sampling rates, electrode groups, display colors |
 | `session.dat` | Wideband signal (int16, channel-interleaved, no header) |
-| `session.lfp` | LFP signal (same binary format as `.dat`, lower sampling rate) |
+| `session.lfp` | LFP signal (same binary format as `.dat`, lower sampling rate; `.eeg` is the older name) |
 | `session.fil` | High-pass filtered signal (same binary format as `.dat`) |
-| `session.spk.N` | Spike waveforms for electrode group N (int16, sample-major layout) |
-| `session.res.N` | Spike timestamps for electrode group N (binary int64 sample indices, no header) |
-| `session.clu.N` | Cluster assignments for electrode group N (binary: int32 nClusters header + int32 cluster IDs; legacy text format still accepted) |
-| `session.evt` / `session.evt.abc` | Event file — millisecond timestamps + text labels |
-| `session.pos` | Animal position — binary x,y pairs at video sampling rate |
+| `session.res.N` | Spike timestamps for electrode group N (binary int64 sample indices, no header; text also accepted) |
+| `session.clu.N` | Cluster assignments for electrode group N (binary: int32 nClusters header + int32 cluster IDs; text also accepted) |
+| `session.abc.evt` / `session.evt.abc` | Event file — millisecond timestamps + text labels |
+| `session.pos` | Animal position — text, one line of `x y [x y …]` per video sample |
 | `session.nrs` | NeuroScope session file — saved viewer state (open files, display config, colors) |
 
-All raw signal files (`.dat`, `.lfp`, `.fil`, `.spk.N`) are int16, channel-interleaved, with no header. The number of channels and sampling rates come from the parameter file.
+Trace files (`.dat`, `.lfp`, `.fil`) are int16, channel-interleaved, with no header. The number of channels and sampling rates come from the parameter file. `.spk.N` files are not read: waveforms are taken from the trace file itself. The format reference for every file is in [doc/ndmanager-plugins/formats](../ndmanager-plugins/formats/README.md).
 
 ---
 
 ## Interface overview
 
-The main window has three areas:
+The main window has two areas:
 
-- **Left dock — Channel panel**: two tabs, *Display* and *Spike*. Lists channels organised by anatomical group (Display tab) or electrode group (Spike tab). Checkboxes show/hide individual channels.
-- **Center — Trace view**: the scrollable signal canvas with all overlaid data layers.
-- **Right dock — Cluster and Event palettes**: collapsible panels, one per loaded cluster file and one per loaded event file, showing colored unit/event buttons.
+- **Left — Palettes**: one tab widget with the tabs *Anatomy* (channels by anatomical group), *Spikes* (channels by spike group), *Spectral* (spectral view settings), and — once files are loaded — *Units* (one box per cluster file) and *Events* (one box per event file).
+- **Right — Displays**: one tab per display, each with a trace view, the time controls below it, and (when a position file is loaded) a position view docked at the top.
 
 ---
 
@@ -71,39 +72,39 @@ The main window has three areas:
 
 | Action | Key / Control |
 |---|---|
-| Scroll forward / backward | Arrow keys or scrollbar |
-| Zoom time axis in / out | `+` / `-` or mouse wheel on trace view |
-| Jump to time | Type milliseconds into the toolbar time field and press Enter |
-| Page forward | `Page Down` |
-| Page backward | `Page Up` |
-| Jump to next event | `Ctrl+F` |
-| Jump to previous event | `Ctrl+B` |
-| Jump to next spike (selected cluster) | `Ctrl+Shift+F` |
-| Jump to previous spike (selected cluster) | `Ctrl+Shift+B` |
+| Scroll forward / backward by a quarter window | `Right` / `Left` |
+| Double / halve the time window | `+` / `-` |
+| Zoom time axis around the pointer | Mouse wheel |
+| Zoom in / out at the pointer | `Ctrl`+wheel |
+| Pan | `Ctrl`+left drag (not with the Select Channels tool) |
+| Jump to time | *Start time* min / s / ms boxes below each display; *Duration* next to them |
+| Page forward / backward | Click the scroll bar beside the slider (`Page Down` / `Page Up` work while the scroll bar has focus) |
+| Jump to next / previous event | `Ctrl+F` / `Ctrl+B` |
+| Jump to next / previous spike | `Ctrl+Shift+F` / `Ctrl+Shift+B` |
 | Auto-advance (playback to end) | `Ctrl+Shift+Space` (toggle) |
-| Accelerate playback | `Ctrl+Up` |
-| Decelerate playback | `Ctrl+Down` |
+| Accelerate / decelerate playback | `Ctrl+Up` / `Ctrl+Down` (125 ms steps) |
+
+Next/Previous Event and Spike only move between *activated* items: select the events or clusters in the palette, then `Ctrl+Alt`+click them (the squares turn into triangles). `Ctrl+Alt`+click on a file ID activates all its selected items.
 
 ---
 
-## Signal layers
+## Trace files and overlays
 
-Each layer is toggled independently from the **View** menu. All layers share the same horizontal time axis and are drawn on top of the raw traces.
+A display shows one trace file — the file that was opened (`.dat`, `.lfp`, `.fil` or any other extension). There is no layer menu.
 
-### Wideband (`.dat`)
-Full-bandwidth signal at acquisition sampling rate. Loaded automatically on open.
+**File → Load Overlay Trace File…** adds a second `.dat`, `.lfp` or `.eeg` file with the same channel layout, drawn on top of each channel in a contrasting colour (for example the wideband signal over the LFP).
 
-### LFP (`.lfp`)
-Downsampled local field potential. Loaded automatically when present. The LFP sampling rate is read from the parameter file (`lfpSamplingRate`); typical values are 1250 or 1600 Hz.
+---
 
-### High-pass (`.fil`)
-Median-filtered, high-pass signal used for spike detection. Loaded automatically when present.
+## Spectral view
+
+**Traces → Spectral View** (`S`) replaces the traces of the active display with a multitaper time-frequency image of the channels and window shown; `S` again returns to the traces. The *Spectral* palette tab sets the mode (*time-freq* for one channel, *band-chan* for one band across channels), tapers, window, FFT length, step, band, colour map and scale. Changes are staged: press `U` to recompute.
 
 ---
 
 ## Loading cluster files
 
-Cluster files are loaded via **File → Load Cluster File(s)…** A cluster file must follow the naming convention `basename.clu.N` or `basename.N.clu` (where N is an integer electrode group number). NeuroScope automatically locates the corresponding `.res.N` (timestamps) and `.spk.N` (waveform snippets) files in the same directory.
+Cluster files are loaded via **File → Load Cluster File(s)…** A cluster file must follow the naming convention `basename.clu.N` or `basename.N.clu` (where N is an integer electrode group number). NeuroScope locates the corresponding `.res.N` (timestamps) in the same directory.
 
 ### What gets loaded
 
@@ -111,15 +112,14 @@ Cluster files are loaded via **File → Load Cluster File(s)…** A cluster file
 |---|---|---|
 | `session.clu.N` | Integer cluster ID per spike | Yes |
 | `session.res.N` | Spike timestamps (sample indices) | Yes — inferred from `.clu.N` path |
-| `session.spk.N` | Waveform snippets for each spike | No — enables waveform display mode |
 
-Multiple cluster files can be loaded simultaneously (e.g. groups 1–8 at once). Each gets its own panel in the right-hand cluster palette, with independently selectable and colored units.
+The `.clu` and `.res` files may be binary or text (detected automatically; both of a pair must use the same form). Multiple cluster files can be loaded simultaneously (e.g. groups 1–8 at once). Each gets its own box in the *Units* palette, with independently selectable and colored units.
 
 ### Error conditions
 
 - **Missing `.res.N`** — neuroscope reports a missing-file error and does not load the group.
-- **Mismatched spike count** — if the number of lines in `.res.N` and `.clu.N` differ, a count-error is reported and the file is not loaded.
-- **Duplicate load** — if the same `.clu.N` is already loaded, neuroscope offers to reload it.
+- **Mismatched spike count** — if the number of spikes in `.res.N` and `.clu.N` differ, a count error is reported and the file is not loaded.
+- **Duplicate load** — if the same `.clu.N` is already loaded, neuroscope reports it and does not load it again.
 
 ### Cluster display modes
 
@@ -127,17 +127,17 @@ Three rendering modes are available from the **Units** menu and can be combined 
 
 | Mode | Menu item | Description |
 |---|---|---|
-| **Raster** (default on) | Units → Raster | Vertical tick marks at each spike timestamp, one row per cluster, rendered as a strip above or below the traces |
+| **Raster** (default on) | Units → Raster | Tick marks at each spike timestamp, one row per cluster, in a strip below the traces |
 | **Vertical lines** | Units → Vertical Lines | Full-height colored vertical lines at each spike timestamp |
-| **Waveforms** | Units → Waveforms | Waveform snippets from `.spk.N` drawn in-place at each spike timestamp |
+| **Waveforms** | Units → Waveforms | Each spike highlighted on the traces of its spike group (only when the trace file is `.dat` or `.fil`) |
 
-Raster row height is adjustable with `Ctrl++` / `Ctrl+-`.
+Raster row height is adjustable with `Ctrl++` / `Ctrl+-` (**Units → Increase / Decrease Height**).
 
-The position of the raster/line/waveform strip relative to the traces is set in **Preferences → Defaults** (cluster position: between traces, at top, or at bottom).
+When browsing, the spike is placed at a fixed position in the window: **Preferences → General → Align units at … % of the view** (and *Align events at* for events).
 
 ### Cluster palette
 
-The right-hand palette shows one colored button per cluster ID. Clicking selects that cluster (used for Next/Previous Spike navigation). Double-click opens a color picker. Right-click provides show/hide options.
+The *Units* palette shows one colored square per cluster ID. Clicking selects the cluster for display; `Ctrl+Alt`+click activates it for Next/Previous Spike. Middle-click opens a color picker.
 
 | Action | Shortcut |
 |---|---|
@@ -155,14 +155,14 @@ Cluster color assignments are saved to the session file and restored on reload.
 
 ## Waveform display
 
-When Waveforms mode is enabled and `.spk.N` is present, neuroscope draws the snippet for each visible spike centered on the spike timestamp. Two parameters control the window:
+When **Units → Waveforms** is enabled, neuroscope highlights a window of the trace around each visible spike, on the channels of the spike group. Two parameters set the window:
 
-- **nbSamples** — total number of samples in the waveform snippet
-- **peakIndex** — sample index (0-based) of the spike peak within that window
+- **nSamples** — total number of samples in the waveform window
+- **peakSampleIndex** — 1-based index of the spike peak within that window
 
-These are read from the parameter file at startup. They can be changed at runtime via **File → Properties** and take effect immediately for all loaded electrode groups.
+Both are read from the group's `spikeDetection` entry in the parameter file. They can be changed at runtime via **File → Properties** (*Units* tab) and take effect immediately for all loaded electrode groups.
 
-Default values (used when the parameter file does not specify them) are configured in **Preferences → Defaults**. These defaults seed the Properties dialog on first open.
+Default values (used when the parameter file does not specify them) are configured in **Settings → Preferences → Defaults → Units**.
 
 ---
 
@@ -183,15 +183,15 @@ The timestamp is a floating-point millisecond value; the label is a free-form st
 5678.0  reward
 ```
 
-Multiple event files can be loaded simultaneously, distinguished by their file suffix: `session.evt`, `session.evt.a`, `session.evt.stim`, etc.
+Event file names have the form `base.id.evt` or `base.evt.id`, where `id` is exactly three characters with at least one non-digit: `session.rip.evt`, `session.evt.s01`. Other names are rejected. Multiple event files can be loaded simultaneously; the `id` labels each one in the palette. See [evt.md](../ndmanager-plugins/formats/evt.md).
 
 ### Loading event files
 
-**File → Load Event File(s)…** opens a multi-file picker. Each loaded `.evt` file gets its own panel in the event palette, with a distinct color per event description (label).
+**File → Load Event File(s)…** opens a multi-file picker. Each loaded event file gets its own box in the *Events* palette, with a distinct color per event description (label).
 
 ### Creating a new event file
 
-**File → Create Event File…** prompts for a file name and creates an empty `.evt` file. Use the **Add Event** tool (toolbar button or `E` key) to mark events interactively.
+**File → Create Event File…** prompts for a file name and creates an empty event file. Use the **Add Event** tool (**Tool → Add Event** or the toolbar button and its drop-down; no shortcut) to mark events interactively.
 
 ### Editing events
 
@@ -199,35 +199,36 @@ Editing requires **Edit Mode** (`Ctrl+E` or Edit menu).
 
 | Action | Method |
 |---|---|
-| Add event | Select Add Event tool (`E`), click in the trace view at the target time |
-| Move event | Select Event tool, drag an event marker to a new position |
-| Remove event | Select Event tool, select the event, then **Events → Remove Event** (`Ctrl+K`) |
-| Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
+| Add event | Choose the event type under **Tool → Add Event** (or the toolbar drop-down), click in the trace view at the target time |
+| Move event | **Select Event** tool (`E`), drag an event marker to a new position |
+| Remove event | **Select Event** tool (`E`), select the event, then **Events → Remove Event** (`Ctrl+K`) |
+| Undo / Redo | `Ctrl+Z` / the platform Redo key (`Ctrl+Shift+Z` on Linux, `Ctrl+Y` on Windows) |
 
-New event descriptions are entered in a popup dialog on first use; existing descriptions appear in the Add Event toolbar dropdown.
+New event descriptions are entered with **New Event …** in the Add Event menu; existing descriptions appear in the Add Event toolbar dropdown.
 
 ### Event palette
 
-Events are listed by description in the event palette. Selecting a description enables Next/Previous Event navigation (`Ctrl+F` / `Ctrl+B`). Event markers on the position trajectory view are toggled with **View → Show Events**.
+Events are listed by description in the *Events* palette. Selecting a description displays it; `Ctrl+Alt`+click activates it for Next/Previous Event navigation (`Ctrl+F` / `Ctrl+B`). Event markers in the position view are toggled with **Positions → Show Events**.
 
 ---
 
 ## Position file (`.pos`)
 
-**File → Load Position File…** loads an animal trajectory file. The `.pos` file is a binary sequence of x,y coordinate pairs sampled at the video frame rate.
+**File → Load Position File…** loads an animal trajectory file. The `.pos` file is plain text: one line per video sample, with `x y` for each tracked spot (`x1 y1 x2 y2 …`); negative coordinates mark an undetected spot. See [pos.md](../ndmanager-plugins/formats/pos.md).
 
-Once loaded, a **Position View** panel docks below the trace view showing the full-session trajectory. A moving dot tracks the animal's current position for the visible time window.
+Once loaded, a **Position View** is docked in the display, showing the positions during the visible time window (**Positions → Show Position View** toggles it).
 
-Position view parameters are set in **File → Properties**:
+Position view parameters are set in **File → Properties** (*Positions* tab):
 
 | Parameter | Description |
 |---|---|
-| Video sampling rate | Frames per second of the `.pos` file |
-| Video width / height | Frame dimensions in pixels |
-| Background image | Optional image rendered behind the trajectory path |
+| Sampling rate | Video sampling rate of the `.pos` file |
+| Width / height | Frame dimensions in pixels |
+| Background image | Optional image rendered behind the positions |
+| Draw trajectory | Draw the whole-session trajectory on the background |
 | Rotation / flip | Orientation correction: 0°/90°/180°/270° with optional horizontal or vertical flip |
 
-When event files are loaded and **View → Show Events** is checked in the position view, each event type is drawn as a dot on the trajectory at the position where it occurred.
+When event files are loaded and **Positions → Show Events** is checked, each selected event is drawn on the position view at the position where it occurred.
 
 ---
 
@@ -235,12 +236,12 @@ When event files are loaded and **View → Show Events** is checked in the posit
 
 ### Palettes
 
-The left dock has two channel palettes:
+The palette area has two channel palettes:
 
-- **Display palette** — channels grouped by anatomical group. Controls what appears in the trace view.
-- **Spike palette** — channels grouped by electrode group. Controls which channels appear in waveform overlays.
+- **Anatomy palette** — channels grouped by anatomical group. Controls what appears in the trace view and how it is laid out.
+- **Spikes palette** — channels grouped by spike (electrode) group. Defines the groups written to the parameter file and used for waveform highlighting.
 
-Both palettes support click/Ctrl+click selection, checkboxes, and right-click context menus for group-level operations.
+Both palettes support click/`Shift`/`Ctrl`+click selection, drag and drop between groups, and middle-click to change a channel or group color.
 
 ### Show / hide channels
 
@@ -251,30 +252,30 @@ Both palettes support click/Ctrl+click selection, checkboxes, and right-click co
 | Move selected to new group | `Ctrl+G` |
 | Remove selected from group | `Shift+Delete` |
 | Discard channels (mark dead) | `Delete` |
-| Keep channels (un-discard) | `Ctrl+Shift+K` |
-| Skip channels | `Ctrl+Shift+S` |
+| Keep channels (un-skip) | `Ctrl+Shift+K` |
+| Skip channels (keep their place, do not draw) | Channels → Skip Channels (no shortcut) |
 | Synchronize display and spike groups | Channels → Synchronize Groups |
 
 ### Amplitude and offset controls
 
 | Action | Shortcut |
 |---|---|
-| Increase all channel amplitudes | `Ctrl+I` |
-| Decrease all channel amplitudes | `Ctrl+D` |
+| Increase all channel amplitudes | `Ctrl+I` (or `Ctrl+Shift`+wheel up) |
+| Decrease all channel amplitudes | `Ctrl+D` (or `Ctrl+Shift`+wheel down) |
 | Increase selected channel amplitudes | `Ctrl+Shift+I` |
 | Decrease selected channel amplitudes | `Ctrl+Shift+D` |
-| Reset selected channel offsets to zero | Traces → Reset Selected Channel Offsets |
+| Reset selected channel offsets to the defaults | Traces → Reset Selected Channel Offsets |
 | Reset selected channel amplitudes | Traces → Reset Selected Channel Amplitudes |
-| Set current offsets as session defaults | Traces → Set Current Offsets as Defaults |
+| Set current offsets as defaults (stored in the parameter file) | Traces → Set Current Offsets as Defaults |
 | Zero all default offsets | Traces → Set Default Offsets to Zero |
-| Autocenter channels (subtract window mean) | `Ctrl+Shift+A` (toggle) |
+| Autocenter channels (subtract window mean) | Traces → Autocenter Channels (toggle, no shortcut) |
 
 ### Color modes
 
 - **Color by Anatomical Groups** — channels in the same anatomical group share a color (Channels menu).
 - **Color by Spike Groups** — channels are colored by electrode group (Channels menu).
 
-Both modes propagate to the left channel panel coloring.
+Both modes propagate to the channel palette coloring.
 
 ---
 
@@ -282,35 +283,48 @@ Both modes propagate to the left channel panel coloring.
 
 | Option | Menu / Shortcut | Notes |
 |---|---|---|
-| Multiple columns | Traces → Multiple Columns | Splits channels across two horizontal columns |
-| Gray-scale | Traces → Gray-Scale | Renders traces in grayscale — useful for printing |
-| Show labels | Traces → Show Labels (`Ctrl+L`) | Channel name labels on the left edge of the trace view |
-| Display calibration | Settings → Display Calibration | Draws a scale bar overlay |
+| Multiple columns | Traces → Multiple Columns | One column per anatomical group |
+| Grey-scale | Traces → Grey-Scale | Renders traces in grey-scale — makes highlighted waveforms stand out |
+| Spectral view | Traces → Spectral View (`S`) | See [Spectral view](#spectral-view) |
+| Show labels | Traces → Show Labels (`Ctrl+L`) | Channel ID and amplitude next to each trace |
+| Display calibration | Settings → Display Calibration | Draws time and voltage scale bars |
 | Background image | File → Properties | Static image behind all traces |
 
 ---
 
 ## Multiple display tabs
 
-Each **Display** tab has its own independent time position, zoom level, visible channel set, selected clusters, selected events, and per-channel gain/offset state. All tabs share the same loaded providers.
+Each **Display** tab has its own independent time position, zoom level, visible channel set, selected clusters, selected events, and per-channel gain/offset state. All tabs share the same loaded files.
 
 | Action | Description |
 |---|---|
-| Displays → New Display | Opens a new tab cloned from the active display |
-| Displays → Rename Active Display | Edits the active tab label |
-| Displays → Close Active Display | Closes the active tab |
+| Displays → New Display (`Ctrl+N`) | Opens a new tab cloned from the active display |
+| Displays → Rename Active Display (`Ctrl+R`) | Edits the active tab label |
+| Displays → Close Active Display (`Ctrl+W`) | Closes the active tab |
 
 ---
 
 ## Printing
 
-**File → Print** (`Ctrl+P`) sends the current trace view to the system print dialog in landscape orientation. All visible layers (traces, clusters, events) are included.
+**File → Print** (`Ctrl+P`) sends the current display to the Qt print dialog in landscape orientation; choose *Print to File (PDF)* to export. All visible layers (traces, clusters, events) are included, and a position view is printed on its own page. To print on a white background, check **Preferences → General → Use white background when printing**.
+
+---
+
+## Saving
+
+**File → Save** (`Ctrl+S`) writes:
+
+- the parameter file `session.yaml` — acquisition settings, sampling rates (including per-extension rates), anatomical and spike groups, skipped channels, and the `neuroscope` section (colors, default offsets, screen gain, video settings). Other sections of an existing file are kept;
+- any modified event files;
+- the session file `session.nrs`.
+
+**File → Save As** (`Ctrl+Shift+S`) writes the session file to a new location. The session file is also written automatically on close when nothing else changed.
 
 ---
 
 ## Session file (`.nrs`)
 
-**File → Save** / **Save As** writes a `session.nrs` YAML file capturing the full viewer state. On next open, neuroscope restores the loaded files, colors, channel positions, and time window for every display tab.
+The session file captures the full viewer state. On next open, neuroscope restores the loaded files, colors, channel positions, and time window for every display tab.
 
 Structure:
 
@@ -342,7 +356,7 @@ neuroscope_session:
         - fileUrl: "/path/to/session.clu.1"
           clusters: [3, 5, 7]
       eventsSelected:
-        - fileUrl: "/path/to/session.evt"
+        - fileUrl: "/path/to/session.rip.evt"
           events: [1, 2]
       clustersSkipped: []
       eventsSkipped: []
@@ -359,52 +373,57 @@ neuroscope_session:
 
 ## YAML parameter file — neuroscope section
 
-NeuroScope reads display defaults from the `neuroscope` block of the session parameter file (e.g. `session.yaml` created by ndmanager). On save, only `neuroscope/` sub-keys are updated; the rest of the parameter file is preserved.
+NeuroScope reads display defaults from the `neuroscope` block of the session parameter file (e.g. `session.yaml` created by ndmanager). The waveform window comes from `spikeDetection`, and the video size and rate from the top-level `video` block.
 
 ```yaml
+video:                        # top-level, shared with ndmanager
+  samplingRate: 39.0          # video sampling rate (Hz)
+  width: 320
+  height: 240
 neuroscope:
   miscellaneous:
-    screenGain: 0.2           # default vertical scale (mV per pixel)
+    screenGain: 0.2           # mV/cm at amplitude x1
     traceBackgroundImage: ""  # optional path to a background image
   video:
-    samplingRate: 39.0        # video frame rate (fps)
-    width: 320
-    height: 240
     rotate: 0                 # 0 | 90 | 180 | 270
     flip: 0                   # 0=none  1=vertical  2=horizontal
+    positionsBackground: 0    # 1 = draw the trajectory on the background
+    videoImage: ""            # optional background image for the position view
   channels:
     colors:
-      - id: 0
+      - channel: 0
+        color: "#ff0000"
         anatomyColor: "#ff0000"
         spikeColor:   "#ff0000"
     offsets:
-      - id: 0
-        offset: 0
+      - channel: 0
+        defaultOffset: 0
   spikes:
-    nbSamples: 32
-    peakIndex: 16
+    nSamples: 32
+    peakSampleIndex: 16
 ```
 
 ---
 
 ## Preferences
 
-**Settings → Preferences** opens the global preferences dialog. Relevant settings:
+**Settings → Preferences** opens the global preferences dialog:
 
-| Setting | Description |
+| Page | Settings |
 |---|---|
-| Background color | Trace view canvas background |
-| Default nbSamples | Waveform window length when not specified in parameter file |
-| Default peakIndex | Waveform peak sample position |
-| Cluster position | Raster/line strip placement: between traces, at top, or at bottom |
-| Event position | Same for event markers |
+| General | Background color; palette tab labels; *Align events at* / *Align units at … % of the view*; *Use white background when printing* |
+| Defaults | *Channels*: acquisition defaults (channels, sampling rates, resolution, offset, voltage range, amplification, screen gain, trace background image); *Units*: default waveform samples and peak index; *Positions*: video defaults |
+| Appearance | Theme (System / Light / Dark) — applies to all NeuroSuite programs |
+| Input | Keyboard and mouse bindings, with named keymap layouts |
+
+---
+
+## Keyboard shortcuts
+
+**Help → Keyboard Shortcuts…** lists every keyboard and mouse binding currently in effect. Bindings are changed on **Settings → Preferences → Input**. The tools have single-key shortcuts: `Z` Zoom, `L` Draw Time Line, `C` Select Channels, `V` Measure, `T` Select Time, `E` Select Event; `S` toggles the spectral view and `U` recomputes it.
 
 ---
 
 ## Installation
 
-| Platform | Guide |
-|---|---|
-| Linux (Ubuntu / Debian) | [install/linux.md](install/linux.md) |
-| Windows | [install/windows.md](install/windows.md) |
-| macOS | [install/macos.md](install/macos.md) |
+NeuroScope is built and installed with the rest of neurosuite-3; follow [doc/INSTALL.md](../INSTALL.md).
