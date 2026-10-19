@@ -1,5 +1,17 @@
 # Probe Maker — interactive probe design and editing
 
+> **Status (2026-10): implemented, differs from this design.** The Probe Maker
+> is embedded in the Probes page (right column of `ProbePage`), not a separate
+> tab. Each probe's session copy is `<session>.probe.<id>.probe`, written on
+> every edit (`probepage.cpp`, `probemakerpage.cpp`), not
+> `<session>.ndm.<n>.probe`. There are no File-menu probe actions and no
+> Ctrl+Alt+R shortcuts: Save and Save As… are buttons in the Probe Maker's own
+> toolbar (Save rewrites the session copy; Save As writes the geometry to a file
+> of your choice, e.g. a library). Both views live in `probemakerviews.{h,cpp}`.
+> The `.probe` format is described in
+> [`formats/probe.md`](../ndmanager-plugins/formats/probe.md). The rest of this
+> note is the original design.
+
 The Probes tab today (`ProbePage` over `ProbeLayout` / `probelayout.ui`) is a
 table-based form for *referencing* probes from a library: it stores
 `probeFile` paths, channel offsets, and group-id mappings (see
@@ -22,9 +34,8 @@ two gaps:
 
 The Probe Maker adds an interactive editor for the same `.probe` schema,
 sharing the file format with the canonical library.  Saving a session-
-local probe writes to `<session>.ndm.<n>.probe` (using the same `.ndm.`
-namespace prefix as `.ndm.<n>.pipeline` files); loading accepts both
-session-local files and library files.
+local probe was planned as `<session>.ndm.<n>.probe`; the implementation
+uses `<session>.probe.<id>.probe` (see the status note above).
 
 ## File format
 
@@ -32,7 +43,8 @@ The Probe Maker reads and writes the existing `.probe` YAML schema
 (`probeFile:` top level, `version`/`vendor`/`model`/`totalChannels`/
 `substrate`/`shanks`/`sites`/`channelMap`/`notes`).  This is the format
 already used by every file under `src/nphys-data/src/probes/` and parsed
-by `ndm_setupgroups`; nothing new needs to be defined.
+by `process_setupgroups.py` (via `ndm_setupgroups`), `probe_geometry.py` and the
+Probe Maker's own reader; nothing new needs to be defined.
 
 For session-local probes (designed in-app rather than picked from the
 library) the file lives alongside the session YAML:
@@ -179,7 +191,8 @@ none of the canonical library files use unknown fields today).
 
 ## Save / Save As / Load actions
 
-Same idiom as the Pipeline tab:
+Planned (not built this way — see the status note: Save and Save As… are
+toolbar buttons only, with no shortcuts and no File-menu entries):
 
 | Action | Where | Shortcut | Writes |
 |---|---|---|---|
@@ -216,13 +229,11 @@ Save/Save As/Load to round-trip it through `.probe` YAML.
 
 ```
 src/ndmanager/src/probemakerpage.{h,cpp}                    NEW — main page widget
-src/ndmanager/src/probelogicalview.{h,cpp}                  NEW — QGraphicsView for hierarchy
-src/ndmanager/src/probephysicalview.{h,cpp}                 NEW — QGraphicsView for µm coords
+src/ndmanager/src/probemakerviews.{h,cpp}                   NEW — logical + physical QGraphicsViews
 src/ndmanager/src/probemakeritems.{h,cpp}                   NEW — QGraphicsItem subclasses
 src/libklustersshared/.../parameteryamlreader_probes.{h,cpp} EXTEND — connector/shank/channel types
 src/ndmanager/src/CMakeLists.txt                            EDIT — add new sources
-src/ndmanager/src/parameterview.{h,cpp}                     EDIT — wire ProbeMakerPage as new tab
-src/ndmanager/src/ndmanager.{h,cpp}                         EDIT — File menu actions
+src/ndmanager/src/probepage.{h,cpp}                         EDIT — embeds ProbeMakerPage
 doc/ndmanager/README.md                                     EDIT — Probe Maker tab section
 doc/design/probe-maker.md                                   NEW — this file
 CHANGELOG.md                                                EDIT — entry for the feature
