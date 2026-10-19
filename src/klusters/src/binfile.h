@@ -15,6 +15,7 @@
 #pragma once
 
 #include <QString>
+#include <neurosuite/core/fileio64.hpp>
 #include <cstdint>
 #include <cstdio>
 #include <vector>
@@ -30,8 +31,8 @@ inline bool readRes(const QString& path, std::vector<int64_t>& ts)
 {
     FILE* f = fopen(path.toLocal8Bit().constData(), "rb");
     if (!f) return false;
-    fseeko(f, 0, SEEK_END);
-    int64_t sz = static_cast<int64_t>(ftello(f));
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    int64_t sz = static_cast<int64_t>(neurosuite::core::ftell64(f));
     rewind(f);
     int64_t n = sz / static_cast<int64_t>(sizeof(int64_t));
     ts.resize(static_cast<size_t>(n));
@@ -69,10 +70,10 @@ inline bool readFet(const QString& path, FetFile& fet)
     if (fread(&fet.nDimensions, sizeof(int32_t), 1, f) != 1) { fclose(f); return false; }
     if (fet.nDimensions <= 0) { fclose(f); return false; }
 
-    fseeko(f, 0, SEEK_END);
-    int64_t sz = static_cast<int64_t>(ftello(f)) - static_cast<int64_t>(sizeof(int32_t));
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    int64_t sz = static_cast<int64_t>(neurosuite::core::ftell64(f)) - static_cast<int64_t>(sizeof(int32_t));
     rewind(f);
-    fseeko(f, sizeof(int32_t), SEEK_SET);
+    neurosuite::core::fseek64(f, sizeof(int32_t), SEEK_SET);
 
     fet.nSpikes = sz / (static_cast<int64_t>(sizeof(int64_t)) * fet.nDimensions);
     int64_t total = fet.nSpikes * fet.nDimensions;
@@ -112,10 +113,10 @@ inline bool readClu(const QString& path, CluFile& clu)
 
     if (fread(&clu.nClusters, sizeof(int32_t), 1, f) != 1) { fclose(f); return false; }
 
-    fseeko(f, 0, SEEK_END);
-    int64_t sz = static_cast<int64_t>(ftello(f)) - static_cast<int64_t>(sizeof(int32_t));
+    neurosuite::core::fseek64(f, 0, SEEK_END);
+    int64_t sz = static_cast<int64_t>(neurosuite::core::ftell64(f)) - static_cast<int64_t>(sizeof(int32_t));
     rewind(f);
-    fseeko(f, sizeof(int32_t), SEEK_SET);
+    neurosuite::core::fseek64(f, sizeof(int32_t), SEEK_SET);
 
     int64_t n = sz / static_cast<int64_t>(sizeof(int32_t));
     clu.ids.resize(static_cast<size_t>(n));
@@ -144,14 +145,14 @@ inline bool writeClu(const QString& path, const CluFile& clu)
 /// Read a single timestamp from .res at 0-based spike index p.
 inline bool readResAt(FILE* f, int64_t p, int64_t& ts)
 {
-    if (fseeko(f, static_cast<off_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0) return false;
+    if (neurosuite::core::fseek64(f, static_cast<std::int64_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0) return false;
     return fread(&ts, sizeof(int64_t), 1, f) == 1;
 }
 
 /// Write a single timestamp to .res at 0-based spike index p.
 inline bool writeResAt(FILE* f, int64_t p, int64_t ts)
 {
-    if (fseeko(f, static_cast<off_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0) return false;
+    if (neurosuite::core::fseek64(f, static_cast<std::int64_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0) return false;
     return fwrite(&ts, sizeof(int64_t), 1, f) == 1;
 }
 
@@ -161,9 +162,9 @@ inline bool readFetRow(FILE* f, int64_t p, int32_t nDimensions,
                        std::vector<int64_t>& row)
 {
     row.resize(static_cast<size_t>(nDimensions));
-    off_t off = static_cast<off_t>(sizeof(int32_t))
-              + static_cast<off_t>((p * nDimensions)) * static_cast<off_t>(sizeof(int64_t));
-    if (fseeko(f, off, SEEK_SET) != 0) return false;
+    std::int64_t off = static_cast<std::int64_t>(sizeof(int32_t))
+              + static_cast<std::int64_t>((p * nDimensions)) * static_cast<std::int64_t>(sizeof(int64_t));
+    if (neurosuite::core::fseek64(f, off, SEEK_SET) != 0) return false;
     return static_cast<int32_t>(fread(row.data(), sizeof(int64_t), static_cast<size_t>(nDimensions), f))
            == nDimensions;
 }
@@ -172,9 +173,9 @@ inline bool readFetRow(FILE* f, int64_t p, int32_t nDimensions,
 inline bool writeFetRow(FILE* f, int64_t p, int32_t nDimensions,
                         const std::vector<int64_t>& row)
 {
-    off_t off = static_cast<off_t>(sizeof(int32_t))
-              + static_cast<off_t>((p * nDimensions)) * static_cast<off_t>(sizeof(int64_t));
-    if (fseeko(f, off, SEEK_SET) != 0) return false;
+    std::int64_t off = static_cast<std::int64_t>(sizeof(int32_t))
+              + static_cast<std::int64_t>((p * nDimensions)) * static_cast<std::int64_t>(sizeof(int64_t));
+    if (neurosuite::core::fseek64(f, off, SEEK_SET) != 0) return false;
     return static_cast<int32_t>(fwrite(row.data(), sizeof(int64_t), static_cast<size_t>(nDimensions), f))
            == nDimensions;
 }
@@ -182,18 +183,18 @@ inline bool writeFetRow(FILE* f, int64_t p, int32_t nDimensions,
 /// Read one .clu entry at 0-based spike index p.
 inline bool readCluAt(FILE* f, int64_t p, int32_t& id)
 {
-    off_t off = static_cast<off_t>(sizeof(int32_t))
-              + static_cast<off_t>((p * static_cast<int64_t>(sizeof(int32_t))));
-    if (fseeko(f, off, SEEK_SET) != 0) return false;
+    std::int64_t off = static_cast<std::int64_t>(sizeof(int32_t))
+              + static_cast<std::int64_t>((p * static_cast<int64_t>(sizeof(int32_t))));
+    if (neurosuite::core::fseek64(f, off, SEEK_SET) != 0) return false;
     return fread(&id, sizeof(int32_t), 1, f) == 1;
 }
 
 /// Write one .clu entry at 0-based spike index p.
 inline bool writeCluAt(FILE* f, int64_t p, int32_t id)
 {
-    off_t off = static_cast<off_t>(sizeof(int32_t))
-              + static_cast<off_t>((p * static_cast<int64_t>(sizeof(int32_t))));
-    if (fseeko(f, off, SEEK_SET) != 0) return false;
+    std::int64_t off = static_cast<std::int64_t>(sizeof(int32_t))
+              + static_cast<std::int64_t>((p * static_cast<int64_t>(sizeof(int32_t))));
+    if (neurosuite::core::fseek64(f, off, SEEK_SET) != 0) return false;
     return fwrite(&id, sizeof(int32_t), 1, f) == 1;
 }
 

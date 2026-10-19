@@ -24,6 +24,7 @@
 #include "tracesprovider.h"
 
 #include <QFile>
+#include <neurosuite/core/fileio64.hpp>
 #include <QRegularExpression>
 #include <QDebug>
 #include <QFileInfo>
@@ -173,7 +174,7 @@ void TracesProvider::retrieveData(long startTime,long endTime,QObject* initiator
                 }
 
                 // Start at appropriate offset
-                fseeko64(dataFile,position,SEEK_SET);
+                neurosuite::core::fseek64(dataFile,position,SEEK_SET);
 
                 // 1) Read the rest of the first record
                 nRead = fread((char*)buffer,sizeof(int16_t),inFirstRecord,dataFile);

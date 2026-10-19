@@ -15,6 +15,7 @@
 // identically.  The seven file-static helpers are realign-only and move with it.
 //
 #include <algorithm>
+#include <neurosuite/core/fileio64.hpp>
 #include <functional>
 #include <numeric>
 #include <cmath>
@@ -121,7 +122,7 @@ using klustersdoc_internal::stripFeatureSuffix;
 // ndm_extractspikes wrote.  Returns nullptr (seed 0) for a window at the start
 // of the file or if the row cannot be read.  Moves the file position; every
 // caller seeks before its next read.
-static const int16_t* readStderivSeed(FILE* fp, off_t windowOff, int totalNbChan,
+static const int16_t* readStderivSeed(FILE* fp, std::int64_t windowOff, int totalNbChan,
                                       const QList<int>& groupChannels,
                                       neurosuite::core::SdiffOrder order,
                                       const int* partner, const int* setOff,
@@ -129,11 +130,11 @@ static const int16_t* readStderivSeed(FILE* fp, off_t windowOff, int totalNbChan
                                       std::vector<int16_t>& seedBuf,
                                       const neurosuite::core::ChannelExprSet* expr = nullptr)
 {
-    const off_t rowBytes = static_cast<off_t>(totalNbChan)
-                         * static_cast<off_t>(sizeof(short));
+    const std::int64_t rowBytes = static_cast<std::int64_t>(totalNbChan)
+                         * static_cast<std::int64_t>(sizeof(short));
     if (!fp || windowOff < rowBytes) return nullptr;
     std::vector<int16_t> row(static_cast<size_t>(totalNbChan));
-    if (fseeko(fp, windowOff - rowBytes, SEEK_SET) != 0
+    if (neurosuite::core::fseek64(fp, windowOff - rowBytes, SEEK_SET) != 0
         || fread(row.data(), sizeof(short), row.size(), fp) != row.size())
         return nullptr;
     const int nChan = static_cast<int>(groupChannels.size());
@@ -836,8 +837,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             return false;
         }
         for (int64_t i = 0; i < N; ++i) {
-            const off_t off = static_cast<off_t>((gidx[static_cast<size_t>(i)] * bytesPerSpike));
-            if (fseeko(sf, off, SEEK_SET) != 0) {
+            const std::int64_t off = static_cast<std::int64_t>((gidx[static_cast<size_t>(i)] * bytesPerSpike));
+            if (neurosuite::core::fseek64(sf, off, SEEK_SET) != 0) {
                 fclose(sf);
                 log << "ERROR: .spk seek failed at spike "
                     << gidx[static_cast<size_t>(i)] << "\n";
@@ -935,7 +936,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             const int64_t p = gidx[static_cast<size_t>(i)];
 
             // Read timestamp from .res at byte offset p*8
-            if (fseeko(rf, static_cast<off_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0 ||
+            if (neurosuite::core::fseek64(rf, static_cast<std::int64_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0 ||
                 fread(&clusterTs[static_cast<size_t>(i)],
                       sizeof(int64_t), 1, rf) != 1) {
                 fclose(rf); fclose(ff);
@@ -946,10 +947,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             // Read extra feature columns from .fet row p
             for (int k = 0; k < nExtraFeats; ++k) {
                 const int col = nPcaFeats + k;
-                const off_t off = static_cast<off_t>(sizeof(int32_t))
-                                + static_cast<off_t>((p * static_cast<int64_t>(fileDim) + col))
-                                * static_cast<off_t>(sizeof(int64_t));
-                if (fseeko(ff, off, SEEK_SET) != 0 ||
+                const std::int64_t off = static_cast<std::int64_t>(sizeof(int32_t))
+                                + static_cast<std::int64_t>((p * static_cast<int64_t>(fileDim) + col))
+                                * static_cast<std::int64_t>(sizeof(int64_t));
+                if (neurosuite::core::fseek64(ff, off, SEEK_SET) != 0 ||
                     fread(&extraFeats[static_cast<size_t>(i)][static_cast<size_t>(k)],
                           sizeof(int64_t), 1, ff) != 1) {
                     log << "WARNING: cannot read extra feat col=" << col
@@ -1374,10 +1375,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                         validRow[static_cast<size_t>(i)] = 0;
                         continue;
                     }
-                    const off_t rawOff = static_cast<off_t>(leftStart)
-                                       * static_cast<off_t>(totalNbChanP82)
-                                       * static_cast<off_t>(sizeof(short));
-                    if (fseeko(filFp82, rawOff, SEEK_SET) != 0) {
+                    const std::int64_t rawOff = static_cast<std::int64_t>(leftStart)
+                                       * static_cast<std::int64_t>(totalNbChanP82)
+                                       * static_cast<std::int64_t>(sizeof(short));
+                    if (neurosuite::core::fseek64(filFp82, rawOff, SEEK_SET) != 0) {
                         validRow[static_cast<size_t>(i)] = 0;
                         continue;
                     }
@@ -1459,10 +1460,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     const int64_t bestStart =
                         clusterTs[static_cast<size_t>(i)] + cumShift[static_cast<size_t>(i)]
                       - static_cast<int64_t>(peakSamp0);
-                    const off_t bestOff = static_cast<off_t>(bestStart)
-                                        * static_cast<off_t>(totalNbChanP82)
-                                        * static_cast<off_t>(sizeof(short));
-                    if (fseeko(filFp82, bestOff, SEEK_SET) != 0) continue;
+                    const std::int64_t bestOff = static_cast<std::int64_t>(bestStart)
+                                        * static_cast<std::int64_t>(totalNbChanP82)
+                                        * static_cast<std::int64_t>(sizeof(short));
+                    if (neurosuite::core::fseek64(filFp82, bestOff, SEEK_SET) != 0) continue;
                     if (fread(gpuFrame.data(), sizeof(short),
                               gpuFrame.size(), filFp82)
                             != gpuFrame.size()) continue;
@@ -1509,10 +1510,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     if (candStart < 0 ||
                         candStart + nSamp > totalSamplesP82) continue;
 
-                    const off_t rawOff = static_cast<off_t>(candStart)
-                                       * static_cast<off_t>(totalNbChanP82)
-                                       * static_cast<off_t>(sizeof(short));
-                    if (fseeko(spikeFp, rawOff, SEEK_SET) != 0) continue;
+                    const std::int64_t rawOff = static_cast<std::int64_t>(candStart)
+                                       * static_cast<std::int64_t>(totalNbChanP82)
+                                       * static_cast<std::int64_t>(sizeof(short));
+                    if (neurosuite::core::fseek64(spikeFp, rawOff, SEEK_SET) != 0) continue;
                     if (fread(frameBuf.data(), sizeof(short),
                               frameBuf.size(), spikeFp)
                             != frameBuf.size()) continue;
@@ -1570,10 +1571,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                         clusterTs[static_cast<size_t>(i)]
                       + cumShift[static_cast<size_t>(i)]
                       - static_cast<int64_t>(peakSamp0);
-                    const off_t bestOff = static_cast<off_t>(bestStart)
-                                        * static_cast<off_t>(totalNbChanP82)
-                                        * static_cast<off_t>(sizeof(short));
-                    if (fseeko(spikeFp, bestOff, SEEK_SET) == 0 &&
+                    const std::int64_t bestOff = static_cast<std::int64_t>(bestStart)
+                                        * static_cast<std::int64_t>(totalNbChanP82)
+                                        * static_cast<std::int64_t>(sizeof(short));
+                    if (neurosuite::core::fseek64(spikeFp, bestOff, SEEK_SET) == 0 &&
                         fread(frameBuf.data(), sizeof(short),
                               frameBuf.size(), spikeFp) == frameBuf.size()) {
                         int16_t* wTgt = wavBuf.data()
@@ -2004,10 +2005,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                 ++verifySkipped;
                 continue;
             }
-            const off_t rawOffV = static_cast<off_t>(startSampleV)
-                                * static_cast<off_t>(totalNbChan)
-                                * static_cast<off_t>(sizeof(short));
-            if (fseeko(filF, rawOffV, SEEK_SET) != 0) { ++verifySkipped; continue; }
+            const std::int64_t rawOffV = static_cast<std::int64_t>(startSampleV)
+                                * static_cast<std::int64_t>(totalNbChan)
+                                * static_cast<std::int64_t>(sizeof(short));
+            if (neurosuite::core::fseek64(filF, rawOffV, SEEK_SET) != 0) { ++verifySkipped; continue; }
             std::vector<int16_t> rawFrameV(static_cast<size_t>(nSamp * totalNbChan));
             if (fread(rawFrameV.data(), sizeof(short),
                       rawFrameV.size(), filF) != rawFrameV.size()) {
@@ -2119,10 +2120,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         if (filF && cumShift[static_cast<size_t>(csIdx)] != 0) {
             const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
             if (startSample >= 0 && startSample + nSamp <= totalSamples) {
-                const off_t rawOff = static_cast<off_t>(startSample)
-                                   * static_cast<off_t>(totalNbChan)
-                                   * static_cast<off_t>(sizeof(short));
-                if (fseeko(filF, rawOff, SEEK_SET) == 0) {
+                const std::int64_t rawOff = static_cast<std::int64_t>(startSample)
+                                   * static_cast<std::int64_t>(totalNbChan)
+                                   * static_cast<std::int64_t>(sizeof(short));
+                if (neurosuite::core::fseek64(filF, rawOff, SEEK_SET) == 0) {
                     std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
                     if (fread(rawFrame.data(), sizeof(short),
                               rawFrame.size(), filF) == rawFrame.size()) {
@@ -2188,16 +2189,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         rec.fetRow = makeFetRow(csIdx, w, ts);
 
         // Write into the pending files (random-access, same layout as originals)
-        fseeko(spkW, static_cast<off_t>(dest) * static_cast<off_t>(bytesPerSpike), SEEK_SET);
+        neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(bytesPerSpike), SEEK_SET);
         fwrite(spkRow.data(), sizeof(int16_t), static_cast<size_t>(spkElems), spkW);
 
-        fseeko(resW, static_cast<off_t>(dest) * static_cast<off_t>(sizeof(int64_t)), SEEK_SET);
+        neurosuite::core::fseek64(resW, static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(sizeof(int64_t)), SEEK_SET);
         fwrite(&ts, sizeof(int64_t), 1, resW);  // extTs — keep .res in lock-step with the re-extracted .spk window so .spk[i] peak == .fil at .res[i] (the invariant nudge depends on)
 
-        const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
-            + static_cast<off_t>(dest) * static_cast<off_t>(timeDim)
-              * static_cast<off_t>(sizeof(int64_t));
-        fseeko(fetW, fetOff, SEEK_SET);
+        const std::int64_t fetOff = static_cast<std::int64_t>(sizeof(int32_t))
+            + static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(timeDim)
+              * static_cast<std::int64_t>(sizeof(int64_t));
+        neurosuite::core::fseek64(fetW, fetOff, SEEK_SET);
         fwrite(rec.fetRow.data(), sizeof(int64_t), static_cast<size_t>(timeDim), fetW);
 
         // Update in-memory feature table and timestamp so scatter/feature
@@ -2878,9 +2879,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         const int64_t readStart = hasPrev ? (startSample - 1) : startSample;
         const int nReadSamples  = nSamp + (hasPrev ? 1 : 0);
 
-        const off_t rawOff = static_cast<off_t>(readStart)
-                           * static_cast<off_t>(totalNbChan) * 2;
-        if (fseeko(filF, rawOff, SEEK_SET) != 0) return false;
+        const std::int64_t rawOff = static_cast<std::int64_t>(readStart)
+                           * static_cast<std::int64_t>(totalNbChan) * 2;
+        if (neurosuite::core::fseek64(filF, rawOff, SEEK_SET) != 0) return false;
         std::vector<int16_t> rawFrame(
             static_cast<size_t>(nReadSamples) * static_cast<size_t>(totalNbChan));
         if (fread(rawFrame.data(), 2, rawFrame.size(), filF) != rawFrame.size())
@@ -3208,7 +3209,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                 const dataType row = static_cast<dataType>(
                     spkTable(1, static_cast<dataType>(pIdx + 1)));
                 const int64_t pos0 = static_cast<int64_t>(row) - 1;
-                if (fseeko(fr, pos0 * static_cast<off_t>(bytesPerSpike),
+                if (neurosuite::core::fseek64(fr, pos0 * static_cast<std::int64_t>(bytesPerSpike),
                            SEEK_SET) != 0) continue;
                 if (fread(buf.data(), 2, buf.size(), fr) != buf.size())
                     continue;
@@ -3334,7 +3335,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             const dataType row = static_cast<dataType>(
                 spkTable(1, static_cast<dataType>(i + 1)));
             const int64_t pos0 = static_cast<int64_t>(row) - 1;
-            if (fseeko(fr, pos0 * static_cast<off_t>(bytesPerSpike),
+            if (neurosuite::core::fseek64(fr, pos0 * static_cast<std::int64_t>(bytesPerSpike),
                        SEEK_SET) != 0) continue;
             if (fread(buf.data(), 2, buf.size(), fr) != buf.size()) continue;
             // .spk layout is sample-major [s*nChan+ci]; accumulate to
@@ -3373,7 +3374,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // have been zeroed by an earlier buggy build (gotWav=false wrote zeros);
         // .res.pending is always written atomically per spike and is safe to use.
         int64_t oldTs64 = 0;
-        if (fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
+        if (neurosuite::core::fseek64(resW, static_cast<std::int64_t>(pos0) * static_cast<std::int64_t>(sizeof(int64_t)),
                    SEEK_SET) != 0) {
             ++resSeekFail;
             oldTs64 = static_cast<int64_t>(clusteringData->featureValue(row, timeDim));
@@ -3410,7 +3411,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // not the feature-space flag: .spk format is independent of .fet format.
         std::vector<int16_t> spkRowWritten;  // kept for trace + readback
         if (gotWav) {
-            if (fseeko(spkW, static_cast<off_t>(pos0) * static_cast<off_t>(bytesPerSpike),
+            if (neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(pos0) * static_cast<std::int64_t>(bytesPerSpike),
                        SEEK_SET) != 0) {
                 ++spkSeekFail;
             } else if (isStderivSpk) {
@@ -3445,7 +3446,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // counted via boundarySkip and reported in the summary so the
         // user can see how many spikes were left behind.
         if (gotWav) {
-            if (fseeko(resW, static_cast<off_t>(pos0) * static_cast<off_t>(sizeof(int64_t)),
+            if (neurosuite::core::fseek64(resW, static_cast<std::int64_t>(pos0) * static_cast<std::int64_t>(sizeof(int64_t)),
                        SEEK_SET) != 0) {
                 ++resSeekFail;
             } else if (fwrite(&ts64, sizeof(int64_t), 1, resW) != 1) {
@@ -3461,10 +3462,10 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             fetRowWritten = makeFetRow(ts64, wav, prevSample, row);
             if (!fetRowWritten.empty()) {
                 // Update on-disk .fetD
-                const off_t fetOff = static_cast<off_t>(sizeof(int32_t))
-                    + static_cast<off_t>(pos0) * static_cast<off_t>(timeDim)
-                      * static_cast<off_t>(sizeof(int64_t));
-                if (fseeko(fetW, fetOff, SEEK_SET) != 0) {
+                const std::int64_t fetOff = static_cast<std::int64_t>(sizeof(int32_t))
+                    + static_cast<std::int64_t>(pos0) * static_cast<std::int64_t>(timeDim)
+                      * static_cast<std::int64_t>(sizeof(int64_t));
+                if (neurosuite::core::fseek64(fetW, fetOff, SEEK_SET) != 0) {
                     ++fetSeekFail;
                 } else {
                     const size_t want = static_cast<size_t>(timeDim);
@@ -3478,7 +3479,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                 // concurrent writer (no other code path should be touching
                 // .fetD.pending while nudge holds spkW/resW/fetW open) or a
                 // filesystem-level reorder; either is a bug we want to catch.
-                if (fseeko(fetW, fetOff, SEEK_SET) == 0) {
+                if (neurosuite::core::fseek64(fetW, fetOff, SEEK_SET) == 0) {
                     std::vector<int64_t> rb(static_cast<size_t>(timeDim), 0LL);
                     const size_t got = fread(rb.data(), sizeof(int64_t),
                                              static_cast<size_t>(timeDim), fetW);
@@ -3525,8 +3526,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
         // .spk read-back verification, mirroring the .fet check above.
         if (gotWav && !spkRowWritten.empty()) {
-            if (fseeko(spkW, static_cast<off_t>(pos0)
-                       * static_cast<off_t>(bytesPerSpike), SEEK_SET) == 0) {
+            if (neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(pos0)
+                       * static_cast<std::int64_t>(bytesPerSpike), SEEK_SET) == 0) {
                 fflush(spkW);
                 std::vector<int16_t> rbSpk(spkRowWritten.size(), 0);
                 const size_t got = fread(rbSpk.data(), 2,

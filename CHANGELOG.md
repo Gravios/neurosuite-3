@@ -121,6 +121,15 @@ vcpkg) stopped on two errors:
   SYCL sources (`groupingassistant_sycl.cpp`, `realign_xcorr_sycl.cpp`, both
   Qt-free); the link keeps `-fsycl` and, with Ninja, runs through `icx`.
 
+- The next build stopped on two more Windows-only gaps. NDManager linked
+  `yaml-cpp` without finding the package itself (it now does), so Windows
+  looked for a bare `yaml-cpp.lib`. NeuroScope called glibc's `fseeko64`,
+  and Klusters `fseeko` / `ftello` with `off_t` offsets: MSVC has none of
+  these, and its `off_t` is 32-bit. A new header,
+  `neurosuite/core/fileio64.hpp`, gives `fseek64` / `ftell64` with
+  `std::int64_t` offsets (`fseeko` / `ftello` on POSIX, `_fseeki64` /
+  `_ftelli64` on Windows); Klusters and NeuroScope use it throughout.
+
 Linux configures and builds as before.
 
 </details>

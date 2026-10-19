@@ -19,6 +19,7 @@
 #include "klustersdoc.h"
 
 #include <QDir>
+#include <neurosuite/core/fileio64.hpp>
 #include <QFile>
 #include <QFileInfo>
 #include <QStringList>
@@ -81,8 +82,8 @@ bool permuteRows(const KlustersDoc::RowFile& f, const std::vector<int64_t>& orde
     for (size_t k = 0; ok && k < order.size(); ++k) {
         const int64_t r = order[k];
         if (r != at)                                  // mostly sorted: seek only on a jump
-            ok = fseeko(in, static_cast<off_t>(f.header)
-                            + static_cast<off_t>(r) * static_cast<off_t>(f.record),
+            ok = neurosuite::core::fseek64(in, static_cast<std::int64_t>(f.header)
+                            + static_cast<std::int64_t>(r) * static_cast<std::int64_t>(f.record),
                         SEEK_SET) == 0;
         ok = ok && std::fread(buf.data(), 1, rec, in) == rec
                 && std::fwrite(buf.data(), 1, rec, out) == rec;

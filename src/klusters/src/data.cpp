@@ -1,5 +1,6 @@
 #include "klusters.h"
 #include <algorithm>
+#include <neurosuite/core/fileio64.hpp>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -1087,7 +1088,7 @@ int Data::buildMissingClusterTemplates(const std::function<void(int,int)>& progr
         const long long off = static_cast<long long>(rec - 1)
                             * static_cast<long long>(nTotal)
                             * static_cast<long long>(elemSize);
-        if (fseeko64(spikeFile, off, SEEK_SET) != 0) continue;
+        if (neurosuite::core::fseek64(spikeFile, off, SEEK_SET) != 0) continue;
 
         std::vector<double>& sm = sum[cid];
         std::vector<double>& sq = sumsq[cid];
@@ -6490,7 +6491,7 @@ int Data::medianWaveformResidualImpl(const QList<int>& clusterIds, int K,
         const long long off = static_cast<long long>(gid - 1) * Dp
                             * static_cast<long long>(sizeof(T));
         T* wrow = &W[static_cast<size_t>(s) * Dp];
-        if (fseeko64(spk, off, SEEK_SET) != 0 ||
+        if (neurosuite::core::fseek64(spk, off, SEEK_SET) != 0 ||
             fread(wrow, sizeof(T), Dp, spk) != static_cast<size_t>(Dp)) {
             qCritical() << "createMedianWaveformResidualFeatureFile: short read"
                            " at spike" << static_cast<long long>(gid);
