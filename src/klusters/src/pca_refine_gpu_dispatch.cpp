@@ -28,21 +28,21 @@ extern "C" {
 }
 #endif
 
-#ifndef USE_HIP
+// HIP and SYCL: no PCA-refine kernel exists yet (only pca_refine_cuda.cu), so
+// these stubs are needed whether or not the backend is compiled in -- keyed on
+// USE_HIP / USE_SYCL they vanished in exactly the builds that call them, and a
+// SYCL or HIP build of Klusters failed to link (undefined sycl_pca_refine,
+// sycl_pca_refine_available).  "Not available" sends realignSpikes to the CPU
+// loop.  When a kernel is added, key its stubs on that kernel's source, as
+// CUDA's are on USE_CUDA (which always adds pca_refine_cuda.cu).
 extern "C" {
     int hip_pca_refine_available() { return 0; }
     int hip_pca_refine(int,int,int,int,int,int,int,int,int,int,int,int,
                        const int16_t*,const float*,const float*,int*) { return -1; }
-}
-#endif
-
-#ifndef USE_SYCL
-extern "C" {
     int sycl_pca_refine_available() { return 0; }
     int sycl_pca_refine(int,int,int,int,int,int,int,int,int,int,int,int,
                         const int16_t*,const float*,const float*,int*) { return -1; }
 }
-#endif
 
 // ---------------------------------------------------------------------------
 // Public C++ dispatcher
