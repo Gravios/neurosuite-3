@@ -43,10 +43,15 @@ display; if it is stale they recompute once and re-run automatically.
 | **Sort Clusters by Spike Count** | Descending spike count (largest becomes `2`). |
 | **Sort Clusters by Time** | Ascending starting-edge time (earliest-firing becomes `2`). |
 | **Sort Clusters by Contamination** | Descending refractory (ISI-violation) contamination. |
-| **Sort Clusters by SNR** | Signal-to-noise ratio of the mean waveform. |
+| **Sort Clusters by SNR** | Descending signal-to-noise ratio of the mean waveform. |
+| **Sort Clusters by Largest Amplitude** | Descending peak-to-trough amplitude of the mean waveform, on the channel where it is largest (biggest unit becomes `2`). |
+| **Sort Clusters by Largest Amplitude by Channel** | Blocks of clusters, one per channel in channel order, each holding the clusters whose largest amplitude is on that channel, biggest first. |
+
+The SNR and amplitude sorts read the cached mean waveforms; clusters
+without a computed mean waveform sort last.
 | **Sort Clusters by Error p-value** | The error-matrix confusion structure (needs a computed error matrix). |
 | **Sort by Residual (Gated by Count)** | The residual-matrix separability, gated by spike count (needs a computed residual matrix). |
-| **Sort by Nearest-Neighbor Waveform** | A greedy nearest-neighbor chain over per-sample **median** waveforms (see below). |
+| **Sort by Nearest-Neighbour Waveform** | A greedy nearest-neighbor chain over per-sample **median** waveforms (see below). |
 | **Sort by Waveform (Global / Spectral)** | Spectral (Fiedler) seriation of the median-waveform similarity (see below). |
 
 ## Waveform sorts: local vs global
@@ -57,7 +62,7 @@ in a way a mean is not) — and differ only in how they order it. Both are
 matrix-free (no error/template matrix required) and run under a wait
 cursor.
 
-- **Nearest-Neighbor Waveform** walks a greedy chain: start at one
+- **Nearest-Neighbour Waveform** walks a greedy chain: start at one
   cluster, then repeatedly step to the nearest not-yet-placed cluster by
   Euclidean waveform distance. This is **local** — each step is locally
   optimal, but with no global objective the chain can jump when a local
