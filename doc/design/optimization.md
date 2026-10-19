@@ -1,5 +1,8 @@
 # neurosuite-3 — System Optimization Guide
 
+> **Scope:** Linux workstation tuning for one specific build host (below). Build
+> options in general are documented in [`doc/BUILD.md`](../BUILD.md).
+
 Hardware profile: AMD Ryzen 7 9800X3D · NVIDIA RTX 5070 Ti (Blackwell) ·
 64 GiB DDR5-6000 (Kingston KF560C30-32, EXPO enabled) ·
 Samsung 990 PRO 2 TB (OS/root) · Samsung 9100 PRO 8 TB (`/data`)
@@ -152,12 +155,12 @@ recovering roughly half of the FUSE overhead for sequential I/O.
 
 ### 4.1  `cmake/ZenOptimizations.cmake`  *(included in this repo)*
 
-The module applies the following to all Release/RelWithDebInfo builds:
+The module applies the following to Release/RelWithDebInfo builds:
 
 | Flag / feature | Effect |
 |---|---|
-| `-march=native` | Full host ISA: AVX-512 + BF16 + VNNI on Zen 5 |
-| `-ffast-math` | IEEE-754 relaxation; unlocks auto-vectorisation of reduction loops |
+| `-march=native` | Full host ISA: AVX-512 + BF16 + VNNI on Zen 5. Global, on by default; `-DNS_NATIVE_ARCH=OFF` for a portable build |
+| `-ffast-math` | IEEE-754 relaxation; unlocks auto-vectorisation of reduction loops. **Not global:** opt-in INTERFACE target `ns_fast_math`, linked only by numeric kernels (e.g. KlustaKwik's CEM core, `process_resample`) |
 | `-funroll-loops` | Loop unrolling; pairs with AVX-512 for inner CEM / covariance passes |
 | IPO / LTO | Cross-TU inlining for Qt GUI components and shared-library boundaries |
 | `nvcc --threads 0` | Parallel device-code compilation — cuts multi-SM CUDA build time |
@@ -227,8 +230,8 @@ Override with `--chunk-frames N`.
 
 ### 6.1  Native architecture compilation
 
-`ZenOptimizations.cmake` sets `CMAKE_CUDA_ARCHITECTURES = native` when
-`nvidia-smi` is present, generating sm_120 code only and skipping earlier
+`ns_gpu_select_cuda_arch()` in `cmake/GpuBackends.cmake` sets
+`CMAKE_CUDA_ARCHITECTURES = native` when `nvidia-smi` is present, generating sm_120 code only and skipping earlier
 SM targets — ~75% faster CUDA build vs the default multi-arch list.
 
 ```bash
@@ -240,8 +243,7 @@ cmake -B build 2>&1 | grep -i "cuda arch"
 
 The RTX 5070 Ti (GB203) provides **128 KB** shared memory per SM, double
 Ampere/Ada.  The KiloKlustaKwik MStep global-atomics fallback is therefore
-never triggered on this GPU.  Verify via KiloKlustaKwik stderr:
-`MStep: shared-memory kernel` (not `global-atomics fallback`).
+never triggered on this GPU.
 
 ### 6.3  Driver and toolkit requirements
 
