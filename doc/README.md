@@ -189,8 +189,9 @@ See the **[GPU installation guide](gpu/README.md)** for:
 
 ## Build order
 
-`libklustersshared` must be installed before `ndmanager` or `klusters`.
-Everything else is independent.
+One CMake build at the top of the repository builds every component in this
+order; the components are not installed one by one. Installation, per
+platform: [INSTALL.md](INSTALL.md).
 
 ```
 libklustersshared → ndmanager
@@ -201,10 +202,9 @@ kiloklustakwik         (independent)
 spikerealign       (independent)
 ```
 
-The top-level `CMakeLists.txt` is a superbuild that builds and installs
-all components in dependency order. See each program's README for
-dependency details and its `install/` subdirectory for platform-specific
-build instructions.
+libneurosuite-core (the Qt-free core library) is built first; libklustersshared
+and the plugins use it. See each program's README for
+its own dependencies and options.
 
 ---
 

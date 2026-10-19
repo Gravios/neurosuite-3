@@ -28,8 +28,8 @@ The authoritative source for all of this is the top-level
 The reference CI toolchain is **Ubuntu 24.04 with the distribution Qt6**; CI
 also builds and tests on Ubuntu 25.10, 26.04 LTS and 26.10, which cover Qt 6.9,
 6.10 and 6.11, GCC 15, CMake 4 and Python 3.13/3.14 (see §8). macOS (Homebrew `qt@6`) and Windows (vcpkg + Qt for MSVC; see below) are
-supported for configuration; per-platform prerequisites are in each component's
-install pages, e.g. [`doc/klusters/install/`](klusters/install/linux.md).
+supported for configuration; the step-by-step installation for every platform
+is [INSTALL.md](INSTALL.md).
 
 Let CMake install the system dependencies for you with `-DNS_INSTALL_DEPS=ON`
 (apt on Linux, Homebrew on macOS, vcpkg and aqtinstall on Windows); the package

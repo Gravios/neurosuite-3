@@ -12,7 +12,7 @@ neurosuite-3 takes you from a raw recording to sorted single units: convert and 
 | If you want to… | Go to |
 |---|---|
 | **Sort your first recording** | [First-time spike sort](doc/workflows/first-time-sort.md) — the end-to-end walkthrough |
-| **Install / build it** | [Quick start](#quick-start) below, then [BUILD.md](doc/BUILD.md) for options & platforms |
+| **Install / build it** | [Installing neurosuite-3](doc/INSTALL.md) — Linux, Windows, macOS; [BUILD.md](doc/BUILD.md) for options |
 | **Learn the apps** | [User & pipeline docs](doc/README.md) · [NeuroScope handbook](doc/site/docs/handbook/01-introduction.md) — also built into the apps: **Help ▸ Handbook** (F1) |
 | **Look up a term** | [Glossary](doc/GLOSSARY.md) |
 | **Work on the code** | [Developer Guide](doc/dev/DEVELOPER_GUIDE.md) · [Contributing](.github/CONTRIBUTING.md) |
@@ -35,7 +35,7 @@ cmake --install build
 
 `-DNS_INSTALL_DEPS=ON` installs the required packages for you (apt / Homebrew / vcpkg); drop it if you'd rather manage them yourself. Choosing a build type, picking or disabling GPU backends, skipping a component (e.g. `-DNS_SKIP_KILOKLUSTAKWIK=ON`), the macOS Qt path and the Windows/vcpkg setup, a sanitizer build, and reproducing CI — all live in **[BUILD.md](doc/BUILD.md)**.
 
-On **Windows**, start with `scripts\install-deps-windows.bat`: it installs the compiler, the libraries and Qt, and writes the `windows` CMake preset (`cmake --preset windows`); see [BUILD.md](doc/BUILD.md#1-toolchain).
+That is the Linux route (macOS: the same commands with Homebrew). On **Windows**, start with `scripts\install-deps-windows.bat`, which installs the compiler, the libraries and Qt, then `cmake --preset windows`. Every platform, step by step: **[INSTALL.md](doc/INSTALL.md)**.
 
 ---
 

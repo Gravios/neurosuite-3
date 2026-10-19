@@ -1,70 +1,27 @@
-# klusters — Windows Installation
+# Klusters — Windows installation
 
-## Prerequisites
+Klusters is built and installed with the rest of neurosuite-3 in one CMake build;
+there is no separate Klusters build. Follow
+**[Installing neurosuite-3 → Windows](../../INSTALL.md#windows)**.
 
-1. **Visual Studio 2022** with the **Desktop development with C++** workload. Download: https://visualstudio.microsoft.com/downloads/
-
-2. **CMake** ≥ 3.21 and **Ninja**:
-   ```powershell
-   winget install Kitware.CMake
-   winget install Ninja-build.Ninja
-   ```
-
-3. **vcpkg**:
-   ```powershell
-   git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-   C:\vcpkg\bootstrap-vcpkg.bat
-   ```
-
-4. **Qt6** — Qt online installer recommended (https://www.qt.io/download-qt-installer), install **Qt 6.x MSVC 2022 64-bit** and tick **Qt SVG**.
-
-   Or via vcpkg:
-   ```powershell
-   vcpkg install qt6-base:x64-windows qt6-svg:x64-windows
-   ```
-
-5. **yaml-cpp**:
-   ```powershell
-   vcpkg install yaml-cpp:x64-windows
-   ```
-
-## Build libklustersshared first
-
-klusters depends on `libklustersshared`. Open a **Developer Command Prompt for VS 2022**:
+After the install, start it from a new terminal:
 
 ```bat
-cd path\to\neurosuite-3\src
-
-cmake -B build\libklustersshared libklustersshared ^
-  -G "Ninja" ^
-  -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake ^
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.x.x\msvc2022_64"
-cmake --build build\libklustersshared
-cmake --install build\libklustersshared --prefix C:\neurosuite
+klusters
 ```
 
-## Build klusters
+To build Klusters without the other programs, add these options to the configure
+step:
 
-```bat
-cmake -B build\klusters klusters ^
-  -G "Ninja" ^
-  -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake ^
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.x.x\msvc2022_64;C:\neurosuite"
-cmake --build build\klusters
-cmake --install build\klusters --prefix C:\neurosuite
+```
+-DNS_SKIP_NEUROSCOPE=ON -DNS_SKIP_NDMANAGER=ON -DNS_SKIP_NDMANAGER_PLUGINS=ON -DNS_SKIP_KILOKLUSTAKWIK=ON
 ```
 
-## Deploy Qt DLLs
+## Intel GPU (SYCL)
 
-```bat
-cd C:\neurosuite\bin
-windeployqt6.exe klusters.exe
-```
-
-## Verify
-
-```bat
-C:\neurosuite\bin\klusters.exe
-```
+Build with the `windows-sycl` preset from the Intel oneAPI command prompt
+([Installing → Intel GPU](../../INSTALL.md#intel-gpu-sycl)). The grouping
+assistant then picks the GPU by itself; realignment's cross-correlation uses
+it with `set KLUSTERS_USE_SYCL=1`. The log line
+`[klusters] GPU backend: SYCL (Intel oneAPI)` confirms it (redirect the output
+to a file: Klusters is a windowed program without a console).

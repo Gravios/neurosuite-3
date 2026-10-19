@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Docs: one installation guide for every platform](#2026-10-19--docs-one-installation-guide-for-every-platform) |
 | 2026-10-19 | [Windows: OpenMP code that MSVC accepts; the CI build gets further](#2026-10-19--windows-openmp-code-that-msvc-accepts-the-ci-build-gets-further) |
 | 2026-10-19 | [Windows: the ndm_* steps run from cmd and PowerShell through Git Bash](#2026-10-19--windows-the-ndm_-steps-run-from-cmd-and-powershell-through-git-bash) |
 | 2026-10-19 | [Windows: the install puts the programs on PATH](#2026-10-19--windows-the-install-puts-the-programs-on-path) |
@@ -84,6 +85,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Docs: one installation guide for every platform
+
+<details>
+<summary>Details</summary>
+
+- New `doc/INSTALL.md`: installing neurosuite-3 on Linux, Windows (the
+  install-deps script, the `windows` / `windows-sycl` presets, PATH, the
+  `ndm_*` launchers, WSL2 for KiloKlustaKwik, updating, uninstalling, a
+  troubleshooting table) and macOS, with the status of each platform.
+- The Klusters, NeuroScope and NDManager install pages (Linux, macOS,
+  Windows) described building each program on its own after
+  libklustersshared. That no longer worked (libneurosuite-core was never
+  built) and is not how the project is built. They now point to INSTALL.md,
+  keep the program's own notes and give the skip options for building one
+  program. Two stale claims went with them: NeuroScope has no FFmpeg option,
+  and no `.app` bundle or `uninstall` target is made.
+- ndmanager-plugins' Windows guide leads with the native build and the `.bat`
+  launchers; the KiloKlustaKwik Windows guides say it is not yet part of the
+  Windows build.
+- The handbook's Installation chapter (Qt 4.8, sourceforge, `make`) now
+  describes the current build; `doc/site/gen.sh` regenerated
+  `07-installation.md` (only that page changed). README, `doc/README.md` and
+  BUILD.md link to INSTALL.md.
+
+</details>
 
 ## 2026-10-19 — Windows: OpenMP code that MSVC accepts; the CI build gets further
 

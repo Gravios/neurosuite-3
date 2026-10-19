@@ -1,64 +1,23 @@
-# ndmanager — macOS Installation
+# NDManager — macOS installation
 
-## Package manager
+NDManager is built and installed with the rest of neurosuite-3 in one CMake build;
+there is no separate NDManager build. Follow
+**[Installing neurosuite-3 → macOS](../../INSTALL.md#macos)**.
 
-Install [Homebrew](https://brew.sh):
-
-```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-```
-
-## System packages
+After the install, start it from a new terminal:
 
 ```bash
-brew install cmake ninja qt@6 libxml2 yaml-cpp pkg-config
+ndmanager &
 ```
 
-Qt6 is installed to `/opt/homebrew/opt/qt@6` (Apple Silicon) or `/usr/local/opt/qt@6` (Intel). Add it to PATH for CMake to find it:
+To build NDManager without the other programs, add these options to the configure
+step:
 
-```bash
-echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
+```
+-DNS_SKIP_KLUSTERS=ON -DNS_SKIP_NEUROSCOPE=ON -DNS_SKIP_KILOKLUSTAKWIK=ON
 ```
 
-On Intel Macs, replace `/opt/homebrew` with `/usr/local` throughout.
+## App bundle
 
-## Build libklustersshared first
-
-ndmanager depends on `libklustersshared`, which must be built from source.
-
-```bash
-cd /path/to/neurosuite-3/src
-
-cmake -B build/libklustersshared libklustersshared \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6);$(brew --prefix libxml2);$(brew --prefix yaml-cpp)"
-cmake --build build/libklustersshared -j$(sysctl -n hw.logicalcpu)
-sudo cmake --install build/libklustersshared
-```
-
-## Build ndmanager
-
-```bash
-cmake -B build/ndmanager ndmanager \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6);$(brew --prefix libxml2);$(brew --prefix yaml-cpp)"
-cmake --build build/ndmanager -j$(sysctl -n hw.logicalcpu)
-sudo cmake --install build/ndmanager
-```
-
-## Create an app bundle (optional)
-
-To produce a self-contained `.app` bundle for distribution:
-
-```bash
-macdeployqt /usr/local/bin/ndmanager.app -dmg
-```
-
-If CMake does not install an `.app` bundle, the binary is at `/usr/local/bin/ndmanager` and can be run directly from the terminal.
-
-## Verify
-
-```bash
-ndmanager --version
-```
+The install puts a plain `ndmanager` executable in `<prefix>/bin`; no `.app`
+bundle is made yet.

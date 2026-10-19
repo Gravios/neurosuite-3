@@ -1,5 +1,12 @@
 # KiloKlustaKwik — Windows Installation, AMD HIP
 
+> **Status (2026-10):** KiloKlustaKwik is not part of the tested Windows build:
+> the Windows CI job and the `windows` presets skip it
+> (`-DNS_SKIP_KILOKLUSTAKWIK=ON`), and it has not been ported the way the
+> plugins were. The steps below are untested. To cluster on a Windows machine
+> today, run it under WSL2 —
+> see [Installing neurosuite-3 → WSL2](../../INSTALL.md#kiloklustakwik-and-the-full-pipeline-wsl2).
+
 AMD ships a standalone **HIP SDK** for Windows separate from the full Linux ROCm stack. It provides `hipcc`, the HIP headers, and runtime DLLs without requiring any Linux tooling.
 
 Supports: Radeon RX 6000 (RDNA2), RX 7000 (RDNA3), RX 9000 (RDNA4). Older GCN cards (RX 500/Vega) are not supported on Windows. Check system requirements at https://rocm.docs.amd.com/projects/install-on-windows/en/latest/reference/system-requirements.html

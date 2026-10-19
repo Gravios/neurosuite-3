@@ -2,23 +2,35 @@
 
 ## Platform support overview
 
-ndmanager-plugins has two components with different Windows compatibility:
+The plugins are built and installed with the rest of neurosuite-3: follow
+**[Installing neurosuite-3 → Windows](../../INSTALL.md#windows)**. After that:
 
-**C++ processing binaries** (`process_medianfilter`, `process_pca`, `process_extractspikes`, etc.) — build natively with MSVC (checked by the `windows` CI job) and with MinGW-w64. Large recordings are read through a Windows file mapping and 64-bit file offsets, and binary files are opened in binary mode, so the outputs match Linux byte for byte (checked with MinGW-w64 builds under Wine on a synthetic session).
+**Processing programs** (`process_butterworth`, `process_pca`,
+`process_extractspikes`, ...) are native Windows programs in `C:\ns3\bin`, on
+your PATH. Large recordings are read through a Windows file mapping with
+64-bit offsets and binary files in binary mode, so the outputs match Linux
+byte for byte (checked with MinGW-w64 builds under Wine on a synthetic
+session; the MSVC build is checked by the `windows` CI job).
 
-**Bash pipeline scripts** (`ndm_start`, `ndm_hipass`, `ndm_pca`, etc.) — require a Bash environment. On Windows, choose one of:
+**Pipeline steps** (`ndm_start`, `ndm_hipass`, `ndm_pca`, ...) are bash
+scripts. Each is installed with a `.bat` launcher beside it (`ndm_hipass.bat`,
+...) that runs it with Git for Windows' bash, so `ndm_hipass` works from cmd
+and PowerShell; the extension-less Python scripts (`ndm_xml2yaml`, ...) run
+with Python. The launchers look for Git Bash in the usual places or beside
+`git.exe` (`NS_BASH` overrides, e.g. `setx NS_BASH "C:\...\Git\bin\bash.exe"`)
+and for Python as `py -3` or `python` (`NS_PYTHON` overrides), and give the
+scripts a `python3`. The scripts are installed with LF line endings whatever
+the checkout used. This route is new: report what fails.
 
-- **WSL2 (recommended)** — run the full pipeline inside WSL Ubuntu exactly as on bare-metal Linux. See the [Linux CPU guide](linux-cpu.md) inside WSL.
-- **MSYS2** — provides Bash and GNU tools natively on Windows; the scripts run but some GNU utilities (`bc`, `awk`, `xpathReader`) must be present.
-- **Git Bash (native, from cmd / PowerShell)** — a Windows build installs a `.bat` launcher next to each script (`ndm_hipass.bat`, `ndm_start.bat`, ...), so `ndm_hipass` typed in cmd or PowerShell runs the script with Git for Windows' bash, and the extension-less Python scripts (`ndm_xml2yaml`, ...) with Python. The launchers find Git Bash in the usual places or next to `git.exe` (set `NS_BASH` to its `bin\bash.exe` otherwise) and Python as `py -3` or `python` (`NS_PYTHON` to override), and give the scripts a `python3`. The scripts are installed with LF line endings whatever the checkout used. New and not yet run end to end on Windows: report what fails.
-
-If you only need the processing binaries (to call them directly without the ndm_* wrapper scripts), native Windows builds work without any of the above.
-
-Not built natively yet: the GPU backends of `process_extractemg` with SYCL (a Windows SYCL build takes its CPU path) and KiloKlustaKwik. `process_aomconvert` needs HDF5 and `process_extractleds` needs FFmpeg; without them they are skipped at configure time.
+Not on Windows yet: KiloKlustaKwik, so `ndm_klustakwik` and pipelines that
+cluster run under WSL2 (Option A); the SYCL backend of `process_extractemg` (a
+SYCL build takes its CPU path). `process_aomconvert` needs HDF5 and
+`process_extractleds` FFmpeg (`install-deps-windows.bat -WithHdf5 -WithFfmpeg`);
+without them they are skipped at configure time.
 
 ---
 
-## Option A — WSL2 (full pipeline, recommended)
+## Option A — WSL2 (full pipeline, including KiloKlustaKwik)
 
 Install WSL2 with Ubuntu 24.04, then follow the [Linux CPU guide](linux-cpu.md) or [Linux CUDA guide](linux-cuda.md) inside the WSL environment. The ndm_* scripts run without modification and can process files on the Windows filesystem via `/mnt/c/...` paths.
 
@@ -32,9 +44,9 @@ Then restart and follow the [Linux CPU guide](linux-cpu.md) inside the WSL termi
 
 ---
 
-## Option B — Native Windows build (processing binaries only)
+## Option B — The plugins on their own
 
-Builds every processing binary. The simplest route is the whole monorepo from its root (see [BUILD.md](../../BUILD.md)): the plugins are built with the GUI programs, and `cmake --install` copies the vcpkg DLLs (GSL, libxml2, yaml-cpp) next to them. The steps below build the plugins on their own.
+The normal route is the whole project ([Installing → Windows](../../INSTALL.md#windows)), whose install also copies the vcpkg DLLs (GSL, libxml2, yaml-cpp), and puts `bin` on PATH. The steps below build only the plugins; their install does none of the DLL or PATH steps.
 
 ### Prerequisites
 

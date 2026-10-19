@@ -1,55 +1,18 @@
-# klusters — macOS Installation
+# Klusters — macOS installation
 
-## Package manager
+Klusters is built and installed with the rest of neurosuite-3 in one CMake build;
+there is no separate Klusters build. Follow
+**[Installing neurosuite-3 → macOS](../../INSTALL.md#macos)**.
 
-Install [Homebrew](https://brew.sh):
+After the install, start it from a new terminal:
 
 ```bash
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+klusters &
 ```
 
-## System packages
+To build Klusters without the other programs, add these options to the configure
+step:
 
-```bash
-brew install cmake ninja qt@6 yaml-cpp pkg-config
 ```
-
-## Add Qt to PATH
-
-```bash
-echo 'export PATH="/opt/homebrew/opt/qt@6/bin:$PATH"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-On Intel Macs, replace `/opt/homebrew` with `/usr/local`.
-
-## Build libklustersshared first
-
-klusters depends on `libklustersshared`, which must be built from source.
-
-```bash
-cd /path/to/neurosuite-3/src
-
-cmake -B build/libklustersshared libklustersshared \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6);$(brew --prefix yaml-cpp)"
-cmake --build build/libklustersshared -j$(sysctl -n hw.logicalcpu)
-sudo cmake --install build/libklustersshared
-```
-
-## Build klusters
-
-```bash
-cmake -B build/klusters klusters \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$(brew --prefix qt@6);$(brew --prefix yaml-cpp)"
-cmake --build build/klusters -j$(sysctl -n hw.logicalcpu)
-sudo cmake --install build/klusters
-```
-
-## Verify
-
-```bash
-klusters --version
-klusters session.fet.1
+-DNS_SKIP_NEUROSCOPE=ON -DNS_SKIP_NDMANAGER=ON -DNS_SKIP_NDMANAGER_PLUGINS=ON -DNS_SKIP_KILOKLUSTAKWIK=ON
 ```

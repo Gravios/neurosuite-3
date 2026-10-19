@@ -1,45 +1,23 @@
-# klusters — Linux Installation (Ubuntu / Debian)
+# Klusters — Linux installation
 
-## System packages
+Klusters is built and installed with the rest of neurosuite-3 in one CMake build;
+there is no separate Klusters build. Follow
+**[Installing neurosuite-3 → Linux](../../INSTALL.md#linux)**.
 
-```bash
-sudo apt install \
-  cmake build-essential pkg-config \
-  qt6-base-dev libqt6svg6-dev \
-  libyaml-cpp-dev
-```
-
-## Build libklustersshared first
-
-klusters depends on `libklustersshared`, which is not available as a distro package.
+After the install, start it from a new terminal:
 
 ```bash
-cd /path/to/neurosuite-3/src
-
-cmake -B build/libklustersshared libklustersshared \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build/libklustersshared -j$(nproc)
-sudo cmake --install build/libklustersshared
+klusters &
 ```
 
-## Build klusters
+To build Klusters without the other programs, add these options to the configure
+step:
 
-```bash
-cmake -B build/klusters klusters \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build/klusters -j$(nproc)
-sudo cmake --install build/klusters
+```
+-DNS_SKIP_NEUROSCOPE=ON -DNS_SKIP_NDMANAGER=ON -DNS_SKIP_NDMANAGER_PLUGINS=ON -DNS_SKIP_KILOKLUSTAKWIK=ON
 ```
 
-## Verify
+## GPU
 
-```bash
-klusters --version
-klusters session.fet.1
-```
-
-## Uninstall
-
-```bash
-sudo xargs rm -f < build/klusters/install_manifest.txt
-```
+CUDA, ROCm and SYCL backends are picked up at configure time when their
+toolkits are installed; see [gpu/README.md](../../gpu/README.md).

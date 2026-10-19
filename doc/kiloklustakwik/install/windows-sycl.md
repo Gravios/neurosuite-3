@@ -1,5 +1,12 @@
 # KiloKlustaKwik — Windows Installation, Intel Arc / SYCL
 
+> **Status (2026-10):** KiloKlustaKwik is not part of the tested Windows build:
+> the Windows CI job and the `windows` presets skip it
+> (`-DNS_SKIP_KILOKLUSTAKWIK=ON`), and it has not been ported the way the
+> plugins were. The steps below are untested. To cluster on a Windows machine
+> today, run it under WSL2 —
+> see [Installing neurosuite-3 → WSL2](../../INSTALL.md#kiloklustakwik-and-the-full-pipeline-wsl2).
+
 ## Prerequisites
 
 Install in this order:

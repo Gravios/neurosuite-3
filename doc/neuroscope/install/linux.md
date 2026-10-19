@@ -1,46 +1,18 @@
-# neuroscope — Linux Installation (Ubuntu / Debian)
+# NeuroScope — Linux installation
 
-## System packages
+NeuroScope is built and installed with the rest of neurosuite-3 in one CMake build;
+there is no separate NeuroScope build. Follow
+**[Installing neurosuite-3 → Linux](../../INSTALL.md#linux)**.
+
+After the install, start it from a new terminal:
 
 ```bash
-sudo apt install \
-  cmake build-essential pkg-config \
-  qt6-base-dev \
-  libxml2-dev \
-  libyaml-cpp-dev
+neuroscope &
 ```
 
-### Optional: FFmpeg (video support)
+To build NeuroScope without the other programs, add these options to the configure
+step:
 
-```bash
-sudo apt install \
-  libavcodec-dev libavformat-dev \
-  libavutil-dev libswscale-dev \
-  ffmpeg
 ```
-
-Without FFmpeg, NeuroScope builds without video display support. All other features are unaffected.
-
-## Build
-
-```bash
-cd /path/to/neurosuite-3/src
-
-cmake -B build/neuroscope neuroscope \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build/neuroscope -j$(nproc)
-sudo cmake --install build/neuroscope
-```
-
-## Verify
-
-```bash
-neuroscope --version
-neuroscope templates/jg05-20120316.yaml
-```
-
-## Uninstall
-
-```bash
-sudo xargs rm -f < build/neuroscope/install_manifest.txt
+-DNS_SKIP_KLUSTERS=ON -DNS_SKIP_NDMANAGER=ON -DNS_SKIP_NDMANAGER_PLUGINS=ON -DNS_SKIP_KILOKLUSTAKWIK=ON
 ```

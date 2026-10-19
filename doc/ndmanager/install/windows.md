@@ -1,90 +1,26 @@
-# ndmanager — Windows Installation
+# NDManager — Windows installation
 
-## Package manager
+NDManager is built and installed with the rest of neurosuite-3 in one CMake build;
+there is no separate NDManager build. Follow
+**[Installing neurosuite-3 → Windows](../../INSTALL.md#windows)**.
 
-Install [vcpkg](https://vcpkg.io) for dependency management. From an elevated PowerShell:
-
-```powershell
-git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
-C:\vcpkg\bootstrap-vcpkg.bat
-[System.Environment]::SetEnvironmentVariable("VCPKG_ROOT", "C:\vcpkg", "Machine")
-[System.Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";C:\vcpkg", "Machine")
-```
-
-## Prerequisites
-
-1. **Visual Studio 2022** with the **Desktop development with C++** workload, or the standalone **Build Tools for Visual Studio 2022**. Download: https://visualstudio.microsoft.com/downloads/
-
-2. **CMake** ≥ 3.21 and **Ninja** — included in the Visual Studio C++ workload, or:
-   ```powershell
-   winget install Kitware.CMake
-   winget install Ninja-build.Ninja
-   ```
-
-3. **Qt6** via the Qt online installer (recommended) or vcpkg:
-   ```powershell
-   # Option A — Qt online installer (includes prebuilt binaries, easiest)
-   # Download from https://www.qt.io/download-qt-installer and install Qt 6.x MSVC 2022 64-bit
-
-   # Option B — vcpkg (source build, slower)
-   vcpkg install qt6-base:x64-windows
-   ```
-
-4. **libxml2** via vcpkg:
-   ```powershell
-   vcpkg install libxml2:x64-windows
-   ```
-
-5. **yaml-cpp** via vcpkg:
-   ```powershell
-   vcpkg install yaml-cpp:x64-windows
-   ```
-
-## Build libklustersshared first
-
-ndmanager depends on `libklustersshared`, which must be built from source.
-
-Open a **Developer Command Prompt for VS 2022** (so MSVC is on PATH), then:
+After the install, start it from a new terminal:
 
 ```bat
-cd path\to\neurosuite-3\src
-
-cmake -B build\libklustersshared libklustersshared ^
-  -G "Ninja" ^
-  -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake ^
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.x.x\msvc2022_64"
-cmake --build build\libklustersshared
-cmake --install build\libklustersshared --prefix C:\neurosuite
+ndmanager
 ```
 
-Adjust `C:\Qt\6.x.x\msvc2022_64` to the actual Qt installation path.
+To build NDManager without the other programs, add these options to the configure
+step:
 
-## Build ndmanager
-
-```bat
-cmake -B build\ndmanager ndmanager ^
-  -G "Ninja" ^
-  -DCMAKE_BUILD_TYPE=Release ^
-  -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake ^
-  -DCMAKE_PREFIX_PATH="C:\Qt\6.x.x\msvc2022_64;C:\neurosuite"
-cmake --build build\ndmanager
-cmake --install build\ndmanager --prefix C:\neurosuite
+```
+-DNS_SKIP_KLUSTERS=ON -DNS_SKIP_NEUROSCOPE=ON -DNS_SKIP_KILOKLUSTAKWIK=ON
 ```
 
-## Deploy Qt DLLs
+## Pipelines on Windows
 
-Qt applications on Windows require the Qt DLLs to be deployed alongside the executable:
-
-```bat
-cd C:\neurosuite\bin
-windeployqt6.exe ndmanager.exe
-```
-
-`windeployqt6.exe` is in the Qt installation's `bin\` directory (e.g. `C:\Qt\6.x.x\msvc2022_64\bin\`). Add it to PATH or call it with the full path.
-
-## Verify
-
-```bat
-C:\neurosuite\bin\ndmanager.exe
-```
+NDManager edits sessions and their pipelines on Windows. The `ndm_*` steps it
+lists run through Git Bash via their `.bat` launchers; KiloKlustaKwik
+(`ndm_klustakwik`) is not built on Windows yet, so a pipeline that clusters
+runs under WSL2 ([Installing → WSL2](../../INSTALL.md#kiloklustakwik-and-the-full-pipeline-wsl2)).
+Opening a saved pipeline file needs a real Python 3 answering to `python3`.
