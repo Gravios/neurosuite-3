@@ -104,6 +104,31 @@ the [pipeline overview](../pipeline.md).
 | [`ndm_clean`](ndm_clean.md) | Remove intermediate files |
 | [`ndm_functions`, `ndm_custody`](ndm_functions.md) | Shared bash helpers sourced by every script; file-resolution policy |
 
+## Helper programs
+
+Installed on `PATH` with the steps but without a page of their own. Most are
+the engines behind a step and take command-line options, not the session
+YAML.
+
+| Program | Purpose |
+|---|---|
+| `cnt` | Count the unique files or directories that exist among the names given |
+| `duration` | Duration and number of samples of one or more data files |
+| `pad` | Pad the numbers in file names with zeros to a given length |
+| `rn` | Rename a group of files as a numbered list |
+| `process_reorderclusters` | Renumber the clusters of a `.clu` file in a given order |
+| `process_removeartefacts` | Remove the spikes of cluster 0 (artefacts) from `.res`, `.spk`, `.fet` and `.clu` |
+| `process_spikecleaner` | Engine of `ndm_spikecleaner`: drop waveforms with a zeroed or flat channel |
+| `process_denoiseuniform` | Engine of `ndm_denoiseuniform`: drop electrically uniform noise events |
+| `process_subtractspikes` | Engine of `ndm_stripdat` (Python): subtract sorted spike waveforms from the recording |
+| `process_mergespikes` | Used by `ndm_redetectspikes` (Python): merge second-pass spikes into `.res` / `.spk` / `.clu` as cluster 0 and delete the stale `.fet` |
+| `process_shadowcluster` | Used by `ndm_reextractspikes` and `ndm_subcluster_unmatched`: assign new spikes to shadow clusters by Mahalanobis distance |
+| `process_reassignspikes` | Reassign burst-decremented spikes with a waveform-adaptation model (`.adapt` from `adaptmodel.py`); not called by a step |
+| `process_lowpass` | Windowed-sinc low-pass filter for multiplexed binary files; used by `ndm_bandpass` |
+| `process_merge` | Merge simultaneously recorded multiplexed binary files channel-wise; used by `ndm_mergedat` |
+| `process_slicebinary` | Copy a subset of channels out of a multiplexed binary file; used by `ndm_slicebinary` |
+| `process_resample` | Resample multiplexed binary files; used by `ndm_resample` and `ndm_lfp` |
+
 ---
 
 *Part of the [ndmanager-plugins](../README.md) reference.*
