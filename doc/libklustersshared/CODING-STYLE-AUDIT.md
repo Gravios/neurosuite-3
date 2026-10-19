@@ -1,5 +1,10 @@
 # libklustersshared coding-style audit
 
+> **Status (2026-10): historical.** A point-in-time audit (first committed
+> 2026-05-14). The file counts, line counts and findings describe the tree as it
+> was then; `src/libklustersshared/src/klustersshared/` now holds 34 files, not
+> 24. The naming conventions it applies are still current.
+
 ## Scope
 
 29 project-original files / ~4060 LOC across:
