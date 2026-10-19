@@ -1,8 +1,9 @@
 # Neurosuite-3 Documentation
 
 A modernized, Qt6-compatible fork of the Neurosuite electrophysiology
-toolchain. All components compile under **C++20** with Qt 6 on Ubuntu
-24.04, Debian 12, and WSL2. GPU acceleration is available for
+toolchain. All components compile under **C++20** with Qt 6; supported
+platforms (Linux, WSL2, native Windows, macOS) and their limits are in
+[INSTALL.md](INSTALL.md). GPU acceleration is available for
 compute-intensive steps via CUDA (NVIDIA), HIP (AMD ROCm), and SYCL
 (Intel Arc/oneAPI).
 
@@ -14,11 +15,14 @@ compute-intensive steps via CUDA (NVIDIA), HIP (AMD ROCm), and SYCL
 
 ### [libklustersshared](libklustersshared/README.md)
 
-Shared library providing the canonical YAML parameter-file implementation.
-Contains `ParameterYamlReader`, `ParameterYamlWriter`, and
-`ParameterYamlModifier` — the only classes that parse or write YAML in the
-entire toolchain — plus shared data types and GUI widget infrastructure.
-ndmanager and klusters both depend on it; neuroscope does not.
+Shared library providing the session-file YAML implementation used by the
+GUIs: `ParameterYamlReader`, `ParameterYamlWriter`, and
+`ParameterYamlModifier`, plus shared data types, the `input::` key/mouse
+engine and GUI widget infrastructure. ndmanager, klusters and neuroscope
+all depend on it. YAML is also parsed elsewhere — by KiloKlustaKwik
+(`KlustaKwikYaml.cpp`, `KK_prior.cpp`), by ndmanager's own readers and
+pages, by NeuroScope's `sessionyamlreader.cpp`, and by the `ndm_*`
+scripts.
 
 **Depends on:** Qt6, yaml-cpp
 
@@ -26,13 +30,13 @@ ndmanager and klusters both depend on it; neuroscope does not.
 
 ### [ndmanager](ndmanager/README.md)
 
-GUI session manager. Opens a `.yaml` (or legacy `.xml`) parameter file
-and provides a tabbed interface for editing all acquisition and processing
+GUI session manager. Opens a `.yaml` parameter file (a legacy `.xml` is
+refused with a message to convert it with `ndm_xml2yaml`) and provides a tabbed interface for editing all acquisition and processing
 parameters. Launches the `ndmanager-plugins` preprocessing pipeline
 step-by-step or as a full batch. The central starting point for any
 recording session.
 
-**Depends on:** Qt6, libklustersshared, libxml2, yaml-cpp
+**Depends on:** Qt6, libklustersshared, yaml-cpp
 
 ---
 
@@ -40,13 +44,15 @@ recording session.
 
 Command-line preprocessing pipeline. Converts raw acquisition data
 (AlphaOmega, Plexon, Neuralynx, CED/Spike2, Amplipex) into spike-sorting-ready
-files through format conversion, median-subtraction high-pass filtering,
-LFP downsampling, spike detection, and PCA feature extraction.
+files through format conversion, high-pass filtering (zero-phase
+Butterworth by default; the median filter with `filter: median`), LFP
+downsampling, spike detection, waveform extraction, and PCA feature
+extraction.
 
 Beyond initial preprocessing, ndmanager-plugins also provides the
 post-sorting analysis pipeline:
 
-- **Second-pass re-extraction** — `ndm_reextractspikes{,_stderiv}` runs
+- **Second-pass re-extraction** — `ndm_reextractspikes [--method M]` runs
   a masked second detection pass at a lower threshold, shadow-clusters
   new spikes into existing cluster shadows, and optionally subdivides
   the unmatched bin via `ndm_subcluster_unmatched`.
@@ -60,10 +66,13 @@ post-sorting analysis pipeline:
   and `ndm_localise` for post-hoc analysis of multi-unit events and
   spike source positions.
 
-The filter and threshold steps optionally use GPU acceleration.
+Several steps optionally use GPU acceleration.
 
-**Depends on:** CMake, OpenMP, libhdf5 (AlphaOmega conversion), yaml-cpp,
-numpy. CUDA optional for `process_medianfilter`, `process_medianthreshold`.
+**Depends on:** CMake, OpenMP, libxml2 (`xpathReader`), libhdf5
+(AlphaOmega conversion), yaml-cpp, numpy. CUDA optional for
+`process_medianfilter`, `process_medianthreshold`, `process_butterworth`,
+`process_lowpass`, `process_spikegrouper`, `process_decomposecollisions`
+and `process_extractemg`.
 
 ---
 
@@ -74,7 +83,7 @@ filtered traces as scrollable panels with simultaneous overlays of
 spike waveforms, cluster assignments, event markers, and animal position.
 Driven from the session `.yaml` parameter file.
 
-**Depends on:** Qt6, yaml-cpp, FFmpeg (optional)
+**Depends on:** Qt6, libklustersshared, yaml-cpp, FFmpeg (optional)
 
 ---
 
@@ -92,7 +101,7 @@ multi-cluster aware). Interactive spike realignment via normalized
 cross-correlation and per-sample timestamp nudging are also available
 — both use a transactional pending-file model so edits can be
 accepted or rolled back in one atomic step. Variant-aware: resolves every file through the shared method-tagged
-naming convention (`standard` / `stderiv`).
+naming convention (`standard` / `sdiff` / `stderiv`).
 
 Supports **hierarchical (two-level) sessions** — fibers assembled from an
 over-split atom layer (`.clu` + `.clc` + `.clp`) — a **residual
@@ -117,9 +126,10 @@ waveform realignment as Phase 1.5 and subspace reclustering as Phase
 2.5) — designed for multi-hour recordings with electrode drift. A
 short-recording two-phase mode is available by setting `ChunkMinutes 0`.
 
-File-extension fallback (`pickInputPath`) lets stderiv-sorted and
-raw-sorted groups coexist within a single session without manual
-symlink shims.
+Input files are resolved by the `Method` parameter
+(`pickInputPath` → `custody::resolve`), so groups sorted with different
+methods coexist in one session; there is no fallback to the retired
+D-suffix names.
 
 GPU acceleration available via CUDA, HIP (AMD ROCm), or SYCL (Intel
 Arc/oneAPI).
@@ -131,21 +141,21 @@ runs / items), yaml-cpp. CUDA / ROCm / oneAPI optional.
 
 ### [spikerealign](spikerealign/README.md)
 
-Standalone batch waveform realignment tool. Reads binary
-`.spk/.res/.clu/.fet` files, aligns each spike to the cluster mean
-template via normalized cross-correlation, and writes corrected data
-back in-place. Shares the GPU backend selection with KiloKlustaKwik. The
-same algorithm runs as Phase 1.5 of chunked KiloKlustaKwik sorting and as
-the interactive realignment inside klusters.
-
-**Depends on:** C++20 compiler, CMake. OpenMP, CUDA/ROCm/oneAPI optional.
+Waveform realignment engine, not a separate program or build target: it
+is compiled into klusters (interactive realignment) and KiloKlustaKwik
+(Phase 1.5 of chunked sorting). It aligns each spike to the cluster mean
+template via normalized cross-correlation and updates the
+`.res`/`.spk`/`.fet` files. GPU dispatch (CUDA / HIP / SYCL, OpenMP
+fallback) follows the host program's backends.
 
 ---
 
 ## Pipeline variants — raw vs stderiv
 
-Two detection transforms (**methods**) are supported across the toolchain:
-`standard` (raw waveforms) and `stderiv` (spatial + temporal derivative).
+Three detection transforms (**methods**) are supported across the toolchain:
+`standard` (raw waveforms), `sdiff` (spatial difference) and `stderiv`
+(spatial + temporal derivative); `stderiv` also takes an order suffix
+(`stderiv_S<order>`, `stderiv_C<order>`).
 The method is an explicit tag in every per-group filename —
 `<base>.<type>.<method>.<group>` — under the shared
 [variant naming convention](ndmanager-plugins/formats/naming.md):
@@ -171,9 +181,12 @@ ndmanager-plugins and KiloKlustaKwik READMEs for details.
 
 ## GPU Acceleration
 
-GPU acceleration is available for kiloklustakwik, spikerealign, klusters
-(Grouping Assistant and realignment), and several ndmanager-plugins
-(`process_medianfilter`, `process_medianthreshold`). All GPU backends
+GPU acceleration is available for kiloklustakwik, klusters (Grouping
+Assistant and realignment, including the built-in spikerealign engine),
+and seven ndmanager-plugins programs (`process_medianfilter`,
+`process_medianthreshold`, `process_butterworth`, `process_lowpass`,
+`process_spikegrouper`, `process_decomposecollisions`,
+`process_extractemg`). All GPU backends
 are auto-detected at build time; a CPU/OpenMP fallback is always
 compiled.
 
@@ -194,17 +207,19 @@ order; the components are not installed one by one. Installation, per
 platform: [INSTALL.md](INSTALL.md).
 
 ```
-libklustersshared → ndmanager
-                 → klusters
-ndmanager-plugins  (independent)
-neuroscope         (independent — does not use libklustersshared)
-kiloklustakwik         (independent)
-spikerealign       (independent)
+nphys-data            (MIME types + desktop icons; no compiler)
+libneurosuite-core    (Qt-free core: neurofileio, …)
+libklustersshared     (shared Qt6 library; links Neurosuite::core)
+  ├── klusters
+  ├── neuroscope
+  └── ndmanager
+ndmanager-plugins     (preprocessing pipeline; no Qt)
+kiloklustakwik        (standalone spike sorter)
 ```
 
-libneurosuite-core (the Qt-free core library) is built first; libklustersshared
-and the plugins use it. See each program's README for
-its own dependencies and options.
+This is the graph in [BUILD.md §5](BUILD.md#5-the-build-graph-and-skip-flags),
+which also lists the skip flags. See each program's README for its own
+dependencies and options.
 
 ---
 
@@ -217,22 +232,22 @@ Raw acquisition files (.mat / .ncs / .smr / .dat)
 ndmanager session.yaml        ← edit parameters, then run pipeline
         │  (calls ndm_start internally, which drives ndmanager-plugins)
         ▼
-session.dat → .fil → .res.N + .spk.<method>.N
+session.dat → .fil → .res.<method>.N + .spk.<method>.N
                        │
                        ▼
                     .fet.<method>.N
         │
         ▼
-KiloKlustaKwik session N         ← automatic cluster assignment
+ndm_klustakwik session.yaml    ← automatic cluster assignment (KiloKlustaKwik)
         │
         ▼
-session.clu.N
+session.clu.<method>.N
         │
         ▼
 klusters session.yaml         ← manual curation (split / merge / realign / nudge / dipsplit)
         │  writes session.curation_log.<group>.<method> per-group audit trail
         ▼
-ndm_reextractspikes{,_stderiv} + ndm_subcluster_unmatched
+ndm_reextractspikes + ndm_subcluster_unmatched
         │     ↑ kk_resolve_prior.py picks up <probe_id>.<group>.prior.yaml
         │       (built once via kk_build_prior.py from curation logs)
 ndm_stripdat (raw / model / botm)
@@ -266,10 +281,10 @@ For task-oriented walkthroughs of the recipes above, see
 
 All tools share a single session `.yaml` parameter file. See
 [ndmanager/README.md](ndmanager/README.md) for the full schema and a
-worked example. Legacy XML parameter files must be converted with
-`ndm_xml2yaml` before use — the preprocessing pipeline has no
-XML-reading path. klusters and neuroscope read XML only at open time
-for backward compatibility; they always save YAML.
+worked example. The GUIs do not read legacy XML parameter files
+(ndmanager refuses them; Klusters opens `.yaml` or the old `.par`
+files); only the `ndm_*` scripts still fall back to reading a legacy
+`.xml` through `xpathReader`. Convert legacy files with `ndm_xml2yaml`.
 
 ---
 
@@ -281,11 +296,13 @@ for backward compatibility; they always save YAML.
 ```
 doc/
 ├── README.md                       ← this file
+├── INSTALL.md                      ← installation, every platform
 ├── BUILD.md                        ← build options, platforms, GPU, CI parity
 ├── GLOSSARY.md                     ← terms used across the docs
 ├── dev/                            ← for contributors
 │   ├── DEVELOPER_GUIDE.md          ← index of internals references
 │   ├── ARCHITECTURE.md
+│   ├── RECIPES.md                  ← which files a common change touches
 │   ├── STANDARDIZATION.md          ← conventions + verification gates
 │   ├── ROADMAP.md
 │   └── PLUGINS-ROADMAP.md
