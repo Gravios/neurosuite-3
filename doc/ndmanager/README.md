@@ -138,7 +138,9 @@ by purpose (Conversion, Preparation, Detection, Sorting, …; see
 [Plugins by purpose](#plugins-by-purpose)). The pages are the session file's `programs:`
 entries, plus any you add: on the Plugins page **Load…** reads a plugin description (`.yaml`),
 and in expert mode **Add** creates an empty entry and **Discover** (also **Actions ▸ Discover
-Plugins**) adds the installed plugins (see [Plugin discovery](#plugin-discovery)); **Apply
+Plugins**) adds the plugins on the search path that describe themselves, such as
+`ndm_fiber-kit` (see [Plugin discovery](#plugin-discovery)); the steps this repository ships do
+not, their pages come from the session file and the template; **Apply
 Pipeline** adds the plugins of the Pipeline graph. Each page exposes the
 parameters that script reads from the parameter file, with Mandatory/Optional/Dynamic status
 indicators. Parameters set here land in the `programs[name=...].parameters` section of the
@@ -158,7 +160,8 @@ one is first run with `--ndm-version`; only a program whose first output line is
 ndmanager understands is skipped. A plugin is then run with `--ndm-describe`, and the
 description it prints is added as a page unless a plugin of that name is already listed. The
 status bar reports how many were added; a plugin that declares file-format versions this build
-does not match is still added, with the details on the console.
+does not match is still added, with the details on the console. The `ndm_*` steps shipped with
+neurosuite-3 do not answer `--ndm-version`, so Discover does not list them.
 
 ### Editing a plugin's parameters
 

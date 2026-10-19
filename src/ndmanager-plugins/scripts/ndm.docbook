@@ -25,7 +25,7 @@
 			</listitem>
 			<listitem>
 				<para>
-					Create the session parameter file <filename>SESSION.yaml</filename> with <application>NDManager</application>, or copy <filename>templates/template.yaml</filename> from the source tree (templates are YAML), and set the parameters of the steps under <literal>programs:</literal>: numbers of channels, sampling rates, thresholds, etc. The step descriptions <application>NDManager</application> reads are installed in <filename><replaceable>prefix</replaceable>/share/ndmanager/descriptions</filename>. An old XML parameter file can be converted with <command>ndm_xml2yaml</command>.
+					Create the session parameter file <filename>SESSION.yaml</filename> with <application>NDManager</application>, or copy <filename>templates/template.yaml</filename> from the source tree (templates are YAML), and set the parameters of the steps under <literal>programs:</literal>: numbers of channels, sampling rates, thresholds, etc. <application>NDManager</application> takes the steps and their parameters, with their help, from the session template, installed as <filename><replaceable>prefix</replaceable>/share/ndmanager/templates/session-template.yaml</filename>. An old XML parameter file can be converted with <command>ndm_xml2yaml</command>.
 				</para>
 			</listitem>
 			<listitem>

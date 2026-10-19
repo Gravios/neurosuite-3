@@ -280,8 +280,10 @@ designer and the docs in step. They fail until all four agree.
 6. **Optional:**
    - a `.docbook` man page next to the script or program (`add_manpage` skips
      it when it is absent);
-   - `src/ndmanager-plugins/descriptions/ndm_<name>.xml` for ndmanager's
-     installed descriptions. Not every step has one, and no test requires it.
+   - nothing in `src/ndmanager-plugins/descriptions/`: those XML files are
+     installed but not read (NDManager reads YAML). NDManager's description
+     of the step, its parameters with their help for the Plugins pages and
+     their **Add**, is the template block of step 3.
 7. **A test.** Add `src/ndmanager-plugins/test/test_<name>.py` or `.sh`. It is
    registered as `ndm_test_<name>` on the next configure. If it runs the C++
    program, map the program in that directory's `CMakeLists.txt`, the way
