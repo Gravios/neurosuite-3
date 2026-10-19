@@ -8,6 +8,7 @@
 #   _ns_windeployqt  path to windeployqt (may be empty / NOTFOUND)
 #   _ns_wdq_mode     --release or --debug
 #   _ns_sycl         ON for a SYCL build
+#   _ns_plugins      ON when ndmanager-plugins is built (process_*.exe in bin)
 #
 # Nothing here fails the install: problems are warnings that name the fix.
 #
@@ -21,13 +22,20 @@ foreach(_ns_e IN LISTS _ns_exes)
         list(APPEND _ns_paths "${_ns_bin}/${_ns_e}.exe")
     endif()
 endforeach()
-if(NOT _ns_paths)
+# The plugins: no Qt, so no windeployqt; their other DLLs are scanned below.
+set(_ns_plugin_paths "")
+if(_ns_plugins)
+    file(GLOB _ns_plugin_paths "${_ns_bin}/process_*.exe" "${_ns_bin}/xpathReader.exe")
+endif()
+if(NOT _ns_paths AND NOT _ns_plugin_paths)
     message(WARNING "neurosuite-3 deploy: no installed program found in ${_ns_bin}")
     return()
 endif()
 
 # ── 1. Qt: DLLs and plugins ───────────────────────────────────────────────────
-if(_ns_windeployqt AND EXISTS "${_ns_windeployqt}")
+if(NOT _ns_paths)
+    # Only the plugins are installed: nothing for windeployqt.
+elseif(_ns_windeployqt AND EXISTS "${_ns_windeployqt}")
     foreach(_ns_p IN LISTS _ns_paths)
         message(STATUS "neurosuite-3 deploy: windeployqt ${_ns_p}")
         execute_process(
@@ -45,12 +53,12 @@ else()
                     "Run <Qt>\\bin\\windeployqt.exe on the installed programs.")
 endif()
 
-# ── 2. Other linked DLLs: vcpkg (yaml-cpp), oneAPI runtime, MSVC runtime ────
+# ── 2. Other linked DLLs: vcpkg (yaml-cpp, GSL, libxml2), oneAPI, MSVC ──────
 # Qt is left to windeployqt; Windows' own DLLs are never copied.  On Windows the
 # scan reads the programs with dumpbin, which is on PATH in the Visual Studio
 # and oneAPI command prompts; without it file(GET_RUNTIME_DEPENDENCIES) would
 # stop the whole install, so say what to do and skip this step instead.
-set(_ns_paths_scan ${_ns_paths})
+set(_ns_paths_scan ${_ns_paths} ${_ns_plugin_paths})
 if(CMAKE_HOST_WIN32 AND NOT CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND)
     find_program(_ns_dumpbin dumpbin)
     if(NOT _ns_dumpbin)

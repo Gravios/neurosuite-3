@@ -9,6 +9,9 @@
 #     compiler its runtime (libmmd, svml_dispmd, libiomp5md, sycl8, ...);
 #   - for a SYCL build, the Unified Runtime adapters (ur_*.dll), which the SYCL
 #     runtime loads by name at run time, so no dependency scan sees them.
+# The ndmanager-plugins programs (process_*.exe, xpathReader.exe) are installed
+# to the same bin directory and need no Qt, but do link vcpkg's GSL, libxml2
+# and yaml-cpp; their DLLs are copied the same way.
 #
 # ns_windows_deploy() adds one install step that does all of this.  It is a
 # no-op on other platforms and with -DNS_DEPLOY_RUNTIME=OFF.  A missing tool or
@@ -33,7 +36,11 @@ function(ns_windows_deploy)
             list(APPEND _exes "${_t}")
         endif()
     endforeach()
-    if(NOT _exes)
+    set(_plugins OFF)
+    if(TARGET process_butterworth)
+        set(_plugins ON)
+    endif()
+    if(NOT _exes AND NOT _plugins)
         return()
     endif()
 
@@ -74,8 +81,12 @@ function(ns_windows_deploy)
         set(_ns_windeployqt \"${NS_WINDEPLOYQT}\")
         set(_ns_wdq_mode    \"$<IF:$<CONFIG:Debug>,--debug,--release>\")
         set(_ns_sycl        ${_sycl})
+        set(_ns_plugins     ${_plugins})
         include(\"${CMAKE_CURRENT_FUNCTION_LIST_DIR}/NsWindowsDeployInstall.cmake\")
     ")
+    if(_plugins)
+        list(APPEND _exes "ndmanager-plugins")
+    endif()
     message(STATUS "neurosuite-3: install also deploys the runtime DLLs "
                    "(${_exes}; -DNS_DEPLOY_RUNTIME=OFF to skip)")
 endfunction()
