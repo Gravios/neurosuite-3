@@ -40,7 +40,8 @@
       <command>ndm_estimatedrift</command>) to the per-spike waveform
       files of every spike-detection group, producing drift-corrected
       waveform files <filename>SESSION.spkC.N</filename> (or
-      <filename>SESSION.spkCD.N</filename> for the stderiv pipeline)
+      <filename>SESSION.spkCD.N</filename> when the input is a stderiv
+      file)
       in which every spike has been spatially reinterpolated as if the
       probe were sitting at the reference position
       <emphasis>d(t)=0</emphasis>.
@@ -86,14 +87,15 @@ s_k_corrected(t) = interp(z_k − d_i, {z_j}_j, {s_j(t)}_j)
   <refsect1>
     <title>Workflow position</title>
     <programlisting>
-ndm_extractspikes(_stderiv)  →  .spk(D).N
-ndm_pca(_stderiv)            →  .fet(D).N
+ndm_extractspikes            →  .spk.&lt;method&gt;.N
+ndm_pca                      →  .fet.&lt;method&gt;.N
 ndm_klustakwik               →  initial .clu.N (rough; drift not yet corrected)
 ndm_estimatedrift            →  .drift  +  .dat.drift.P  (per probe)
    ↓
-<emphasis role="strong">ndm_driftcorrect</emphasis>             →  .spkC(D).N
+<emphasis role="strong">ndm_driftcorrect</emphasis>             →  .spkC.N / .spkCD.N
    ↓
-ndm_pca(_stderiv) [re-run]   →  .fetC(D).N
+(put the corrected file in place of .spk.&lt;method&gt;.N)
+ndm_pca [re-run]             →  .fet.&lt;method&gt;.N
 ndm_klustakwik [re-run]      →  refined .clu.N
 ndm_estimatedrift [re-run]   →  sharper drift estimate
    ↓
@@ -104,8 +106,8 @@ ndm_estimatedrift [re-run]   →  sharper drift estimate
       between the probe and the reference position, not the increment
       between successive iterations.
       <command>ndm_driftcorrect</command> always reads the original
-      <filename>.spk(D)</filename> (never a previous
-      <filename>.spkC(D)</filename>) so successive iterations do not
+      <filename>.spk</filename> (never a previous
+      <filename>.spkC</filename>/<filename>.spkCD</filename>) so successive iterations do not
       compound interpolation error.  Setting
       <parameter>overwrite</parameter> to <literal>true</literal>
       forces the output to be regenerated when the drift signal has
@@ -288,12 +290,13 @@ ndm_estimatedrift [re-run]   →  sharper drift estimate
         </para></listitem>
       </varlistentry>
       <varlistentry>
-        <term><filename>SESSION.spk.N</filename> /
-              <filename>SESSION.spkD.N</filename></term>
+        <term><filename>SESSION.spk.stderiv.N</filename> /
+              <filename>SESSION.spk.standard.N</filename> /
+              <filename>SESSION.spk.N</filename></term>
         <listitem><para>
-          Recorded waveforms (mandatory input).  When both are present
-          <filename>.spkD.N</filename> is preferred (matches the
-          stderiv pipeline used by <command>ndm_pca_stderiv</command>).
+          Recorded waveforms (mandatory input), looked up in this order;
+          the first that exists is used.  A stderiv input gives a
+          <filename>.spkCD.N</filename> output.
         </para></listitem>
       </varlistentry>
       <varlistentry>
@@ -320,33 +323,33 @@ ndm_estimatedrift [re-run]   →  sharper drift estimate
   <refsect1>
     <title>Wiring into the pipeline</title>
     <para>
-      Until <command>ndm_pca</command> /
-      <command>ndm_pca_stderiv</command> /
-      <command>ndm_klustakwik</command> grow native
-      <filename>.spkC(D)</filename> awareness (see the
-      <function>pickInputPath</function> helper in
-      <command>KlustaKwik</command>), the corrected files can be
-      consumed by symlink or by passing explicit paths to the
-      individual tools.  The recommended pattern for an iterative
+      No pipeline step reads <filename>.spkC.N</filename> or
+      <filename>.spkCD.N</filename>, and none writes a
+      <filename>.fetC</filename> file.  To sort the corrected waveforms,
+      put the corrected file in place of the
+      <filename>.spk.<replaceable>method</replaceable>.N</filename> that
+      <command>ndm_pca</command> reads.  The recommended pattern for an iterative
       refinement loop is:
     </para>
     <programlisting>
 # 1) Initial pass — no drift correction yet.
-ndm_extractspikes_stderiv  $session
-ndm_pca_stderiv            $session
-ndm_klustakwik             $session
+ndm_detectspikes  --method stderiv $session
+ndm_extractspikes --method stderiv $session
+ndm_pca           --method stderiv $session
+ndm_klustakwik    --method stderiv $session
 
 # 2) First drift estimate.
 ndm_estimatedrift          $session
 ndm_driftcorrect           $session
 
 # 3) Refeaturize and recluster on .spkCD.
+# (remove the old .fet/.clu of the method first, or set overwrite)
 for g in $groups; do
-    mv $session.spkD.$g  $session.spkD.$g.iter0
-    cp $session.spkCD.$g $session.spkD.$g    # let ndm_pca_stderiv see it
+    mv $session.spk.stderiv.$g $session.spk.stderiv.$g.iter0
+    cp $session.spkCD.$g       $session.spk.stderiv.$g   # let ndm_pca see it
 done
-ndm_pca_stderiv            $session
-ndm_klustakwik             $session
+ndm_pca           --method stderiv $session
+ndm_klustakwik    --method stderiv $session
 
 # 4) Sharpen drift estimate.
 ndm_estimatedrift          $session
