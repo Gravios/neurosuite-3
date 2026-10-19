@@ -24,7 +24,7 @@ Both clusterings are represented as full `Data` objects:
 - `activeData` — points at whichever the views render; `data()` returns it.
 
 The two `Data`s are clusterings **over the same spikes**. `Data` owns
-`Array<dataType> features` by value (`data.h:1006`), and `loadChildClustering()`
+`Array<dataType> features` by value, and `loadChildClustering()`
 builds the child by re-reading the `.fet`/`.spk` into a second `Data`. The code
 says so directly:
 
@@ -85,8 +85,8 @@ manufactured. The distinction dissolves into a data property instead of being
 forced one way.
 
 The code already has the seam for this: `Data::labelByFeatureRow()` and its inverse
-(rebuild `spikesByCluster` + `clusterInfoMap` from a per-row label vector,
-`data.h:369`) round-trip between the two representations, so a `ClusterLayer` is a
+(rebuild `spikesByCluster` + `clusterInfoMap` from a per-row label vector)
+round-trip between the two representations, so a `ClusterLayer` is a
 label vector over a `SpikeStore`.
 
 ## 3. Phases
