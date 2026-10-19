@@ -1,5 +1,13 @@
 # Klusters source — naming and clarity audit
 
+> **Status (2026-10): historical snapshot.** This audit was written in
+> April 2026, when `src/klusters/src/` was about 25k lines in 17 files; it
+> is now about 99k lines in over 100 files. Its counts, file names and line
+> references describe that state and have not been updated. The
+> conventions it settled (bare members without `m_`, predicate-style
+> booleans, no C-style casts) still apply — see
+> [STANDARDIZATION.md](../dev/STANDARDIZATION.md) for the current rules.
+
 **Scope.** This audit covers the 25k LOC of `src/klusters/src/` plus
 `src/libklustersshared/`.  It catalogs naming inconsistencies and
 clarity issues found across the codebase, sorts them by severity and
