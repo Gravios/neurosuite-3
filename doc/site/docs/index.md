@@ -1,28 +1,27 @@
-# neurosuite-3 documentation
+# neurosuite-3
 
-A **prototype** of a modern documentation site for neurosuite-3, built with
-[MkDocs](https://www.mkdocs.org/) + [Material](https://squidfunk.github.io/mkdocs-material/).
-It unifies, in one searchable site, two bodies of documentation that already
-exist in the repository:
+neurosuite-3 takes a raw extracellular recording to sorted single units:
+convert and filter the signal, detect and automatically sort spikes, curate
+the result by hand, and inspect everything against the LFP, events and the
+animal's position. It is a Qt 6 / C++20 revival of the Neurosuite programs,
+built as one project for Linux, Windows and macOS, with optional GPU
+acceleration over a CPU path that always works.
 
-- the **User Handbook** — converted from the canonical DocBook source
-  (`src/neuroscope/doc/en/index.docbook`) with [pandoc](https://pandoc.org/),
-  replacing the retired KDE meinproc / DocBook-XSL toolchain; and
-- the **Developer Guide** and its component references — the Markdown that
-  already lives at the repository root and under `src/*/docs/`, included here by
-  symlink (single source of truth, no duplication).
+| Program | What it does |
+|---|---|
+| [**NDManager**](ndmanager/README.md) | Edits a session: acquisition parameters, probes, channel groups, and the processing pipeline |
+| [**Processing pipeline**](ndmanager-plugins/README.md) | The `ndm_*` steps and `process_*` programs: filtering, spike detection and extraction, features, clustering, drift and collision handling |
+| [**KiloKlustaKwik**](kiloklustakwik/README.md) | Automatic spike sorting (chunked CEM, GPU backends) |
+| [**Klusters**](klusters/README.md) | Manual cluster curation |
+| [**NeuroScope**](handbook/01-introduction.md) | Viewing raw traces, LFP, spikes, events and positions |
 
-## Why this exists
+## Start here
 
-The user handbook used to be built from DocBook XML to chunked HTML by a KDE4
-toolchain that is no longer available, so the shipped HTML could not be
-regenerated. This prototype rebuilds the same content with pandoc — which
-installs anywhere — into both a rich web site (this) and a plain,
-QTextBrowser-safe HTML page for NeuroScope's in-app **Help ▸ Handbook (F1)**
-viewer. See the repository `doc/site/README.md` for how it is generated and how
-to evaluate it.
+- **[Install neurosuite-3](INSTALL.md)** — Linux, Windows, macOS.
+- **[Sort your first recording](workflows/first-time-sort.md)** — the end-to-end walkthrough.
+- **[Workflows](workflows/README.md)** — curation, drift correction, collisions, re-extraction, priors.
+- **[File formats](ndmanager-plugins/formats/README.md)** and the **[glossary](GLOSSARY.md)**.
 
-## Start reading
-
-- **[User Handbook ▸ Introduction](handbook/01-introduction.md)**
-- **[Developer Guide ▸ Overview](developer/developer-guide.md)**
+The source, issue tracker and release history are on
+[GitHub](https://github.com/Gravios/neurosuite-3); the
+[changelog](CHANGELOG.md) lists every change.

@@ -47,6 +47,8 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
 
+hooks:
+  - hooks.py           # links that leave the site point to the file on GitHub
 markdown_extensions:
   - attr_list          # honour {#id} heading/anchor ids from the converter
   - md_in_html         # honour the injected <a id="..."> anchors
@@ -55,13 +57,27 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
+      # GitHub-style heading ids, so anchors written for the repository
+      # (#ndm_pca--per-channel-pca-spk--fet-pca) resolve on the site too.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - pymdownx.superfences
   - pymdownx.highlight
   - pymdownx.details
 
 nav:
   - Home: index.md
-  - User Handbook:
+  - Getting started:
+      - Installation: INSTALL.md
+      - First-time spike sort: workflows/first-time-sort.md
+      - Glossary: GLOSSARY.md
+  - Klusters:
+      - Klusters manual: klusters/README.md
+      - Cluster sorting: klusters/cluster-sorting.md
+      - Hierarchical clustering: klusters/hierarchical-clustering.md
+      - Spike realignment: spikerealign/README.md
+  - NeuroScope:
       - Introduction: handbook/01-introduction.md
       - Using NeuroScope: handbook/02-using-neuroscope.md
       - Settings: handbook/03-settings.md
@@ -69,8 +85,34 @@ nav:
       - Menu Entries: handbook/05-menu-entries.md
       - Credits & License: handbook/06-credits-and-license.md
       - Installation: handbook/07-installation.md
-  - Developer Guide:
-      - Overview: developer/developer-guide.md
+      - Reference: neuroscope/README.md
+  - NDManager: ndmanager/README.md
+  - Processing pipeline:
+      - Overview: ndmanager-plugins/README.md
+      - The pipeline: ndmanager-plugins/pipeline.md
+      - Parameters: ndmanager-plugins/parameters.md
+      - Commands: ndmanager-plugins/commands/README.md
+      - File formats: ndmanager-plugins/formats/README.md
+  - KiloKlustaKwik: kiloklustakwik/README.md
+  - Workflows:
+      - Overview: workflows/README.md
+      - Cluster curation: workflows/cluster-curation.md
+      - Iterative refinement: workflows/iterative-refinement.md
+      - Re-extract at a lower threshold: workflows/re-extract-lower-threshold.md
+      - Drift correction: workflows/drift-correction.md
+      - Collision decomposition: workflows/collision-decomposition.md
+      - Empirical priors: workflows/empirical-priors.md
+  - GPU acceleration: gpu/README.md
+  - Developer:
+      - Developer guide: dev/DEVELOPER_GUIDE.md
+      - Build options: BUILD.md
+      - Architecture: dev/ARCHITECTURE.md
+      - Standards: dev/STANDARDIZATION.md
+      - Recipes: dev/RECIPES.md
+      - Roadmap: dev/ROADMAP.md
+      - Plugins roadmap: dev/PLUGINS-ROADMAP.md
+      - Design notes: design/README.md
       - Input system — Klusters: developer/klusters-input-system.md
       - Input system — NeuroScope: developer/neuroscope-input-system.md
-      - Plugin API: developer/plugin-api.md
+      - Klusters plugin API: developer/plugin-api.md
+  - Changelog: CHANGELOG.md

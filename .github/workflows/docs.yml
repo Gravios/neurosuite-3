@@ -20,10 +20,10 @@ on:
   push:
     branches: [main]
     paths:
-      - 'doc/site/**'
+      - 'doc/**'
+      - 'CHANGELOG.md'
       - 'src/neuroscope/doc/en/**'
       - 'src/*/docs/**'
-      - 'doc/dev/DEVELOPER_GUIDE.md'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -57,6 +57,10 @@ jobs:
         working-directory: doc/site
         run: |
           ./gen.sh
+          # The handbook pages and NeuroScope's in-app handbook are committed:
+          # fail when they were not regenerated after an index.docbook change.
+          git diff --exit-code -- docs/handbook ../../src/neuroscope/doc/en/handbook.html \
+            || { echo "::error::run doc/site/gen.sh and commit its output"; exit 1; }
           mkdocs build --strict --site-dir site
 
       - uses: actions/configure-pages@v6

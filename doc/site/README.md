@@ -1,18 +1,19 @@
-# doc/site — modern documentation prototype (MkDocs + pandoc)
+# doc/site — the documentation site (MkDocs + pandoc)
 
-A working **prototype** of a modern documentation system for neurosuite-3, built
-to evaluate replacing the retired KDE **DocBook → meinproc → chunked HTML**
-handbook toolchain. It produces two things from the *canonical* DocBook source
-(`src/neuroscope/doc/en/index.docbook`), with no KDE4 dependency:
+The project's documentation site, published to GitHub Pages
+(<https://gravios.github.io/neurosuite-3/>) by `.github/workflows/docs.yml`.
+It is built with **[MkDocs](https://www.mkdocs.org/) +
+[Material](https://squidfunk.github.io/mkdocs-material/)** from:
 
-1. a **[MkDocs](https://www.mkdocs.org/) + [Material](https://squidfunk.github.io/mkdocs-material/)**
-   web site that unifies the user handbook with the existing developer docs; and
-2. a single, self-contained, **QTextBrowser-safe** `index.html` for NeuroScope's
-   in-app **Help ▸ Handbook (F1)** viewer (`QHelpViewer`, which wraps
-   `QTextBrowser` — no JavaScript, HTML4 + a CSS 2.1 subset only).
-
-Nothing here is wired into the normal build, and the existing DocBook source and
-shipped HTML are untouched — this sits alongside them for evaluation.
+- the repository's Markdown, included **by symlink** with its directory layout
+  kept (`docs/klusters -> doc/klusters`, `docs/INSTALL.md -> doc/INSTALL.md`, …),
+  so a page's relative links work the same on GitHub and on the site;
+  `hooks.py` sends links to files the site does not carry (source, `src/*`
+  READMEs) to the file on GitHub;
+- the **NeuroScope handbook**, converted from its DocBook source
+  (`src/neuroscope/doc/en/index.docbook`) by `gen.sh` with
+  [pandoc](https://pandoc.org/); the same run writes the single
+  QTextBrowser-safe page NeuroScope's **Help ▸ Handbook (F1)** shows.
 
 ## Why
 
@@ -30,12 +31,17 @@ doc/site/
   gen.sh                regenerate both outputs from the DocBook source
   CMakeLists.txt        standalone, opt-in CMake targets (not in the main build)
   tools/                the conversion pipeline (see "How gen.sh works")
+  hooks.py              rewrites links that leave the site to GitHub URLs
   docs/
     index.md            site landing page
-    handbook/*.md       the handbook, converted (one file per chapter) — GENERATED
+    handbook/*.md       the NeuroScope handbook, converted — GENERATED, committed
     handbook/Images     -> symlink to src/neuroscope/doc/en/Images
-    developer/*.md      -> symlinks to DEVELOPER_GUIDE.md and src/*/docs/*.md
-  build/                generated in-app HTML (git-ignored)
+    INSTALL.md, BUILD.md, GLOSSARY.md, CHANGELOG.md, klusters/, neuroscope/,
+    ndmanager/, ndmanager-plugins/, kiloklustakwik/, workflows/, gpu/,
+    spikerealign/, dev/, design/
+                        -> symlinks into doc/ (and the top-level CHANGELOG.md)
+    developer/*.md      -> symlinks to src/*/docs/*.md
+  build/                generated in-app HTML copy (git-ignored)
 ```
 
 The developer docs are **symlinked**, not copied: the repo Markdown stays the
@@ -89,21 +95,17 @@ being Latin-1, so the pipeline is:
 4. **In-app HTML** — `pandoc -f docbook -t html4` through
    `tools/inapp.html.template` (inline CSS, no JS/flex) → one self-contained page.
 
-## Known gaps (prototype)
+## Known gaps
 
-- **Developer-doc links.** The developer Markdown is symlinked in as-is and still
-  carries repo-relative links (`ARCHITECTURE.md`, `../../klusters/docs/…`) and
-  GitHub-style numbered anchors (`#4-the-scope-stack`) that don't resolve inside
-  the site. `mkdocs build` reports these as INFO (link validation is set to
-  `info` in `mkdocs.yml`). To close it in production, either add the referenced
-  files to the site or rewrite those links (e.g. the
-  [monorepo](https://github.com/backstage/mkdocs-monorepo-plugin) plugin, or a
-  small link-rewrite pass like the handbook's).
+- **A few anchors.** About a dozen in-page anchors use heading ids that the
+  GitHub-style slugs (`pymdownx.slugs`) generate differently (numbered or
+  punctuated headings); `mkdocs build` lists them as INFO.
 - **License boilerplate.** The KDE `&underGPL;` / `&underFDL;` / `&FDLNotice;`
   entities aren't shipped in this tree, so `tools/doctype.xml` gives them standard
   short expansions. Swap in the exact text when cutting over.
-- **Generated files are committed** for a runnable demo; a production setup would
-  generate them in CI instead.
+- **Generated files are committed** (the handbook pages and NeuroScope's
+  `handbook.html`) so neither the site preview nor the app build needs pandoc;
+  the docs workflow fails when they are out of date with `index.docbook`.
 
 ## GitHub integration (two birds, one stone)
 
@@ -124,12 +126,15 @@ One-time repo setup: **Settings ▸ Pages ▸ Source = "GitHub Actions"**. After
 that, the site publishes to `https://gravios.github.io/neurosuite-3/`. (The
 per-page "Edit" button is intentionally off — see the note in `mkdocs.yml`.)
 
-## Cutting over
+## In-app handbook (F1)
 
-1. Point the install in `src/neuroscope/doc/CMakeLists.txt` at the pandoc output
-   (`gen.sh` / the `handbook_inapp_html` target) instead of the pre-built
-   `en/html/`, and have the app keep opening `index.html`.
-2. Enable the Pages workflow above (the one-time Source setting); it already
-   builds and deploys on push.
-3. Once happy, the DocBook source can either stay as the authoring format (pandoc
-   keeps converting it) or be converted to Markdown once and retired.
+NeuroScope's Help ▸ Handbook opens `src/neuroscope/doc/en/handbook.html`, which
+`gen.sh` writes from the DocBook source; it is committed (like the site's
+handbook pages) so a build needs no pandoc, and the install puts it beside the
+screenshots as `index.html`. Regenerate both outputs with `gen.sh` whenever
+`index.docbook` changes.
+
+Klusters and NDManager show their Markdown manuals (`doc/klusters/README.md`,
+`doc/ndmanager/README.md`), which the viewer renders directly. Their old KDE
+DocBook handbooks and the pre-built 2006–2011 chunked HTML are no longer
+installed.
