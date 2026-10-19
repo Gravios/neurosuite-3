@@ -22,8 +22,10 @@
 		<arg choice="plain"><replaceable>resolution</replaceable></arg>
 		<arg><option>--uniformity-threshold</option> <replaceable>T</replaceable></arg>
 		<arg><option>--min-amplitude</option> <replaceable>A</replaceable></arg>
+		<arg><option>--keep-flat</option> | <option>--remove-flat</option></arg>
 		<arg><option>--dry-run</option></arg>
 		<arg><option>--verbose</option></arg>
+		<arg><option>--cpu</option></arg>
 		</cmdsynopsis>
 	</refsynopsisdiv>
 
@@ -47,6 +49,12 @@
 			waveform (noise); a score near one indicates maximal inter-channel
 			diversity (genuine spike). Spikes whose score falls below
 			<option>--uniformity-threshold</option> are removed.
+		</para>
+		<para>
+			Flat waveforms (total RMS below 0.5 ADC counts after per-channel
+			DC removal, i.e. no AC energy) cannot be scored; they are removed
+			by default. <option>--min-amplitude</option> applies before both
+			tests.
 		</para>
 		<para>
 			The algorithm operates in two passes. In the first pass all spike
@@ -121,7 +129,7 @@
 		<title>Options</title>
 		<variablelist>
 			<varlistentry>
-				<term><option>--uniformity-threshold</option> <replaceable>T</replaceable></term>
+				<term><option>--uniformity-threshold</option>, <option>-u</option> <replaceable>T</replaceable></term>
 				<listitem>
 					<para>
 						Spikes with a spatial uniformity score below
@@ -135,14 +143,22 @@
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><option>--min-amplitude</option> <replaceable>A</replaceable></term>
+				<term><option>--min-amplitude</option>, <option>-a</option> <replaceable>A</replaceable></term>
 				<listitem>
 					<para>
 						Spikes whose peak amplitude (in raw ADC counts) is
 						below <replaceable>A</replaceable> are retained
-						without scoring. They are too small to classify
+						without scoring or the flat test. They are too small to classify
 						reliably and could otherwise be incorrectly discarded.
 						Default: <literal>0</literal> (disabled).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--keep-flat</option>, <option>--remove-flat</option></term>
+				<listitem>
+					<para>
+						Keep or remove flat waveforms (see Description). Default: remove.
 					</para>
 				</listitem>
 			</varlistentry>
@@ -163,6 +179,14 @@
 						Print the timestamp, peak amplitude, and uniformity
 						score for every spike, with a <literal>[NOISE]</literal>
 						marker on those that would be removed.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--cpu</option></term>
+				<listitem>
+					<para>
+						Accepted and ignored (reserved).
 					</para>
 				</listitem>
 			</varlistentry>
@@ -202,8 +226,10 @@
 				<term><filename>.clu.N</filename> (optional)</term>
 				<listitem>
 					<para>
-						Plain text. First line: cluster count. Subsequent
-						lines: one cluster ID per spike. Filtered in sync
+						Binary (<literal>int32</literal> cluster count, then
+						one <literal>int32</literal> per spike) or legacy text
+						(first line cluster count, then one ID per line); the
+						format is detected and kept on output. Filtered in sync
 						with <filename>.res</filename> and
 						<filename>.spk</filename> when present.
 					</para>

@@ -103,6 +103,9 @@
  		<para>
 			Custom gains can be applied to one or more channels. For instance, to multiply channel 5 by a gain of 1.5, write 5*1.5 in the channel list.
 		</para>
+		<para>
+			A reference channel can be subtracted: 5-3 writes channel 5 minus channel 3. Gain and reference combine: 5*1.5-3 writes 1.5 × channel 5 minus channel 3, and 5-3*1.5 writes 1.5 × (channel 5 minus channel 3).
+		</para>
 	</refsect1>
 
 	<refsect1>

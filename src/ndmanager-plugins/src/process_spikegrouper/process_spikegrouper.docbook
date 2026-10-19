@@ -147,7 +147,7 @@
 		<variablelist>
 			<varlistentry>
 				<term><option>--max-sub-groups</option> <replaceable>K</replaceable></term>
-				<listitem><para>Maximum number of sub-groups to create per anatomical group.  Default: 6.</para></listitem>
+				<listitem><para>Maximum number of sub-groups to create per anatomical group.  Default: 16.</para></listitem>
 			</varlistentry>
 			<varlistentry>
 				<term><option>--min-channels</option> <replaceable>M</replaceable></term>
@@ -283,11 +283,11 @@
 			</varlistentry>
 			<varlistentry>
 				<term>1</term>
-				<listitem><para>Error: missing required argument, YAML parse failure, or I/O error.</para></listitem>
+				<listitem><para>Error: missing <option>--nchannels</option> or <option>--sampling-rate</option>, YAML parse failure, or I/O error.</para></listitem>
 			</varlistentry>
 			<varlistentry>
 				<term>11</term>
-				<listitem><para>Input missing: the <replaceable>.fil</replaceable> or YAML file could not be opened, or the <replaceable>.fil</replaceable> file is too small.</para></listitem>
+				<listitem><para>Input missing: <option>--fil</option> or <option>--yaml</option> not given, the <replaceable>.fil</replaceable> or YAML file could not be opened, or the <replaceable>.fil</replaceable> file is too small.</para></listitem>
 			</varlistentry>
 		</variablelist>
 	</refsect1>
