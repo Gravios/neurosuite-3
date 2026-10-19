@@ -9,9 +9,9 @@
 #     cmake --build build/docs --target handbook_inapp_html   # QTextBrowser HTML
 #     cmake --build build/docs --target handbook_markdown      # MkDocs Markdown
 #
-# When you decide to cut over, the `handbook_inapp_html` output replaces the
-# pre-built chunked HTML under src/neuroscope/doc/en/html/, and the install()
-# in src/neuroscope/doc/CMakeLists.txt can point at it (see doc/site/README.md).
+# gen.sh also writes src/neuroscope/doc/en/handbook.html, the committed page
+# NeuroScope's F1 opens (installed by src/neuroscope/doc/CMakeLists.txt);
+# `handbook_inapp_html` adds a browsable copy with its Images/ in the build dir.
 # ---------------------------------------------------------------------------
 cmake_minimum_required(VERSION 3.16)
 project(neurosuite3_docs NONE)

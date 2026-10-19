@@ -1,0 +1,1610 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>The NeuroScope Handbook</title>
+<style type="text/css">
+/* QTextBrowser-safe only: HTML4 + a CSS 2.1 subset. No flexbox, grid or JS, so
+   this renders identically in neuroscope's in-app Handbook viewer and a browser. */
+body   { font-family: sans-serif; font-size: 10pt; color: #000; background: #fff; margin: 12px; }
+h1     { font-size: 17pt; color: #223; border-bottom: 2px solid #557; padding-bottom: 3px; }
+h2     { font-size: 14pt; color: #223; border-bottom: 1px solid #aab; padding-bottom: 2px; }
+h3     { font-size: 12pt; color: #224; }
+a      { color: #1a5db5; text-decoration: none; }
+code, pre { font-family: monospace; }
+pre    { background: #f3f3f5; border: 1px solid #ccd; padding: 6px; }
+table  { border-collapse: collapse; }
+td, th { border: 1px solid #bbc; padding: 3px 6px; }
+th     { background: #eef; }
+img    { border: 1px solid #ccd; }
+div.note { background: #fbfbe8; border: 1px solid #ddc; padding: 6px 10px; }
+div.toc  { background: #f6f6fa; border: 1px solid #dde; padding: 6px 14px; }
+</style>
+</head>
+<body>
+<h1>The NeuroScope Handbook</h1>
+<div class="toc"><p><b>Contents</b></p><ul>
+<li><a href="#introduction" id="toc-introduction">Introduction</a></li>
+<li><a href="#using-neuroscope" id="toc-using-neuroscope">Using
+NeuroScope</a>
+<ul>
+<li><a href="#starting" id="toc-starting">Starting a New
+Session</a></li>
+<li><a href="#palettes" id="toc-palettes">Palettes</a></li>
+<li><a href="#channel-groups" id="toc-channel-groups">Editing Channel
+Groups</a></li>
+<li><a href="#managing-display" id="toc-managing-display">Managing the
+Display</a></li>
+<li><a href="#advanced-display-management"
+id="toc-advanced-display-management">Advanced Display
+Management</a></li>
+<li><a href="#browsing-lfp" id="toc-browsing-lfp">Browsing Local Field
+Potentials</a></li>
+<li><a href="#tools" id="toc-tools">Tools</a></li>
+<li><a href="#units" id="toc-units">Unit Activity</a></li>
+<li><a href="#events" id="toc-events">Events</a></li>
+<li><a href="#positions" id="toc-positions">Positions</a></li>
+<li><a href="#properties" id="toc-properties">File Properties</a></li>
+<li><a href="#print" id="toc-print">Printing and Exporting</a></li>
+<li><a href="#saving" id="toc-saving">Session Management</a></li>
+<li><a href="#shortcuts" id="toc-shortcuts">Keyboard and Mouse
+Shortcuts</a></li>
+</ul></li>
+<li><a href="#settings" id="toc-settings">Settings</a></li>
+<li><a href="#data-files" id="toc-data-files">File Formats</a>
+<ul>
+<li><a href="#data_files" id="toc-data_files">Data Files</a></li>
+<li><a href="#parameter_file" id="toc-parameter_file">The Parameter
+File</a></li>
+<li><a href="#neuroscope-session-file"
+id="toc-neuroscope-session-file">The Session File</a></li>
+</ul></li>
+<li><a href="#menu-entries" id="toc-menu-entries">Menu Entries</a>
+<ul>
+<li><a href="#menu-file" id="toc-menu-file">The File Menu</a></li>
+<li><a href="#menu-edit" id="toc-menu-edit">The Edit Menu</a></li>
+<li><a href="#menu-tools" id="toc-menu-tools">The Tools Menu</a></li>
+<li><a href="#menu-Channels" id="toc-menu-Channels">The Channels
+Menu</a></li>
+<li><a href="#menu-clusters" id="toc-menu-clusters">The Units
+Menu</a></li>
+<li><a href="#menu-events" id="toc-menu-events">The Events Menu</a></li>
+<li><a href="#menu-positions" id="toc-menu-positions">The Positions
+Menu</a></li>
+<li><a href="#menu-traces" id="toc-menu-traces">The Traces Menu</a></li>
+<li><a href="#menu-displays" id="toc-menu-displays">The Displays
+Menu</a></li>
+<li><a href="#menu-settings" id="toc-menu-settings">The Settings
+Menu</a></li>
+<li><a href="#menu-help" id="toc-menu-help">The Help Menu</a></li>
+</ul></li>
+<li><a href="#credits" id="toc-credits">Credits and License</a></li>
+<li><a href="#installation" id="toc-installation">Installation</a>
+<ul>
+<li><a href="#getting-neuroscope" id="toc-getting-neuroscope">How to
+obtain NeuroScope</a></li>
+<li><a href="#requirements" id="toc-requirements">Requirements</a></li>
+<li><a href="#compilation" id="toc-compilation">Compilation and
+Installation</a></li>
+</ul></li>
+</ul></div>
+<h1 id="introduction">Introduction</h1>
+<p>NeuroScope is an advanced viewer for electrophysiological and
+behavioral data: it can display local field potentials (EEG), neuronal
+spikes, behavioral events, as well as the position of the animal in the
+environment. It also features limited editing capabilities.</p>
+<p>NeuroScope is part of a larger data analysis framework, including <a
+href="http://klusters.sourceforge.net">Klusters</a> and other utilities
+which are currently under development. While NeuroScope can be used as a
+standalone application, some of its features are most useful within this
+framework.</p>
+<h1 id="using-neuroscope">Using NeuroScope</h1>
+<h2 id="starting">Starting a New Session</h2>
+<p>To start a new session, select <span class="menuchoice">File &gt;
+Open</span>. In the Open dialog, you can select any type of data file
+(<code>dat</code>, <code>eeg</code>, <code>nrs</code> or
+<code>xml</code>: see <a href="#data-files">File Formats</a>).</p>
+<p>A session can also be started from Konqueror by clicking on one of
+the above files, or on the command line by typing:</p>
+<pre><code>% neuroscope filename</code></pre>
+<p>First, NeuroScope needs some information about the acquisition
+system. You will be prompted to provide this information in the
+Properties dialog. More generally, this dialog is where you can set all
+the parameters for the various files you view and edit (this will be
+presented in later sections of this manual). For now, suffice it to
+introduce the Channels tab, which is the only one enabled at this
+point.</p>
+<p><span id="fig-properties"></span></p>
+<p><img src="Images/properties.png" alt="File Properties." /></p>
+<p>All the fields are self-explanatory, but these fields may need
+clarification:</p>
+<ul>
+<li><p>Initial offset: some acquisition systems record the data with a
+fixed offset; this can be specified here so that NeuroScope can recenter
+all the channels in the display.</p></li>
+<li><p>Voltage range: the total voltage range, e.g. if the system is set
+to ±5V, the range is 10V.</p></li>
+<li><p>Screen gain: millivolts per screen centimeter when the
+magnification level is set to 1x.</p></li>
+</ul>
+<p>The information provided in the Properties dialog can be later
+displayed and modified at any time by selecting <span
+class="menuchoice">File &gt; Properties</span>.</p>
+<p>When starting NeuroScope from a terminal, this information can also
+be provided as command line options. To list available options, type</p>
+<pre><code>% neuroscope --help
+Usage: neuroscope [Qt-options] [KDE-options] [options] file
+
+NeuroScope - Viewer for local field potentials, spikes and events
+
+Generic options:
+  --help                    Show help about options
+  --help-qt                 Show Qt specific options
+  --help-kde                Show KDE specific options
+  --help-all                Show all options
+  --author                  Show author information
+  -v, --version             Show version information
+  --license                 Show license information
+  --                        End of options
+
+Options:
+  -r, --resolution          Resolution of the acquisition system.
+  -c, --nbChannels          Number of channels.
+  -o, --offset              Initial offset.
+  -m, --voltageRange        Voltage range.
+  -a, --amplification       Amplification.
+  -g, --screenGain          Screen gain.
+  -s, --samplingRate        Sampling rate.
+  -t, --timeWindow          Initial time window (in miliseconds).
+
+Arguments:
+  file                      Document to open.</code></pre>
+<p>The options provided on the command line will be displayed in the
+Properties dialog.</p>
+<p>Once the information is properly set, the first 1000 ms of data are
+loaded and displayed in the main window, which should look like
+this:</p>
+<p><span id="fig-initialView"></span></p>
+<p><img src="Images/initialView.png" alt="initialView." /></p>
+<p>Note: if the channel amplitudes are too large, they can be easily
+adjusted (see <a href="#data-files">Traces</a>).</p>
+<p>The window contains two functionally distinct areas: the Palettes on
+the left, and the Display containing a Trace View on the right. These
+will be discussed in the following sections.</p>
+<h2 id="palettes">Palettes</h2>
+<p>NeuroScope provides several palettes to manipulate the data: the
+Anatomical Groups Palette, the Spike Groups Palette, as well as the
+Units Palette and the Events Palette (the latter two become available
+upon loading cluster and event files, respectively). To display a
+palette, click on the corresponding tab. Each tab has a distinctive icon
+next to the palette name to make it more easily identifiable.
+Optionally, palette names can be hidden, leaving only the icons, to save
+space in the main window (see <a href="#settings">Settings</a>).</p>
+<p><span id="fig-palettes"></span></p>
+<p><img src="Images/palettes.png" alt="Palettes." /></p>
+<h3>Anatomical Groups and Spike Groups</h3>
+<p>The Anatomical Groups Palette and the Spike Groups Palette are both
+used to manipulate the local field potential traces, and they share very
+similar behaviors. While the purpose of both palettes is to selectively
+display and group related channels, their main difference lies in how
+the groups are defined.</p>
+<p>Suppose you record data from both the neocortex and the hippocampus:
+you may want to assign all channels recorded from the neocortex into one
+group, and all channels recorded from the hippocampus into another
+group, or maybe have two distinct groups for CA1 and CA3, respectively.
+This is what anatomical groups are for. More generally however,
+anatomical groups can be used to implement any classification you may
+wish, e.g. sites from the same shank in recordings using silicon probes.
+Anatomical groups are handled in the Anatomical Groups Palette.</p>
+<p>On the other hand, spike groups are related to unit activity. In most
+experimental paradigms, you will want to study neuronal firing patterns,
+and thus you will need to extract unit activity from local field
+potentials. Usually, the spikes emitted by each single unit appear only
+on a limited subset of the channels. In NeuroScope, each such set of
+channels (e.g. a tetrode) is referred to as a spike group. Although
+NeuroScope will not perform spike extraction and classification (many
+other tools are available to perform these tasks), it will help you
+define the spike groups for later processing. Remember that spike groups
+are not necessarily equivalent to physical electrode groups: for
+instance, if one channel from a tetrode is floating or too noisy,
+discarding it altogether will yield better results during subsequent
+spike sorting. In general, these groups cannot be efficiently defined
+without first inspecting the data. This is why NeuroScope provides the
+ability to define spike groups. These are handled in the Spike Groups
+Palette</p>
+<h3>Units</h3>
+<p>Unit activity can be extracted and sorted using a combination of
+automatic and manual cluster cutting. Spike sorting applications include
+Kenneth D. Harris' <a
+href="http://klustakwik.sourceforge.net">KlustaKwik</a> (a powerful
+automatic cluster cutting command-line tool) and Lynn Hazan's <a
+href="http://klusters.sourceforge.net">Klusters</a> (an advanced cluster
+viewer/editor application for KDE). Cluster files can be loaded into
+NeuroScope, which allows for browsing identified unit activity together
+with local field potentials. The Units Palette is where you perform all
+operations related to spike clusters.</p>
+<h3>Events</h3>
+<p>Many experimental paradigms involve correlating brain activity with
+behavior. The latter is often described using timestamped markers listed
+in an event file. These event markers can be loaded and displayed in
+NeuroScope, which allows for visually assessing relations between
+behavioral events (water delivery, tone onset, etc.) and the occurrence
+of neurophysiological activity (increased neuronal firing, theta rhythm,
+etc.) The Events Palette is where you perform all operations related to
+behavioral events.</p>
+<h2 id="channel-groups">Editing Channel Groups</h2>
+<p>The first task you will want to perform upon starting NeuroScope is
+to group related channels. Usually, this is first done in the Anatomical
+Groups Palette, because this determines how the channels are displayed.
+Indeed, in the display channels are layed out in the same order as they
+appear in the Anatomical Groups Palette: the first channel of the first
+group appears at the top, the second channel of the first group appears
+right below, etc. until the last channel of the last group which appears
+at the bottom of the display. Also, groups are separated by small gaps
+so they are more readily visible.</p>
+<h3>Creating a New Group</h3>
+<p>Initially, all channels belong to the same group. In order to create
+a new group, you must first select the channels you want to group by
+clicking on the corresponding colored circles in the palette. Use Shift
+or Ctrl for multiple selections (see the Edit menu for more choices).
+Then, group these channels by selecting <span
+class="menuchoice">Channels &gt; Move Channels to New Group</span> or by
+clicking on <img src="Images/new_group.png" alt="New Group" />.</p>
+<p><span id="fig-newGroup"></span></p>
+<p><img src="Images/newGroup.png" alt="initialView." /></p>
+<p>On the display, groups are spatially separated by small gaps to make
+them more readily visible.</p>
+<h3>Discarding Bad Channels</h3>
+<p>You may want to discard floating or noisy channels altogether. This
+can be done by selecting the channels and selecting <span
+class="menuchoice">Channels &gt; Discard Channels</span> or by clicking
+on <img src="Images/discard.png" alt="Discard" />. The channels will be
+moved to the Discarded Group, as indicated by the small trash icon next
+to the group box in the palette.</p>
+<div class="note">
+<p>Notice that discarding channels <em>does not modify your data</em> in
+any way: it does not actually remove the channels from the data files,
+but merely hides them from the display. Discarded channels can be
+brought back by moving them to an existing group (this is explained in
+<a href="#moving-groups">Moving Channels between Groups</a>).</p>
+</div>
+<p><span id="fig-discardingChannels"></span></p>
+<p><img src="Images/discardingChannels.png"
+alt="Discard Channels." /></p>
+<p>You may have noticed in the above screenshot that the circle for the
+channel in the Discarded Group is now hollow. This is a visual hint to
+indicate that this channel is now hidden from the display (for more
+information on hidden channels, see <a href="#show-hide">Showing and
+Hiding Channels</a>).</p>
+<h3>Skipping Channels</h3>
+<p>If you are viewing data recorded from silicon probes and one or more
+channels are unusable (e.g. floating or extremely noisy), you may want
+to discard those channels using the method described in the previous
+section. However, this would not be appropriate here because valuable
+spatial information would be lost: due to dynamical rearrangement of the
+display, the layout of the traces would no longer reflect the spatial
+arrangement of the recording sites on the probes. The solution is
+instead to have NeuroScope 'skip' the unusable channels by selecting the
+channels and choosing <span class="menuchoice">Channels &gt; Skip
+Channels</span> or by clicking on <img src="Images/skip.png"
+alt="Skip channel" />. The traces will be hidden and replaced with a
+small gap, thus ensuring that the overall layout of the channels remains
+unchanged in the displays. The corresponding circles in the palettes
+will also be hidden (leaving only the channel numbers).</p>
+<p>You can bring back skipped channels by selecting the channels and
+choosing <span class="menuchoice">Channels &gt; Keep Channels</span> or
+by clicking on <img src="Images/keep.png" alt="Keep channel" />. The
+channels will be reappear in the displays and the palettes.</p>
+<p><span id="fig-skippingChannels"></span></p>
+<p><img src="Images/keepDisplay.png" alt="Keep Channels." /></p>
+<p><img src="Images/skipDisplay.png" alt="Skip Channels." /></p>
+<h3 id="moving-groups">Moving Channels between Groups</h3>
+<p>Channels can be moved from one group to another group by simply
+dragging and dropping the corresponding circles in the palette. This
+includes moving channels to and from the Discarded Group.</p>
+<p><span id="fig-movingChannels"></span></p>
+<p><img src="Images/movingChannels.png" alt="Discard Channels." /></p>
+<div class="note">
+<p>Note that the channels cannot be dropped on top of another channel
+(if you attempt this, the pointer will turn into a "forbidden" cursor
+and the operation will be canceled). Instead, they must be dropped on an
+empty space.</p>
+</div>
+<h3 id="reordering-channels">Reordering Channels within a Group</h3>
+<p>Channels can be easily reordered within a group by dragging and
+dropping the corresponding circles in the group box, similar to moving
+channels between groups except that the displacement occurs within a
+single group.</p>
+<h3 id="reordering-groups">Reordering Groups</h3>
+<p>Groups can also be reordered using a drag and drop approach. To
+select a group, click on its ID (the number on the left side of the
+group box). You can then drag it and drop it just above or below the ID
+of another group to move it there.</p>
+<h3 id="synchronizing">Synchronizing Anatomical and Spike Groups</h3>
+<p>As mentioned earlier, the typical way to organize channels is to
+first work with anatomical groups. In many cases, spike groups are
+mostly identical to anatomical groups: anatomical groups could thus be
+used as a basis to define spike groups. In such cases, NeuroScope can
+reuse the groups in the Anatomical Groups Palette to define spike
+groups: select <span class="menuchoice">Channels &gt; Synchronize
+Groups</span>. Since this will override any existing spike groups, you
+will be prompted for confirmation if you have already defined spike
+groups.</p>
+<h3 id="removing-from-group">Removing Channels from a Spike Group</h3>
+<p>While all the above mentioned operations apply to both anatomical and
+spike groups, this feature is only relevant for spike groups. It
+provides a way to deal with those channels that did not record any unit
+activity, although they did record valuable local field potential
+information. Obviously, these channels should not be discarded. However,
+they should not be used for spike extraction and sorting, either. In
+order to indicate that these channels do not belong to any spike group,
+select them and choose <span class="menuchoice">Channels &gt; Remove
+Channels from Group</span> or click on <img src="Images/remove.png"
+alt="New Group" />. The channels will be moved to the Undefined Spike
+Group, indentified by the question mark. Notice that this is the same
+group where all channels are initially listed before you start defining
+spike groups.</p>
+<p><span id="fig-removingChannels"></span></p>
+<p><img src="Images/removingChannels.png" alt="Discard Channels." /></p>
+<div class="note">
+<p>Notice that removing channels from a spike group <em>does not modify
+your data</em> in any way: it does not actually remove the channels from
+the data files, but removes their IDs from the list of spike groups used
+for subsequent spike extraction and sorting. Removed channels can be
+brought back by moving them to an existing spike group (this is
+explained in <a href="#moving-groups">Moving Channels between
+Groups</a>).</p>
+</div>
+<h2 id="managing-display">Managing the Display</h2>
+<h3 id="direct-selection">Selecting Channels</h3>
+<p>As mentioned previously, channels can be selected by clicking on the
+corresponding circles in the palettes. Clicking on a group ID (the
+number on the left side of a group box) will select or deselect all the
+channels in the group at once. Another, more graphical way is to
+directly click on the traces in the display using the Select Channels
+tool. To activate this tool, select <span class="menuchoice">Tools &gt;
+Select Channels</span> or click on <img src="Images/select_tool.png"
+alt="Select Channels" />. Use Ctrl for multiple selections (see <a
+href="#selection-labels">Labels and Calibration Bars</a> for yet another
+way to select channels).</p>
+<h3>Channel Colors</h3>
+<p>In order to make individual channels as well as channel groups more
+readily visible, channels can be colored using three different
+schemes:</p>
+<ul>
+<li><p>By Anatomical Group: A color can be assigned to all the channels
+in a given anatomical group by middle-clicking on the group ID in the
+Anatomical Groups Palette. This brings up the Color Chooser. As soon as
+you validate your new choice, the palettes and display will be updated
+accordingly. The new colors are referred to as the Anatomical Group
+colors for the given channels.</p></li>
+<li><p>By Spike Group: Similarly, a color can be assigned to all the
+channels in a given spike group by middle-clicking on the group ID in
+the Spike Groups Palette. The new colors are referred to as the Spike
+Group colors for the given channels.</p></li>
+<li><p>By Channel: Additionally, an individual channel can also be
+assigned a color by middle-clicking on the corresponding circle in
+either palette.</p></li>
+</ul>
+<p><span id="fig-colors"></span></p>
+<p><img src="Images/colors.png" alt="Colors." /></p>
+<p>Although each channel can only have one single color at a time,
+Anatomical Group colors and Spike Group colors are always kept in
+memory. This means that although assigning an individual channel a new
+color will change its color in the display, this will not override its
+Anatomical Group color nor its Spike Group color (in memory): these can
+still be later reactivated. Similarly, changing Anatomical Group colors
+does not affect Spike Group colors and vice versa.</p>
+<p>To recolor all channels using Anatomical Group colors, select <span
+class="menuchoice">Channels &gt; Color by Anatomical Groups</span>.
+Similarly, to recolor all channels using Spike Group colors, select
+<span class="menuchoice">Channels &gt; Color by Spike Groups</span>.</p>
+<div class="note">
+<p>Contrary to Anatomical Group colors and Spike Group colors,
+individual channel colors are not kept in memory. You can think of them
+as temporary colors: they are typically used when you need to
+temporarily identify one particular channel from the other channels in
+the same group.</p>
+</div>
+<h3 id="show-hide">Showing and Hiding Channels</h3>
+<p>When you first open a data file with NeuroScope, all the channels are
+shown in the display. But you can decide to hide some channels, for
+instance to temporarily focus on a subset of the data. To hide channels,
+select them (in either palette or <a href="#direct-selection">directly
+in the display</a>), and choose <span class="menuchoice">Channels &gt;
+Hide Channels</span> or click on <img src="Images/eye_close.png"
+alt="Hide Channels" />. The remaining channels will be reorganized in
+the display to optimally utilize the available space. The circles in the
+palette will become hollow to indicate that the channels are now hidden
+(see the above <a href="#fig-colors">figure</a>).</p>
+<p>To make hidden channels visible again, select the corresponding
+circles and choose <span class="menuchoice">Channels &gt; Show
+Channels</span> or click on <img src="Images/eye.png"
+alt="Show Channels" />.</p>
+<h3>Adjusting Amplitudes and Offsets</h3>
+<p>Channel amplitudes can be adjusted by selecting channels and choosing
+<span class="menuchoice">Traces &gt; Increase Selected Channel
+Amplitudes</span> or <span class="menuchoice">Traces &gt; Decrease
+Selected Channel Amplitudes</span>. To adjust all channels at once,
+select <span class="menuchoice">Traces &gt; Increase All Channel
+Amplitudes</span> or <span class="menuchoice">Traces &gt; Decrease All
+Channel Amplitudes</span>. To reset the amplitudes to their default
+(initial) settings, select channels and choose <span
+class="menuchoice">Traces &gt; Reset Selected Channel
+Amplitudes</span>.</p>
+<p>Channels can be offset by clicking on the traces and dragging them by
+the appropriate amount using the Select Channels tool. To activate this
+tool, select <span class="menuchoice">Tools &gt; Select Channels</span>
+or click on <img src="Images/select_tool.png" alt="Select Channels" />.
+Use Ctrl for multiple selections (see <a href="#selection-labels">Labels
+and Calibration Bars</a> for yet another way to select channels). Notice
+that in order to provide visual feedback the traces become slightly
+thicker when the channels are selected using the Select Channels tool.
+As you drag them around, their new positions are indicated by white
+outlines. Upon releasing the mouse button, the traces will move to their
+new positions.</p>
+<p><span id="fig-offsets"></span></p>
+<p><img src="Images/offsets.png" alt="Offsets." /></p>
+<p>When the physical organisation of your electrodes is more complex
+than vertical arrays (e.g. epidural electrodes covering the surface of
+the brain), NeuroScope provides a way to store your electrode layout.
+This can be done by redefining the default offsets which are stored in
+the parameter file (see <a href="#parameter_file">File Formats</a>). To
+set the current offsets as the default offsets, select <span
+class="menuchoice">Traces &gt; Set Current Offsets as Default</span>. To
+set the default offsets back to zero, select <span
+class="menuchoice">Traces &gt; Set Default Offsets to Zero</span>.</p>
+<p><span id="fig-epidural"></span></p>
+<p><img src="Images/epidural.png" alt="Epidural electrode." /></p>
+<div class="note">
+<p>Defaut offsets can be reused for subsequent experiments. This can be
+done using <a href="http://ndmanager.sourceforge.net">NDManager</a>,
+which is part of the larger data analysis framework including NeuroScope
+and <a href="http://klusters.sourceforge.net">Klusters</a>.
+Alternatively, this can also be done manually by duplicating and
+modifing the parameter file (see <a href="#parameter_file">File
+Formats</a>).</p>
+</div>
+<h2 id="advanced-display-management">Advanced Display Management</h2>
+<h3>Multiple Column Mode</h3>
+<p>A very useful feature when recording from multisite silicon probes is
+the ability to display each shank as a separate 'column', so that the
+traces are laid out on the screen in a similar way as the physical
+recording sites in the brain. Select <span class="menuchoice">Traces
+&gt; Multiple Columns</span>. Channels from each Anatomical Group now
+appear in separate columns.</p>
+<p><span id="fig-multiple-columns"></span></p>
+<p><img src="Images/multipleColumns.png"
+alt="Multiple Column Mode." /></p>
+<div class="note">
+<p>Keep in mind that although Anatomical Groups were primarily designed
+to help you organize the channels to reflect the positions of the
+electrodes in the brain, they can be more generally used to implement
+any kind of classification that may suit your needs.</p>
+</div>
+<p>When channels are hidden in multiple column mode, dynamical
+reorganization of the display may not always be the appropriate
+behavior. Indeed, if you are viewing data recorded from silicon probes,
+you will most likely prefer keeping the channels always laid out in the
+same way no matter how many channels are displayed, rather than having
+them moved around to optimize the available space. In order to hide
+channels while keeping their spatial arrangement, use this trick: change
+the color of the channels you wish to hide to the background color
+(black, unless you modified it in the <span id="static-hiding"></span><a
+href="#settings-background">Settings</a>).</p>
+<h3>Labels and Calibration Bars</h3>
+<p>Labels provide information about the traces: the ID of the
+corresponding channel, and the current amplitude. Labels can be showed
+by selecting <span class="menuchoice">Traces &gt; Show Labels</span>
+(selecting this menu item a second time will toggle its status and hide
+the labels).</p>
+<p><span id="fig-labels"></span></p>
+<p><img src="Images/labels.png" alt="Labels." /></p>
+<p>Amplitudes are described as follows. By convention, 'x1' corresponds
+to the <span id="screen-gain"></span><a href="#properties">current
+screen gain</a>. Thus, assuming for instance a screen gain of 1 mV/cm,
+an amplitude of 'x0.38' corresponds to 0.38 mV/cm. Notice that different
+traces can have different amplitudes, as is the case in the above
+screenshot where local field potentials have a gain of x0.38 and the
+synchronization pulse has a gain of x0.12.</p>
+<p>Calibration bars also provide scaling information. The horizontal bar
+indicates the time scale, and the vertical bar indicates the voltage
+scale <em>for channel 0</em> (notice that there is only one vertical
+bar, but each channel can have a different amplitude, hence the need for
+a convention). Showing calibration bars is most useful when printing
+traces. To display or hide the calibration bars, toggle <span
+class="menuchoice">Settings &gt; Show Calibration</span>.</p>
+<div class="note">
+<p>Labels can be shown or hidden on a display-by-display basis, but
+showing or hiding calibration bars applies to all displays at once
+(which is why these functions appear in different menus).</p>
+</div>
+<p>Besides clicking on the corresponding circles in the palette or <span
+id="selection-labels"></span><a href="#direct-selection">on the
+traces</a> in the display, channels can also be selected by clicking on
+the corresponding labels using the Select Channel tool. For multiple
+selections, this offers the possibility to use the Shift key (for
+continuous selections) in addition to the Ctrl key (for non-continuous
+selections).</p>
+<h3>View Mode and Edit Mode</h3>
+<p>All the features described up to this point are most useful in the
+initial stages of data exploration. But once all groups are defined, the
+interface can be simplified by enabling only those features related to
+data browsing. This is know as the View Mode, as opposed to the
+elaborate (default) Edit Mode. You can toggle between the two modes by
+selecting <span class="menuchoice">Edit &gt; Edit Mode</span> or
+clicking on <img src="Images/edit.png" alt="View Mode and Edit Mode" />.
+In View Mode, the channels are represented by colored squares in the
+palettes: this visual feedback allows you to instantly differentiate
+between modes. Channels can now be shown or hidden by simply selecting
+or deselecting the corresponding squares - you no longer need to
+explicitly show or hide them.</p>
+<p><span id="fig-modes"></span></p>
+<p><img src="Images/modes.png" alt="View Mode and Edit Mode." /></p>
+<p>Notice that the editing tools are now disabled: you can no longer
+create, modify or delete groups, nor can you change channel offsets.</p>
+<p>In View Mode, the palettes behave in the same way as in <a
+href="http://klusters.sourceforge.net">Klusters</a>. This is also how
+the Units Palette and the Events Palette behave.</p>
+<h3>Using Multiple Displays</h3>
+<p>NeuroScope provides the possibility to use several displays at once,
+which can be useful to examine different subsets of the data in
+parallel. To open a new display, select <span
+class="menuchoice">Displays &gt; New Display</span>. The new display is
+copied from the currently active display as a starting point, and can
+then be independently modified. After you have modified the contents of
+a display to fit your needs, you may wish to change its title (the label
+of the tab) to reflect your changes. Select <span
+class="menuchoice">Displays &gt; Rename Active Display</span>. This will
+bring up a dialog where you can type the new title for the currently
+active display.</p>
+<h2 id="browsing-lfp">Browsing Local Field Potentials</h2>
+<p>There are several ways to navigate through the data:</p>
+<ul>
+<li><p>To move to a particular point in the data, enter the
+corresponding time in the Start time text boxes (below the traces). Time
+is typically entered in minutes, seconds and milliseconds.
+Alternatively, you can use cumulative seconds or milliseconds: for
+instance, entering <code>0 min 180 s 0 ms</code>, or
+<code>0 min 0 s 180000 ms</code> is equivalent to entering
+<code>3 min 0 s 0 ms</code>.</p></li>
+<li><p>To modify the duration of the time window shown in the display
+(1 s by default), change the value in the Duration text box (below the
+traces). This value can be doubled by hitting the + key, or divided by
+two by hitting the - key.</p></li>
+<li><p>To display the next time window, click on the scroll bar below
+the traces, in the empty space on the right side of the slider. You can
+also hit the Page Down key. Similarly, clicking on the left side of the
+slider, or hitting the Page Up key, displays the previous time
+window.</p></li>
+<li><p>To move by smaller amounts, click on the arrows of the scroll
+bar, or hit Left Arrow or Right Arrow.</p></li>
+<li><p>To move to the beginning or the end of the data, hit the Home or
+End keys, respectively.</p></li>
+<li><p>Dragging the slider in the scroll bar is another way to move
+within the data.</p></li>
+</ul>
+<div class="note">
+<p>The shortcut keys described above will not work if the focus is in
+one of the text boxes below the traces. This is because in this case the
+shortcuts are applied to the text boxes rather than to the display (e.g.
+hitting the End key will move the insertion point to the end of the
+text). To activate the navigation shortcut keys, move the focus
+elsewhere, for instance by clicking on the scroll bar.</p>
+</div>
+<h2 id="tools">Tools</h2>
+<p>NeuroScope provides a set of tools to help you efficiently browse and
+edit your data. Whichever tool you select, when the cursor is located
+within the display, the time below the pointer (counted from the
+beginning of the data) is indicated in the Status Bar.</p>
+<p>Only one tool is active at a time: choosing a tool replaces the
+previous one, and the active tool stays highlighted on the toolbar. Each
+tool can be selected from the Tools menu, from the toolbar, or with its
+keyboard shortcut: Z (Zoom), C (Select Channels), V (Measure), T (Select
+Time), E (Select Event) and L (Draw Time Line); Add Event is chosen from
+its toolbar drop-down. When several displays are open, the active tool
+is remembered for each display, so the toolbar highlight follows the
+display you are working in. All of these shortcuts can be listed or
+changed as described in <a href="#shortcuts">Keyboard and Mouse
+Shortcuts</a>.</p>
+<h3>Zoom</h3>
+<p>To zoom on a particular area in the display, select <span
+class="menuchoice">Tools &gt; Zoom</span> or click on <img
+src="Images/zoom_tool.png" alt="Zoom tool." /> . Now click on the center
+of the area you wish to enlarge. Alternatively, you can select the area
+to enlarge (click and hold the left button, then drag the mouse to
+select the area). Double-clicking will bring the zoom level back to the
+initial state.</p>
+<h3>Draw Time Line</h3>
+<p>In order to quickly assess the temporal relationships between
+physiological events occurring on different channels, a vertical time
+line can be temporarily displayed on the traces. To display the time
+line, select <span class="menuchoice">Tools &gt; Draw Time Line</span>
+or click on <img src="Images/time_line_tool.png"
+alt="Time Line tool." /> . Now click and drag the mouse around in the
+trace view: the time line follows the cursor until you release the mouse
+button. In multiple column mode, the time line is drawn in each of the
+columns at the same position in time.</p>
+<p>As usual, while you move the pointer within the display, the time at
+the cursor position is displayed in the Status Bar.</p>
+<h3>Select Channels</h3>
+<p>To select one or more channels directly from the display, choose
+<span class="menuchoice">Tools &gt; Select Channels</span> or click on
+<img src="Images/select_tool.png" alt="Select tool." /> . Now hold the
+Ctrl key and click on the channels you wish to select. As a visual
+feedback, the traces become slightly thicker when the channels are
+selected. Notice that this does not allow for continuous selection. Use
+<a href="#selection-labels">this method</a> instead.</p>
+<h3>Measure</h3>
+<p>To measure on the traces the amplitude and duration of a
+neurophysiological event (an action potential, a theta cylce, etc.),
+select <span class="menuchoice">Tools &gt; Measure</span> or click on
+<img src="Images/measure_tool.png" alt="Measure tool." /> . Click on the
+upper left corner of the rectangular region you wish to measure, and
+drag the pointer to the lower right corner: the corresponding voltage
+and duration are indicated in the Status Bar.</p>
+<p><span id="fig-measure"></span></p>
+<p><img src="Images/measure.png" alt="Measure." /></p>
+<h3>Select Time</h3>
+<p>To graphically refine the displayed time window, select <span
+class="menuchoice">Tools &gt; Select Time</span> or click on <img
+src="Images/time_tool.png" alt="Time Select tool." /> . Click at the
+start time of the window you wish to define, then drag the pointer to
+the end time: the displayed time window will be updated accordingly.
+Notice that this is different from zooming in two respects: first, only
+the horizontal component of the selection (time) is taken into account,
+and second this actually redefines both the Start time and the Duration,
+rather than temporarily focusing on a particular portion of the
+display.</p>
+<p><span id="fig-select-time"></span></p>
+<p><img src="Images/selectTime.png" alt="Select time." /></p>
+<p>As usual, while you move the pointer within the display, the time at
+the cursor position is displayed in the Status Bar.</p>
+<h3>Select Event</h3>
+<p>To select a single event, choose <span class="menuchoice">Tools &gt;
+Select Event</span> or click on <img src="Images/event_tool.png"
+alt="Event Select tool." /> , and click on the event line in the
+display. The event can now be moved or deleted. For more details, see <a
+href="#events">Events</a>.</p>
+<h3>Add Event</h3>
+<p>To add a single event to an existing event file, select an event type
+under <span class="menuchoice">Tools &gt; Add Event</span> or click on
+<img src="Images/add_event_tool.png" alt="Add Event tool." /> ,
+optionally selecting an event type in the drop down menu, and click in
+the display where the new event should be added. For more details, see
+<a href="#events">Events</a>.</p>
+<h2 id="units">Unit Activity</h2>
+<h3>Displaying Unit Activity</h3>
+<p>Unit activity is described in two files: a spike time file (listing
+the timestamps of the spikes) and a cluster file (assigning each spike
+to a cluster which corresponds to a putative unit). In addition, if you
+are working with a <code>.dat</code> file, spike waveforms can be
+extracted from that file. This is explained in more detail in <a
+href="#data-files">File Formats</a>. The spike time file and the cluster
+file can be loaded by selecting <span class="menuchoice">File &gt; Load
+Cluster File(s)...</span> (multiple files can be opened in parallel).
+This creates a new cluster box in the Units Palette, where all the
+clusters are listed (the Units Palette is created upon loading the first
+cluster file).</p>
+<p>To display the spikes fired by certain clusters, select the
+corresponding clusters by clicking on the colored squares in the
+palette. Use Shift or Ctrl for multiple selections. Clicking on a
+cluster file ID (the number on the left side of a unit box) will select
+or deselect all the clusters in the file at once. Hold the Shift key
+while clicking on a cluster file ID to select all clusters except 0 and
+1 (artefacts and noise, respectively).</p>
+<p><span id="fig-clusters"></span></p>
+<p><img src="Images/clusters.png" alt="Units." /></p>
+<p>NeuroScope provides three different graphical representations for
+spikes. You can activate or deactivate one or more representations by
+selecting or deselecting the corresponding items in the Units menu.</p>
+<ul>
+<li><p>Vertical Lines: each spike is represented as a vertical line
+spanning the entire display.</p></li>
+<li><p>Rasters: spikes are represented as small vertical segments below
+the local field potential traces, grouped by unit. In the display, the
+total height devoted to the rasters (vs the traces) can be adjusted by
+selecting <span class="menuchoice">Units &gt; Increase Height</span> or
+<span class="menuchoice">Units &gt; Decrease Height</span>.</p></li>
+<li><p>Waveforms: spike waveforms are highlighted on their respective
+traces (for instance, since the <code>.clu.5</code> file describes the
+clusters of spike group 5, selecting a cluster from this group will
+cause NeuroScope to draw the corresponding waveforms on the traces
+listed in the spike group 5). Highlighting is rendered even more visible
+if the traces are drawn using shades of gray instead of colors. This can
+be obtained by selecting <span class="menuchoice">Traces &gt;
+Grey-Scale</span>.</p></li>
+</ul>
+<div class="note">
+<p>The waveforms can be drawn only when working with raw data
+(<code>.dat</code> files), as the waveform information is not available
+in low-pass filtered data.</p>
+</div>
+<div class="note">
+<p>In multiple column mode, spikes recorded from a given set of
+electrodes are shown only in the column containing the corresponding
+traces. If however these traces are split across two or more columns,
+the spikes will be shown in each of these columns.</p>
+</div>
+<h3>Browsing Unit Activity</h3>
+<p>Pyramidal or granule cells typically fire at low rates. Thus, when
+examining their firing patterns, you may sometimes find it difficult to
+locate those epochs when the neurons discharge. NeuroScope provides a
+mechanism to easily 'browse' spikes, i.e. to automatically move the time
+window to the previous or next spike fired by one or more neurons.
+First, indicate which clusters you wish to browse by holding both Ctrl
+and Alt and clicking on the corresponding colored squares in the palette
+(only already selected clusters can be used). The squares are now
+replaced by triangles to reflect their activated state. Now, choose
+<span class="menuchoice">Units &gt; Previous Spike</span> or click on
+<img src="Images/backCluster.png" alt="Previous spike." /> to move the
+time window to the previous spike fired by one of the activated
+clusters, or choose <span class="menuchoice">Units &gt; Next
+Spike</span> or click on <img src="Images/forwardCluster.png"
+alt="Next spike." /> to move the time window to the next spike.</p>
+<div class="note">
+<p>Holding Ctrl and Alt while clicking on a cluster file ID will
+activate or deactivate all selected clusters in the corresponding
+file.</p>
+</div>
+<div class="note">
+<p>Since only selected clusters can be browsed, deselecting a unit will
+automatically reset its activation state.</p>
+</div>
+<h2 id="events">Events</h2>
+<h3>Displaying Events</h3>
+<p>Events are described in one or more event files (listing the
+timestamps and descriptions of the events, see <a
+href="#data-files">File Formats</a>). Event files can be loaded by
+selecting <span class="menuchoice">File &gt; Load Event
+File(s)...</span> (multiple files can be opened in parallel). This
+creates a new box in the Events Palette, where all the events are listed
+(the Events Palette is created upon loading the first event file).</p>
+<p>To display certain events, click on the colored squares in the
+palette. Use Shift or Ctrl for multiple selections. Clicking on an event
+file ID (the three letters on the left side of an event box) will select
+or deselect all the events in the file at once. Events are represented
+as colored dashed lines spanning the whole display.</p>
+<p><span id="fig-events"></span></p>
+<p><img src="Images/events.png" alt="Events." /></p>
+<h3>Browsing Events</h3>
+<p>NeuroScope provides a mechanism to easily 'browse' events, i.e. to
+automatically move the time window to the previous or next event among a
+list of activated events. First, indicate which events you wish to
+browse by holding both Ctrl and Alt and clicking on the corresponding
+colored squares in the palette (only already selected events can be
+used). The squares are now replaced by triangles to reflect their
+activated state. Now, choose <span class="menuchoice">Events &gt;
+Previous Event</span> or click on <img src="Images/backEvent.png"
+alt="Previous event." /> to move the time window to the previous
+activated event, or choose <span class="menuchoice">Events &gt; Next
+Event</span> or click on <img src="Images/forwardEvent.png"
+alt="Next event." /> to move the time window to the next activated
+event.</p>
+<div class="note">
+<p>Holding Ctrl and Alt while clicking on an event file ID will activate
+or deactivate all selected events in the corresponding file.</p>
+</div>
+<div class="note">
+<p>Since only selected events can be browsed, deselecting an event will
+automatically reset its activation state.</p>
+</div>
+<h3>Editing Events</h3>
+<h4>Selecting Events</h4>
+<p>To select a single event, choose <span class="menuchoice">Tools &gt;
+Select Event</span> or click on <img src="Images/event_tool.png"
+alt="Event Select tool." /> , and click on the event line in the
+display. The event line becomes slightly thicker. The event can now be
+moved or deleted.</p>
+<h4>Moving an Event</h4>
+<p>To move an event, i.e to change its timestamp, select it in the
+display, and move the pointer while holding the mouse button. As you
+drag the event around, its new position is indicated by a white outline.
+Upon releasing the mouse button, the event will move to its new
+position.</p>
+<h4>Deleting an Event</h4>
+<p>To delete an event, select it in the display, and choose <span
+class="menuchoice">Events &gt; Delete Event</span>.</p>
+<h4>Adding an Event</h4>
+<p>To add a single event to an existing event file, first choose in the
+palette the event file where the event should be added by clicking on
+the three-letter ID on the left side of the corresponding event box.
+Then, select an event type under <span class="menuchoice">Tools &gt; Add
+Event</span> or click on <img src="Images/add_event_tool.png"
+alt="Add Event tool." /> (optionally selecting an event type in the drop
+down menu). Now click in the display where the new event should be
+added.</p>
+<p>New event types can also be created, by selecting <span
+class="menuchoice">New Event...</span> under either of the two menus
+mentioned above. A dialog box will pop up to allow you to provide a new
+event description.</p>
+<h4>Undo and Redo</h4>
+<p>To undo the last operation (addition, deletion, or timestamp change),
+select <span class="menuchoice">Edit &gt; Undo</span>. Conversely, after
+canceling an operation, selecting <span class="menuchoice">Edit &gt;
+Redo</span> will apply the changes again.</p>
+<h4>Creating a New Event File</h4>
+<p>A new event file can be created by selecting <span
+class="menuchoice">File &gt; Create Event File...</span> and choosing a
+new name in the file creation dialog. A new box appears in the Event
+Palette, where new events can now be added.</p>
+<h2 id="positions">Positions</h2>
+<p>In certain behavioral experiments, e.g. when studying place cells or
+head direction cells, it is necessary to record brain signals as well as
+the ongoing position and orientation of the animal. The latter is
+usually stored in a file listing the positions across time of one or
+more small lights (spots) attached to the head of the animal (see <a
+href="#position-file">File Formats</a>). NeuroScope has the ability to
+simultaneously display brain signals and the successive positions of the
+animal during the same episode.</p>
+<p>To open a position file, select <span class="menuchoice">File &gt;
+Load Position File...</span>. A new view is added in the display,
+showing the successive positions recorded during the current time
+window. The spots are represented as colored circles linked by gray
+lines (e.g., a segment for two spots, a triangle for three spots, etc.)
+The front spot is drawn in red, and all the other spots in green. Also,
+the last position in the current time window is highlighted: the circles
+are larger, and the lines are white. This helps determine the direction
+of movement.</p>
+<p><span id="fig-positions"></span></p>
+<p><img src="Images/positions.png" alt="Positions." /></p>
+<p>Events can be superimposed on the position display as colored
+crosses. Events are drawn at the position where the animal was at the
+time of their occurent. Notice that if no the position of the animal
+could be detected at the time of the event, this will not be drawn. To
+display or hide the events, toggle <span class="menuchoice">Positions
+&gt; Show Events</span>.</p>
+<p>By default, the positions are drawn against a black background, but
+NeuroScope can instead use an overview of the behavioral maze as a
+background image. Select <span class="menuchoice">File &gt;
+Properties</span>, and choose the Positions tab, where you can specify
+the image location on your disk. You can also flip and rotate the image
+(the positions will be flipped and rotated accordingly). In addition,
+NeuroScope can draw over the background (be it a black background or an
+image) an outline of the trajectory of the animal throughout the
+experiment. This can be activated using the Draw trajectory
+checkbox.</p>
+<h2 id="properties">File Properties</h2>
+<p>Selecting <span class="menuchoice">File &gt; Properties</span> brings
+up the File Properties dialog. In this dialog, you can check and edit a
+number of parameters related to the current session. These parameters
+are described in <a href="#defaults">Settings</a> (notice that although
+the File Properties dialog is very similar to the Defaults tab of the
+Settings dialog, the former is related to the current session only,
+whereas the latter defines the default values for new sessions). Changes
+in the File Properties dialog will be applied immediately upon
+validation.</p>
+<p>One item in the File Properties dialog needs special mention: the
+Sampling Rate for this File entry. This is useful when you work with
+data files other than the <code>.dat</code> file (which contains raw
+data, and thus has the same sampling rate as the acquisition
+system).</p>
+<h2 id="print">Printing and Exporting</h2>
+<h3>Printing</h3>
+<p>To print the current display, select <span class="menuchoice">File
+&gt; Print</span>. This brings up the standard KDE print dialog. Notice
+the additional Background Color tab: it allows you to set the background
+color to white for printing (this saves printer ink). If the tabs are
+hidden, just click on the Expand button to display them.</p>
+<p><img src="Images/printer.png" alt="Printer." /></p>
+<p>If a position view is opened, each view is printed on a separate
+page. The file name, the starting time and time frame of the trace view
+are printed below the figure. The filie name of the position view is
+printed below the position figure.</p>
+<h3>Exporting</h3>
+<p>Exporting is achieved in a similar way as printing. Select <span
+class="menuchoice">File &gt; Print</span>. In the print dialog, click on
+the printer drop down list, and choose Print to File (PostScript) to
+export the display as a PostScript figure, or Print to File (PDF) to
+export it as a Portable Document File.</p>
+<p>The Postscript format is ideal to import a figure into a drawing
+program for additional editing: it is a widely used standard, and all
+the information is stored in vectorial form. The PDF format is ideal for
+sharing a final figure with other investigators: it is platform
+independent (it will look identical whether in Linux, MacOS or Windows)
+and much more compact than PostScript (thus the output file is smaller
+and can easily be sent as an attachment via e-mail).</p>
+<h2 id="saving">Session Management</h2>
+<p>In a typical session, you open a data file, browse the local field
+potentials, maybe create several different displays, load and display
+spikes, events and positions, etc. You then end your session. The next
+time you reopen the same data file, NeuroScope will make sure that your
+session is restored exactly as it was when you closed it. Even better,
+this will happen whatever file you open from the same recording, be it
+the <code>.dat</code> file, the <code>.eeg</code> file, or any other
+recording file. This is made possible because all the relevant
+information is automatically saved to disk when you end a session (you
+do not need to explicitly save it yourself). Notice that this is
+different from saving your work via the Save menu entry or toolbar
+button, which applies to changes in the spike and anatomical groups, as
+well as to changes in the events.</p>
+<h2 id="shortcuts">Keyboard and Mouse Shortcuts</h2>
+<p>Every menu command, tool and mouse gesture in NeuroScope is driven by
+one central list of bindings. You can see the whole list at any time,
+and you can change almost any of them to suit your habits.</p>
+<h3 id="shortcuts-viewing">Viewing the Shortcuts</h3>
+<p>Select <span class="menuchoice">Help &gt; Keyboard
+Shortcuts...</span> to open a read-only list of every command together
+with the key, mouse button or wheel action currently assigned to it. The
+list is split into a Keyboard section and a Mouse section, and within
+each the commands are grouped by category: the menu or tool they belong
+to.</p>
+<h3 id="shortcuts-customizing">Customizing the Shortcuts</h3>
+<p>To change a binding, open <span class="menuchoice">Settings &gt;
+Configure neuroscope</span> and select the Input page. Each command is
+shown on its own row with its current binding:</p>
+<ul>
+<li><p>For a <em>keyboard</em> command, click the field and press the
+new key combination.</p></li>
+<li><p>For a <em>mouse</em> command, choose the button (or wheel
+direction) and any modifier keys from the controls on the row.</p></li>
+</ul>
+<p>If two commands that apply in the same context are given the same
+binding, both fields are highlighted so you can resolve the clash. A few
+bindings belong to a temporary mode and are shown read-only.</p>
+<p>Each row has a Reset that restores that command's shipped default. To
+undo all of your changes at once, use Reset all to defaults at the top
+of the page. Changes take effect when you click Apply or OK, and are
+remembered across sessions.</p>
+<h3 id="shortcuts-layouts">Keymap Layouts</h3>
+<p>The top of the Input page carries a Keymap layout bar that lets you
+keep several named sets of bindings and switch between them:</p>
+<ul>
+<li><p>Pick a layout from the list and click Apply to load it into the
+rows below.</p></li>
+<li><p>Save As... captures your current bindings as a new, named
+layout.</p></li>
+<li><p>Rename and Delete act on your own saved layouts. Built-in layouts
+are read-only and cannot be renamed or deleted.</p></li>
+</ul>
+<p>NeuroScope ships with one built-in layout, Default, which holds the
+program's original keyboard and mouse bindings. Applying it is a
+convenient way to return to the shipped configuration (the same effect
+as Reset all to defaults). As with individual edits, a change of layout
+is only stored when you click Apply or OK.</p>
+<h1 id="settings">Settings</h1>
+<p>Selecting <span class="menuchoice">Settings &gt; Configure
+neuroscope</span> will open the Settings Dialog. This lets you configure
+several default behaviors of NeuroScope.</p>
+<dl>
+<dt><span id="settings-general"></span>General</dt>
+<dd>
+<p>In this page, you can configure the following:</p>
+<ul>
+<li><p><span id="settings-background"></span>Background color. This
+setting affects all views.</p></li>
+<li><p>Display labels in the palette headers. This shows or hides the
+labels ('Anatomy','Spikes', 'Units' and 'Events') next to the icons in
+the palette headers. Hiding them saves some space.</p></li>
+<li><p>Align events.... This setting is used when you browse events. For
+instance, each time you move to the next event, the time window is
+shifted forward in such a way that the next event appears at a fixed
+position in the display. This setting determines where the events are
+aligned in the display.</p>
+<p>Align units.... Same as above, for spikes.</p></li>
+</ul>
+</dd>
+<dt><span id="defaults"></span>Defaults</dt>
+<dd>
+<p>In this page, you can configure the default values for the items
+contained in the following categories.</p>
+<p>Channels</p>
+<ul>
+<li><p>Number of channels. Default number of channels.</p></li>
+<li><p>Sampling rate (Hz). Default sampling rate of the
+<code>.dat</code> files.</p></li>
+<li><p>Resolution (bits). Default resolution of the recording
+system.</p></li>
+<li><p>Initial offset. Default offset in the recording system.</p></li>
+<li><p>Voltage range (V). Default total voltage range of the recording
+system, e.g. 10V for ±5V.</p></li>
+<li><p>Amplification. Default gain of the amplifiers.</p></li>
+<li><p>Screen gain (mV/cm). Default screen gain (see <a
+href="#screen-gain">this paragraph</a> for details).</p></li>
+<li><p>Sampling rate for EEG (Hz). Default sampling rate of the local
+field potentials (<code>.eeg</code>) file.</p></li>
+<li><p>Background image. Background image for the Trace View. You can
+use any image format supported by Qt: JPEG, PNG, BMP, XBM, XPM, PNM, MNG
+and GIF. See your Qt documentation for details (e.g. the QImageIO class
+description).</p></li>
+</ul>
+<p>Units</p>
+<ul>
+<li><p>Number of samples per waveform. Default number of samples per
+waveform, used when highlighting waveforms on the traces.</p></li>
+<li><p>Index of the peak sample. Default peak sample in the waveforms,
+used when highlighting waveforms on the traces.</p></li>
+</ul>
+<p>Positions</p>
+<ul>
+<li><p>Sampling rate (Hz). Default sampling rate of the position
+file.</p></li>
+<li><p>Width (pixels). Default horizontal resolution of the video
+camera.</p></li>
+<li><p>Height (pixels). Default vertical resolution of the video
+camera.</p></li>
+<li><p>Background image. Background image for the Position View. You can
+use any image format supported by Qt: JPEG, PNG, BMP, XBM, XPM, PNM, MNG
+and GIF. See your Qt documentation for details (e.g. the QImageIO class
+description).</p></li>
+<li><p>Draw trajectory. Activate this to draw over the background (be it
+a black background or an image) an outline of the trajectory of the
+animal throughout the experiment.</p></li>
+<li><p>Rotate CCW (degrees). This allows you to rotate
+(counterclockwise) both the position data and the background
+image.</p></li>
+<li><p>flip. This allows you to flip both the position data and the
+background image.</p></li>
+</ul>
+</dd>
+<dt><span id="settings-input"></span>Input</dt>
+<dd>
+<p>In this page, you can view and change the keyboard shortcuts and
+mouse bindings used throughout NeuroScope, and keep named <a
+href="#shortcuts-layouts">keymap layouts</a>. See <a
+href="#shortcuts">Keyboard and Mouse Shortcuts</a> for details.</p>
+</dd>
+</dl>
+<h1 id="data-files">File Formats</h1>
+<p>NeuroScope reads electrophysiological data from a set of files. Each
+of these files has a name of the form <code>base.ext</code> or
+<code>base.n.ext</code> (or <code>base.ext.n</code>), where
+<code>base</code> stands for the common base name of all files belonging
+to a single recording session, <code>ext</code> is an extension
+describing the type of data stored in the file, and <code>n</code>
+stands for the ID of the particular group of channels from which the
+data was recorded. Thus, using this convention the data for session
+CS150612 would be named <code>CS150612.dat</code>, the filter data for
+local filed potentials would be named <code>CS150612.eeg</code> and the
+cluster file for tetrode 2 would be named <code>CS150612.2.clu</code> or
+<code>CS150612.clu.2</code>.</p>
+<p>More specifically, the data files are organized as described in the
+following sections.</p>
+<h2 id="data_files">Data Files</h2>
+<h3 id="data-file">The data File</h3>
+<p>Generic file name: <code>base.dat</code> for the raw data,
+<code>base.eeg</code> for local field potentials, and more generally
+<code>base.ext</code> for any other type of filtered data (where
+<code>ext</code> is extension describing the type of data stored in the
+file).</p>
+<p>Format: 12, 14, 16 or 32 bit binary.</p>
+<p>The data file contains the data for each channel. Assuming
+<code>N1</code> channels (<code>channel1...channelN1</code>) and
+<code>N2</code> samples (<code>sample1...sampleN2</code>) the data are
+stored as follows:</p>
+<pre><code>sample1_channel1
+sample1_channel2
+...
+sample1_channelN1
+sample2_channel1
+sample2_channel2
+...
+sample2_channelN1
+...
+sampleN2_channelN1</code></pre>
+<h3 id="cluster-file">The Cluster File</h3>
+<p>Generic file name: <code>base.n.clu</code> (or
+<code>base.clu.n</code>)</p>
+<p>Format: ASCII</p>
+<p>The cluster file lists the cluster ID of each spike, one per line.
+The first line contains the total number of clusters. Assuming
+<code>N</code> spikes (<code>spike1...spikeN</code>), this file looks
+like:</p>
+<pre><code>nClusters
+clusterID_spike1
+clusterID_spike2
+clusterID_spike3
+...
+clusterID_spikeN</code></pre>
+<p><em>Notice that the last line must end with a newline or carriage
+return.</em></p>
+<h3 id="res-file">The Spike Time File</h3>
+<p>Generic file name: <code>base.n.res</code> (or
+<code>base.res.n</code>)</p>
+<p>Format: ASCII</p>
+<p>The spike time file lists the timestamp for each spike. The timestamp
+is expressed in multiples of the sampling interval. For instance, for a
+20kHz recording (50 microsecond sampling interval), a timestamp of 200
+corresponds to 200x0.000050s=0.01s from the beginning of the recording
+session. Assuming <code>N</code> spikes (<code>spike1...spikeN</code>),
+this file looks like:</p>
+<pre><code>timestamp_spike1
+timestamp_spike2
+timestamp_spike3
+...
+timestamp_spikeN</code></pre>
+<p><em>Notice that the last line must end with a newline or carriage
+return.</em></p>
+<h3 id="event-file">The Event File</h3>
+<p>Generic file name: <code>basename.ext.evt</code> or
+<code>basename.evt.ext</code> (where <code>ext</code> is a three-letter
+extension describing the type of data stored in the file)</p>
+<p>Format: ASCII</p>
+<p>The event file lists the events and their timestamps. The timestamps
+are given in miliseconds (floating point values) and the event types are
+arbitrary strings. Assuming <code>N</code> events
+(<code>event1...eventN</code>), this file looks like:</p>
+<pre><code>timestamp_event1    description_event1
+timestamp_event2    description_event2
+timestamp_event3    description_event3
+...
+timestamp_eventN    description_eventN</code></pre>
+<p><em>Notice that the last line must end with a newline or carriage
+return.</em></p>
+<h3 id="position-file">The Positon File</h3>
+<p>Generic file name: <code>basename.ext</code> (where <code>ext</code>
+can be any three-letter extension)</p>
+<p>Format: ASCII</p>
+<p>The position file lists the <code>x</code> and <code>y</code>
+coordinates of the each spot. Assuming <code>N</code> position samples
+(<code>position1...positionN</code>) and <code>M</code> spots on the
+head of the animal, this file looks like:</p>
+<pre><code>x_position1_spot1   y_position1_spot1   ...  x_position1_spotM  y_position1_spotM
+x_position2_spot1   y_position2_spot1   ...  x_position2_spotM  y_position2_spotM
+...
+x_positionN_spot1   y_positionN_spot1   ...  x_positionN_spotM  y_positionN_spotM</code></pre>
+<p>By convention, spots which have not been detected by the video
+recording system should be given negatives coordinates. These spots will
+not be drawn in the position view.</p>
+<p><em>Notice that the last line must end with a newline or carriage
+return.</em></p>
+<h2 id="parameter_file">The Parameter File</h2>
+<p>Generic file name: <code>base.xml</code></p>
+<p>Format: XML</p>
+<p>The parameter file is a generic file which contains information
+required by many related programs; NeuroScope only needs a subset of
+this information. The parameter file is optional: it is usually
+generated using <a
+href="http://ndmanager.sourceforge.net">NDManager</a>, a dedicated
+application, but if you do not provide it, NeuroScope will prompt you
+for the necessary information and automatically generate a parameter
+file for you (however, contrary to NDManager, NeuroScope will actually
+generate only the subset of fields that it requires, and not a full
+parameter file).</p>
+<h2 id="neuroscope-session-file">The Session File</h2>
+<p>Generic file name: <code>base.nrs</code></p>
+<p>Format: XML</p>
+<p>The session file is where NeuroScope stores information related to
+the working environment: the number of displays and their settings
+(start time, duration, visible channels, amplitudes, etc.), loaded
+cluster, event and position files, etc. This ensures that when you
+reopen a data file, your session is restored exactly as it was when you
+closed it.</p>
+<h1 id="menu-entries">Menu Entries</h1>
+<h2 id="menu-file">The File Menu</h2>
+<dl>
+<dt><span class="menuchoice">File &gt; Open</span></dt>
+<dd>
+<p>Opens data files</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Open Recent</span></dt>
+<dd>
+<p>Opens data files selected from a list of recently edited data
+files.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Load Cluster
+File(s)...</span></dt>
+<dd>
+<p>Loads multiple cluster files.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Load Event File(s)...</span></dt>
+<dd>
+<p>Loads multiple event files.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Create Event File...</span></dt>
+<dd>
+<p>Creates an event file.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Load Position File...</span></dt>
+<dd>
+<p>Loads a single position file.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Save</span></dt>
+<dd>
+<p>Saves the session file.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Save As</span></dt>
+<dd>
+<p>Saves the session file in a new location.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Print</span></dt>
+<dd>
+<p>Prints (or exports as PostScript or PDF) each view of the current
+display in a separate page.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Properties</span></dt>
+<dd>
+<p>Opens a dialog displaying the properties of the currently opened
+file. These properties can be edited.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Close</span></dt>
+<dd>
+<p>Closes the session (will prompt for saving if necessary).</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Close Cluster File</span></dt>
+<dd>
+<p>Closes the cluster file currently selected in the Units Palette.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Close Event File</span></dt>
+<dd>
+<p>Closes the event file currently selected in the Events Palette.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Close Position File</span></dt>
+<dd>
+<p>Closes the position file.</p>
+</dd>
+<dt><span class="menuchoice">File &gt; Quit</span></dt>
+<dd>
+<p>Quits NeuroScope (will prompt for saving if necessary).</p>
+</dd>
+</dl>
+<h2 id="menu-edit">The Edit Menu</h2>
+<dl>
+<dt><span class="menuchoice">Edit &gt; Undo</span></dt>
+<dd>
+<p>Undoes the last change (for event edition only).</p>
+</dd>
+<dt><span class="menuchoice">Edit &gt; Redo</span></dt>
+<dd>
+<p>Redoes the last undone change (for event edition only).</p>
+</dd>
+<dt><span class="menuchoice">Edit &gt; Select All</span></dt>
+<dd>
+<p>Selects all the items in the current palette (channels, clusters or
+events).</p>
+</dd>
+<dt><span class="menuchoice">Edit &gt; Select All except 0 and
+1</span></dt>
+<dd>
+<p>Selects all clusters except artefacts (cluster 0) and noise
+(cluster 1).</p>
+</dd>
+<dt><span class="menuchoice">Edit &gt; Deselect All</span></dt>
+<dd>
+<p>Deselects all the items in the current palette (channels, clusters or
+events).</p>
+</dd>
+<dt><span class="menuchoice">Edit &gt; Edit Mode</span></dt>
+<dd>
+<p>Swiches between edit and non edit mode.</p>
+</dd>
+</dl>
+<h2 id="menu-tools">The Tools Menu</h2>
+<dl>
+<dt><span class="menuchoice">Tools &gt; Zoom</span></dt>
+<dd>
+<p>Allows you to zoom on a point (left click) or area (click and drag);
+double-click to reset the zoom level to the initial state.</p>
+</dd>
+<dt><span class="menuchoice">Tools &gt; Draw Time Line</span></dt>
+<dd>
+<p>Allows you to temporarily draw a vertical line where you left
+click.</p>
+</dd>
+<dt><span class="menuchoice">Tools &gt; Select Channels</span></dt>
+<dd>
+<p>Allows you to select channels in order to act on them (move them to
+compensate for an offset, change the amplitude...)</p>
+</dd>
+<dt><span class="menuchoice">Tools &gt; Measure</span></dt>
+<dd>
+<p>Allows you to measure the time and the voltage between two
+points.</p>
+</dd>
+<dt><span class="menuchoice">Tools &gt; Select Time</span></dt>
+<dd>
+<p>Allows you to refine the time frame used to display the data.</p>
+</dd>
+<dt><span class="menuchoice">Tools &gt; Select Events</span></dt>
+<dd>
+<p>Allows you to select one event in order to move it or delete it.</p>
+</dd>
+<dt><span class="menuchoice">Tools &gt; Add Event</span></dt>
+<dd>
+<p>Allows you to add a new event (select the type of event from the
+submenu).</p>
+</dd>
+</dl>
+<h2 id="menu-Channels">The Channels Menu</h2>
+<dl>
+<dt><span class="menuchoice">Channels &gt; Show Channels</span></dt>
+<dd>
+<p>Shows the selected channels.</p>
+</dd>
+<dt><span class="menuchoice">Channels &gt; Hide Channels</span></dt>
+<dd>
+<p>Hides the selected channels.</p>
+</dd>
+<dt><span class="menuchoice">Channels &gt; Move Channels to New
+Group</span></dt>
+<dd>
+<p>Moves the selected channels to a newly created group (either an
+anatomical group or a spike group).</p>
+</dd>
+<dt><span class="menuchoice">Channels &gt; Remove Channels from
+Group</span></dt>
+<dd>
+<p>Removes the selected channels from their current group and puts them
+in the Undefined Group (the "?" group). This does not actually remove
+the channels from the data file.</p>
+</dd>
+<dt><span class="menuchoice">Channels &gt; Discard Channels</span></dt>
+<dd>
+<p>Removes the selected channels from their current group and puts them
+in the Discarded Group (simultaneously acts on the anatomical and spike
+groups). This does not actually remove the channels from the data
+file.</p>
+</dd>
+<dt><span class="menuchoice">Channels &gt; Synchronize
+Groups</span></dt>
+<dd>
+<p>Synchronizes the anatomical and spike groups. The existing spike
+groups are discarded and replaced with the anatomical groups.</p>
+</dd>
+<dt><span class="menuchoice">Channels &gt; Color by Anatomical
+Groups</span></dt>
+<dd>
+<p>Colors the channels using the anatomical group colors.</p>
+</dd>
+<dt><span class="menuchoice">Channels &gt; Color by Spike
+Groups</span></dt>
+<dd>
+<p>Colors the channels using the spike group colors.</p>
+</dd>
+</dl>
+<h2 id="menu-clusters">The Units Menu</h2>
+<dl>
+<dt><span class="menuchoice">Units &gt; Vertical Lines</span></dt>
+<dd>
+<p>Draws spikes for selected clusters as long vertical lines.</p>
+</dd>
+<dt><span class="menuchoice">Units &gt; Raster</span></dt>
+<dd>
+<p>Draws spikes for selected clusters as rasters below the local field
+potential traces.</p>
+</dd>
+<dt><span class="menuchoice">Units &gt; Waveforms</span></dt>
+<dd>
+<p>Draws spike waveforms for selected clusters directly on the local
+field potential traces.</p>
+</dd>
+<dt><span class="menuchoice">Units &gt; Next Spike</span></dt>
+<dd>
+<p>Moves the time window to the next spike fired by one of the currently
+activated clusters.</p>
+</dd>
+<dt><span class="menuchoice">Units &gt; Previous Spike</span></dt>
+<dd>
+<p>Moves the time window to the previous spike fired by one of the
+currently activated clusters.</p>
+</dd>
+</dl>
+<h2 id="menu-events">The Events Menu</h2>
+<dl>
+<dt><span class="menuchoice">Events &gt; Next Event</span></dt>
+<dd>
+<p>Moves the time window to the next activated event.</p>
+</dd>
+<dt><span class="menuchoice">Events &gt; Previous Event</span></dt>
+<dd>
+<p>Moves the time window to the previous activated event.</p>
+</dd>
+<dt><span class="menuchoice">Events &gt; Remove Event</span></dt>
+<dd>
+<p>Removes the currently selected event.</p>
+</dd>
+</dl>
+<h2 id="menu-positions">The Positions Menu</h2>
+<dl>
+<dt><span class="menuchoice">Positions &gt; Show Position
+View</span></dt>
+<dd>
+<p>Shows or hides the position view.</p>
+</dd>
+</dl>
+<h2 id="menu-traces">The Traces Menu</h2>
+<dl>
+<dt><span class="menuchoice">Traces &gt; Multiple Columns</span></dt>
+<dd>
+<p>Toggles between single and multiple column mode. In mutiple column
+mode, each anatomical group is represented on a separate column.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Grey-Scale</span></dt>
+<dd>
+<p>Displays the channels in gray-scale.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Increase All Channel
+Amplitudes</span></dt>
+<dd>
+<p>Increases the amplitudes of all the channels (both visible and
+hidden).</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Decrease All Channel
+Amplitudes</span></dt>
+<dd>
+<p>Decreases the amplitudes of all the channels (both visible and
+hidden).</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Increase Selected Channel
+Amplitudes</span></dt>
+<dd>
+<p>Increases the amplitudes of the selected channels.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Decrease Selected Channel
+Amplitudes</span></dt>
+<dd>
+<p>Decreases the amplitudes of the selected channels.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Reset Selected Channel
+Amplitude</span></dt>
+<dd>
+<p>Resets the amplitudes of the selected channels.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Reset Selected Channel
+Offsets</span></dt>
+<dd>
+<p>Resets the offsets of the selected channels to the default
+offsets.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Set Current Offsets as
+Defaults</span></dt>
+<dd>
+<p>Sets the current offsets as the default offsets to be stored in the
+parameter file.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Set Default Offsets to
+Zero</span></dt>
+<dd>
+<p>Sets the default offsets to be stored in the parameter file to
+zero.</p>
+</dd>
+<dt><span class="menuchoice">Traces &gt; Show Labels</span></dt>
+<dd>
+<p>Shows or hides the labels (channel IDs and gains).</p>
+</dd>
+</dl>
+<h2 id="menu-displays">The Displays Menu</h2>
+<dl>
+<dt><span class="menuchoice">Displays &gt; New Display</span></dt>
+<dd>
+<p>Creates a new Display.</p>
+</dd>
+<dt><span class="menuchoice">Displays &gt; Rename Active
+Display</span></dt>
+<dd>
+<p>Brings a dialog enabling the user to enter a new label for the
+currently active display.</p>
+</dd>
+<dt><span class="menuchoice">Displays &gt; Close Active
+Display</span></dt>
+<dd>
+<p>Closes the currently active display; when there is only one display,
+closes all data files as well (will prompt for saving if necessary).</p>
+</dd>
+</dl>
+<h2 id="menu-settings">The Settings Menu</h2>
+<dl>
+<dt><span class="menuchoice">Settings &gt; Show Toolbar</span></dt>
+<dd>
+<p>Shows or hides the Toolbar.</p>
+</dd>
+<dt><span class="menuchoice">Settings &gt; Show Tools</span></dt>
+<dd>
+<p>Shows or hides the Tools.</p>
+</dd>
+<dt><span class="menuchoice">Settings &gt; Show Parameters</span></dt>
+<dd>
+<p>Shows or hides the Parameter Bar.</p>
+</dd>
+<dt><span class="menuchoice">Settings &gt; Show Status Bar</span></dt>
+<dd>
+<p>Shows or hides the Status Bar.</p>
+</dd>
+<dt><span class="menuchoice">Settings &gt; Display
+Calibration</span></dt>
+<dd>
+<p>Shows or hides a calibration bar for channel 0 (voltage and gain are
+indicated).</p>
+</dd>
+<dt><span class="menuchoice">Settings &gt; Configure
+Shortcuts</span></dt>
+<dd>
+<p>Lets you configure the shortcuts.</p>
+</dd>
+<dt><span class="menuchoice">Settings &gt; Configure
+neuroscope</span></dt>
+<dd>
+<p>Lets you configure a number of settings including default
+behaviors.</p>
+</dd>
+</dl>
+<h2 id="menu-help">The Help Menu</h2>
+<dl>
+<dt><span class="menuchoice">Help &gt; neuroscope Handbook</span></dt>
+<dd>
+<p>Opens this user manual in the Help Center.</p>
+</dd>
+<dt><span class="menuchoice">Help &gt; Keyboard Shortcuts...</span></dt>
+<dd>
+<p>Opens a list of all keyboard shortcuts and mouse bindings and the
+commands they trigger. See <a href="#shortcuts">Keyboard and Mouse
+Shortcuts</a>.</p>
+</dd>
+<dt><span class="menuchoice">Help &gt; What's this?</span></dt>
+<dd>
+<p>Activates the context help tool.</p>
+</dd>
+<dt><span class="menuchoice">Help &gt; Report Bug</span></dt>
+<dd>
+<p>Helps you compose an e-mail message to report a bug to the author of
+NeuroScope.</p>
+</dd>
+<dt><span class="menuchoice">Help &gt; About neuroscope</span></dt>
+<dd>
+<p>Shows information about the authors of and contributors to
+NeuroScope.</p>
+</dd>
+<dt><span class="menuchoice">Help &gt; About KDE</span></dt>
+<dd>
+<p>Shows information about the authors of and contributors to KDE.</p>
+</dd>
+</dl>
+<h1 id="credits">Credits and License</h1>
+<p>NeuroScope</p>
+<p>Program copyright 2004 Lynn Hazan <a
+href="mailto:lynn.hazan@myrealbox.com">lynn.hazan@myrealbox.com</a></p>
+<p>Contributors:</p>
+<ul>
+<li><p>Michaël B. Zugaro <a
+href="mailto:mzugaro@andromeda.rutgers.edu">mzugaro@andromeda.rutgers.edu</a></p></li>
+</ul>
+<p>The data shown in this documentation were kindly provided by:</p>
+<ul>
+<li><p>Sean M. Montgomery <a
+href="mailto:smontgom@pegasus.rutgers.edu">smontgom@pegasus.rutgers.edu</a></p></li>
+<li><p>David Robbe <a
+href="mailto:robbe@axon.rutgers.edu">robbe@axon.rutgers.edu</a></p></li>
+<li><p>Michaël B. Zugaro <a
+href="mailto:mzugaro@andromeda.rutgers.edu">mzugaro@andromeda.rutgers.edu</a></p></li>
+</ul>
+<p>This documentation is licensed under the terms of the <a
+href="https://www.gnu.org/licenses/fdl.html">GNU Free Documentation
+License</a>.</p>
+<p>This program is licensed under the terms of the <a
+href="https://www.gnu.org/licenses/gpl.html">GNU General Public
+License</a>.</p>
+<h1 id="installation">Installation</h1>
+<h2 id="getting-neuroscope">How to obtain NeuroScope</h2>
+<p>NeuroScope is part of neurosuite-3, together with Klusters,
+NDManager, the NDManager processing plugins and KiloKlustaKwik. The
+source is at <a
+href="https://github.com/Gravios/neurosuite-3">https://github.com/Gravios/neurosuite-3</a>;
+all the programs are built and installed together in one CMake
+build.</p>
+<h2 id="requirements">Requirements</h2>
+<p>Qt 6.4 or newer, yaml-cpp and libxml2, a C++20 compiler (GCC, Clang,
+MSVC 2022 or Intel oneAPI) and CMake 3.22 or newer. The build can
+install the dependencies itself (see below). Linux is the reference
+platform; Windows 10/11 and macOS are supported.</p>
+<h2 id="compilation">Compilation and Installation</h2>
+<p>On Linux and macOS:</p>
+<pre><code>% git clone https://github.com/Gravios/neurosuite-3.git
+% cd neurosuite-3
+% cmake -B build -DCMAKE_INSTALL_PREFIX=&quot;$HOME/.local&quot; -DNS_INSTALL_DEPS=ON
+% cmake --build build --parallel
+% cmake --install build</code></pre>
+<p><code>-DNS_INSTALL_DEPS=ON</code> installs the dependencies with apt
+or Homebrew; leave it out to install them yourself.</p>
+<p>On Windows, in the repository, run
+<code>scripts\install-deps-windows.bat</code>, which installs Visual
+Studio's build tools, the libraries and Qt. Then, in a new x64 Native
+Tools Command Prompt for VS 2022:</p>
+<pre><code>&gt; cmake --preset windows
+&gt; cmake --build --preset windows
+&gt; cmake --install build</code></pre>
+<p>The programs are installed to <code>C:\ns3\bin</code>, which is added
+to your PATH.</p>
+<p>The full guide, with the Intel GPU build, WSL2 and troubleshooting,
+is <code>doc/INSTALL.md</code> in the source tree.</p>
+</body>
+</html>

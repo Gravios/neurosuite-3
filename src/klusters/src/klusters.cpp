@@ -7434,7 +7434,7 @@ void KlustersApp::slotAbout()
 void KlustersApp::slotHanbook()
 {
     QHelpViewer *helpDialog = new QHelpViewer(this);
-    helpDialog->setHtml(KLUSTER_DOC_PATH + QLatin1String("index.html"));
+    helpDialog->setHtml(KLUSTER_DOC_PATH + QLatin1String("README.md"));
     helpDialog->setAttribute( Qt::WA_DeleteOnClose );
     helpDialog->show();
 }

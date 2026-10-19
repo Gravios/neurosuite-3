@@ -4,13 +4,16 @@
 # (src/neuroscope/doc/en/index.docbook) into two outputs:
 #
 #   1. doc/site/docs/handbook/*.md  -- the MkDocs handbook (one file per chapter)
-#   2. <out>/index.html + Images/   -- a single, self-contained, QTextBrowser-safe
-#                                       HTML handbook for the in-app F1 viewer
+#   2. src/neuroscope/doc/en/handbook.html -- a single, QTextBrowser-safe HTML
+#                                       handbook for the in-app F1 viewer; the
+#                                       install puts it beside Images/ as index.html.
+#                                       Committed, like (1), so a build needs no pandoc.
+#      With INAPP_OUT_DIR, also <out>/index.html + Images/ (a browsable copy).
 #
 # This replaces the retired KDE meinproc / DocBook-XSL toolchain with pandoc,
 # which installs anywhere. Requires: pandoc, xmllint, iconv, python3.
 #
-# Usage:  doc/site/gen.sh [INAPP_OUT_DIR]      (default: doc/site/build/inapp)
+# Usage:  doc/site/gen.sh [INAPP_OUT_DIR]
 #
 set -euo pipefail
 
@@ -19,7 +22,8 @@ root="$(cd "$here/../.." && pwd)"
 tools="$here/tools"
 src="$root/src/neuroscope/doc/en/index.docbook"
 images="$root/src/neuroscope/doc/en/Images"
-inapp_out="${1:-$here/build/inapp}"
+inapp_out="${1:-}"
+inapp_html="$root/src/neuroscope/doc/en/handbook.html"
 
 for bin in pandoc xmllint iconv python3; do
     command -v "$bin" >/dev/null 2>&1 || { echo "gen.sh: missing required tool: $bin" >&2; exit 1; }
@@ -44,13 +48,16 @@ mkdir -p "$here/docs/handbook"
 python3 "$tools/split_rewrite.py" "$work/final.md" "$here/docs/handbook"
 
 # 3b. In-app HTML: single self-contained page for neuroscope's QTextBrowser viewer.
-mkdir -p "$inapp_out"
 pandoc -f docbook -t html4 --toc --toc-depth=2 \
        --template="$tools/inapp.html.template" \
        --metadata title="The NeuroScope Handbook" \
-       "$work/anchored.xml" -o "$inapp_out/index.html"
-rm -rf "$inapp_out/Images"
-cp -r "$images" "$inapp_out/Images"
+       "$work/anchored.xml" -o "$inapp_html"
+if [ -n "$inapp_out" ]; then
+    mkdir -p "$inapp_out"
+    cp "$inapp_html" "$inapp_out/index.html"
+    rm -rf "$inapp_out/Images"
+    cp -r "$images" "$inapp_out/Images"
+fi
 
 echo "gen.sh: handbook Markdown -> $here/docs/handbook/"
-echo "gen.sh: in-app HTML       -> $inapp_out/index.html"
+echo "gen.sh: in-app HTML       -> $inapp_html${inapp_out:+ (copy in $inapp_out)}"

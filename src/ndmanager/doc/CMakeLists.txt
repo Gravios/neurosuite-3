@@ -1,17 +1,20 @@
 # ---------------------------------------------------------------------------
-# doc — install pre-built HTML documentation and images
+# doc — the ndmanager handbook for Help ▸ Handbook (F1)
+#
+# The handbook is doc/ndmanager/ (README.md), the same Markdown the repository and the
+# documentation site show; the in-app viewer renders it directly.  It is
+# installed where the program's doc path points (HTML/en, a historical name).
+# The old KDE DocBook handbook under en/ is no longer built or installed.
 # ---------------------------------------------------------------------------
-file(GLOB _html "${CMAKE_CURRENT_SOURCE_DIR}/en/html/*.html")
-if(_html)
-    install(FILES ${_html}
-        DESTINATION "${CMAKE_INSTALL_DOCDIR}/HTML/en")
+set(_ns_md_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../../doc/ndmanager")
+set(_ns_md "")
+foreach(_f IN ITEMS README.md)
+    if(EXISTS "${_ns_md_dir}/${_f}")
+        list(APPEND _ns_md "${_ns_md_dir}/${_f}")
+    endif()
+endforeach()
+if(_ns_md)
+    install(FILES ${_ns_md} DESTINATION "share/doc/ndmanager/HTML/en")
+else()
+    message(STATUS "ndmanager: doc/ndmanager not found — the handbook (F1) is not installed")
 endif()
-
-file(GLOB _images "${CMAKE_CURRENT_SOURCE_DIR}/en/Images/*.png")
-if(_images)
-    install(FILES ${_images}
-        DESTINATION "${CMAKE_INSTALL_DOCDIR}/HTML/en/Images")
-endif()
-
-# doc/en/ only needed when regenerating docs from DocBook source (requires KDE4)
-# add_subdirectory(en)

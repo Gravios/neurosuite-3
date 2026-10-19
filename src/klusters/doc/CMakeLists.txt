@@ -1,38 +1,20 @@
-project(klusters-doc)
-macro (CREATE_HTML_DOC _docbook _dir )
-   get_filename_component(_input ${_docbook} ABSOLUTE)
-   get_filename_component(_base ${_input} NAME)
-   set(_ssheet "${KDE4_DATA_INSTALL_DIR}/ksgmltools2/customization/kde-chunk.xsl")
-
-   set(_htmlDoc ${CMAKE_CURRENT_SOURCE_DIR}/index.html)
-   add_custom_command(OUTPUT ${_htmlDoc}
-      COMMAND ${DOCBOOK2HTML_EXECUTABLE} --output ${CMAKE_CURRENT_SOURCE_DIR}/html/ ${_input}
-      DEPENDS ${_input} ${DOCBOOK2HTML_EXECUTABLE}
-   )
-
-   get_filename_component(_targ ${CMAKE_CURRENT_SOURCE_DIR} NAME)
-   add_custom_target(${_targ} ALL DEPENDS "${_htmlDoc}")
-
-   #install( DIRECTORY Images DESTINATION ${CMAKE_INSTALL_PREFIX}/share/doc/klusters/ )
-   #file(GLOB _html ${CMAKE_CURRENT_BINARY_DIR}/*.html)
-   #install(FILES ${_html} ${_htmlDoc} DESTINATION ${CMAKE_INSTALL_PREFIX}/share/doc/klusters/)
-   MESSAGE(STATUS "Need to add to git")
-
-endmacro (CREATE_HTML_DOC)
-
-
-
-if (KDE4_FOUND)
-find_program(DOCBOOK2HTML_EXECUTABLE NAMES docbook2html )
-if(DOCBOOK2HTML_EXECUTABLE)
-   if (REGENERATE_DOC)
-     add_subdirectory(en)
-   endif()
-endif(DOCBOOK2HTML_EXECUTABLE)
+# ---------------------------------------------------------------------------
+# doc — the klusters handbook for Help ▸ Handbook (F1)
+#
+# The handbook is doc/klusters/ (README.md cluster-sorting.md hierarchical-clustering.md), the same Markdown the repository and the
+# documentation site show; the in-app viewer renders it directly.  It is
+# installed where the program's doc path points (HTML/en, a historical name).
+# The old KDE DocBook handbook under en/ is no longer built or installed.
+# ---------------------------------------------------------------------------
+set(_ns_md_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../../doc/klusters")
+set(_ns_md "")
+foreach(_f IN ITEMS README.md cluster-sorting.md hierarchical-clustering.md)
+    if(EXISTS "${_ns_md_dir}/${_f}")
+        list(APPEND _ns_md "${_ns_md_dir}/${_f}")
+    endif()
+endforeach()
+if(_ns_md)
+    install(FILES ${_ns_md} DESTINATION "share/doc/klusters/HTML/en")
+else()
+    message(STATUS "klusters: doc/klusters not found — the handbook (F1) is not installed")
 endif()
-
-file(GLOB _html ${CMAKE_CURRENT_SOURCE_DIR}/en/html/*.html)
-install(FILES ${_html} DESTINATION share/doc/klusters/HTML/en)
-file(GLOB _image ${CMAKE_CURRENT_SOURCE_DIR}/en/Images/*.png)
-
-install(FILES ${_image} DESTINATION share/doc/klusters/HTML/en/Images)

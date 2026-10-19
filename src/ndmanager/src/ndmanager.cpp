@@ -1547,7 +1547,7 @@ void ndManager::slotAbout()
 void ndManager::slotHanbook()
 {
     QHelpViewer *helpDialog = new QHelpViewer(this);
-    helpDialog->setHtml(NDMANAGER_DOC_PATH + QLatin1String("index.html"));
+    helpDialog->setHtml(NDMANAGER_DOC_PATH + QLatin1String("README.md"));
     helpDialog->setAttribute( Qt::WA_DeleteOnClose );
     helpDialog->show();
 }

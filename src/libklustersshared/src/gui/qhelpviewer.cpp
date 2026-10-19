@@ -12,6 +12,7 @@ Modernized for Qt6 - QWebView was removed; use QTextBrowser with openExternalLin
 #include <QFile>
 #include <QFileInfo>
 #include <QPalette>
+#include <QTextDocument>
 
 QHelpViewer::QHelpViewer(QWidget *parent)
     : QDialog(parent)
@@ -47,6 +48,15 @@ QHelpViewer::~QHelpViewer() = default;
 
 void QHelpViewer::setHtml(const QString &filename, const QString &anchor)
 {
+    // A Markdown handbook (Klusters, NDManager: their README.md) is rendered by
+    // QTextBrowser itself; links to other .md files open in the viewer too.
+    if (filename.endsWith(QLatin1String(".md"), Qt::CaseInsensitive)) {
+        mView->setSearchPaths({QFileInfo(filename).absolutePath()});
+        mView->setSource(QUrl::fromLocalFile(filename), QTextDocument::MarkdownResource);
+        if (!anchor.isEmpty())
+            mView->scrollToAnchor(anchor);
+        return;
+    }
     QFile f(filename);
     if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
         // Set search path so relative links/images resolve correctly
@@ -69,14 +79,23 @@ void QHelpViewer::slotLinkClicked(const QUrl &url)
     // Resolve relative links against the handbook directory (the search path
     // set in setHtml) and navigate INSIDE the viewer; only genuinely external
     // links (http/https/mailto/…) go out to the desktop.
+    if (url.isRelative() && url.path().isEmpty() && url.hasFragment()) {
+        mView->scrollToAnchor(url.fragment());   // "#section" within this page
+        return;
+    }
     QUrl target = url;
     if (target.isRelative()) {
         const QStringList paths = mView->searchPaths();
         if (!paths.isEmpty())
             target = QUrl::fromLocalFile(paths.first() + QLatin1Char('/')).resolved(url);
     }
-    if (target.isRelative() || target.scheme() == QLatin1String("file"))
+    if (target.isRelative() || target.scheme() == QLatin1String("file")) {
+        // A page the install does not carry (e.g. a link from a README to a
+        // developer document) stays put rather than blanking the viewer.
+        if (target.isLocalFile() && !QFileInfo::exists(target.toLocalFile()))
+            return;
         mView->setSource(target);
+    }
     else
         QDesktopServices::openUrl(target);
 }
