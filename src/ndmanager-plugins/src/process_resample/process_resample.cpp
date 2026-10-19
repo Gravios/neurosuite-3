@@ -218,11 +218,13 @@ int main(int argc, char *argv[])
                 dst[f] = (float)*src / 32768.0f;
         }
 
-        // Parallel per-channel resampling
-        long long outFramesGen = 0;
+        // Parallel per-channel resampling.  Each channel records its frame
+        // count and the maximum is taken after the loop: reduction(max) is
+        // OpenMP 3.1, which MSVC's OpenMP 2.0 does not have.
+        std::vector<long long> chanFramesGen(nChannels, 0);
 
 #ifdef _OPENMP
-        #pragma omp parallel for schedule(static) reduction(max : outFramesGen)
+        #pragma omp parallel for schedule(static)
 #endif
         for (int ch = 0; ch < nChannels; ch++) {
             SRC_DATA sd;
@@ -239,9 +241,11 @@ int main(int argc, char *argv[])
                         ch, src_strerror(err));
                 exit(1);
             }
-            if ((long long)sd.output_frames_gen > outFramesGen)
-                outFramesGen = sd.output_frames_gen;
+            chanFramesGen[ch] = static_cast<long long>(sd.output_frames_gen);
         }
+        long long outFramesGen = 0;
+        for (long long g : chanFramesGen)
+            if (g > outFramesGen) outFramesGen = g;
 
         // Reinterleave: chanOut[ch][f] -> outBuf[f*nCh+ch]  (float -> int16)
         // Channel-outer: each thread reads contiguous chanOut[ch], writes
