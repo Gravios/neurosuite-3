@@ -1541,6 +1541,14 @@ programs:
       bridges the two-lobed energy of .spkD waveforms.  ≤ 0 keeps the
       bounded-argmax search.
 
+      # method
+
+      Detection method of the spike files this step reads and writes: standard
+      (default), sdiff, stderiv, or a suffixed form such as stderiv_C5.  It is
+      part of every per-group file name (SESSION.<type>.<method>.N), so it must
+      match the method of the steps before.  --method on the command line
+      overrides it.
+
   - name: ndm_spikecleaner
     parameters:
       - name: removeFlatChannels
@@ -2425,6 +2433,49 @@ programs:
       explicitly to cap total CPU use:
         threadsPerGroup * nGroups <= nAvailableCores
 
+      MORE PARAMETERS
+
+      # method
+
+      standard, sdiff or stderiv (default standard): the waveform domain the PCA
+      is fit in, stamped on the outputs (.fet.<method>.N, .pca.<method>.N).  A
+      suffix _D<lag><dims> (e.g. stderiv_C5_D34) also writes the lagged feature
+      space -- per channel PC1 at -lag, 0 and +lag samples, plus PC2 when dims is
+      4 -- beside the ordinary features.  --method on the command line overrides
+      it.
+
+      # methodOrder
+
+      Spatial derivative order, 0-3 (default 3; stderiv only).  The old name
+      sdiffOrder is accepted.  A suffixed method (stderiv_C4) states the order
+      itself and wins.  --methodOrder overrides it.
+
+      # dropLastChannel
+
+      The spatial derivative leaves one channel that is dropped before PCA (N
+      channels give N-1 feature groups).  For orders 1 and 3 it is an exact
+      combination of the others, so dropping it costs nothing; for a custom
+      pattern (stderiv_C4 / stderiv_C5) it may carry information.  true
+      (default) drops it, false keeps it.  ndm_refeaturize reads it from here
+      unless its own block sets it.
+
+      # varimax
+
+      true (default) rotates the kept components (Varimax) so each follows a
+      spike-shape source rather than a variance-ordered mixture, which makes the
+      feature axes legible for hand-sorting.  The rotation is saved in the .pca
+      basis, so Klusters' reprojection follows it.  false keeps the unrotated
+      basis.
+
+      # varimaxMaxIter
+
+      Maximum Varimax iterations (process_pca default 30).
+
+      # varimaxTol
+
+      Relative change of the Varimax criterion that counts as converged
+      (process_pca default 1e-6).
+
   - name: ndm_refeaturize
     parameters:
       - name: method
@@ -2731,6 +2782,57 @@ programs:
       before launch and unset afterwards so it does not leak to other tools.
       0 (default) = use all available cores (nproc). Set explicitly only when you
       need to leave cores free for other concurrent work.
+
+      MORE KILOKLUSTAKWIK OPTIONS
+
+      Passed to KiloKlustaKwik as the option of the same name with a capital
+      first letter (subspaceDims -> -SubspaceDims).  The default in brackets is
+      what this script passes when the parameter is unset.
+
+      # method
+
+      Detection method of the files to cluster: reads .fet.<method>.N and writes
+      .clu.<method>.N (default standard).  It must match the method of
+      ndm_detectspikes / ndm_extractspikes / ndm_pca.  --method on the command
+      line overrides it.
+
+      # subspaceDims
+
+      Phase 2a/2b run on the top N spatial features, ranked by within-cluster or
+      within-chunk variance (default 3); 0 uses every feature dimension.
+
+      # subspaceRecluster
+
+      1 (default) re-clusters each cluster in its own feature subspace after
+      Phase 2; 0 skips it.
+
+      # templateMatchScore
+
+      Minimum waveform cross-correlation for merging two clusters of one chunk by
+      their templates (default 0.0 = off).
+
+      # templateMatchIters
+
+      Maximum within-chunk template-merge iterations (default 10).
+
+      # crossChunkTemplateScore
+
+      Minimum waveform cross-correlation for matching clusters across chunks by
+      their templates (default 0.0 = off).
+
+      # splitRecurseDepth
+
+      Maximum recursion depth of the split search (default 0).
+
+      # phase15Iters
+
+      Passed as -Phase15Iters (default 2), an option KiloKlustaKwik does not
+      read: it has no effect.
+
+      # subspaceReclusterDepth
+
+      Passed as -SubspaceReclusterDepth (default 2), an option KiloKlustaKwik
+      does not read: it has no effect.
 
 
   - name: ndm_autoklusta
@@ -3205,6 +3307,12 @@ programs:
 
       KlustaKwik merge parameters (defaults 35 / 30 / 35).
 
+      # method
+
+      Detection method of the files the drift-adaptive re-clustering reads
+      (.fet.<method>.N) and writes (default standard); it must match the method
+      the session was sorted with.
+
   - name: ndm_drifttracker
     parameters:
       - name: windowMin
@@ -3375,6 +3483,14 @@ programs:
       Requires CuPy or equivalent.  Falls back to CPU if no compatible GPU is detected.
       For typical session sizes the CPU path is fast enough; GPU mainly helps with
       very large sessions (>10M spikes) and dense probes.
+
+      # method
+
+      Detection method of the spike files this step reads and writes: standard
+      (default), sdiff, stderiv, or a suffixed form such as stderiv_C5.  It is
+      part of every per-group file name (SESSION.<type>.<method>.N), so it must
+      match the method of the steps before.  --method on the command line
+      overrides it.
 
   # == Post-sorting analysis (continued) ========================================
   - name: ndm_localise
