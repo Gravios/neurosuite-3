@@ -79,11 +79,19 @@ if(_CUDA_ACTIVE)
     message(STATUS "  CUDA toolkit       : ${CUDAToolkit_VERSION}")
 else()
     # Symlink/alias so the shell script can call "process_decomposecollisions"
-    # and get the CPU build on machines without CUDA.
-    install(CODE "
-        execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
-            process_decomposecollisions_cpu
-            \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/process_decomposecollisions\")
-    ")
+    # and get the CPU build on machines without CUDA.  Windows: a copy, since
+    # a symbolic link needs Developer Mode or administrator rights there, and
+    # the name needs its .exe.
+    if(WIN32)
+        install(PROGRAMS $<TARGET_FILE:process_decomposecollisions_cpu>
+            DESTINATION "${CMAKE_INSTALL_BINDIR}"
+            RENAME "process_decomposecollisions${CMAKE_EXECUTABLE_SUFFIX}")
+    else()
+        install(CODE "
+            execute_process(COMMAND \${CMAKE_COMMAND} -E create_symlink
+                process_decomposecollisions_cpu
+                \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/process_decomposecollisions\")
+        ")
+    endif()
     message(STATUS "process_decomposecollisions: CPU-only build; GPU binary not created")
 endif()
