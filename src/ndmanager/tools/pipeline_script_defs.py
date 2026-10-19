@@ -16,7 +16,8 @@ parametercatalog.inc is the parameter catalog the Plugins pages offer when a
 parameter is added: every parameter of every program block of the template,
 the commented-out ones included, with the template's value and status, whether
 the template sets it (or only mentions it, commented out), and its section of
-the block's help text (`# name`, up to the next heading).
+the block's help text (`# name`, up to the next heading; for the blocks in
+HELP_FROM, another block's section when it has none).
 
 Plugins that are aliases of others (ndm_extractspikes_sdiff /
 _stderiv, ndm_pca_stderiv) stay placeable so existing pipelines load, but
@@ -261,7 +262,8 @@ def help_sections(text: str) -> dict[str, str]:
         m = HELP_HEADING.match(ln)
         if m and not ln.startswith("# -"):
             flush()
-            names = [n for n in re.split(r"\s*[/,]\s*", m.group(1))
+            heading = m.group(1).split(":")[0]     # "# mergeThresh: 30.0 (vs 42.0 ...)"
+            names = [n for n in re.split(r"\s*[/,]\s*", heading)
                      if re.fullmatch(r"[A-Za-z][\w.]*", n)]
             body = []
         elif HELP_CAPS.match(ln.strip()) and ln == ln.lstrip():
@@ -271,6 +273,14 @@ def help_sections(text: str) -> dict[str, str]:
             body.append(ln)
     flush()
     return out
+
+
+# Blocks whose parameters are another block's, passed on: a parameter with
+# no section of its own takes that block's section.
+HELP_FROM = {
+    # read_kk_param -b: the sub-clustering's KiloKlustaKwik options
+    "ndm_subcluster_unmatched": ("ndm_klustakwik", "As for ndm_klustakwik, for the sub-clustering: "),
+}
 
 
 def render_catalog() -> str:
@@ -284,6 +294,10 @@ def render_catalog() -> str:
     ]
     for prog in sorted(tpl):
         sections = help_sections(helps.get(prog, ""))
+        if prog in HELP_FROM:
+            other, prefix = HELP_FROM[prog]
+            for name, text in help_sections(helps.get(other, "")).items():
+                sections.setdefault(name, prefix + text)
         for name, value, status, commented in tpl[prog]:
             rows.append(f"{{ {_c(prog)}, {_c(name)}, {_c(value)}, {_c(status)}, "
                         f"{'false' if commented else 'true'},")
