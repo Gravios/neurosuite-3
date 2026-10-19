@@ -11,8 +11,9 @@
 [8. Tests](#8-tests) ·
 [9. Known issues](#9-known-issues)
 
-This page is written from the sources under `src/libklustersshared/`. Where it
-cites a line number it is `file:line` in the current tree. It does not repeat
+This page is written from the sources under `src/libklustersshared/`. A
+`file:line` citation was right when written; if the code has moved, search
+for the function it names. It does not repeat
 three existing references; it summarises and links them:
 
 | Topic | Reference |
@@ -38,9 +39,9 @@ Qt-free tools compile directly (`sdiff_pairs.h`, `progressbar.*`).
 | Consumer | How | Evidence |
 |---|---|---|
 | klusters | links `KlustersShared::klustersshared` | `src/klusters/src/CMakeLists.txt` (`target_link_libraries(klusters PRIVATE KlustersShared::klustersshared …)`) |
-| neuroscope | links `KlustersShared::klustersshared` | `src/neuroscope/src/CMakeLists.txt:68` |
-| ndmanager | links `KlustersShared::klustersshared` | `src/ndmanager/src/CMakeLists.txt:80` |
-| kiloklustakwik | compiles `src/xcorr/*` into its own executables (`_xcorr_dir`) | `src/kiloklustakwik/CMakeLists.txt:167` |
+| neuroscope | links `KlustersShared::klustersshared` | `src/neuroscope/src/CMakeLists.txt` |
+| ndmanager | links `KlustersShared::klustersshared` | `src/ndmanager/src/CMakeLists.txt` |
+| kiloklustakwik | compiles `src/xcorr/*` into its own executables (`_xcorr_dir`) | `src/kiloklustakwik/CMakeLists.txt` |
 | ndmanager-plugins | include path only: `sdiff_pairs.h`, `customtypes.h`; compiles `progressbar.cpp` | e.g. `src/ndmanager-plugins/src/process_nlxconvert/CMakeLists.txt` |
 
 Each GUI app guards its lookup with `if(NOT TARGET KlustersShared::klustersshared)`
@@ -58,7 +59,7 @@ for the three apps as a redundant build-order edge.
 | `src/gui/`, `src/gui/page/` | yes | `DockArea`, `QExtendTabWidget`, `QHelpViewer`, `QRecentFileAction`, `QColorButton`, `KlusterRubberBand`; paged dialog framework; icons and cursors (`.qrc`) |
 | `src/xcorr/` | **no** | realign kernel: OpenMP, CUDA, HIP and SYCL back ends plus a runtime dispatcher |
 | `src/HTML/en/common/`, `src/images/` | **no** | KDE handbook chrome (CSS, logos, licence pages) and `note.gif`. Nothing in any `CMakeLists.txt` or `.qrc` references them (see §9) |
-| `test/` | partly | two ctest programs plus an unbuilt legacy demo (§8) |
+| `test/` | no | ten ctest programs (each compiles or links what it tests) plus an unbuilt legacy demo (§8) |
 
 The embedded resources are `src/gui/libklustersshared-icons.qrc` (prefix
 `/shared-icons`: document/dialog/edit icons, `folder-open`, `configure`,
@@ -304,8 +305,10 @@ the mean resultant length `R < rMin` (energy split into two lobes); `R` and
 
 ### 4.5 Dispatch, GPU selection and threading
 
-`XcorrDispatch::compute` detects the back end on its first call and caches it
-in two file-static variables (`realign_xcorr_dispatch.cpp:67-68`). Probe order:
+`XcorrDispatch::compute` detects the back end on its first call and holds it
+in a function-local `static std::atomic` (`backendState()` in
+`realign_xcorr_dispatch.cpp`), so detection runs exactly once even when the
+first calls come from several threads. Probe order:
 
 1. CUDA, if compiled in and `cudaGetDeviceCount() > 0`;
 2. HIP, if compiled in and `hipGetDeviceCount() > 0`;
@@ -317,11 +320,13 @@ in two file-static variables (`realign_xcorr_dispatch.cpp:67-68`). Probe order:
 
 The chosen back end is printed once to stdout as `[realign] xcorr backend: …`.
 
-If a GPU call returns non-zero, the dispatcher prints a message, runs the same
-call on the OpenMP path, and **permanently** switches the process to OpenMP.
-Conditions that make a GPU call fail include `2·maxShift + 1 > 1024` (one
-thread block per spike holds every lag; CUDA/HIP reject `maxShift > 511`), any
-allocation failure, and a launch error.
+If a GPU call returns non-zero, the dispatcher runs the same call on the
+OpenMP path and **permanently** switches the process to OpenMP. The switch is
+an atomic compare-exchange, and only the thread that makes it prints the
+message. Failures include any allocation failure and a launch error. A call
+whose `2·maxShift + 1 > 1024` (one CUDA/HIP thread block per spike holds every
+lag, so `maxShift > 511`) is not a failure: on CUDA/HIP that call runs on
+OpenMP and the GPU stays in use for later calls.
 
 Device choice: CUDA and HIP use the runtime's default device (no
 `cudaSetDevice`); SYCL uses `gpu_selector_v`. Steer them with
@@ -336,10 +341,9 @@ Threading:
   the serial realign lane so only one realignment touches the pending
   `.spk/.res/.fet` at a time — see
   [CONCURRENCY.md §7.2](../../klusters/docs/CONCURRENCY.md#72-realignworker--realignjob--the-serialized-realign-pipeline).
-- The dispatcher's cached state is not synchronised. KiloKlustaKwik calls
-  `XcorrDispatch::compute` from inside an OpenMP parallel loop
-  (`KK_templatematch.cpp:314`, calls at `:381` and `:400`), so first-call
-  detection and the failure demotion can race there (§9).
+- KiloKlustaKwik calls `XcorrDispatch::compute` from inside an OpenMP
+  parallel loop (`KK_templatematch.cpp`); the atomic back-end state above
+  makes that safe (§9 item 10, `klustersshared_xcorr_dispatch_test`).
 
 ### 4.6 Callers
 
@@ -556,9 +560,10 @@ Namespace `neurosuite`. `enum class Theme { System, Light, Dark }`.
 | `systemIsDark()`, `isDark(Theme)` | Qt ≥ 6.5: `QStyleHints::colorScheme()`; older: luminance of the startup window colour |
 | `themeToString`, `themeFromString`, `themeDisplayName` | token conversion (unknown → `System`), translated labels |
 
-Callers: each app's `main.cpp` calls `initThemeFromSettings()`; each app's
-preferences (ndmanager: `ndmanager.cpp:234`) calls `saveThemePreference` and
-`applyTheme`.
+Callers: each app's `main.cpp` calls `initThemeFromSettings()`; Klusters'
+and NeuroScope's Preferences dialogs (`prefdialog.cpp`) and ndmanager's
+**Settings ▸ Theme** submenu (`ndmanager.cpp`, `setupActions()`) call
+`saveThemePreference` and `applyTheme`.
 
 ### 7.3 Colour containers
 
@@ -569,7 +574,8 @@ preferences (ndmanager: `ndmanager.cpp:234`) calls `saveThemePreference` and
 | `ChannelColorEntry` (`channelcolorentry.h`) | value type with the same three colours plus id, used by the YAML reader/writer; ndmanager aliases its own `ChannelColors` to it (`src/ndmanager/src/channelcolors.h:22`) | ndmanager, neuroscope |
 
 Both list classes own their entries through raw pointers (`QList<T*>`) and
-define a deep-copy constructor but no copy assignment (§9).
+define a deep-copy constructor and a deep-copy `operator=` (§9 item 25,
+`klustersshared_colors_test`).
 
 ### 7.4 Small types and helpers
 
@@ -595,9 +601,18 @@ Registered in `src/libklustersshared/CMakeLists.txt` under `if(NS_BUILD_TESTS)`:
 |---|---|---|---|
 | `klustersshared_theme_test` | `test/theme_test.cpp` | token round-trip, light/dark palettes (luminance and contrast of window, text, disabled, highlight), `currentTheme`, preference save/load | `QT_QPA_PLATFORM=offscreen`, `XDG_CONFIG_HOME=<build>/themecfg` so the user's settings are not touched |
 | `klustersshared_yamlmodifier_test` | `test/yamlmodifier_test.cpp` | `ParameterYamlModifier` round trip as NeuroScope's save does it: unknown and tool-owned keys (`sdiffPairs`, `probeId`, `shankIndex`, `channelMapping`, …) survive, keys follow channels not positions, trash group not written, per-channel keys and `files:` entries kept | none |
+| `klustersshared_yamlwriter_test` | `test/yamlwriter_test.cpp` | `ParameterYamlWriter` over a base document as ndmanager saves: per-group keys, extra acquisition keys and unmodelled blocks (`sourceRecording`) survive | none |
+| `klustersshared_yamlformat_test` | `test/yamlformat_test.cpp` + `yamlformat.cpp` | `emitWithLayout` keeps comments, inline lists, quoting and spacing; round trips over the repository's templates | the repository root as argument |
+| `klustersshared_sessiontemplate_test` | `test/sessiontemplate_test.cpp` + `sessiontemplate.cpp` | session-template sections, export and apply | none |
+| `klustersshared_colors_test` | `test/colors_test.cpp` | `ItemColors` / `ChannelColors` copies (construction and assignment) are deep | none |
+| `klustersshared_sdiff_pairs_test` | `test/sdiff_pairs_test.cpp` | the `sdiffPairs` grammar (`sdiff_pairs.h`): trees, sets, strict positions; malformed patterns rejected | the shared grammar vectors in `libneurosuite-core/test/` |
+| `klustersshared_unitsidecar_test` | `test/unitsidecar_test.cpp` | the per-clustering cluster-information file (`unitsidecar.h`) | none |
+| `klustersshared_xcorr_dispatch_test` | `test/xcorr_dispatch_test.cpp` + dispatcher and OpenMP kernel | `XcorrDispatch` under concurrent calls with a fake CUDA back end: one probe, atomic demotion, wide shifts on OpenMP | none (no GPU needed) |
+| `klustersshared_realign_kernels_test` | `test/realign_kernels_test.cpp` + OpenMP kernel and `realign_center.cpp` | zero-energy spikes and templates, lag ties, `perSpikeCentroidShifts` | none |
 
-Both are standalone programs with their own `main()` and a `chk(cond, msg)`
-helper that prints `PASS`/`FAIL` and returns non-zero on any failure.
+Each is a standalone program with its own `main()` and a
+small check helper that reports failures and returns non-zero if any check
+failed.
 
 `test/main.cpp`, `listview.*`, `mainview.*`, `scrollarea.*`, `itemgroupview.*`
 and `test/CMakeLists.txt` are a legacy `test_scrollview` demo. No CMake file
@@ -611,9 +626,8 @@ Library code tested from elsewhere:
 | `kk_test_klusters_realign` (`src/kiloklustakwik/test/`) | `realign_xcorr_omp.cpp`, `realign_xcorr_dispatch.cpp`, `realign_center.cpp` through `klusters_realign.cpp` |
 | `build_invariants` (`tests/`) | `cmake_minimum_required` of `src/libklustersshared/CMakeLists.txt` |
 
-Not covered by any test: `sdiff_pairs.h`, `realign_center` directly, the GPU
-xcorr back ends, the page framework and widgets, `ItemColors`/`ChannelColors`,
-`Array`, `Utilities`, `ZoomWindow`, `ProgressBar`.
+Not covered by any test: the real GPU xcorr back ends, the page framework and
+widgets, `Array`, `Utilities`, `ZoomWindow`, `ProgressBar`.
 
 ### 8.2 Running
 
@@ -628,8 +642,8 @@ See [BUILD.md §6](../../../doc/BUILD.md#6-tests).
 
 ### 8.3 Recipe: add a test
 
-1. Create `test/<topic>_test.cpp` with its own `main()` and the same `chk()`
-   helper; return `fails ? 1 : 0`.
+1. Create `test/<topic>_test.cpp` with its own `main()` and a check helper
+   copied from an existing test; return `fails ? 1 : 0`.
 2. In `src/libklustersshared/CMakeLists.txt`, inside `if(NS_BUILD_TESTS)`:
 
    ```cmake
@@ -840,7 +854,8 @@ corrected; the text describes the problem as it was.
 
 **Other documentation**
 
-32. [doc/libklustersshared/README.md](../../../doc/libklustersshared/README.md)
+32. **Fixed:** the README's dependencies and build order now match the build.
+    Was: [doc/libklustersshared/README.md](../../../doc/libklustersshared/README.md)
     lists Qt6 Xml as a dependency (not required), omits libneurosuite-core and
     neuroscope from "Build order", and says the library "must be installed
     before" the apps, which the monorepo build does not require.
