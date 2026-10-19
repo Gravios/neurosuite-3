@@ -2,7 +2,7 @@
 # /////////////////////////////////////////////////////////////////////////////
 # //  KlustaKwikRefine
 # //
-# //  Ergonomic wrapper around `KlustaKwik -RefineExisting` for curating an
+# //  Ergonomic wrapper around `KiloKlustaKwik -RefineExisting` for curating an
 # //  existing .clu file using the centroids and per-cluster covariances of
 # //  that .clu as Gaussian models.  Three sub-phases run in sequence:
 # //
@@ -14,7 +14,11 @@
 # //
 # //  Auto-detection
 # //
-# //    - Seed .clu          : <session>.clu.<group>            (must exist)
+# //    - Seed .clu          : <session>.clu.<method>.<group>   (must exist;
+# //                                                             also where
+# //                                                             KiloKlustaKwik
+# //                                                             -Method <method>
+# //                                                             writes the result)
 # //    - Drift chunks       : <session>.chunks.<group>         (optional;
 # //                                                             enables the
 # //                                                             drift-aware
@@ -27,7 +31,7 @@
 # //
 # //  Idempotence
 # //
-# //    The seed .clu.<group> is backed up to .clu.<group>.bak-refine on
+# //    The seed .clu.<method>.<group> is backed up to .bak-refine on
 # //    first run; refusal-to-clobber on subsequent runs unless --force is
 # //    passed.  Remove the .bak-refine to force a fresh refinement on the
 # //    current .clu.
@@ -35,6 +39,7 @@
 # //  Usage
 # //
 # //    KlustaKwikRefine <session> <electrodeGroup>
+# //                     [--method M]                         (default: standard)
 # //                     [--mode reassign|split|merge|full]   (default: full)
 # //                     [--iters N]                          (default: 5)
 # //                     [--mergethresh F]                    (default: auto-χ²)
@@ -47,7 +52,7 @@
 # //                     [--dry-run]                          (print cmd, exit)
 # //                     [-- <extra-KK-flags...>]             (forwarded raw)
 # //
-# //  Extra flags after `--` are forwarded verbatim to the KlustaKwik binary,
+# //  Extra flags after `--` are forwarded verbatim to the KiloKlustaKwik binary,
 # //  so anything KKE accepts works (e.g. `-Verbose 2 -Log 1`).
 # /////////////////////////////////////////////////////////////////////////////
 
@@ -63,6 +68,7 @@ usage()
 
 # ─── arg parsing ─────────────────────────────────────────────────────────────
 positional=()
+method=standard
 mode=full
 iters=5
 mergethresh=0          # 0 => let the binary auto-calibrate
@@ -77,6 +83,7 @@ extra_args=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)         usage 0 ;;
+        --method)          method=$2;      shift 2 ;;
         --mode)            mode=$2;        shift 2 ;;
         --iters)           iters=$2;       shift 2 ;;
         --mergethresh)     mergethresh=$2; shift 2 ;;
@@ -112,9 +119,16 @@ case "$mode" in
 esac
 
 # ─── input validation ────────────────────────────────────────────────────────
-clu_path="$session.clu.$group"
+# KiloKlustaKwik -Method <method> reads <session>.fet.<method>.<group> and
+# writes <session>.clu.<method>.<group>, so the seed is taken from that same
+# name: the refined result replaces it.
+clu_path="$session.clu.$method.$group"
 if [[ ! -f "$clu_path" ]]; then
     echo "$SCRIPT_NAME: $clu_path not found — nothing to refine" >&2
+    if [[ -f "$session.clu.$group" ]]; then
+        echo "  ($session.clu.$group exists: an untagged name from an older pipeline;" >&2
+        echo "   KiloKlustaKwik writes $clu_path, so rename it to that)" >&2
+    fi
     exit 1
 fi
 
@@ -147,26 +161,24 @@ if [[ $dry_run -eq 0 ]]; then
 fi
 
 # ─── pick the binary ─────────────────────────────────────────────────────────
-# Prefer the GPU build when present (KiloKlustaKwik), falling back to the CPU
-# build (KiloKlustaKwik_cpu) — same selection rule as the regular ndmanager-
-# plugins KlustaKwik invocation in ndm_klustakwik.
+# KiloKlustaKwik is the installed name of whichever backend was built; the
+# CPU reference build is always installed as KiloKlustaKwik_cpu too.
 if command -v KiloKlustaKwik >/dev/null 2>&1; then
     KK_BIN=KiloKlustaKwik
 elif command -v KiloKlustaKwik_cpu >/dev/null 2>&1; then
     KK_BIN=KiloKlustaKwik_cpu
-elif command -v KlustaKwik >/dev/null 2>&1; then
-    KK_BIN=KlustaKwik
 else
-    echo "$SCRIPT_NAME: no KlustaKwik binary on PATH" >&2
+    echo "$SCRIPT_NAME: no KiloKlustaKwik binary on PATH" >&2
     exit 1
 fi
 
 # ─── construct the call ──────────────────────────────────────────────────────
-# RefineExisting takes the seed .clu path; the binary will write its output
-# back to <session>.clu.<group> (the canonical output path), which is why we
-# backed it up as .bak-refine above.  ChunkFile, when present, drives the
+# RefineExisting takes the seed .clu path; the binary writes its output to
+# <session>.clu.<method>.<group>, the seed's own name, which is why we backed
+# it up as .bak-refine above.  ChunkFile, when present, drives the
 # drift-aware temporal-overlap gate inside RefineExistingClustering's Phase C.
 cmd=("$KK_BIN" "$session" "$group"
+     -Method            "$method"
      -RefineExisting    "$clu_path"
      -RefineMode        "$mode"
      -RefineIters       "$iters"
@@ -190,7 +202,7 @@ if [[ $dry_run -eq 1 ]]; then
     exit 0
 fi
 
-echo "$SCRIPT_NAME: $session group $group — mode=$mode${chunks:+ (drift-aware)}"
+echo "$SCRIPT_NAME: $session group $group — method=$method mode=$mode${chunks:+ (drift-aware)}"
 echo "  seed:    $clu_path  (backed up to $bak_path)"
 echo "  binary:  $KK_BIN"
 echo
@@ -199,7 +211,7 @@ echo
 status=$?
 
 if [[ $status -ne 0 ]]; then
-    echo "$SCRIPT_NAME: KlustaKwik returned $status; restoring $clu_path from backup"
+    echo "$SCRIPT_NAME: KiloKlustaKwik returned $status; restoring $clu_path from backup"
     cp -f "$bak_path" "$clu_path"
     exit $status
 fi

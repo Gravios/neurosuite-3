@@ -273,11 +273,12 @@ capture.
 | `-RefineLockNoiseClu N` | `1` | Never modify clusters 0 and 1 |
 
 The `KlustaKwikRefine` script (installed with the binary) wraps
-`-RefineExisting`: `KlustaKwikRefine <session> <group> [--mode …] [--iters N]
-[--chunks PATH] [--dry-run] [-- extra KK flags]`. It backs up the seed to
-`.bak-refine` and picks up `<session>.chunks.<group>` automatically. Run it
-with no arguments for the full usage. Note that it looks for the seed under
-the untagged name `<session>.clu.<group>`.
+`-RefineExisting`: `KlustaKwikRefine <session> <group> [--method M] [--mode …]
+[--iters N] [--chunks PATH] [--dry-run] [-- extra KK flags]`. The seed is
+`<session>.clu.<method>.<group>` (method default `standard`), the file
+KiloKlustaKwik `-Method <method>` writes the result to; the wrapper backs it up
+to `.bak-refine` first and picks up `<session>.chunks.<group>` automatically.
+Run it with no arguments for the full usage.
 
 ---
 
