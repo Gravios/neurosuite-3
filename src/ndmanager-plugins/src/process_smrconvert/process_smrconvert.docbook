@@ -39,6 +39,9 @@
 		<arg>
 			<option>-v</option>
 		</arg>
+		<arg>
+			<option>-h</option>
+		</arg>
 		<arg choice="plain">
 			<replaceable>input</replaceable>
 		</arg>
@@ -80,7 +83,7 @@
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><option>-c</option> <replaceable>channels</replaceable></term>
+				<term><option>-c</option>, <option>--channels</option> <replaceable>channels</replaceable></term>
 				<listitem>
 					<para>
 						convert only listed ADC channels, e.g. 1,8,10,12 (incompatible with '-x' option)
@@ -88,7 +91,7 @@
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><option>-x</option> <replaceable>channels</replaceable></term>
+				<term><option>-x</option>, <option>--exclude</option> <replaceable>channels</replaceable></term>
 				<listitem>
 					<para>
 						do not convert listed ADC channels, e.g. 1,8,10,12 (incompatible with '-c' option)
@@ -120,10 +123,18 @@
 				</listitem>
 			</varlistentry>
 			<varlistentry>
-				<term><option>-v</option></term>
+				<term><option>-v</option>, <option>--verbose</option></term>
 				<listitem>
 					<para>
 						verbose mode, displays progress information
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-h</option>, <option>--help</option></term>
+				<listitem>
+					<para>
+						display options
 					</para>
 				</listitem>
 			</varlistentry>

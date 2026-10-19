@@ -155,7 +155,7 @@
 				<term><option>-g</option>, <option>--gap</option> <replaceable>dt</replaceable></term>
 				<listitem>
 					<para>
-						a data record is considered to match an 'acquisition restart' event if it is close in time and follows a sampling gap exceeding this threshold (in seconds, default = 1)
+						a data record is considered to match an 'acquisition restart' event if it is close in time and follows a sampling gap exceeding this threshold (whole seconds, read as an integer, default = 1)
 					</para>
 				</listitem>
 			</varlistentry>

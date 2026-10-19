@@ -35,6 +35,8 @@
 		<arg><option>--no-emg-trace</option></arg>
 		<arg><option>--no-waveforms</option></arg>
 		<arg><option>-v</option></arg>
+		<arg><option>-V</option></arg>
+		<arg><option>-h</option></arg>
 		<arg choice="plain"><replaceable>basename</replaceable></arg>
 		</cmdsynopsis>
 	</refsynopsisdiv>
@@ -321,6 +323,14 @@
 				<term><option>-v</option></term>
 				<listitem><para>Verbose progress output.</para></listitem>
 			</varlistentry>
+			<varlistentry>
+				<term><option>-V</option>, <option>--version</option></term>
+				<listitem><para>Print the program version and exit.</para></listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-h</option>, <option>--help</option></term>
+				<listitem><para>Print help and exit.</para></listitem>
+			</varlistentry>
 		</variablelist>
 	</refsect1>
 
@@ -453,8 +463,8 @@
 					1) — cuBLAS <literal>dgemv</literal> for the two
 					gemvs, custom kernel for the elementwise cube,
 					cuBLAS <literal>daxpy</literal> for the
-					<literal>−3·w</literal> term.  Build with
-					<literal>cmake -DUSE_CUDA=ON</literal>.
+					<literal>−3·w</literal> term.  CMake option
+					<literal>USE_CUDA</literal>.
 				</para>
 			</listitem>
 			<listitem>
@@ -462,8 +472,8 @@
 					<emphasis>HIP</emphasis> (AMD ROCm, priority 2) —
 					rocBLAS <literal>rocblas_dgemv</literal> +
 					<literal>rocblas_daxpy</literal>, hipLaunchKernelGGL
-					for the cube.  Build with
-					<literal>cmake -DUSE_HIP=ON</literal>.
+					for the cube.  CMake option
+					<literal>USE_HIP</literal>.
 				</para>
 			</listitem>
 			<listitem>
@@ -471,11 +481,18 @@
 					<emphasis>SYCL</emphasis> (Intel oneAPI, priority 3)
 					— oneMKL <literal>column_major::gemv</literal> +
 					<literal>axpy</literal>, sycl::parallel_for for
-					the cube.  Build with
-					<literal>cmake -DUSE_SYCL=ON</literal>.
+					the cube.  CMake option
+					<literal>USE_SYCL</literal>.
 				</para>
 			</listitem>
 		</itemizedlist>
+		<para>
+			The three options default to <literal>ON</literal> and are
+			auto-detected: the first backend whose toolkit is found is built
+			(CUDA, then HIP, then SYCL), and the CPU path is always built.  Set an option to
+			<literal>OFF</literal> to leave a backend out; see
+			<filename>doc/BUILD.md</filename>.
+		</para>
 		<para>
 			Selection at runtime via <option>--backend</option>; the
 			default <literal>auto</literal> picks the first available.

@@ -73,17 +73,21 @@
 			<varlistentry><term><option>-g</option> <replaceable>groups</replaceable></term>
 				<listitem><para>Comma-separated 1-based group indices (default: all groups present in the model).</para></listitem></varlistentry>
 			<varlistentry><term><option>-r</option> <replaceable>refractorySamples</replaceable></term>
-				<listitem><para>Reject any move that would place a spike within this many samples of an existing spike in the target unit (0 disables).</para></listitem></varlistentry>
+				<listitem><para>Reject any move that would place a spike within this many samples of an existing spike in the target unit (default 0, which disables the check).</para></listitem></varlistentry>
 			<varlistentry><term><option>-a</option> <replaceable>amplitudePercentile</replaceable></term>
 				<listitem><para>Only contest spikes below this within-unit amplitude percentile (default 50).</para></listitem></varlistentry>
 			<varlistentry><term><option>-k</option> <replaceable>priorWeight</replaceable></term>
-				<listitem><para>Weight of the curated-label prior; larger values bias toward leaving spikes where curation placed them.</para></listitem></varlistentry>
+				<listitem><para>Weight of the curated-label prior; larger values bias toward leaving spikes where curation placed them (default 1.0).</para></listitem></varlistentry>
 			<varlistentry><term><option>-M</option> <replaceable>scoreMargin</replaceable></term>
-				<listitem><para>Minimum score gain required before a spike is moved (hysteresis against churn).</para></listitem></varlistentry>
+				<listitem><para>Minimum score gain required before a spike is moved (hysteresis against churn; default 0.0).</para></listitem></varlistentry>
 			<varlistentry><term><option>-o</option> <replaceable>outSuffix</replaceable></term>
 				<listitem><para>Output stem suffix (default <literal>-reassigned</literal>).</para></listitem></varlistentry>
 			<varlistentry><term><option>--commit</option></term>
 				<listitem><para>Write the reassigned <filename>.clu.N</filename> (otherwise dry-run, log only).</para></listitem></varlistentry>
+			<varlistentry><term><option>-v</option></term>
+				<listitem><para>Verbose output.</para></listitem></varlistentry>
+			<varlistentry><term><option>-h</option>, <option>--help</option></term>
+				<listitem><para>Print help and exit.</para></listitem></varlistentry>
 		</variablelist>
 	</refsect1>
 
@@ -91,8 +95,8 @@
 		<title>SEE ALSO</title>
 		<para>
 			<citerefentry><refentrytitle>process_shadowcluster</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
-			<citerefentry><refentrytitle>process_decomposecollisions</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
-			<citerefentry><refentrytitle>process_spikecleaner</refentrytitle><manvolnum>1</manvolnum></citerefentry>
+			<citerefentry><refentrytitle>ndm_decomposecollisions</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<command>adaptmodel.py</command>
 		</para>
 	</refsect1>
 
