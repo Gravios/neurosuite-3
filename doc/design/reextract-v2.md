@@ -1,7 +1,14 @@
 # ndm_reextractspikes{,_stderiv} + ndmanager — drop-in patch (2026-04-21 rev 3)
 
 
-> *Historical design record. Describes the retired `.spkD` / `.fetD` / `.pcaD` naming; the current scheme is the [variant convention](../ndmanager-plugins/formats/naming.md).*
+> **Status (2026-10): historical design record.** It describes the retired
+> `.spkD` / `.fetD` / `.pcaD` naming; the current scheme is the
+> [variant convention](../ndmanager-plugins/formats/naming.md). Other parts are
+> out of date too: the `ndm_reextractspikes_stderiv` script is gone
+> (`ndm_reextractspikes` selects the engine with its `method` parameter); the
+> Klusters "Autoscale margin" preference is on the Display tab
+> (`prefdisplaylayout.ui`), not General; and the install recipe (rev 11) is
+> obsolete — see [`doc/INSTALL.md`](../INSTALL.md).
 
 Three related changes:
 
