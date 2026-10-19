@@ -299,3 +299,10 @@ target_compile_features(core_test_mappedfile PRIVATE cxx_std_20)
 target_include_directories(core_test_mappedfile PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 target_link_libraries(core_test_mappedfile PRIVATE Neurosuite::core)
 add_test(NAME core_test_mappedfile COMMAND core_test_mappedfile)
+
+# fileops.hpp: replacing a file (also over an existing one, which std::rename
+# refuses on Windows), flushing to disk, the process id.  Header-only.
+add_executable(core_test_fileops fileops_test.cpp)
+target_compile_features(core_test_fileops PRIVATE cxx_std_20)
+target_include_directories(core_test_fileops PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_fileops COMMAND core_test_fileops)
