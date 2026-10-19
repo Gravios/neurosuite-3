@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [NDManager: Add offers the parameters a plugin reads](#2026-10-19--ndmanager-add-offers-the-parameters-a-plugin-reads) |
 | 2026-10-19 | [Docs: every page checked against the code; current in-app handbooks; the site covers all documentation](#2026-10-19--docs-every-page-checked-against-the-code-current-in-app-handbooks-the-site-covers-all-documentation) |
 | 2026-10-19 | [Docs: one installation guide for every platform](#2026-10-19--docs-one-installation-guide-for-every-platform) |
 | 2026-10-19 | [Windows: OpenMP code that MSVC accepts; the CI build gets further](#2026-10-19--windows-openmp-code-that-msvc-accepts-the-ci-build-gets-further) |
@@ -86,6 +87,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — NDManager: Add offers the parameters a plugin reads
+
+<details>
+<summary>Details</summary>
+
+- **Add** on a plugin's page (expert mode) opened an empty row, so a
+  parameter could only be added by knowing its name; the ones the template
+  leaves commented out (e.g. `ndm_hipass` `lowPassHz`, `order`, `precision`)
+  were not visible anywhere in NDManager. It now opens a list of the
+  parameters the plugin reads that the page does not show, from the catalog
+  generated from `templates/template.yaml`, with the template's value and the
+  parameter's help; several can be added at once. A commented-out parameter is
+  added empty (the plugin's default): its commented value can be an example
+  (`lowPassHz` 6000, where the default is 0). **Other Name…** keeps the empty
+  row; plugins the template does not describe get it directly.
+- Hovering over a parameter's name shows its part of the plugin's help.
+
+</details>
 
 ## 2026-10-19 — Docs: every page checked against the code; current in-app handbooks; the site covers all documentation
 

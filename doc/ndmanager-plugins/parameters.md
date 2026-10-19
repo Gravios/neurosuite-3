@@ -130,6 +130,8 @@ ndmanager edits the same file: the **Plugins** tab shows each `programs:`
 block with its help, and the **Pipeline** tab places steps in a graph saved
 as `SESSION.ndm.<name>.pipeline`, which [`ndm_start`](commands/ndm_start.md)
 runs. A step dropped onto the graph starts with the template's parameters.
+On a step's page, **Add** (expert mode) offers the template's parameters the
+page does not list, the commented-out ones included, with their help.
 See [the ndmanager guide](../ndmanager/README.md#pipeline-tab--editable-node-graph).
 
 ---

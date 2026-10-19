@@ -164,10 +164,18 @@ does not match is still added, with the details on the console.
 
 The parameter table edits like a spreadsheet: double-click a cell, press F2, or just start
 typing over the selected one. Tab and Shift+Tab move from cell to cell and leave the table
-after the last one (or before the first one), so the keyboard never gets stuck in it. In
-expert mode, **Add** appends a row with its name ready for typing, **Remove** deletes the
-selected rows, and **Move Up** / **Move Down** change the order the description lists the
-parameters in. Outside expert mode only the Value column can be edited.
+after the last one (or before the first one), so the keyboard never gets stuck in it.
+Hovering over a parameter's name shows its part of the plugin's help.
+
+In expert mode, **Add** lists the parameters the plugin reads that the page does not show
+yet, with the template's value and a description; filter by typing, pick one or several
+(Ctrl/Shift-click) and press **Add** or double-click. A parameter the template sets comes
+with the template's value; one the template only mentions in a comment comes empty, which
+means the plugin's default, so adding it changes nothing until a value is typed. **Other
+Name…** adds an empty row to type a name into, which is also what **Add** does for a plugin
+the template does not describe (one found by Discover or made by hand). **Remove** deletes
+the selected rows, and **Move Up** / **Move Down** change the order the description lists
+the parameters in. Outside expert mode only the Value column can be edited.
 
 A program description (its `.yaml`, or what the plugin prints for `--ndm-describe`) may give each
 parameter three optional keys after `name`, `value` and `status`:
@@ -365,7 +373,8 @@ their own — set them on *Detect Spikes*, *Extract Spikes* and *PCA*.
 
 The list is generated: `src/ndmanager/tools/pipeline_script_defs.py` writes
 `src/ndmanager/src/pipelinescriptdefs.inc` from the template plus a table of palette labels,
-tooltips and categories. To add a plugin, give it a block in `templates/template.yaml`, add
+tooltips and categories, and `src/ndmanager/src/parametercatalog.inc`, every template
+parameter with its help, which the Plugins pages' **Add** offers. To add a plugin, give it a block in `templates/template.yaml`, add
 its row to that table, and rerun the script; `test_template_parameters.py` and
 `test_pipeline_designer_defs.py` (in `src/ndmanager-plugins/test/`) fail until the script,
 the template and the designer agree.

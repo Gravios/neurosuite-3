@@ -19,6 +19,8 @@
  ***************************************************************************/
 //include files for the application
 #include "parameterpage.h"
+#include "addparameterdialog.h"
+#include "parametercatalog.h"
 #include "parametertype.h"
 #include <parametervaluedelegate.h>
 
@@ -28,6 +30,7 @@
 #include <QDebug>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSet>
 #include <QTableWidget>
 
 // The table's columns.  Type, default and hidden have no column: they are
@@ -102,8 +105,12 @@ void ParameterPage::describeRow(int row)
     if (!kind.isEmpty()) tip << kind;
     const QString def = name->data(ParameterType::DefaultRole).toString();
     if (!def.isEmpty()) tip << tr("default: %1").arg(def);
+    // The name's tooltip is its section of the plugin's help, when the
+    // catalog has one.  Signals blocked: a tooltip change is an itemChanged.
+    const QString help = ParameterCatalog::help(getProgramName(), name->text().simplified());
     const bool wasBlocked = parameterTable->blockSignals(true);
     value->setToolTip(tip.join(QStringLiteral("; ")));
+    name->setToolTip(AddParameterDialog::helpToolTip(help));
     parameterTable->blockSignals(wasBlocked);
 }
 
@@ -276,6 +283,52 @@ void ParameterPage::setParameterInformation(const QMap<int, QStringList >& param
 
 
 void ParameterPage::addParameter(){
+    // The parameters this plugin reads that the page does not list yet.
+    const QList<ParameterCatalogEntry> catalog = ParameterCatalog::forProgram(getProgramName());
+    if(!catalog.isEmpty()){
+        QSet<QString> listed;
+        for(int row = 0; row < parameterTable->rowCount(); ++row)
+            if(const QTableWidgetItem* name = parameterTable->item(row, NameColumn))
+                listed.insert(name->text().simplified());
+        QList<ParameterCatalogEntry> available;
+        for(const ParameterCatalogEntry& e : catalog)
+            if(!listed.contains(e.name)) available << e;
+
+        AddParameterDialog dialog(getProgramName(), available, this);
+        if(dialog.exec() != QDialog::Accepted) return;
+        if(!dialog.otherNameRequested()){
+            addCatalogParameters(dialog.selected());
+            return;
+        }
+    }
+    addEmptyParameter();
+}
+
+void ParameterPage::addCatalogParameters(const QList<ParameterCatalogEntry>& entries){
+    if(entries.isEmpty()) return;
+    descriptionModified = true;
+    int last = -1;
+    for(const ParameterCatalogEntry& e : entries){
+        // A parameter the template sets comes with the template's value; one
+        // it only mentions (commented out) comes empty: the plugin's default,
+        // as before it was listed.  The commented-out value may be an example.
+        const QString value = e.inTemplate ? e.value : QString();
+        const bool wasBlocked = parameterTable->blockSignals(true);
+        last = appendRow(e.name, value, e.status.isEmpty() ? status.value(1) : e.status);
+        parameterTable->blockSignals(wasBlocked);
+        guard.remember(last, ValueColumn);
+        if(!value.isEmpty()){
+            valueModified = true;
+            emit parameterValueChanged(e.name, value);
+        }
+    }
+    // On to the last one's value, ready to type.
+    parameterTable->setCurrentCell(last, ValueColumn);
+    parameterTable->scrollToItem(parameterTable->item(last, ValueColumn));
+    parameterTable->setFocus();
+}
+
+void ParameterPage::addEmptyParameter(){
     descriptionModified = true;
     const bool wasBlocked = parameterTable->blockSignals(true);
     const int row = appendRow(QString(), QString(), status.value(0));

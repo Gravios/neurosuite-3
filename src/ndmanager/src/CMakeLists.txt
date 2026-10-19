@@ -45,6 +45,8 @@ set(_srcs
     safetablewidget.cpp
     cellguard.cpp               # puts an invalid table entry back instead of trapping the focus
     parametervaluedelegate.cpp  # typed editors for a plugin parameter's Value cell
+    parametercatalog.cpp        # the parameters each shipped plugin reads (generated from the template)
+    addparameterdialog.cpp      # Add on a plugin's page: pick from the catalog
     templatedialogs.cpp         # File > Export Session as Template / Apply Template to Session
     ndmanagerutils.cpp
     colortable.cpp

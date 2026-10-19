@@ -33,6 +33,7 @@
 #include <safetablewidget.h>
 #include "cellguard.h"
 class QComboBox;
+struct ParameterCatalogEntry;
 struct ParameterType;
 class QTableWidgetItem;
 
@@ -105,7 +106,9 @@ signals:
 public slots:
     /**Handles the change of the program's name.*/
     void changeCaption();
-    /**Adds a new line in the parameter table.*/
+    /**Adds parameters: for a plugin the catalog knows, those picked from
+     * the ones it reads that the table does not list; otherwise (or on
+     * "Other Name…") an empty row to type a name into.*/
     void addParameter();
     /**Removes the selected lines from the parameter table.*/
     void removeParameter();
@@ -131,6 +134,10 @@ public slots:
 
 private:
     QComboBox *createCombobox();
+    /** Appends @p entries (from the catalog) and moves to the last one's value. */
+    void addCatalogParameters(const QList<ParameterCatalogEntry>& entries);
+    /** Appends an empty row and starts editing its name. */
+    void addEmptyParameter();
     /** Appends a row; @p extra is {type, default, hidden}, kept on the name
      *  cell.  Signals are the caller's to block.  Returns the row. */
     int appendRow(const QString& name, const QString& value, const QString& statusText,
