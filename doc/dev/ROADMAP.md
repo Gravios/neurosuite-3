@@ -67,16 +67,13 @@ The `setFailed()` API exists on `ProgressBar` but `process_pca.cpp`'s
 `exit(1)` paths don't call it.  Means red ✗ on direct CLI failure.
 Five lines of code.  Estimate: trivial.
 
-**Complete `pickInputPath` deployment in KiloKlustaKwik.**
-`.fet`/`.fetD` dual-extension lookup helper is partial.  Pending sites:
-`.spk` (×9), `.pca` (×1), `.clu` (×2) read locations.  Mechanical sweep,
-~30 minutes.  Estimate: 1 session.
-
-**Schema versioning for `ParameterYamlReader`.**
-Add `schemaVersion: N` field at YAML document root.  Build migrator chain
-infrastructure (no migrators yet — just the chain).  Cheaper to do now, while
-schema is small, than after a breakage.  Estimate: 1 session for
-infrastructure; migrators added as schema evolves.
+**Session-schema migrator chain.**
+The writer and modifier already stamp `parameters.version` with
+`kSessionSchema` (`"1.0"`, `version_contract.hpp`).  Still to do: have
+`ParameterYamlReader` check that version and build the migrator chain
+infrastructure (no migrators yet — just the chain).  Cheaper to do now,
+while the schema is small, than after a breakage.  Estimate: 1 session for
+infrastructure; migrators added as the schema evolves.
 
 **KiloKlustaKwik experimental sweeps.**
 Run with `-TimeMergeIter 100 -ChunkPreseedFraction 0.08`.  Scale vote-match
@@ -209,13 +206,6 @@ completes.  Facts that belong in `STANDARDIZATION.md` shouldn't also live as
 memory entries (duplication risk: STANDARDIZATION says one thing, memory
 says another, they drift).  Process item rather than code item.
 
-**neuroscope audit.**
-Has not been audited at all.  Likely lower fruit than kiloklustakwik (less
-algorithmic complexity, more straightforward Qt code) but unknown until
-scanned.  Estimate: 1-2 sessions if proceeded with.
-
-**ndmanager audit.**
-Same as neuroscope — unaudited, fruit unknown.  Estimate: 1-2 sessions.
 
 ---
 
@@ -226,6 +216,24 @@ git history / `CHANGELOG.md` after roughly a quarter.)
 
 <details>
 <summary>Completed items</summary>
+
+### ✅ `pickInputPath` deployment in KiloKlustaKwik
+
+`pickInputPath` now resolves every input through `custody::resolve` by the
+`Method` parameter (`KlustaKwik.cpp`), and the `.spk` / `.pca` / `.clu` read
+sites use it or the shared-artifact resolver.  The D-suffix files it once
+fell back to are retired.
+
+### ✅ neuroscope and ndmanager audits *(2026-10)*
+
+NeuroScope: [`doc/design/neuroscope-audit.md`](../design/neuroscope-audit.md).
+ndManager: audit fixes of 2026-10-15 and 2026-10-16 in `CHANGELOG.md`.
+
+### ✅ `ZenOptimizations.cmake` global flags
+
+The global block now uses `add_compile_options` (so `-funroll-loops` and
+`-march=native` really apply), with `-march=native` behind its own
+`NS_NATIVE_ARCH` option (default `ON`, `OFF` for portable builds).
 
 ### ✅ Action-icon standard *(2026-10-18)*
 
@@ -328,8 +336,9 @@ questions) are under Soon.
 `src/libneurosuite-core/docs/FILE_FORMATS.md`.  A ctest suite (format I/O
 for `.spk` / `.wti` / `.wtl`, custody conformance, the input registry,
 template lineage, …) and a CI build (`.github/workflows/ci.yml`) are in
-place.  Still uncovered by tests: `.res` / `.fet` / `.col` round-trips and
-golden-file tests for `ParameterYamlReader` (see Test debt).
+place.  Golden-file tests for the template-library formats
+(`core_test_golden_formats`) and `.res` / `.fet` / `.col` robustness and
+round-trip checks (`core_test_neurofileio_robust`) have since been added.
 
 ### ✅ libklustersshared 5-phase audit + dead-code triage *(this session)*
 
@@ -405,8 +414,7 @@ unnecessary complication for a non-binding constraint.
 
 Considered briefly mid-session as direction of "Phase 3 m_-prefix
 homogenisation" before Gravio corrected.  **Dropped** because the project
-convention is bare names (no prefix) — klusters has zero `m_` on members
-across ~30K LOC.  The audit direction is **strip**, not add.  Re-recorded
+convention is bare names (no prefix) — klusters has zero `m_` on members.  The audit direction is **strip**, not add.  Re-recorded
 in `STANDARDIZATION.md` §6.1 as a known Claude failure mode.
 
 </details>
@@ -428,17 +436,19 @@ These don't fit the time-horizon structure but are worth tracking.
 
 ### Test debt
 
-- No round-trip tests for `.res` / `.fet` / `.col`, and no golden-file tests
-  for `ParameterYamlReader`
+- `ParameterYamlReader` has no golden-file test of its own (the writer,
+  modifier and template round-trips are covered by the `klustersshared_`
+  tests)
 - The GUI work is untestable in the cloud build; behaviour depends on the
   workstation live pass (see Next) against `jg05-20120316` group 7 or
   `eb05-20251118` group 25
-- CI builds one configuration (Qt6, CPU) with non-fatal warnings; no
-  -Wshadow gate or Qt-version matrix yet (see Next)
+- CI builds four Ubuntu releases (Qt 6.4, 6.9, 6.10, 6.11; CPU) plus a
+  Windows/MSVC job, with non-fatal warnings; no -Wshadow gate yet (see Next)
 
 ### Schema debt
 
-- No `schemaVersion` field in YAML (planned, see Soon)
+- `parameters.version` is written but not yet checked on read; no migrator
+  chain (planned, see Soon)
 - Probe migration partially landed, polluting analyzer signal (decision
   needed, see Considered)
 
@@ -479,15 +489,11 @@ measurement that identifies the actual bottleneck.
 - **PGO:** the one untapped compile-time lever (~10–20% on branchy CPU compute:
   KK CPU path, detection plugins), using the reference sessions as the training
   workload. Cost: two-phase build + profile refresh.
-- **Build system:** `ns_fast_math` / `ns_native_arch` per-target opt-ins landed.
-  NOTE: the global flag block in `cmake/ZenOptimizations.cmake` applies flags via
-  `set(CMAKE_<lang>_FLAGS_<cfg> ... CACHE STRING ... FORCE)`, which is a no-op
-  (a normal-variable shadow keeps the default) — so global `-march=native` /
-  `-funroll-loops` were never actually applied; only per-target flags took
-  effect. Fix is `string(APPEND CMAKE_<lang>_FLAGS_<cfg> ...)` on the normal
-  variable. Deferred pending a decision: fixing it makes `-march=native` truly
-  global ⇒ non-portable binaries across the whole tree. (LTO, set via
-  `CMAKE_INTERPROCEDURAL_OPTIMIZATION`, was verified to be genuinely active.)
+- **Build system:** done — `cmake/ZenOptimizations.cmake` applies
+  `-funroll-loops` and `-march=native` with `add_compile_options` (the latter
+  behind `NS_NATIVE_ARCH`, default `ON`), `-ffast-math` per target through
+  `ns_fast_math`, and LTO via `CMAKE_INTERPROCEDURAL_OPTIMIZATION`
+  ([BUILD.md §3](../BUILD.md#3-build-options)).
 
 ### Algorithmic debt (Klusters data model)
 
@@ -513,5 +519,5 @@ measurement that identifies the actual bottleneck.
 
 ---
 
-*Last updated: 2026-10-11.  Update this date whenever items shift between
+*Last updated: 2026-10-19.  Update this date whenever items shift between
 sections, complete, or are added.*
