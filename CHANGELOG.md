@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Docs: every page checked against the code; current in-app handbooks; the site covers all documentation](#2026-10-19--docs-every-page-checked-against-the-code-current-in-app-handbooks-the-site-covers-all-documentation) |
 | 2026-10-19 | [Docs: one installation guide for every platform](#2026-10-19--docs-one-installation-guide-for-every-platform) |
 | 2026-10-19 | [Windows: OpenMP code that MSVC accepts; the CI build gets further](#2026-10-19--windows-openmp-code-that-msvc-accepts-the-ci-build-gets-further) |
 | 2026-10-19 | [Windows: the ndm_* steps run from cmd and PowerShell through Git Bash](#2026-10-19--windows-the-ndm_-steps-run-from-cmd-and-powershell-through-git-bash) |
@@ -85,6 +86,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Docs: every page checked against the code; current in-app handbooks; the site covers all documentation
+
+<details>
+<summary>Details</summary>
+
+- **Review.** All ~220 documentation files (Markdown, DocBook handbooks and
+  man pages; translations excluded) were checked claim by claim against the
+  code: 121 high, 199 medium and 167 low-severity findings. The high ones told
+  users to do things that fail: KiloKlustaKwik options that do not exist and
+  are silently ignored (`-ChunkBoundaries`, `-SubspaceReclusterDepth`,
+  `-ForceCPU`) and most of its defaults wrong; install guides missing yaml-cpp
+  or GSL, so configure failed; workflow commands that cannot run (no
+  `ndm_detectspikes`, methods that do not match, a non-existent
+  `--threshold-factor`, the never-read `extraInfos` override); Klusters and
+  NeuroScope keys that run a different action; NDManager described as running
+  plugins; XML parameter files, KDE menus and Qt 4 builds.
+- **Fixes**, one commit per file group: the Klusters, NeuroScope, NDManager,
+  KiloKlustaKwik, GPU, plugin, man-page, workflow, developer and design
+  documentation now describe the programs as they are. Historical notes carry
+  dated status banners instead of being rewritten. Duplicated build
+  instructions point to `doc/INSTALL.md`.
+- **In-app handbooks (F1).** All three programs opened KDE-era HTML from
+  2006-2011 (and NeuroScope's and NDManager's rules installed it where F1 did
+  not look). NeuroScope now shows its handbook generated from the DocBook by
+  `doc/site/gen.sh`; Klusters and NDManager show their Markdown manuals,
+  rendered by the viewer. The pre-built HTML trees are removed.
+- **Site.** Menu references and the 20 screenshots render again. The site now
+  carries the whole user documentation (installation, Klusters, NDManager,
+  pipeline, KiloKlustaKwik, workflows, formats, developer pages, changelog);
+  links to source files go to GitHub. The docs workflow fails when the
+  committed handbook output is stale.
+- Code issues found during the review (not fixed here) are listed in the
+  project's audit notes.
+
+</details>
 
 ## 2026-10-19 — Docs: one installation guide for every platform
 
