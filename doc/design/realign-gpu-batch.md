@@ -142,7 +142,7 @@ fallback backend implements `refineBatch` as an OpenMP parallel-for over
 
 ---
 
-## 5. Host orchestration (klustersdoc.cpp)
+## 5. Host orchestration (klustersdoc_realign.cpp)
 
 A new `realignSpikesBatch(const QList<int>& clusterIds, ...)` (or a batch flag on
 the existing path) does:
@@ -203,8 +203,8 @@ following.
   `RefineBatchDesc`, dispatch to the active backend.
 - `pca_refine_gpu.h` + the CUDA/HIP/SYCL kernel sources — add the batched kernel.
 - CPU backend — add the OpenMP `refineBatch`.
-- `klustersdoc.cpp` — `realignSpikesBatch` orchestration (chunking, double-buffer).
-- `klusters.cpp` — `slotPcaAlignAllClusters` calls the batch path instead of
+- `klustersdoc_realign.cpp` — `realignSpikesBatch` orchestration (chunking, double-buffer).
+- `klusters_realign.cpp` — `slotPcaAlignAllClusters` calls the batch path instead of
   queuing one worker per cluster; progress bar advances per chunk-applied cluster.
 - `test/` — `klusters_test_refine_batch` (CPU oracle).
 
