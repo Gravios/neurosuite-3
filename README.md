@@ -35,6 +35,8 @@ cmake --install build
 
 `-DNS_INSTALL_DEPS=ON` installs the required packages for you (apt / Homebrew / vcpkg); drop it if you'd rather manage them yourself. Choosing a build type, picking or disabling GPU backends, skipping a component (e.g. `-DNS_SKIP_KILOKLUSTAKWIK=ON`), the macOS Qt path and the Windows/vcpkg setup, a sanitizer build, and reproducing CI — all live in **[BUILD.md](doc/BUILD.md)**.
 
+On **Windows**, start with `scripts\install-deps-windows.bat`: it installs the compiler, the libraries and Qt, and writes the `windows` CMake preset (`cmake --preset windows`); see [BUILD.md](doc/BUILD.md#1-toolchain).
+
 ---
 
 ## The programs

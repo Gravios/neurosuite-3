@@ -43,6 +43,9 @@
 #
 #   NS_VCPKG_ROOT       vcpkg root for Windows NS_INSTALL_DEPS
 #                       (default: %VCPKG_ROOT% env var, or C:/vcpkg)
+#   NS_QT_ROOT, NS_QT_VERSION   Windows NS_INSTALL_DEPS: Qt installed when none
+#                       is found (default C:/Qt, 6.8.3)
+#   NS_DEPS_HDF5, NS_DEPS_FFMPEG  Windows NS_INSTALL_DEPS: optional libraries
 #
 # SYCL / Intel oneAPI note:
 #   The ExternalProject superbuild allowed klustakwik to probe for icpx
@@ -287,7 +290,12 @@ if(NS_INSTALL_DEPS)
             endif()
         endif()
 
-    # ── Windows (vcpkg) ───────────────────────────────────────────────────
+    # ── Windows (vcpkg + aqtinstall) ──────────────────────────────────────
+    # The compiler is already found here (project() has run), so only the
+    # libraries and Qt are installed, by scripts/install-deps-windows.ps1
+    # -DepsOnly (the same script installs the compiler too when run by hand).
+    # A CMAKE_TOOLCHAIN_FILE set after project() has no effect, so vcpkg's
+    # install tree and Qt go on CMAKE_PREFIX_PATH instead.
     elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         if(NOT NS_VCPKG_ROOT)
             if(DEFINED ENV{VCPKG_ROOT})
@@ -296,43 +304,46 @@ if(NS_INSTALL_DEPS)
                 set(NS_VCPKG_ROOT "C:/vcpkg")
             endif()
         endif()
-        set(_vcpkg_exe "${NS_VCPKG_ROOT}/vcpkg.exe")
-        if(NOT EXISTS "${_vcpkg_exe}")
-            message(STATUS "NS_INSTALL_DEPS: bootstrapping vcpkg at ${NS_VCPKG_ROOT}…")
-            find_program(_git git)
-            if(NOT _git)
-                message(FATAL_ERROR
-                    "NS_INSTALL_DEPS: git not found — install Git for Windows first:\n"
-                    "  https://git-scm.com/download/win")
-            endif()
-            execute_process(
-                COMMAND ${_git} clone https://github.com/microsoft/vcpkg.git "${NS_VCPKG_ROOT}"
-                RESULT_VARIABLE _r COMMAND_ECHO STDOUT)
-            if(NOT _r EQUAL 0)
-                message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg clone failed.")
-            endif()
-            execute_process(
-                COMMAND "${NS_VCPKG_ROOT}/bootstrap-vcpkg.bat" -disableMetrics
-                RESULT_VARIABLE _r COMMAND_ECHO STDOUT)
-            if(NOT _r EQUAL 0)
-                message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg bootstrap failed.")
-            endif()
+        set(NS_QT_ROOT "C:/Qt" CACHE PATH
+            "Windows NS_INSTALL_DEPS: where Qt is installed when none is found")
+        set(NS_QT_VERSION "6.8.3" CACHE STRING
+            "Windows NS_INSTALL_DEPS: the Qt version installed when none is found")
+        option(NS_DEPS_HDF5   "Windows NS_INSTALL_DEPS: also install HDF5 (process_aomconvert)" OFF)
+        option(NS_DEPS_FFMPEG "Windows NS_INSTALL_DEPS: also install FFmpeg (process_extractleds; long build)" OFF)
+
+        # A Qt already given (CMAKE_PREFIX_PATH / Qt6_DIR) is used as it is.
+        find_package(Qt6 QUIET COMPONENTS Core)
+        file(TO_NATIVE_PATH "${NS_VCPKG_ROOT}" _ns_vcpkg_native)
+        file(TO_NATIVE_PATH "${NS_QT_ROOT}"    _ns_qt_native)
+        set(_ns_ps_args -DepsOnly -VcpkgRoot "${_ns_vcpkg_native}"
+                        -QtRoot "${_ns_qt_native}" -QtVersion "${NS_QT_VERSION}")
+        if(Qt6_FOUND)
+            list(APPEND _ns_ps_args -SkipQt)
         endif()
-        set(_vcpkg_triplet "x64-windows")
+        if(NS_DEPS_HDF5)
+            list(APPEND _ns_ps_args -WithHdf5)
+        endif()
+        if(NS_DEPS_FFMPEG)
+            list(APPEND _ns_ps_args -WithFfmpeg)
+        endif()
+        find_program(_ns_powershell NAMES powershell pwsh REQUIRED)
         execute_process(
-            COMMAND "${_vcpkg_exe}" install
-                    yaml-cpp libxml2 gsl libsamplerate ffmpeg
-                    --triplet ${_vcpkg_triplet}
-            RESULT_VARIABLE _r COMMAND_ECHO STDOUT)
+            COMMAND "${_ns_powershell}" -NoProfile -ExecutionPolicy Bypass
+                    -File "${CMAKE_CURRENT_SOURCE_DIR}/scripts/install-deps-windows.ps1"
+                    ${_ns_ps_args}
+            RESULT_VARIABLE _r)
         if(NOT _r EQUAL 0)
-            message(FATAL_ERROR "NS_INSTALL_DEPS: vcpkg install failed (exit ${_r}).")
+            message(FATAL_ERROR "NS_INSTALL_DEPS: scripts/install-deps-windows.ps1 failed (exit ${_r}).")
         endif()
-        if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-            set(CMAKE_TOOLCHAIN_FILE
-                "${NS_VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-                CACHE FILEPATH "vcpkg toolchain (set by NS_INSTALL_DEPS)" FORCE)
+
+        if(NOT DEFINED VCPKG_INSTALLED_DIR)       # no vcpkg toolchain file given
+            set(VCPKG_INSTALLED_DIR  "${NS_VCPKG_ROOT}/installed")
+            set(VCPKG_TARGET_TRIPLET "x64-windows")
+            list(APPEND CMAKE_PREFIX_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}")
         endif()
-        message(STATUS "NS_INSTALL_DEPS: NOTE — Qt6 must still be installed via the Qt Online Installer.")
+        if(NOT Qt6_FOUND)
+            list(APPEND CMAKE_PREFIX_PATH "${NS_QT_ROOT}/${NS_QT_VERSION}/msvc2022_64")
+        endif()
     else()
         message(WARNING "NS_INSTALL_DEPS: unsupported platform '${CMAKE_SYSTEM_NAME}' — skipping.")
     endif()

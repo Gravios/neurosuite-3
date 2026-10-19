@@ -27,13 +27,45 @@ The authoritative source for all of this is the top-level
 
 The reference CI toolchain is **Ubuntu 24.04 with the distribution Qt6**; CI
 also builds and tests on Ubuntu 25.10, 26.04 LTS and 26.10, which cover Qt 6.9,
-6.10 and 6.11, GCC 15, CMake 4 and Python 3.13/3.14 (see §8). macOS (Homebrew `qt@6`) and Windows (vcpkg + the Qt Online Installer) are
+6.10 and 6.11, GCC 15, CMake 4 and Python 3.13/3.14 (see §8). macOS (Homebrew `qt@6`) and Windows (vcpkg + Qt for MSVC; see below) are
 supported for configuration; per-platform prerequisites are in each component's
 install pages, e.g. [`doc/klusters/install/`](klusters/install/linux.md).
 
 Let CMake install the system dependencies for you with `-DNS_INSTALL_DEPS=ON`
-(apt on Linux, Homebrew on macOS, vcpkg on Windows); the package lists are in
-`CMakeLists.txt`.
+(apt on Linux, Homebrew on macOS, vcpkg and aqtinstall on Windows); the package
+lists are in `CMakeLists.txt`.
+
+**Windows, from nothing.** CMake needs a compiler before it can run, so on a
+fresh machine start with the script instead, from cmd or PowerShell:
+
+```bat
+scripts\install-deps-windows.bat
+```
+
+It installs, skipping whatever is already there: Git, the Visual Studio 2022
+Build Tools with the C++ workload (MSVC, Windows SDK, CMake, Ninja), Python
+(only to download Qt), vcpkg with yaml-cpp, GSL, libxml2 and libsamplerate, and
+Qt 6.8.3 for MSVC through aqtinstall (no Qt account needed). It then writes a
+`CMakeUserPresets.json` (git-ignored) with a `windows` preset (MSVC) and a
+`windows-sycl` preset (Intel `icx`), so the build is, in the **x64 Native Tools
+Command Prompt for VS 2022**:
+
+```bat
+cmake --preset windows
+cmake --build --preset windows
+cmake --install build
+```
+
+The install goes to `C:\ns3`, with the Qt and vcpkg DLLs beside the programs.
+
+Options: `-WithHdf5` (`process_aomconvert`), `-WithFfmpeg`
+(`process_extractleds`; a long vcpkg build), `-WithPythonPackages` (PyYAML,
+NumPy, SciPy), `-QtVersion`, `-QtRoot`, `-VcpkgRoot`, `-Force` (overwrite the
+presets) and `-DryRun` (print what would be done). The Intel oneAPI toolkit
+for the SYCL build is not installed by it. With a compiler already present,
+`-DNS_INSTALL_DEPS=ON` runs the same script for the libraries and Qt (Qt only
+when CMake does not already find one); `-DNS_DEPS_HDF5=ON` and
+`-DNS_DEPS_FFMPEG=ON` add the optional libraries.
 
 ---
 
@@ -74,6 +106,8 @@ All are passed with `-D` at configure time.
 | `NS_SKIP_<COMPONENT>` | `OFF` | skip one component (§5) |
 | `NS_INSTALL_DEPS` | `OFF` | install system dependencies first (apt/Homebrew/vcpkg) |
 | `NS_VCPKG_ROOT` | `$VCPKG_ROOT` or `C:/vcpkg` | vcpkg root for Windows `NS_INSTALL_DEPS` |
+| `NS_QT_ROOT` / `NS_QT_VERSION` | `C:/Qt` / `6.8.3` | Windows `NS_INSTALL_DEPS`: where and which Qt to install when CMake finds none |
+| `NS_DEPS_HDF5` / `NS_DEPS_FFMPEG` | `OFF` | Windows `NS_INSTALL_DEPS`: also install HDF5 / FFmpeg with vcpkg |
 | `NS_DEPLOY_RUNTIME` | `ON` | Windows: `cmake --install` also copies the Qt DLLs and plugins (windeployqt), vcpkg's DLLs and the oneAPI runtime next to the programs, so the install folder runs as it is |
 | `NS_ZEN_OPT` | (optional module) | host tuning (`-march=native`, fast-math, LTO) via `cmake/ZenOptimizations.cmake`; pass `OFF` when cross-compiling |
 

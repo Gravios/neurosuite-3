@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-19 | [Windows: one script installs the build dependencies](#2026-10-19--windows-one-script-installs-the-build-dependencies) |
 | 2026-10-19 | [Windows: the ndmanager-plugins programs build natively, and CI checks it](#2026-10-19--windows-the-ndmanager-plugins-programs-build-natively-and-ci-checks-it) |
 | 2026-10-19 | [Windows: `cmake --install` gives a folder that runs](#2026-10-19--windows-cmake---install-gives-a-folder-that-runs) |
 | 2026-10-19 | [CI: GitHub actions moved to their Node.js 24 releases](#2026-10-19--ci-github-actions-moved-to-their-nodejs-24-releases) |
@@ -80,6 +81,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-19 — Windows: one script installs the build dependencies
+
+<details>
+<summary>Details</summary>
+
+- `scripts\install-deps-windows.bat` (a wrapper for
+  `scripts/install-deps-windows.ps1`, Windows PowerShell 5.1 or later) sets
+  up a Windows machine from nothing, skipping what is already installed: Git
+  and the Visual Studio 2022 Build Tools with the C++ workload (winget), Python
+  when Qt has to be downloaded, vcpkg with yaml-cpp, GSL, libxml2 and
+  libsamplerate (HDF5 and FFmpeg on request), and Qt 6.8.3 for MSVC through
+  aqtinstall, with no Qt account. It writes a git-ignored
+  `CMakeUserPresets.json`: `cmake --preset windows` (MSVC) or
+  `windows-sycl` (Intel `icx`), installing to `C:\ns3`. `-DryRun` prints
+  what it would do.
+- `-DNS_INSTALL_DEPS=ON` on Windows runs the same script for the libraries and
+  Qt. Before, it set `CMAKE_TOOLCHAIN_FILE` after `project()`, where it has no
+  effect, so the vcpkg packages it installed were not found; it now puts the
+  vcpkg tree and Qt on `CMAKE_PREFIX_PATH`. It no longer builds FFmpeg by
+  default (`-DNS_DEPS_FFMPEG=ON`, `-DNS_DEPS_HDF5=ON`) and installs Qt only
+  when CMake finds none (`NS_QT_ROOT`, `NS_QT_VERSION`).
+- Checked: PowerShell 7 parses the script; dry runs, and runs against stand-in
+  vcpkg and Qt directories (including a failing vcpkg, which stops it with the
+  exit code), take the expected steps; CMake lists the generated presets; the
+  CMake branch, configured with a Windows (MinGW) toolchain against the
+  stand-ins, ran the script and set the prefix path. Not yet run on Windows.
+
+</details>
 
 ## 2026-10-19 — Windows: the ndmanager-plugins programs build natively, and CI checks it
 

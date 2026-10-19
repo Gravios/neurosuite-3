@@ -38,3 +38,6 @@ compile_commands.json
 config.log
 config.status
 CMakeCache.txt
+
+# written by scripts/install-deps-windows.ps1 (machine-specific paths)
+CMakeUserPresets.json
