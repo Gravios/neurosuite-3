@@ -1,5 +1,10 @@
 site_name: neurosuite-3 documentation
 site_description: User handbook and developer references for neurosuite-3
+# Where the site is published.  Needed for 404.html: GitHub Pages serves it for
+# any missing path (e.g. /neurosuite-3/handbook/), and without site_url MkDocs
+# writes its asset links as /assets/..., outside the project's /neurosuite-3/,
+# so the error page showed unstyled.
+site_url: https://gravios.github.io/neurosuite-3/
 docs_dir: docs
 use_directory_urls: true
 
