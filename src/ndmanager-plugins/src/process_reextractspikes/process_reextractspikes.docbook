@@ -47,13 +47,14 @@
 
 	<refsect1>
 		<title>OPTIONS</title>
-		<para>Options are identical to <command>process_extractspikes</command>
-			except for the addition of <option>-m</option> (mask basename,
+		<para>Options are those of <command>process_extractspikes</command>
+			(<option>-l</option> is mandatory here; <option>-a</option> and
+			<option>-R</option> are not accepted) plus <option>-m</option> (mask basename,
 			defaults to <replaceable>basename</replaceable>),
 			<option>-M</option> (mask half-width in samples, defaults to
 			the refractory period), and <option>-i</option> (input file
 			override, defaults to
-			<filename>basename.fil</filename>).</para>
+			<filename>basename.fil</filename>). <option>-h</option> prints help.</para>
 	</refsect1>
 
 	<refsect1>

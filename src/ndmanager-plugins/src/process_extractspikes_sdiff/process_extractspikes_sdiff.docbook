@@ -44,7 +44,16 @@
 			<option>-d</option> <replaceable>sdiffOrder</replaceable>
 		</arg>
 		<arg>
+			<option>-a</option>
+		</arg>
+		<arg>
+			<option>-R</option>
+		</arg>
+		<arg>
 			<option>-v</option>
+		</arg>
+		<arg>
+			<option>-h</option>
 		</arg>
 		<arg choice="plain">
 			<replaceable>basename</replaceable>
@@ -97,10 +106,12 @@
 				<listitem>
 					<para>
 						Grouped channel list (e.g. <literal>0,1,2:4,5,7</literal> for
-						2 groups with 3 channels each). Channels within each group
+						2 groups with 3 channels each). With <option>-d 1</option>
+						or <option>-d 2</option> the channels within each group
 						<emphasis>must</emphasis> be listed in physical probe order
 						along the shank (top to tip, as ndm_setupgroups writes
 						them, or the reverse) so that spatial neighbours are adjacent.
+						Orders 0 and 3 do not depend on channel order.
 					</para>
 				</listitem>
 			</varlistentry>
@@ -178,12 +189,41 @@
 						<command>process_extractspikes</command>);
 						<literal>1</literal> — first-order difference
 						(<emphasis>s[i] = x[i] − x[i+1]</emphasis>);
-						<literal>2</literal> — discrete Laplacian (default,
-						<emphasis>s[i] = x[i] − ½(x[i−1] + x[i+1])</emphasis>,
-						edge channels use one-sided differences).
+						<literal>2</literal> — discrete Laplacian
+						(<emphasis>s[i] = x[i] − ½(x[i−1] + x[i+1])</emphasis>,
+						edge channels use one-sided differences);
+						<literal>3</literal> — all pairs (default,
+						<emphasis>s[i] = n·x[i] − Σⱼ x[j]</emphasis>, i.e.
+						proportional to the channel minus the group mean; no
+						probe-order requirement). Other values are refused.
 						Any order but <literal>0</literal> needs at least two
 						channels per group; a one-channel group is refused with
 						an error naming it.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-a</option></term>
+				<listitem>
+					<para>
+						Detect on the absolute value of the derivative signal, so
+						positive and negative peaks are both found. By default
+						the peak search prefers negative peaks.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-R</option></term>
+				<listitem>
+					<para>
+						Re-extract mode: skip detection, read the spike times
+						from <filename>basename.res.N</filename> and cut one
+						waveform per time. In this mode the windows are written
+						after the same spatial-derivative transform
+						(<option>-d</option>) is applied, not as raw data.
+						<option>-r</option>, <option>-f</option>,
+						<option>-l</option> and <option>-Z</option> are not
+						needed and are ignored.
 					</para>
 				</listitem>
 			</varlistentry>
@@ -192,6 +232,14 @@
 				<listitem>
 					<para>
 						Verbose mode.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-h</option></term>
+				<listitem>
+					<para>
+						Print help and exit.
 					</para>
 				</listitem>
 			</varlistentry>

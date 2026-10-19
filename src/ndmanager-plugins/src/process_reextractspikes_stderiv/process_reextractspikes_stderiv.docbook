@@ -28,6 +28,9 @@
 			<arg choice="opt"><option>-S</option> <replaceable>auto|prev|zero</replaceable></arg>
 			<arg choice="opt"><option>-m</option> <replaceable>maskBase</replaceable></arg>
 			<arg choice="opt"><option>-M</option> <replaceable>maskHalfWidth</replaceable></arg>
+			<arg choice="opt"><option>-i</option> <replaceable>inputFile</replaceable></arg>
+			<arg choice="opt"><option>-v</option></arg>
+			<arg choice="opt"><option>-h</option></arg>
 			<arg choice="plain"><replaceable>basename</replaceable></arg>
 		</cmdsynopsis>
 	</refsynopsisdiv>
@@ -44,9 +47,22 @@
 			<option>-T</option> <literal>sdiff</literal> (default) measures the
 			noise on the spatial derivative, <literal>stderiv</literal> on the
 			detection signal.  Detection runs
-			on the stderiv shadow signal; waveform extraction reads the
-			original unmodified <filename>.fil</filename> and writes
-			<filename>.spkD.N</filename> files.
+			on the stderiv shadow signal. The program writes
+			<filename>basename.res.N</filename> and
+			<filename>basename.spkD.N</filename>; the
+			<filename>.spkD.N</filename> windows hold the same transformed
+			signal (spatial derivative plus temporal first difference) that
+			<command>process_extractspikes_stderiv</command> writes, so they
+			project through the same <filename>.pcaD.N</filename> basis.
+		</para>
+		<para>
+			<option>-m</option> (mask basename, default
+			<replaceable>basename</replaceable>), <option>-M</option> (mask
+			half-width in samples, default the refractory period) and
+			<option>-i</option> (input file, default
+			<filename>basename.fil</filename>) work as in
+			<command>process_reextractspikes</command>; <option>-v</option>
+			is verbose, <option>-h</option> prints help.
 		</para>
 		<para>
 			<option>-S</option> sets the seed of each written window's temporal
@@ -64,7 +80,7 @@
 		<title>SEE ALSO</title>
 		<para>
 			<citerefentry><refentrytitle>process_reextractspikes</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
-			<citerefentry><refentrytitle>process_extractspikes_stderiv</refentrytitle><manvolnum>1</manvolnum></citerefentry>,
+			<command>process_extractspikes_stderiv</command> (no manual page; run it with <option>-h</option>),
 			<citerefentry><refentrytitle>process_shadowcluster</refentrytitle><manvolnum>1</manvolnum></citerefentry>
 		</para>
 	</refsect1>

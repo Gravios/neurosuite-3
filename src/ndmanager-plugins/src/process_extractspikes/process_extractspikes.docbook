@@ -34,6 +34,12 @@
 			<option>-l</option> <replaceable>peakSearchLength</replaceable>
 		</arg>
 		<arg>
+			<option>-a</option>
+		</arg>
+		<arg>
+			<option>-R</option>
+		</arg>
+		<arg>
 			<option>-v</option>
 		</arg>
 		<arg choice="plain">
@@ -45,7 +51,7 @@
 	<refsect1><title>Description</title>
 
 		<para>
-			<command>process_extractspikes</command> extracts spike waveforms and timestamps from high-pass a filtered multiplexed binary data file (both upward and downward going spikes are detected).
+			<command>process_extractspikes</command> extracts spike waveforms and timestamps from a high-pass filtered multiplexed binary data file (<filename>basename.fil</filename>). Upward and downward going spikes are both detected; when both cross threshold in the same search window the negative peak is preferred (see <option>-a</option>).
 		</para>
 
 		<variablelist>
@@ -106,6 +112,22 @@
 				</listitem>
 			</varlistentry>
 			<varlistentry>
+				<term><option>-a</option></term>
+				<listitem>
+					<para>
+						pick the peak with the largest absolute value instead of preferring negative peaks
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-R</option></term>
+				<listitem>
+					<para>
+						re-extract mode: skip detection, read the spike times from <filename>basename.res.N</filename> and write one raw waveform per time to <filename>basename.spk.N</filename>. <option>-t</option>, <option>-r</option> and <option>-l</option> are not needed in this mode.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
 				<term><option>-v</option></term>
 				<listitem>
 					<para>
@@ -123,6 +145,22 @@
 			</varlistentry>
 		</variablelist>
 
+	</refsect1>
+
+	<refsect1>
+		<title>Environment</title>
+		<variablelist>
+			<varlistentry>
+				<term><envar>PROCESS_EXTRACTSPIKES_MEM_CAP_GB</envar></term>
+				<listitem>
+					<para>
+						Maximum in-memory waveform buffer per group, in GB
+						(default 2). Groups whose waveform data would exceed this
+						limit are written to disk in streaming mode.
+					</para>
+				</listitem>
+			</varlistentry>
+		</variablelist>
 	</refsect1>
 
 	<refsect1>
