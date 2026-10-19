@@ -207,8 +207,9 @@ echo "  seed:    $clu_path  (backed up to $bak_path)"
 echo "  binary:  $KK_BIN"
 echo
 
-"${cmd[@]}"
-status=$?
+# set -e would end the script on a failing run, before the restore below.
+status=0
+"${cmd[@]}" || status=$?
 
 if [[ $status -ne 0 ]]; then
     echo "$SCRIPT_NAME: KiloKlustaKwik returned $status; restoring $clu_path from backup"
