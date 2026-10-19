@@ -73,7 +73,12 @@ endif()
 # SYCL probe (skipped when CUDA or HIP already selected)
 # =============================================================================
 set(_emg_sycl_active FALSE)
-if(USE_SYCL AND NOT _emg_cuda_active AND NOT _emg_hip_active)
+# Windows: the SYCL rules below pass GCC-style flags and link oneMKL with
+# -lmkl_*, which the MSVC-style icx driver and linker do not take; the CPU
+# path is used there until they are ported.
+if(USE_SYCL AND WIN32 AND NOT _emg_cuda_active AND NOT _emg_hip_active)
+    message(STATUS "process_extractemg: SYCL backend not yet available on Windows — CPU path")
+elseif(USE_SYCL AND NOT _emg_cuda_active AND NOT _emg_hip_active)
     find_program(_ICPX icpx
         HINTS $ENV{ONEAPI_ROOT}/compiler/latest/bin
               /opt/intel/oneapi/compiler/latest/bin
