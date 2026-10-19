@@ -1,5 +1,11 @@
 # templates/template.yaml — parameter block refresh (2026-04-20)
 
+> **Status (2026-10): historical.** `ndm_reextractspikes_stderiv` no longer
+> exists: `ndm_reextractspikes` dispatches by its `method` parameter
+> (standard | sdiff | stderiv). The `ndm_decomposecollisions` block now has 11
+> entries (`method` was added), and `templates/template.yaml` writes parameters
+> as block mappings (`- name: …` / `value: …`), not the flow style shown below.
+
 Default session-template updated so three plugins whose parameter
 surface grew over the recent patch series (`ndm_reextractspikes{,_stderiv}`,
 `ndm_decomposecollisions`, `ndm_stripdat`) expose all their YAML-readable
