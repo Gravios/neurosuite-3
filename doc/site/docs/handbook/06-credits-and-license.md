@@ -4,6 +4,8 @@ NeuroScope
 
 Program copyright 2004 Lynn Hazan <lynn.hazan@myrealbox.com>
 
+NeuroScope is now maintained by the neurosuite-3 maintainers as part of [neurosuite-3](https://github.com/Gravios/neurosuite-3).
+
 Contributors:
 
 -   Michaël B. Zugaro <mzugaro@andromeda.rutgers.edu>

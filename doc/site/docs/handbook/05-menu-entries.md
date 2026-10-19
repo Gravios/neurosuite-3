@@ -1,22 +1,24 @@
 # Menu Entries
 
+The shortcuts listed here are the defaults. **Help \> Keyboard Shortcuts...** lists the bindings currently in effect, and they can be changed on the Input page of **Settings \> Preferences**. On macOS, Ctrl is the Command key.
+
 ## The File Menu {#menu-file}
 
-**File \> Open**
+**File \> Open** (Ctrl+O)
 
-:   Opens data files
+:   Opens a data file, or a session file (`.nrs`).
 
 **File \> Open Recent**
 
-:   Opens data files selected from a list of recently edited data files.
+:   Opens a file selected from a list of recently opened files.
 
 **File \> Load Cluster File(s)...**
 
-:   Loads multiple cluster files.
+:   Loads one or more cluster files (each with its spike time file).
 
 **File \> Load Event File(s)...**
 
-:   Loads multiple event files.
+:   Loads one or more event files.
 
 **File \> Create Event File...**
 
@@ -26,17 +28,21 @@
 
 :   Loads a single position file.
 
-**File \> Save**
+**File \> Load Overlay Trace File...**
 
-:   Saves the session file.
+:   Loads a second trace file with the same channel layout and draws it on top of each channel (see [Overlay Trace Files](./02-using-neuroscope.md#overlay-traces)).
 
-**File \> Save As**
+**File \> Save** (Ctrl+S)
+
+:   Saves the parameter file, the session file and any modified event files.
+
+**File \> Save As** (Ctrl+Shift+S)
 
 :   Saves the session file in a new location.
 
-**File \> Print**
+**File \> Print** (Ctrl+P)
 
-:   Prints (or exports as PostScript or PDF) each view of the current display in a separate page.
+:   Prints (or exports as PDF) each view of the current display in a separate page.
 
 **File \> Properties**
 
@@ -58,87 +64,95 @@
 
 :   Closes the position file.
 
-**File \> Quit**
+**File \> Quit** (Ctrl+Q)
 
 :   Quits NeuroScope (will prompt for saving if necessary).
 
 ## The Edit Menu {#menu-edit}
 
-**Edit \> Undo**
+**Edit \> Undo** (Ctrl+Z)
 
 :   Undoes the last change (for event edition only).
 
-**Edit \> Redo**
+**Edit \> Redo** (Ctrl+Shift+Z)
 
-:   Redoes the last undone change (for event edition only).
+:   Redoes the last undone change (for event edition only). The shortcut is the platform's Redo key: Ctrl+Shift+Z on Linux, Ctrl+Y on Windows.
 
-**Edit \> Select All**
+**Edit \> Select All** (Ctrl+A)
 
 :   Selects all the items in the current palette (channels, clusters or events).
 
-**Edit \> Select All except 0 and 1**
+**Edit \> Select All except 0 and 1** (Ctrl+Shift+A)
 
 :   Selects all clusters except artefacts (cluster 0) and noise (cluster 1).
 
-**Edit \> Deselect All**
+**Edit \> Deselect All** (Ctrl+U)
 
 :   Deselects all the items in the current palette (channels, clusters or events).
 
-**Edit \> Edit Mode**
+**Edit \> Edit Mode** (Ctrl+E)
 
-:   Swiches between edit and non edit mode.
+:   Switches between edit and view mode.
 
-## The Tools Menu {#menu-tools}
+## The Tool Menu {#menu-tools}
 
-**Tools \> Zoom**
+**Tool \> Zoom** (Z)
 
 :   Allows you to zoom on a point (left click) or area (click and drag); double-click to reset the zoom level to the initial state.
 
-**Tools \> Draw Time Line**
+**Tool \> Draw Time Line** (L)
 
 :   Allows you to temporarily draw a vertical line where you left click.
 
-**Tools \> Select Channels**
+**Tool \> Select Channels** (C)
 
 :   Allows you to select channels in order to act on them (move them to compensate for an offset, change the amplitude...)
 
-**Tools \> Measure**
+**Tool \> Measure** (V)
 
 :   Allows you to measure the time and the voltage between two points.
 
-**Tools \> Select Time**
+**Tool \> Select Time** (T)
 
 :   Allows you to refine the time frame used to display the data.
 
-**Tools \> Select Events**
+**Tool \> Select Event** (E)
 
 :   Allows you to select one event in order to move it or delete it.
 
-**Tools \> Add Event**
+**Tool \> Add Event**
 
 :   Allows you to add a new event (select the type of event from the submenu).
 
 ## The Channels Menu {#menu-Channels}
 
-**Channels \> Show Channels**
+**Channels \> Show Channels** (Ctrl+C)
 
 :   Shows the selected channels.
 
-**Channels \> Hide Channels**
+**Channels \> Hide Channels** (Ctrl+H)
 
 :   Hides the selected channels.
 
-**Channels \> Move Channels to New Group**
+**Channels \> Move Channels to New Group** (Ctrl+G)
 
 :   Moves the selected channels to a newly created group (either an anatomical group or a spike group).
 
-**Channels \> Remove Channels from Group**
+**Channels \> Remove Channels from Group** (Shift+Delete)
 
 :   Removes the selected channels from their current group and puts them in the Undefined Group (the "?" group). This does not actually remove the channels from the data file.
 
-**Channels \> Discard Channels**
+**Channels \> Discard Channels** (Delete)
 
 :   Removes the selected channels from their current group and puts them in the Discarded Group (simultaneously acts on the anatomical and spike groups). This does not actually remove the channels from the data file.
+
+**Channels \> Keep Channels** (Ctrl+Shift+K)
+
+:   Brings skipped channels back into the display.
+
+**Channels \> Skip Channels**
+
+:   Skips the selected channels: they are no longer drawn, but keep their place in the layout.
 
 **Channels \> Synchronize Groups**
 
@@ -164,27 +178,35 @@
 
 **Units \> Waveforms**
 
-:   Draws spike waveforms for selected clusters directly on the local field potential traces.
+:   Draws spike waveforms for selected clusters directly on the traces (only for `.dat` and `.fil` files).
 
-**Units \> Next Spike**
+**Units \> Increase Height** (Ctrl++)
+
+:   Increases the height of the rasters.
+
+**Units \> Decrease Height** (Ctrl+-)
+
+:   Decreases the height of the rasters.
+
+**Units \> Next Spike** (Ctrl+Shift+F)
 
 :   Moves the time window to the next spike fired by one of the currently activated clusters.
 
-**Units \> Previous Spike**
+**Units \> Previous Spike** (Ctrl+Shift+B)
 
 :   Moves the time window to the previous spike fired by one of the currently activated clusters.
 
 ## The Events Menu {#menu-events}
 
-**Events \> Next Event**
+**Events \> Next Event** (Ctrl+F)
 
 :   Moves the time window to the next activated event.
 
-**Events \> Previous Event**
+**Events \> Previous Event** (Ctrl+B)
 
 :   Moves the time window to the previous activated event.
 
-**Events \> Remove Event**
+**Events \> Remove Event** (Ctrl+K)
 
 :   Removes the currently selected event.
 
@@ -194,39 +216,47 @@
 
 :   Shows or hides the position view.
 
+**Positions \> Show Events**
+
+:   Shows or hides the selected events in the position view.
+
 ## The Traces Menu {#menu-traces}
 
 **Traces \> Multiple Columns**
 
-:   Toggles between single and multiple column mode. In mutiple column mode, each anatomical group is represented on a separate column.
+:   Toggles between single and multiple column mode. In multiple column mode, each anatomical group is represented on a separate column.
 
 **Traces \> Grey-Scale**
 
-:   Displays the channels in gray-scale.
+:   Displays the channels in grey-scale.
 
-**Traces \> Increase All Channel Amplitudes**
+**Traces \> Spectral View** (S)
+
+:   Toggles the active display between the traces and the [Spectral View](./02-using-neuroscope.md#spectral-view).
+
+**Traces \> Increase All Channel Amplitudes** (Ctrl+I)
 
 :   Increases the amplitudes of all the channels (both visible and hidden).
 
-**Traces \> Decrease All Channel Amplitudes**
+**Traces \> Decrease All Channel Amplitudes** (Ctrl+D)
 
 :   Decreases the amplitudes of all the channels (both visible and hidden).
 
-**Traces \> Increase Selected Channel Amplitudes**
+**Traces \> Increase Selected Channel Amplitudes** (Ctrl+Shift+I)
 
 :   Increases the amplitudes of the selected channels.
 
-**Traces \> Decrease Selected Channel Amplitudes**
+**Traces \> Decrease Selected Channel Amplitudes** (Ctrl+Shift+D)
 
 :   Decreases the amplitudes of the selected channels.
-
-**Traces \> Reset Selected Channel Amplitude**
-
-:   Resets the amplitudes of the selected channels.
 
 **Traces \> Reset Selected Channel Offsets**
 
 :   Resets the offsets of the selected channels to the default offsets.
+
+**Traces \> Reset Selected Channel Amplitudes**
+
+:   Resets the amplitudes of the selected channels.
 
 **Traces \> Set Current Offsets as Defaults**
 
@@ -236,39 +266,51 @@
 
 :   Sets the default offsets to be stored in the parameter file to zero.
 
-**Traces \> Show Labels**
+**Traces \> Autocenter Channels**
+
+:   Centres each trace on its mean value over the current time window.
+
+**Traces \> Show Labels** (Ctrl+L)
 
 :   Shows or hides the labels (channel IDs and gains).
 
+**Traces \> Auto-advance to end of recording** (Ctrl+Shift+Space)
+
+:   Pages forward automatically, one time window at a time, until the end of the recording.
+
+**Traces \> Accelerate** (Ctrl+Up)
+
+:   Shortens the auto-advance interval by 125 ms.
+
+**Traces \> Decelerate** (Ctrl+Down)
+
+:   Lengthens the auto-advance interval by 125 ms (up to 1000 ms).
+
 ## The Displays Menu {#menu-displays}
 
-**Displays \> New Display**
+**Displays \> New Display** (Ctrl+N)
 
-:   Creates a new Display.
+:   Creates a new display, copied from the active one.
 
-**Displays \> Rename Active Display**
+**Displays \> Rename Active Display** (Ctrl+R)
 
 :   Brings a dialog enabling the user to enter a new label for the currently active display.
 
-**Displays \> Close Active Display**
+**Displays \> Close Active Display** (Ctrl+W)
 
 :   Closes the currently active display; when there is only one display, closes all data files as well (will prompt for saving if necessary).
 
 ## The Settings Menu {#menu-settings}
 
-**Settings \> Show Toolbar**
+**Settings \> Show Main Toolbar**
 
-:   Shows or hides the Toolbar.
+:   Shows or hides the main toolbar.
 
 **Settings \> Show Tools**
 
-:   Shows or hides the Tools.
+:   Shows or hides the tools toolbar.
 
-**Settings \> Show Parameters**
-
-:   Shows or hides the Parameter Bar.
-
-**Settings \> Show Status Bar**
+**Settings \> Show StatusBar**
 
 :   Shows or hides the Status Bar.
 
@@ -276,37 +318,21 @@
 
 :   Shows or hides a calibration bar for channel 0 (voltage and gain are indicated).
 
-**Settings \> Configure Shortcuts**
+**Settings \> Preferences**
 
-:   Lets you configure the shortcuts.
-
-**Settings \> Configure neuroscope**
-
-:   Lets you configure a number of settings including default behaviors.
+:   Opens the [Preferences](./03-settings.md#settings) dialog, including the keyboard and mouse bindings (Input page).
 
 ## The Help Menu {#menu-help}
 
-**Help \> neuroscope Handbook**
+**Help \> Handbook** (F1)
 
-:   Opens this user manual in the Help Center.
+:   Opens this user manual.
 
 **Help \> Keyboard Shortcuts...**
 
 :   Opens a list of all keyboard shortcuts and mouse bindings and the commands they trigger. See [Keyboard and Mouse Shortcuts](./02-using-neuroscope.md#shortcuts).
 
-**Help \> What's this?**
-
-:   Activates the context help tool.
-
-**Help \> Report Bug**
-
-:   Helps you compose an e-mail message to report a bug to the author of NeuroScope.
-
-**Help \> About neuroscope**
+**Help \> About**
 
 :   Shows information about the authors of and contributors to NeuroScope.
-
-**Help \> About KDE**
-
-:   Shows information about the authors of and contributors to KDE.
 

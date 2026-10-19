@@ -1,6 +1,6 @@
 # Settings
 
-Selecting **Settings \> Configure neuroscope** will open the Settings Dialog. This lets you configure several default behaviors of NeuroScope.
+Selecting **Settings \> Preferences** will open the Preferences dialog. This lets you configure several default behaviors of NeuroScope.
 
 <a id="settings-general"></a>General
 
@@ -8,11 +8,13 @@ Selecting **Settings \> Configure neuroscope** will open the Settings Dialog. Th
 
     -   <a id="settings-background"></a>Background color. This setting affects all views.
 
-    -   Display labels in the palette headers. This shows or hides the labels ('Anatomy','Spikes', 'Units' and 'Events') next to the icons in the palette headers. Hiding them saves some space.
+    -   Display labels in the palette headers. This shows or hides the labels ('Anatomy', 'Spikes', 'Units' and 'Events') next to the icons in the palette tabs. Hiding them saves some space. The Spectral tab always shows its name.
 
     -   Align events.... This setting is used when you browse events. For instance, each time you move to the next event, the time window is shifted forward in such a way that the next event appears at a fixed position in the display. This setting determines where the events are aligned in the display.
 
         Align units.... Same as above, for spikes.
+
+    -   Use white background when printing. Prints the traces on a white background instead of the display background colour.
 
 <a id="defaults"></a>Defaults
 
@@ -34,9 +36,9 @@ Selecting **Settings \> Configure neuroscope** will open the Settings Dialog. Th
 
     -   Screen gain (mV/cm). Default screen gain (see [this paragraph](./02-using-neuroscope.md#screen-gain) for details).
 
-    -   Sampling rate for EEG (Hz). Default sampling rate of the local field potentials (`.eeg`) file.
+    -   Sampling rate for EEG (Hz). Default sampling rate of the local field potentials file (`.lfp`, formerly `.eeg`).
 
-    -   Background image. Background image for the Trace View. You can use any image format supported by Qt: JPEG, PNG, BMP, XBM, XPM, PNM, MNG and GIF. See your Qt documentation for details (e.g. the QImageIO class description).
+    -   Background image. Background image for the Trace View. You can use any image format that your Qt installation can read (for instance PNG, JPEG, BMP or GIF).
 
     Units
 
@@ -52,13 +54,17 @@ Selecting **Settings \> Configure neuroscope** will open the Settings Dialog. Th
 
     -   Height (pixels). Default vertical resolution of the video camera.
 
-    -   Background image. Background image for the Position View. You can use any image format supported by Qt: JPEG, PNG, BMP, XBM, XPM, PNM, MNG and GIF. See your Qt documentation for details (e.g. the QImageIO class description).
+    -   Background image. Background image for the Position View. You can use any image format that your Qt installation can read (for instance PNG, JPEG, BMP or GIF).
 
     -   Draw trajectory. Activate this to draw over the background (be it a black background or an image) an outline of the trajectory of the animal throughout the experiment.
 
     -   Rotate CCW (degrees). This allows you to rotate (counterclockwise) both the position data and the background image.
 
     -   flip. This allows you to flip both the position data and the background image.
+
+<a id="settings-appearance"></a>Appearance
+
+:   Theme: System, Light or Dark. The theme applies to all NeuroSuite programs and takes effect when you click Apply or OK.
 
 <a id="settings-input"></a>Input
 

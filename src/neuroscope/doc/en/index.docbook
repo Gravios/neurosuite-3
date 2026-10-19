@@ -41,8 +41,8 @@ Please respect the format of the date (DD/MM/YYYY) and of the version
 (V.MM.LL), it could be used by automation scripts.
 Do NOT change these in the translation. -->
 
-<date>26/11/2006</date>
-<releaseinfo>1.3.3</releaseinfo>
+<date>2026-10</date>
+<releaseinfo>2.0.0</releaseinfo>
 
 <!-- Abstract about this handbook -->
 
@@ -51,16 +51,15 @@ Do NOT change these in the translation. -->
 &neuroscope; is a viewer for displaying various physiological and behavioral data. It allows comparison of analyzed data with the original recordings.
 </para>
 <para>
-&neuroscope; is developped by Lynn Hazan in <ulink url="http://osiris.rutgers.edu">G. Buzsáki's lab</ulink> (CMBN, Rutgers Newark, USA).
+&neuroscope; was developed by Lynn Hazan in <ulink url="http://osiris.rutgers.edu">G. Buzsáki's lab</ulink> (CMBN, Rutgers Newark, USA). It is now maintained as part of <ulink url="https://github.com/Gravios/neurosuite-3">neurosuite-3</ulink>.
 </para>
 </abstract>
 
 <!-- This is a set of Keywords for indexing by search engines. -->
 
 <keywordset>
-<keyword>KDE</keyword>
-<keyword>kdeutils</keyword>
-<keyword>Kapp</keyword>
+<keyword>neurosuite-3</keyword>
+<keyword>Electrophysiology</keyword>
 <keyword>Viewer</keyword>
 <keyword>Local Field Potentials</keyword>
 <keyword>Cortex</keyword>
@@ -80,7 +79,7 @@ revision history. (see installation appendix comment) -->
 &neuroscope; is an advanced viewer for electrophysiological and behavioral data: it can display local field potentials (EEG), neuronal spikes, behavioral events, as well as the position of the animal in the environment. It also features limited editing capabilities.
 </para>
 <para>
-&neuroscope; is part of a larger data analysis framework, including <ulink url="http://klusters.sourceforge.net">Klusters</ulink> and other utilities which are currently under development. While &neuroscope; can be used as a standalone application, some of its features are most useful within this framework.
+&neuroscope; is part of <ulink url="https://github.com/Gravios/neurosuite-3">neurosuite-3</ulink>, together with Klusters (cluster viewer and editor), NDManager (parameter files and processing) and KiloKlustaKwik (automatic clustering). While &neuroscope; can be used as a standalone application, some of its features are most useful within this framework.
 </para>
 </chapter>
 
@@ -94,17 +93,17 @@ your application. -->
 <sect1 id="starting">
 <title>Starting a New Session</title>
 <para>
-To start a new session, select <menuchoice> <guimenu>File</guimenu> <guimenuitem>Open</guimenuitem> </menuchoice>. In the <guilabel>Open</guilabel> dialog, you can select any type of data file (<filename>dat</filename>, <filename>eeg</filename>, <filename>nrs</filename> or <filename>xml</filename>: see <link linkend="data-files">File Formats</link>).
+To start a new session, select <menuchoice> <guimenu>File</guimenu> <guimenuitem>Open</guimenuitem> </menuchoice>. The <guilabel>Open</guilabel> dialog lists data files (<filename>dat</filename>, <filename>lfp</filename>, <filename>eeg</filename> and <filename>fil</filename>); choose <guilabel>All files</guilabel> to open a data file with another extension or a session file (<filename>nrs</filename>). See <link linkend="data-files">File Formats</link>.
 </para>
 <para>
-A session can also be started from Konqueror by clicking on one of the above files, or on the command line by typing:
+A session can also be started from your file manager by opening one of the above files with &neuroscope;, or on the command line by typing:
 </para>
 <screen width="40">
 <prompt>%</prompt> <userinput>neuroscope</userinput> <replaceable>filename</replaceable>
 </screen>
 
 <para>
-First, &neuroscope; needs some information about the acquisition system. You will be prompted to provide this information in the
+First, &neuroscope; needs some information about the acquisition system. It reads this from the parameter file (<filename>base.yaml</filename>, see <link linkend="parameter_file">File Formats</link>); if there is none, you will be prompted to provide this information in the
 <guilabel>Properties</guilabel> dialog. More generally, this dialog is where you can set all the parameters for the various files you view and edit (this will be presented in later sections of this manual). For now, suffice it to introduce the <guilabel>Channels</guilabel> tab, which is the only one enabled at this point.
 </para>
 <para id="fig-properties">
@@ -151,37 +150,28 @@ The information provided in the <guilabel>Properties</guilabel> dialog can be la
 <para>
 When starting &neuroscope; from a terminal, this information can also be provided as command line options. To list available options, type <screen width="40">
 <prompt>%</prompt> <userinput>neuroscope --help</userinput>
-Usage: neuroscope [Qt-options] [KDE-options] [options] file
-
-NeuroScope - Viewer for local field potentials, spikes and events
-
-Generic options:
-  --help                    Show help about options
-  --help-qt                 Show Qt specific options
-  --help-kde                Show KDE specific options
-  --help-all                Show all options
-  --author                  Show author information
-  -v, --version             Show version information
-  --license                 Show license information
-  --                        End of options
+Usage: neuroscope [options] file
+Neuroscope &#x2014; neural data viewer
 
 Options:
-  -r, --resolution          Resolution of the acquisition system.
-  -c, --nbChannels          Number of channels.
-  -o, --offset              Initial offset.
-  -m, --voltageRange        Voltage range.
-  -a, --amplification       Amplification.
-  -g, --screenGain          Screen gain.
-  -s, --samplingRate        Sampling rate.
-  -t, --timeWindow          Initial time window (in miliseconds).
+  -h, --help                  Displays help on commandline options.
+  --help-all                  Displays help, including generic Qt options.
+  -v, --version               Displays version information.
+  -r, --resolution &lt;value&gt;    Resolution of the acquisition system.
+  -c, --nbChannels &lt;value&gt;    Number of channels.
+  -o, --offset &lt;value&gt;        Initial offset.
+  -m, --voltageRange &lt;value&gt;  Voltage range.
+  -a, --amplification &lt;value&gt; Amplification.
+  -g, --screenGain &lt;value&gt;    Screen gain.
+  -s, --samplingRate &lt;value&gt;  Sampling rate.
+  -t, --timeWindow &lt;value&gt;    Initial time window (milliseconds).
 
 Arguments:
-  file                      Document to open.
-
+  file                        File to open.
 </screen>
 </para>
 <para>
-The options provided on the command line will be displayed in the <guilabel>Properties</guilabel> dialog.
+The options provided on the command line will be displayed in the <guilabel>Properties</guilabel> dialog. If a parameter file exists, its values are used instead and the command line values are discarded.
 </para>
 
 <para>
@@ -214,7 +204,7 @@ The window contains two functionally distinct areas: the <guilabel>Palettes</gui
 <sect1 id="palettes">
 <title>Palettes</title>
 <para>
-&neuroscope; provides several palettes to manipulate the data: the <guilabel>Anatomical Groups Palette</guilabel>, the <guilabel>Spike Groups Palette</guilabel>, as well as the <guilabel>Units Palette</guilabel> and the <guilabel>Events Palette</guilabel> (the latter two become available upon loading cluster and event files, respectively). To display a palette, click on the corresponding tab. Each tab has a distinctive icon next to the palette name to make it more easily identifiable. Optionally, palette names can be hidden, leaving only the icons, to save space in the main window (see <link linkend="settings">Settings</link>).
+&neuroscope; provides several palettes to manipulate the data, shown as tabs on the left of the main window: the <guilabel>Anatomical Groups Palette</guilabel> (<guilabel>Anatomy</guilabel>), the <guilabel>Spike Groups Palette</guilabel> (<guilabel>Spikes</guilabel>), the <guilabel>Spectral</guilabel> tab (settings of the <link linkend="spectral-view">Spectral View</link>), as well as the <guilabel>Units Palette</guilabel> and the <guilabel>Events Palette</guilabel> (the latter two become available upon loading cluster and event files, respectively). To display a palette, click on the corresponding tab. Each tab has a distinctive icon next to the palette name to make it more easily identifiable. Optionally, palette names can be hidden, leaving only the icons, to save space in the main window (see <link linkend="settings">Settings</link>).
 </para>
 <para id="fig-palettes">
 <screenshot>
@@ -247,7 +237,7 @@ On the other hand, spike groups are related to unit activity. In most experiment
 <sect2>
 <title>Units</title>
 <para>
-Unit activity can be extracted and sorted using a combination of automatic and manual cluster cutting. Spike sorting applications include Kenneth D. Harris' <ulink url="http://klustakwik.sourceforge.net">KlustaKwik</ulink> (a powerful automatic cluster cutting command-line tool) and Lynn Hazan's <ulink url="http://klusters.sourceforge.net">Klusters</ulink> (an advanced cluster viewer/editor application for KDE). Cluster files can be loaded into &neuroscope;, which allows for browsing identified unit activity together with local field potentials. The <guilabel>Units Palette</guilabel> is where you perform all operations related to spike clusters.
+Unit activity can be extracted and sorted using a combination of automatic and manual cluster cutting. Spike sorting applications include KiloKlustaKwik (the neurosuite-3 version of Kenneth D. Harris' KlustaKwik, an automatic cluster cutting command-line tool) and Lynn Hazan's Klusters (an advanced cluster viewer/editor); both are part of <ulink url="https://github.com/Gravios/neurosuite-3">neurosuite-3</ulink>. Cluster files can be loaded into &neuroscope;, which allows for browsing identified unit activity together with local field potentials. The <guilabel>Units Palette</guilabel> is where you perform all operations related to spike clusters.
 </para>
 </sect2>
 <sect2>
@@ -494,7 +484,7 @@ Notice that removing channels from a spike group <emphasis>does not modify your 
 <sect2 id="direct-selection">
 <title>Selecting Channels</title>
 <para>
-As mentioned previously, channels can be selected by clicking on the corresponding circles in the palettes. Clicking on a group ID (the number on the left side of a group box) will select or deselect all the channels in the group at once. Another, more graphical way is to directly click on the traces in the display using the <guilabel>Select Channels</guilabel> tool. To activate this tool, select <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Select Channels</guimenuitem> </menuchoice> or click on <guiicon>
+As mentioned previously, channels can be selected by clicking on the corresponding circles in the palettes. Clicking on a group ID (the number on the left side of a group box) will select or deselect all the channels in the group at once. Another, more graphical way is to directly click on the traces in the display using the <guilabel>Select Channels</guilabel> tool. To activate this tool, select <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Select Channels</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/select_tool.png" format="PNG"/>
@@ -594,10 +584,13 @@ To make hidden channels visible again, select the corresponding circles and choo
 <sect2>
 <title>Adjusting Amplitudes and Offsets</title>
 <para>
-Channel amplitudes can be adjusted by selecting channels and choosing <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Increase Selected Channel Amplitudes</guimenuitem> </menuchoice> or <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Decrease Selected Channel Amplitudes</guimenuitem> </menuchoice>. To adjust all channels at once, select <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Increase All Channel Amplitudes</guimenuitem> </menuchoice> or <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Decrease All Channel Amplitudes</guimenuitem> </menuchoice>. To reset the amplitudes to their default (initial) settings, select channels and choose <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Reset Selected Channel Amplitudes</guimenuitem> </menuchoice>.
+Channel amplitudes can be adjusted by selecting channels and choosing <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Increase Selected Channel Amplitudes</guimenuitem> </menuchoice> or <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Decrease Selected Channel Amplitudes</guimenuitem> </menuchoice>. To adjust all channels at once, select <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Increase All Channel Amplitudes</guimenuitem> </menuchoice> or <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Decrease All Channel Amplitudes</guimenuitem> </menuchoice>. To reset the amplitudes to their default (initial) settings, select channels and choose <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Reset Selected Channel Amplitudes</guimenuitem> </menuchoice>. With the mouse, <keycap>Ctrl+Shift</keycap> and the wheel increase or decrease the amplitude of all channels.
 </para>
 <para>
-Channels can be offset by clicking on the traces and dragging them by the appropriate amount using the <guilabel>Select Channels</guilabel> tool. To activate this tool, select <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Select Channels</guimenuitem> </menuchoice> or click on <guiicon>
+To centre each trace on its mean value over the current time window, toggle <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Autocenter Channels</guimenuitem> </menuchoice>. This is useful for channels with a large or drifting DC offset.
+</para>
+<para>
+Channels can be offset by clicking on the traces and dragging them by the appropriate amount using the <guilabel>Select Channels</guilabel> tool. To activate this tool, select <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Select Channels</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/select_tool.png" format="PNG"/>
@@ -626,7 +619,7 @@ Channels can be offset by clicking on the traces and dragging them by the approp
 </screenshot>
 </para>
 <para>
-When the physical organisation of your electrodes is more complex than vertical arrays (e.g. epidural electrodes covering the surface of the brain), NeuroScope provides a way to store your electrode layout. This can be done by redefining the default offsets which are stored in the parameter file (see <link linkend="parameter_file">File Formats</link>). To set the current offsets as the default offsets, select <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Set Current Offsets as Default</guimenuitem> </menuchoice>. To set the default offsets back to zero, select <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Set Default Offsets to Zero</guimenuitem> </menuchoice>.
+When the physical organisation of your electrodes is more complex than vertical arrays (e.g. epidural electrodes covering the surface of the brain), NeuroScope provides a way to store your electrode layout. This can be done by redefining the default offsets which are stored in the parameter file (see <link linkend="parameter_file">File Formats</link>). To set the current offsets as the default offsets, select <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Set Current Offsets as Defaults</guimenuitem> </menuchoice>. To set the default offsets back to zero, select <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Set Default Offsets to Zero</guimenuitem> </menuchoice>.
 </para>
 <para id="fig-epidural">
 <screenshot>
@@ -645,7 +638,7 @@ When the physical organisation of your electrodes is more complex than vertical 
 </para>
 <note>
 <para>
-Defaut offsets can be reused for subsequent experiments. This can be done using <ulink url="http://ndmanager.sourceforge.net">NDManager</ulink>, which is part of the larger data analysis framework including &neuroscope; and <ulink url="http://klusters.sourceforge.net">Klusters</ulink>. Alternatively, this can also be done manually by duplicating and modifing the parameter file (see <link linkend="parameter_file">File Formats</link>).
+Default offsets can be reused for subsequent experiments. This can be done using NDManager, which is part of <ulink url="https://github.com/Gravios/neurosuite-3">neurosuite-3</ulink> together with &neuroscope; and Klusters. Alternatively, this can also be done manually by duplicating and modifing the parameter file (see <link linkend="parameter_file">File Formats</link>).
 </para>
 </note>
 </sect2>
@@ -709,7 +702,7 @@ Labels provide information about the traces: the ID of the corresponding channel
 Amplitudes are described as follows. By convention, 'x1' corresponds to the <link linkend="properties">current screen gain</link>. Thus, assuming for instance a screen gain of 1&nbsp;mV/cm, an amplitude of 'x0.38' corresponds to 0.38&nbsp;mV/cm. Notice that different traces can have different amplitudes, as is the case in the above screenshot where local field potentials have a gain of x0.38 and the synchronization pulse has a gain of x0.12.
 </para>
 <para>
-Calibration bars also provide scaling information. The horizontal bar indicates the time scale, and the vertical bar indicates the voltage scale <emphasis>for channel 0</emphasis> (notice that there is only one vertical bar, but each channel can have a different amplitude, hence the need for a convention). Showing calibration bars is most useful when printing traces. To display or hide the calibration bars, toggle <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Show Calibration</guimenuitem> </menuchoice>.
+Calibration bars also provide scaling information. The horizontal bar indicates the time scale, and the vertical bar indicates the voltage scale <emphasis>for channel 0</emphasis> (notice that there is only one vertical bar, but each channel can have a different amplitude, hence the need for a convention). Showing calibration bars is most useful when printing traces. To display or hide the calibration bars, toggle <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Display Calibration</guimenuitem> </menuchoice>.
 </para>
 <note>
 <para>
@@ -756,7 +749,24 @@ All the features described up to this point are most useful in the initial stage
 Notice that the editing tools are now disabled: you can no longer create, modify or delete groups, nor can you change channel offsets.
 </para>
 <para>
-In <guilabel>View Mode</guilabel>, the palettes behave in the same way as in <ulink url="http://klusters.sourceforge.net"><application>Klusters</application></ulink>. This is also how the <guilabel>Units Palette</guilabel> and the <guilabel>Events Palette</guilabel> behave.
+In <guilabel>View Mode</guilabel>, the palettes behave in the same way as in <application>Klusters</application>. This is also how the <guilabel>Units Palette</guilabel> and the <guilabel>Events Palette</guilabel> behave.
+</para>
+</sect2>
+
+<sect2 id="spectral-view">
+<title>Spectral View</title>
+<para>
+Select <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Spectral View</guimenuitem> </menuchoice> (<keycap>S</keycap>) to replace the traces of the active display with a time-frequency image (multitaper spectral estimate) of the channels and time window shown. Select it again to return to the traces.
+</para>
+<para>
+The <guilabel>Spectral</guilabel> tab in the palette area sets the parameters: the mode (<guilabel>time-freq</guilabel> for one channel, <guilabel>band-chan</guilabel> for one frequency band across all channels), the number of tapers and time-bandwidth product, window, FFT length and step, the frequency band, the time window (locked to the trace window or an independent span), optional whitening, decimation and re-referencing, and the colour map and scale. Changes are not applied at once: the title of the view shows that an update is pending, and pressing <keycap>U</keycap> computes the image with the new settings.
+</para>
+</sect2>
+
+<sect2 id="overlay-traces">
+<title>Overlay Trace Files</title>
+<para>
+To compare two versions of the same recording (for instance the wideband and a filtered signal), select <menuchoice> <guimenu>File</guimenu> <guimenuitem>Load Overlay Trace File...</guimenuitem> </menuchoice> and choose a <filename>.dat</filename>, <filename>.lfp</filename> or <filename>.eeg</filename> file with the same channel layout as the open file. It is drawn on top of each channel in a contrasting colour.
 </para>
 </sect2>
 
@@ -782,22 +792,22 @@ To move to a particular point in the data, enter the corresponding time in the <
 </listitem>
 <listitem>
 <para>
-To modify the duration of the time window shown in the display (1&nbsp;s by default), change the value in the <guilabel>Duration</guilabel> text box (below the traces). This value can be doubled by hitting the <keycap>+</keycap> key, or divided by two by hitting the <keycap>-</keycap> key.
+To modify the duration of the time window shown in the display (1&nbsp;s by default), change the value in the <guilabel>Duration</guilabel> text box (below the traces). This value can be doubled by hitting the <keycap>+</keycap> key, or divided by two by hitting the <keycap>-</keycap> key. The mouse wheel also zooms the time axis around the pointer.
 </para>
 </listitem>
 <listitem>
 <para>
-To display the next time window, click on the scroll bar below the traces, in the empty space on the right side of the slider. You can also hit the <keycap>Page Down</keycap> key. Similarly, clicking on the left side of the slider, or hitting the <keycap>Page Up</keycap> key, displays the previous time window.
+To display the next time window, click on the scroll bar below the traces, in the empty space on the right side of the slider. Similarly, clicking on the left side of the slider displays the previous time window. While the scroll bar has the keyboard focus, <keycap>Page Down</keycap> and <keycap>Page Up</keycap> do the same.
 </para>
 </listitem>
 <listitem>
 <para>
-To move by smaller amounts, click on the arrows of the scroll bar, or hit <keycap>Left Arrow</keycap> or <keycap>Right Arrow</keycap>.
+To move by smaller amounts, click on the arrows of the scroll bar, or hit <keycap>Left Arrow</keycap> or <keycap>Right Arrow</keycap> (a quarter of the time window). Holding <keycap>Ctrl</keycap> and dragging with the left mouse button pans the view (except with the <guilabel>Select Channels</guilabel> tool, where <keycap>Ctrl</keycap>-click selects channels).
 </para>
 </listitem>
 <listitem>
 <para>
-To move to the beginning or the end of the data, hit the <keycap>Home</keycap> or <keycap>End</keycap> keys, respectively.
+To move to the beginning or the end of the data, hit the <keycap>Home</keycap> or <keycap>End</keycap> keys while the scroll bar has the keyboard focus.
 </para>
 </listitem>
 <listitem>
@@ -805,10 +815,20 @@ To move to the beginning or the end of the data, hit the <keycap>Home</keycap> o
 Dragging the slider in the scroll bar is another way to move within the data.
 </para>
 </listitem>
+<listitem>
+<para>
+To page through the data automatically, toggle <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Auto-advance to end of recording</guimenuitem> </menuchoice> (<keycap>Ctrl+Shift+Space</keycap>). The display advances by one time window at a fixed interval until the end of the recording; changing the start time or moving the scroll bar stops it. <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Accelerate</guimenuitem> </menuchoice> (<keycap>Ctrl+Up</keycap>) and <menuchoice> <guimenu>Traces</guimenu> <guimenuitem>Decelerate</guimenuitem> </menuchoice> (<keycap>Ctrl+Down</keycap>) shorten or lengthen the interval in steps of 125&nbsp;ms (between 0 and 1000&nbsp;ms).
+</para>
+</listitem>
+<listitem>
+<para>
+Holding <keycap>Ctrl</keycap> while turning the mouse wheel zooms in or out around the pointer.
+</para>
+</listitem>
 </itemizedlist>
 <note>
 <para>
-The shortcut keys described above will not work if the focus is in one of the text boxes below the traces. This is because in this case the shortcuts are applied to the text boxes rather than to the display (e.g. hitting the <keycap>End</keycap> key will move the insertion point to the end of the text). To activate the navigation shortcut keys, move the focus elsewhere, for instance by clicking on the scroll bar.
+<keycap>Page Up</keycap>, <keycap>Page Down</keycap>, <keycap>Home</keycap> and <keycap>End</keycap> are handled by the scroll bar, so they only work while it has the keyboard focus (click on it). If the focus is in one of the text boxes below the traces, keys edit the text box instead (e.g. <keycap>End</keycap> moves the insertion point to the end of the text).
 </para>
 </note>
 </sect1>
@@ -819,13 +839,13 @@ The shortcut keys described above will not work if the focus is in one of the te
 &neuroscope; provides a set of tools to help you efficiently browse and edit your data. Whichever tool you select, when the cursor is located within the display, the time below the pointer (counted from the beginning of the data) is indicated in the <guilabel>Status Bar</guilabel>.
 </para>
 <para>
-Only one tool is active at a time: choosing a tool replaces the previous one, and the active tool stays highlighted on the toolbar. Each tool can be selected from the <guimenu>Tools</guimenu> menu, from the toolbar, or with its keyboard shortcut: <keycap>Z</keycap> (Zoom), <keycap>C</keycap> (Select Channels), <keycap>V</keycap> (Measure), <keycap>T</keycap> (Select Time), <keycap>E</keycap> (Select Event) and <keycap>L</keycap> (Draw Time Line); Add Event is chosen from its toolbar drop-down. When several displays are open, the active tool is remembered for each display, so the toolbar highlight follows the display you are working in. All of these shortcuts can be listed or changed as described in <link linkend="shortcuts">Keyboard and Mouse Shortcuts</link>.
+Only one tool is active at a time: choosing a tool replaces the previous one, and the active tool stays highlighted on the toolbar. Each tool can be selected from the <guimenu>Tool</guimenu> menu, from the toolbar, or with its keyboard shortcut: <keycap>Z</keycap> (Zoom), <keycap>C</keycap> (Select Channels), <keycap>V</keycap> (Measure), <keycap>T</keycap> (Select Time), <keycap>E</keycap> (Select Event) and <keycap>L</keycap> (Draw Time Line); Add Event has no shortcut and is chosen from the <guimenu>Tool</guimenu> menu or its toolbar drop-down. When several displays are open, the active tool is remembered for each display, so the toolbar highlight follows the display you are working in. All of these shortcuts can be listed or changed as described in <link linkend="shortcuts">Keyboard and Mouse Shortcuts</link>.
 </para>
 
 <sect2>
 <title>Zoom</title>
 <para>
-To zoom on a particular area in the display, select <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Zoom</guimenuitem> </menuchoice> or click on <guiicon>
+To zoom on a particular area in the display, select <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Zoom</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/zoom_tool.png" format="PNG"/>
@@ -844,7 +864,7 @@ To zoom on a particular area in the display, select <menuchoice> <guimenu>Tools<
 <sect2>
 <title>Draw Time Line</title>
 <para>
-In order to quickly assess the temporal relationships between physiological events occurring on different channels, a vertical time line can be temporarily displayed on the traces. To display the time line, select <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Draw Time Line</guimenuitem> </menuchoice> or click on <guiicon>
+In order to quickly assess the temporal relationships between physiological events occurring on different channels, a vertical time line can be temporarily displayed on the traces. To display the time line, select <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Draw Time Line</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/time_line_tool.png" format="PNG"/>
@@ -866,7 +886,7 @@ As usual, while you move the pointer within the display, the time at the cursor 
 <sect2>
 <title>Select Channels</title>
 <para>
-To select one or more channels directly from the display, choose <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Select Channels</guimenuitem> </menuchoice> or click on <guiicon>
+To select one or more channels directly from the display, choose <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Select Channels</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/select_tool.png" format="PNG"/>
@@ -885,7 +905,7 @@ To select one or more channels directly from the display, choose <menuchoice> <g
 <sect2>
 <title>Measure</title>
 <para>
-To measure on the traces the amplitude and duration of a neurophysiological event (an action potential, a theta cylce, etc.), select <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Measure</guimenuitem> </menuchoice> or click on <guiicon>
+To measure on the traces the amplitude and duration of a neurophysiological event (an action potential, a theta cylce, etc.), select <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Measure</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/measure_tool.png" format="PNG"/>
@@ -919,7 +939,7 @@ To measure on the traces the amplitude and duration of a neurophysiological even
 <sect2>
 <title>Select Time</title>
 <para>
-To graphically refine the displayed time window, select <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Select Time</guimenuitem> </menuchoice> or click on <guiicon>
+To graphically refine the displayed time window, select <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Select Time</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/time_tool.png" format="PNG"/>
@@ -956,7 +976,7 @@ As usual, while you move the pointer within the display, the time at the cursor 
 <sect2>
 <title>Select Event</title>
 <para>
-To select a single event, choose <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Select Event</guimenuitem> </menuchoice> or click on <guiicon>
+To select a single event, choose <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Select Event</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/event_tool.png" format="PNG"/>
@@ -975,7 +995,7 @@ To select a single event, choose <menuchoice> <guimenu>Tools</guimenu> <guimenui
 <sect2>
 <title>Add Event</title>
 <para>
-To add a single event to an existing event file, select an event type under <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Add Event</guimenuitem> </menuchoice> or click on <guiicon>
+To add a single event to an existing event file, select an event type under <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Add Event</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/add_event_tool.png" format="PNG"/>
@@ -998,7 +1018,7 @@ To add a single event to an existing event file, select an event type under <men
 <sect2>
 <title>Displaying Unit Activity</title>
 <para>
-Unit activity is described in two files: a spike time file (listing the timestamps of the spikes) and a cluster file (assigning each spike to a cluster which corresponds to a putative unit). In addition, if you are working with a <filename>.dat</filename> file, spike waveforms can be extracted from that file. This is explained in more detail in <link linkend="data-files">File Formats</link>. The spike time file and the cluster file can be loaded by selecting <menuchoice> <guimenu>File</guimenu> <guimenuitem>Load Cluster File(s)...</guimenuitem> </menuchoice>  (multiple files can be opened in parallel). This creates a new cluster box in the <guilabel>Units Palette</guilabel>, where all the clusters are listed (the <guilabel>Units Palette</guilabel> is created upon loading the first cluster file).
+Unit activity is described in two files: a spike time file (listing the timestamps of the spikes) and a cluster file (assigning each spike to a cluster which corresponds to a putative unit). In addition, if the open trace file is the wideband (<filename>.dat</filename>) or high-pass filtered (<filename>.fil</filename>) file, spike waveforms can be highlighted on the traces. This is explained in more detail in <link linkend="data-files">File Formats</link>. The spike time file and the cluster file can be loaded by selecting <menuchoice> <guimenu>File</guimenu> <guimenuitem>Load Cluster File(s)...</guimenuitem> </menuchoice>  (multiple files can be opened in parallel). This creates a new cluster box in the <guilabel>Units Palette</guilabel>, where all the clusters are listed (the <guilabel>Units Palette</guilabel> is created upon loading the first cluster file).
 </para>
 <para>
 To display the spikes fired by certain clusters, select the corresponding clusters by clicking on the colored squares in the palette. Use <keycap>Shift</keycap> or <keycap>Ctrl</keycap> for multiple selections. Clicking on a cluster file ID (the number on the left side of a unit box) will select or deselect all the clusters in the file at once. Hold the <keycap>Shift</keycap> key while clicking on a cluster file ID to select all clusters except 0 and 1 (artefacts and noise, respectively).
@@ -1047,7 +1067,7 @@ Waveforms: spike waveforms are highlighted on their respective traces (for insta
 
 <note>
 <para>
-The waveforms can be drawn only when working with raw data (<filename>.dat</filename> files), as the waveform information is not available in low-pass filtered data.
+The waveforms can be drawn only when the open trace file is a <filename>.dat</filename> or <filename>.fil</filename> file, as the waveform information is not available in low-pass filtered data (<filename>.lfp</filename>).
 </para>
 </note>
 <note>
@@ -1175,7 +1195,7 @@ Since only selected events can be browsed, deselecting an event will automatical
 <sect3>
 <title>Selecting Events</title>
 <para>
-To select a single event, choose <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Select Event</guimenuitem> </menuchoice> or click on <guiicon>
+To select a single event, choose <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Select Event</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/event_tool.png" format="PNG"/>
@@ -1201,14 +1221,14 @@ To move an event, i.e to change its timestamp, select it in the display, and mov
 <sect3>
 <title>Deleting an Event</title>
 <para>
-To delete an event, select it in the display, and choose <menuchoice> <guimenu>Events</guimenu> <guimenuitem>Delete Event</guimenuitem> </menuchoice>.
+To delete an event, select it in the display, and choose <menuchoice> <guimenu>Events</guimenu> <guimenuitem>Remove Event</guimenuitem> </menuchoice> (<keycap>Ctrl+K</keycap>).
 </para>
 </sect3>
 
 <sect3>
 <title>Adding an Event</title>
 <para>
-To add a single event to an existing event file, first choose in the palette the event file where the event should be added by clicking on the three-letter ID on the left side of the corresponding event box. Then, select an event type under <menuchoice> <guimenu>Tools</guimenu> <guimenuitem>Add Event</guimenuitem> </menuchoice> or click on <guiicon>
+To add a single event to an existing event file, first choose in the palette the event file where the event should be added by clicking on the three-letter ID on the left side of the corresponding event box. Then, select an event type under <menuchoice> <guimenu>Tool</guimenu> <guimenuitem>Add Event</guimenuitem> </menuchoice> or click on <guiicon>
 	<inlinemediaobject>
 	  <imageobject>
 	    <imagedata fileref="Images/add_event_tool.png" format="PNG"/>
@@ -1291,19 +1311,8 @@ One item in the <guilabel>File Properties</guilabel> dialog needs special mentio
 <title>Printing</title>
 <para>
 To print the current display, select <menuchoice> <guimenu>File</guimenu> <guimenuitem>Print</guimenuitem> </menuchoice>.
-This brings up the standard KDE print dialog. Notice the additional <guilabel>Background Color</guilabel> tab: it allows you to set the background color to white for printing (this saves printer ink). If the tabs are hidden, just click on the <guilabel>Expand</guilabel> button to display them.
+This brings up the print dialog. To print the traces on a white background (this saves printer ink), check <guilabel>Use white background when printing</guilabel> on the <guilabel>General</guilabel> page of <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Preferences</guimenuitem> </menuchoice>.
 </para>
-	<mediaobject>
-	  <imageobject>
-	    <imagedata fileref="Images/printer.png" format="PNG"/>
-	  </imageobject>
-	  <imageobject>
-	    <imagedata fileref="Images/printer.eps" format="EPS"/>
-	  </imageobject>
-	  <textobject>
-	    <phrase>Printer.</phrase>
-	  </textobject>
-	</mediaobject>
 
 <para>
 If a position view is opened, each view is printed on a separate page. The file name, the starting time and time frame of the trace view are printed below the figure. The filie name of the position view is printed below the position figure.
@@ -1312,10 +1321,10 @@ If a position view is opened, each view is printed on a separate page. The file 
 <sect2>
 <title>Exporting</title>
 <para>
-Exporting is achieved in a similar way as printing. Select <menuchoice> <guimenu>File</guimenu> <guimenuitem>Print</guimenuitem> </menuchoice>. In the print dialog, click on the printer drop down list, and choose <guilabel>Print to File (PostScript)</guilabel> to export the display as a PostScript figure, or <guilabel>Print to File (PDF)</guilabel> to export it as a Portable Document File.
+Exporting is achieved in a similar way as printing. Select <menuchoice> <guimenu>File</guimenu> <guimenuitem>Print</guimenuitem> </menuchoice>. In the print dialog, choose <guilabel>Print to File (PDF)</guilabel> (or your system's PDF printer) to export the display as a Portable Document File.
 </para>
 <para>
-The Postscript format is ideal to import a figure into a drawing program for additional editing: it is a widely used standard, and all the information is stored in vectorial form. The PDF format is ideal for sharing a final figure with other investigators: it is platform independent (it will look identical whether in Linux, MacOS or Windows) and much more compact than PostScript (thus the output file is smaller and can easily be sent as an attachment via e-mail).
+A PDF file can be imported into a drawing program for additional editing, and it is convenient for sharing a figure with other investigators: it looks identical on Linux, macOS and Windows.
 </para>
 </sect2>
 </sect1>
@@ -1324,7 +1333,7 @@ The Postscript format is ideal to import a figure into a drawing program for add
 <sect1 id="saving">
 <title>Session Management</title>
 <para>
-In a typical session, you open a data file, browse the local field potentials, maybe create several different displays, load and display spikes, events and positions, etc. You then end your session. The next time you reopen the same data file, &neuroscope; will make sure that your session is restored exactly as it was when you closed it. Even better, this will happen whatever file you open from the same recording, be it the <filename>.dat</filename> file, the <filename>.eeg</filename> file, or any other recording file. This is made possible because all the relevant information is automatically saved to disk when you end a session (you do not need to explicitly save it yourself). Notice that this is different from saving your work via the <guilabel>Save</guilabel> menu entry or toolbar button, which applies to changes in the spike and anatomical groups, as well as to changes in the events.
+In a typical session, you open a data file, browse the local field potentials, maybe create several different displays, load and display spikes, events and positions, etc. You then end your session. The next time you reopen the same data file, &neuroscope; will make sure that your session is restored exactly as it was when you closed it. Even better, this will happen whatever file you open from the same recording, be it the <filename>.dat</filename> file, the <filename>.lfp</filename> file, or any other recording file. This is made possible because all the relevant information is automatically saved to disk when you end a session (you do not need to explicitly save it yourself). Notice that this is different from saving your work via the <guilabel>Save</guilabel> menu entry or toolbar button, which writes the parameter file (acquisition settings, sampling rates, anatomical and spike groups, channel colours and default offsets) and any modified event files, in addition to the session file.
 </para>
 </sect1>
 
@@ -1344,7 +1353,7 @@ Select <menuchoice> <guimenu>Help</guimenu> <guimenuitem>Keyboard Shortcuts...</
 <sect2 id="shortcuts-customizing">
 <title>Customizing the Shortcuts</title>
 <para>
-To change a binding, open <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuroscope</guimenuitem> </menuchoice> and select the <guilabel>Input</guilabel> page. Each command is shown on its own row with its current binding:
+To change a binding, open <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Preferences</guimenuitem> </menuchoice> and select the <guilabel>Input</guilabel> page. Each command is shown on its own row with its current binding:
 </para>
 <itemizedlist>
 <listitem><para>
@@ -1390,7 +1399,7 @@ Pick a layout from the list and click <guibutton>Apply</guibutton> to load it in
 <chapter id="settings">
 <title>Settings</title>
 <para>
-Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuroscope</guimenuitem></menuchoice> will open the <guilabel>Settings Dialog</guilabel>. This lets you configure several default behaviors of &neuroscope;.
+Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Preferences</guimenuitem> </menuchoice> will open the <guilabel>Preferences</guilabel> dialog. This lets you configure several default behaviors of &neuroscope;.
 </para>
 
 <variablelist>
@@ -1406,7 +1415,7 @@ Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuros
 </listitem>
 <listitem>
 <para>
-<guilabel>Display labels in the palette headers</guilabel>. This shows or hides the labels ('Anatomy','Spikes', 'Units' and 'Events') next to the icons in the palette headers. Hiding them saves some space.
+<guilabel>Display labels in the palette headers</guilabel>. This shows or hides the labels ('Anatomy', 'Spikes', 'Units' and 'Events') next to the icons in the palette tabs. Hiding them saves some space. The <guilabel>Spectral</guilabel> tab always shows its name.
 </para>
 </listitem>
 <listitem>
@@ -1415,6 +1424,11 @@ Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuros
 </para>
 <para>
 <guilabel>Align units...</guilabel>. Same as above, for spikes.
+</para>
+</listitem>
+<listitem>
+<para>
+<guilabel>Use white background when printing</guilabel>. Prints the traces on a white background instead of the display background colour.
 </para>
 </listitem>
 </itemizedlist>
@@ -1467,12 +1481,12 @@ Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuros
 </listitem>
 <listitem>
 <para>
-<guilabel>Sampling rate for EEG (Hz)</guilabel>. Default sampling rate of the local field potentials (<filename>.eeg</filename>) file.
+<guilabel>Sampling rate for EEG (Hz)</guilabel>. Default sampling rate of the local field potentials file (<filename>.lfp</filename>, formerly <filename>.eeg</filename>).
 </para>
 </listitem>
 <listitem>
 <para>
-<guilabel>Background image</guilabel>. Background image for the <guilabel>Trace View</guilabel>. You can use any image format supported by Qt: JPEG, PNG, BMP, XBM, XPM, PNM, MNG and GIF. See your Qt documentation for details (e.g. the QImageIO class description).
+<guilabel>Background image</guilabel>. Background image for the <guilabel>Trace View</guilabel>. You can use any image format that your Qt installation can read (for instance PNG, JPEG, BMP or GIF).
 </para>
 </listitem>
 </itemizedlist>
@@ -1514,7 +1528,7 @@ Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuros
 </listitem>
 <listitem>
 <para>
-<guilabel>Background image</guilabel>. Background image for the <guilabel>Position View</guilabel>. You can use any image format supported by Qt: JPEG, PNG, BMP, XBM, XPM, PNM, MNG and GIF. See your Qt documentation for details (e.g. the QImageIO class description).
+<guilabel>Background image</guilabel>. Background image for the <guilabel>Position View</guilabel>. You can use any image format that your Qt installation can read (for instance PNG, JPEG, BMP or GIF).
 </para>
 </listitem>
 <listitem>
@@ -1537,6 +1551,13 @@ Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuros
 </listitem>
 </varlistentry>
 
+<varlistentry id="settings-appearance">
+<term><guilabel>Appearance</guilabel></term>
+<listitem>
+<para><guilabel>Theme</guilabel>: <guilabel>System</guilabel>, <guilabel>Light</guilabel> or <guilabel>Dark</guilabel>. The theme applies to all NeuroSuite programs and takes effect when you click <guibutton>Apply</guibutton> or <guibutton>OK</guibutton>.</para>
+</listitem>
+</varlistentry>
+
 <varlistentry id="settings-input">
 <term><guilabel>Input</guilabel></term>
 <listitem>
@@ -1550,10 +1571,10 @@ Selecting <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Configure neuros
 <title>File Formats</title>
 
 <para>
-&neuroscope; reads electrophysiological data from a set of files. Each of these files has a name of the form <filename>base.ext</filename> or <filename>base.n.ext</filename> (or <filename>base.ext.n</filename>), where <filename>base</filename> stands for the common base name of all files belonging to a single recording session, <filename>ext</filename> is an extension describing the type of data stored in the file, and <filename>n</filename> stands for the ID of the particular group of channels from which the data was recorded. Thus, using this convention the data for session <acronym>CS150612</acronym> would be named <filename>CS150612.dat</filename>, the filter data for local filed potentials would be named <filename>CS150612.eeg</filename> and the cluster file for tetrode&nbsp;2  would be named <filename>CS150612.2.clu</filename> or <filename>CS150612.clu.2</filename>.
+&neuroscope; reads electrophysiological data from a set of files. Each of these files has a name of the form <filename>base.ext</filename> or <filename>base.n.ext</filename> (or <filename>base.ext.n</filename>), where <filename>base</filename> stands for the common base name of all files belonging to a single recording session, <filename>ext</filename> is an extension describing the type of data stored in the file, and <filename>n</filename> stands for the ID of the particular group of channels from which the data was recorded. Thus, using this convention the data for session <acronym>CS150612</acronym> would be named <filename>CS150612.dat</filename>, the low-pass filtered data for local field potentials would be named <filename>CS150612.lfp</filename> and the cluster file for tetrode&nbsp;2  would be named <filename>CS150612.2.clu</filename> or <filename>CS150612.clu.2</filename>.
 </para>
 <para>
-More specifically, the data files are organized as described in the following sections.
+More specifically, the data files are organized as described in the following sections. The complete format reference for all neurosuite-3 files is in <filename>doc/ndmanager-plugins/formats/</filename> in the source tree.
 </para>
 
 <sect1 id="data_files">
@@ -1561,7 +1582,7 @@ More specifically, the data files are organized as described in the following se
 <sect2 id="data-file">
 <title>The data File</title>
 <para>
-Generic file name: <filename>base.dat</filename> for the raw data, <filename>base.eeg</filename> for local field potentials,  and  more generally <filename>base.ext</filename> for any other type of filtered data (where <filename>ext</filename> is extension describing the type of data stored in the file).
+Generic file name: <filename>base.dat</filename> for the raw data, <filename>base.lfp</filename> (formerly <filename>base.eeg</filename>) for local field potentials, <filename>base.fil</filename> for high-pass filtered data,  and  more generally <filename>base.ext</filename> for any other type of filtered data (where <filename>ext</filename> is extension describing the type of data stored in the file).
 </para>
 <para>
 Format: 12, 14, 16 or 32&nbsp;bit binary.
@@ -1589,10 +1610,10 @@ sampleN2_channelN1
 Generic file name:  <filename>base.n.clu</filename> (or <filename>base.clu.n</filename>)
 </para>
 <para>
-Format: <acronym>ASCII</acronym>
+Format: binary or <acronym>ASCII</acronym> (detected automatically; the <filename>.clu</filename> and <filename>.res</filename> files of a group must use the same form). The pipeline writes binary files: a 32-bit header followed by one 32-bit cluster ID per spike (see <filename>doc/ndmanager-plugins/formats/clu.md</filename>).
 </para>
 <para>
-The cluster file lists the cluster ID of each spike, one per line. The first line contains the total number of clusters. Assuming <literal>N</literal> spikes (<literal>spike1...spikeN</literal>), this file looks like:
+In the <acronym>ASCII</acronym> form, the cluster file lists the cluster ID of each spike, one per line. The first line contains the total number of clusters. Assuming <literal>N</literal> spikes (<literal>spike1...spikeN</literal>), this file looks like:
 <programlisting>
 nClusters
 clusterID_spike1
@@ -1613,11 +1634,11 @@ clusterID_spikeN
 Generic file name: <filename>base.n.res</filename> (or <filename>base.res.n</filename>)
 </para>
 <para>
-Format: <acronym>ASCII</acronym>
+Format: binary or <acronym>ASCII</acronym> (detected automatically). The pipeline writes binary files: one 64-bit sample index per spike, with no header (see <filename>doc/ndmanager-plugins/formats/res.md</filename>).
 </para>
 <para>
 The spike time file lists the timestamp for each spike. The timestamp is expressed in multiples of the sampling interval. For instance, for a 20kHz recording (50 microsecond sampling interval), a timestamp of 200 corresponds to 200x0.000050s=0.01s from the beginning of the recording session.
-Assuming <literal>N</literal> spikes (<literal>spike1...spikeN</literal>), this file looks like:
+In the <acronym>ASCII</acronym> form, assuming <literal>N</literal> spikes (<literal>spike1...spikeN</literal>), this file looks like:
 <programlisting>
 timestamp_spike1
 timestamp_spike2
@@ -1634,7 +1655,7 @@ timestamp_spikeN
 <sect2 id="event-file">
 <title>The Event File</title>
 <para>
-Generic file name: <filename>basename.ext.evt</filename> or <filename>basename.evt.ext</filename> (where <filename>ext</filename> is a three-letter extension describing the type of data stored in the file)
+Generic file name: <filename>basename.id.evt</filename> or <filename>basename.evt.id</filename>, where <filename>id</filename> is a three-character identifier with at least one non-digit character (e.g. <filename>CS150612.rip.evt</filename>, <filename>CS150612.evt.s01</filename>). The identifier is shown in the <guilabel>Events Palette</guilabel>.
 </para>
 <para>
 Format: <acronym>ASCII</acronym>
@@ -1658,7 +1679,7 @@ timestamp_eventN	description_eventN
 <sect2 id="position-file">
 <title>The Positon File</title>
 <para>
-Generic file name: <filename>basename.ext</filename> (where <filename>ext</filename> can be any three-letter extension)
+Generic file name: <filename>basename.pos</filename> by convention (any extension is accepted)
 </para>
 <para>
 Format: <acronym>ASCII</acronym>
@@ -1684,13 +1705,16 @@ By convention, spots which have not been detected by the video recording system 
 <sect1 id="parameter_file">
 <title>The Parameter File</title>
 <para>
-Generic file name: <filename>base.xml</filename>
+Generic file name: <filename>base.yaml</filename> (or <filename>base.yml</filename>)
 </para>
 <para>
-Format: <acronym>XML</acronym>
+Format: <acronym>YAML</acronym>
 </para>
 <para>
-The parameter file is a generic file which contains information required by many related programs; &neuroscope; only needs a subset of this information. The parameter file is optional: it is usually generated using <ulink url="http://ndmanager.sourceforge.net">NDManager</ulink>, a dedicated application, but if you do not provide it, &neuroscope; will prompt you for the necessary information and automatically generate a parameter file for you (however, contrary to NDManager, &neuroscope; will actually generate only the subset of fields that it requires, and not a full parameter file).
+The parameter file is a generic file which contains information required by many related programs; &neuroscope; only needs a subset of this information. The parameter file is optional: it is usually written by NDManager (part of <ulink url="https://github.com/Gravios/neurosuite-3">neurosuite-3</ulink>), but if you do not provide it, &neuroscope; will prompt you for the necessary information and write a parameter file when you save (however, contrary to NDManager, &neuroscope; writes only the subset of fields that it requires, and not a full parameter file). When it saves, &neuroscope; updates its own fields and keeps the rest of an existing file.
+</para>
+<para>
+Older parameter files in <acronym>XML</acronym> (<filename>base.xml</filename>) are not read; convert them with <command>ndm_xml2yaml</command> from the NDManager plugins.
 </para>
 </sect1>
 
@@ -1700,7 +1724,7 @@ The parameter file is a generic file which contains information required by many
 Generic file name: <filename>base.nrs</filename>
 </para>
 <para>
-Format: <acronym>XML</acronym>
+Format: <acronym>YAML</acronym>. An older <acronym>XML</acronym> session file cannot be read: &neuroscope; ignores it, opens the data with default display settings and replaces it with a YAML file when the session is saved.
 </para>
 <para>
 The session file is where &neuroscope; stores information related to the working environment: the number of displays and their settings (start time, duration, visible channels, amplitudes, etc.), loaded cluster, event and position files, etc. This ensures that when you reopen a data file, your session is restored exactly as it was when you closed it.
@@ -1711,125 +1735,76 @@ The session file is where &neuroscope; stores information related to the working
 <chapter id="menu-entries">
 <title>Menu Entries</title>
 
+<para>
+The shortcuts listed here are the defaults. <menuchoice> <guimenu>Help</guimenu> <guimenuitem>Keyboard Shortcuts...</guimenuitem> </menuchoice> lists the bindings currently in effect, and they can be changed on the <guilabel>Input</guilabel> page of <menuchoice> <guimenu>Settings</guimenu> <guimenuitem>Preferences</guimenuitem> </menuchoice>. On macOS, <keycap>Ctrl</keycap> is the <keycap>Command</keycap> key.
+</para>
+
 <sect1 id="menu-file">
 <title>The File Menu</title>
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>O</keycap></keycombo>
-</shortcut>
-<guimenu>File</guimenu>
-<guimenuitem>Open</guimenuitem>
-</menuchoice></term>
-<listitem><para>Opens data files</para></listitem>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Open</guimenuitem></menuchoice> (<keycap>Ctrl+O</keycap>)</term>
+<listitem><para>Opens a data file, or a session file (<filename>.nrs</filename>).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Open Recent</guimenuitem>
-</menuchoice></term>
-<listitem><para>Opens data files selected from a list of recently edited data files.</para></listitem>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Open Recent</guimenuitem></menuchoice></term>
+<listitem><para>Opens a file selected from a list of recently opened files.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Load Cluster File(s)...</guimenuitem>
-</menuchoice></term>
-<listitem><para>Loads multiple cluster files.</para></listitem>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Load Cluster File(s)...</guimenuitem></menuchoice></term>
+<listitem><para>Loads one or more cluster files (each with its spike time file).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Load Event File(s)...</guimenuitem>
-</menuchoice></term>
-<listitem><para>Loads multiple event files.</para></listitem>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Load Event File(s)...</guimenuitem></menuchoice></term>
+<listitem><para>Loads one or more event files.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Create Event File...</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Create Event File...</guimenuitem></menuchoice></term>
 <listitem><para>Creates an event file.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Load Position File...</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Load Position File...</guimenuitem></menuchoice></term>
 <listitem><para>Loads a single position file.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>S</keycap></keycombo>
-</shortcut>
-<guimenu>File</guimenu>
-<guimenuitem>Save</guimenuitem>
-</menuchoice></term>
-<listitem><para>Saves the session file.</para></listitem>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Load Overlay Trace File...</guimenuitem></menuchoice></term>
+<listitem><para>Loads a second trace file with the same channel layout and draws it on top of each channel (see <link linkend="overlay-traces">Overlay Trace Files</link>).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Save As</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Save</guimenuitem></menuchoice> (<keycap>Ctrl+S</keycap>)</term>
+<listitem><para>Saves the parameter file, the session file and any modified event files.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Save As</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+S</keycap>)</term>
 <listitem><para>Saves the session file in a new location.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>P</keycap></keycombo>
-</shortcut>
-<guimenu>File</guimenu>
-<guimenuitem>Print</guimenuitem>
-</menuchoice></term>
-<listitem><para>Prints (or exports as PostScript or PDF) each view of the current display in a separate page.</para></listitem>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Print</guimenuitem></menuchoice> (<keycap>Ctrl+P</keycap>)</term>
+<listitem><para>Prints (or exports as PDF) each view of the current display in a separate page.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Properties</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Properties</guimenuitem></menuchoice></term>
 <listitem><para>Opens a dialog displaying the properties of the currently opened file. These properties can be edited.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Close</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Close</guimenuitem></menuchoice></term>
 <listitem><para>Closes the session (will prompt for saving if necessary).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Close Cluster File</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Close Cluster File</guimenuitem></menuchoice></term>
 <listitem><para>Closes the cluster file currently selected in the <guilabel>Units Palette</guilabel>.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Close Event File</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Close Event File</guimenuitem></menuchoice></term>
 <listitem><para>Closes the event file currently selected in the <guilabel>Events Palette</guilabel>.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>File</guimenu>
-<guimenuitem>Close Position File</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Close Position File</guimenuitem></menuchoice></term>
 <listitem><para>Closes the position file.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>Q</keycap></keycombo>
-</shortcut>
-<guimenu>File</guimenu>
-<guimenuitem>Quit</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>File</guimenu> <guimenuitem>Quit</guimenuitem></menuchoice> (<keycap>Ctrl+Q</keycap>)</term>
 <listitem><para>Quits &kapp; (will prompt for saving if necessary).</para></listitem>
 </varlistentry>
 </variablelist>
@@ -1841,144 +1816,65 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>Z</keycap></keycombo>
-</shortcut>
-<guimenu>Edit</guimenu>
-<guimenuitem>Undo</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Edit</guimenu> <guimenuitem>Undo</guimenuitem></menuchoice> (<keycap>Ctrl+Z</keycap>)</term>
 <listitem><para>Undoes the last change (for event edition only).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>Shift</keycap><keycap>Z</keycap></keycombo>
-</shortcut>
-<guimenu>Edit</guimenu>
-<guimenuitem>Redo</guimenuitem>
-</menuchoice></term>
-<listitem><para>Redoes the last undone change (for event edition only).</para></listitem>
+<term><menuchoice><guimenu>Edit</guimenu> <guimenuitem>Redo</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+Z</keycap>)</term>
+<listitem><para>Redoes the last undone change (for event edition only). The shortcut is the platform's Redo key: <keycap>Ctrl+Shift+Z</keycap> on Linux, <keycap>Ctrl+Y</keycap> on Windows.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>A</keycap></keycombo>
-</shortcut>
-<guimenu>Edit</guimenu>
-<guimenuitem>Select All</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Edit</guimenu> <guimenuitem>Select All</guimenuitem></menuchoice> (<keycap>Ctrl+A</keycap>)</term>
 <listitem><para>Selects all the items in the current palette (channels, clusters or events).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>Shift</keycap><keycap>A</keycap></keycombo>
-</shortcut>
-<guimenu>Edit</guimenu>
-<guimenuitem>Select All except 0 and 1</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Edit</guimenu> <guimenuitem>Select All except 0 and 1</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+A</keycap>)</term>
 <listitem><para>Selects all clusters except artefacts (cluster&nbsp;0) and noise (cluster&nbsp;1).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>U</keycap></keycombo>
-</shortcut>
-<guimenu>Edit</guimenu>
-<guimenuitem>Deselect All</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Edit</guimenu> <guimenuitem>Deselect All</guimenuitem></menuchoice> (<keycap>Ctrl+U</keycap>)</term>
 <listitem><para>Deselects all the items in the current palette (channels, clusters or events).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>E</keycap></keycombo>
-</shortcut>
-<guimenu>Edit</guimenu>
-<guimenuitem>Edit Mode</guimenuitem>
-</menuchoice></term>
-<listitem><para>Swiches between edit and non edit mode.</para></listitem>
+<term><menuchoice><guimenu>Edit</guimenu> <guimenuitem>Edit Mode</guimenuitem></menuchoice> (<keycap>Ctrl+E</keycap>)</term>
+<listitem><para>Switches between edit and view mode.</para></listitem>
 </varlistentry>
 </variablelist>
 </para>
 </sect1>
 
 <sect1 id="menu-tools">
-<title>The Tools Menu</title>
+<title>The Tool Menu</title>
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycap>Z</keycap>
-</shortcut>
-<guimenu>Tools</guimenu>
-<guimenuitem>Zoom</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Tool</guimenu> <guimenuitem>Zoom</guimenuitem></menuchoice> (<keycap>Z</keycap>)</term>
 <listitem><para>Allows you to zoom on a point (left click) or area (click and drag); double-click to reset the zoom level to the initial state.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycap>L</keycap>
-</shortcut>
-<guimenu>Tools</guimenu>
-<guimenuitem>Draw Time Line</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Tool</guimenu> <guimenuitem>Draw Time Line</guimenuitem></menuchoice> (<keycap>L</keycap>)</term>
 <listitem><para>Allows you to temporarily draw a vertical line where you left click.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycap>S</keycap>
-</shortcut>
-<guimenu>Tools</guimenu>
-<guimenuitem>Select Channels</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Tool</guimenu> <guimenuitem>Select Channels</guimenuitem></menuchoice> (<keycap>C</keycap>)</term>
 <listitem><para>Allows you to select channels in order to act on them (move them to compensate for an offset, change the amplitude...)</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycap>V</keycap>
-</shortcut>
-<guimenu>Tools</guimenu>
-<guimenuitem>Measure</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Tool</guimenu> <guimenuitem>Measure</guimenuitem></menuchoice> (<keycap>V</keycap>)</term>
 <listitem><para>Allows you to measure the time and the voltage between two points.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycap>T</keycap>
-</shortcut>
-<guimenu>Tools</guimenu>
-<guimenuitem>Select Time</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Tool</guimenu> <guimenuitem>Select Time</guimenuitem></menuchoice> (<keycap>T</keycap>)</term>
 <listitem><para>Allows you to refine the time frame used to display the data.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycap>E</keycap>
-</shortcut>
-<guimenu>Tools</guimenu>
-<guimenuitem>Select Events</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Tool</guimenu> <guimenuitem>Select Event</guimenuitem></menuchoice> (<keycap>E</keycap>)</term>
 <listitem><para>Allows you to select one event in order to move it or delete it.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycap>N</keycap>
-</shortcut>
-<guimenu>Tools</guimenu>
-<guimenuitem>Add Event</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Tool</guimenu> <guimenuitem>Add Event</guimenuitem></menuchoice></term>
 <listitem><para>Allows you to add a new event (select the type of event from the submenu).</para></listitem>
 </varlistentry>
-
 </variablelist>
 </para>
 </sect1>
@@ -1988,74 +1884,43 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>C</keycap></keycombo>
-</shortcut>
-<guimenu>Channels</guimenu>
-<guimenuitem>Show Channels</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Show Channels</guimenuitem></menuchoice> (<keycap>Ctrl+C</keycap>)</term>
 <listitem><para>Shows the selected channels.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>H</keycap></keycombo>
-</shortcut>
-<guimenu>Channels</guimenu>
-<guimenuitem>Hide Channels</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Hide Channels</guimenuitem></menuchoice> (<keycap>Ctrl+H</keycap>)</term>
 <listitem><para>Hides the selected channels.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>G</keycap></keycombo>
-</shortcut>
-<guimenu>Channels</guimenu>
-<guimenuitem>Move Channels to New Group</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Move Channels to New Group</guimenuitem></menuchoice> (<keycap>Ctrl+G</keycap>)</term>
 <listitem><para>Moves the selected channels to a newly created group (either an anatomical group or a spike group).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Shift</keycap><keycap>DEL</keycap></keycombo>
-</shortcut>
-<guimenu>Channels</guimenu>
-<guimenuitem>Remove Channels from Group</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Remove Channels from Group</guimenuitem></menuchoice> (<keycap>Shift+Delete</keycap>)</term>
 <listitem><para>Removes the selected channels from their current group and puts them in the <guilabel>Undefined Group</guilabel> (the <guilabel>"?"</guilabel> group). This does not actually remove the channels from the data file.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>DEL</keycap></keycombo>
-</shortcut>
-<guimenu>Channels</guimenu>
-<guimenuitem>Discard Channels</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Discard Channels</guimenuitem></menuchoice> (<keycap>Delete</keycap>)</term>
 <listitem><para>Removes the selected channels from their current group and puts them in the <guilabel>Discarded Group</guilabel> (simultaneously acts on the anatomical and spike groups). This does not actually remove the channels from the data file.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Channels</guimenu>
-<guimenuitem>Synchronize Groups</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Keep Channels</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+K</keycap>)</term>
+<listitem><para>Brings skipped channels back into the display.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Skip Channels</guimenuitem></menuchoice></term>
+<listitem><para>Skips the selected channels: they are no longer drawn, but keep their place in the layout.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Synchronize Groups</guimenuitem></menuchoice></term>
 <listitem><para>Synchronizes the anatomical and spike groups. The existing spike groups are discarded and replaced with the anatomical groups.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Channels</guimenu>
-<guimenuitem>Color by Anatomical Groups</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Color by Anatomical Groups</guimenuitem></menuchoice></term>
 <listitem><para>Colors the channels using the anatomical group colors.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Channels</guimenu>
-<guimenuitem>Color by Spike Groups</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Channels</guimenu> <guimenuitem>Color by Spike Groups</guimenuitem></menuchoice></term>
 <listitem><para>Colors the channels using the spike group colors.</para></listitem>
 </varlistentry>
 </variablelist>
@@ -2067,69 +1932,52 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Units</guimenu>
-<guimenuitem>Vertical Lines</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Units</guimenu> <guimenuitem>Vertical Lines</guimenuitem></menuchoice></term>
 <listitem><para>Draws spikes for selected clusters as long vertical lines.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Units</guimenu>
-<guimenuitem>Raster</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Units</guimenu> <guimenuitem>Raster</guimenuitem></menuchoice></term>
 <listitem><para>Draws spikes for selected clusters as rasters below the local field potential traces.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Units</guimenu>
-<guimenuitem>Waveforms</guimenuitem>
-</menuchoice></term>
-<listitem><para>Draws spike waveforms for selected clusters directly on the local field potential traces.</para></listitem>
+<term><menuchoice><guimenu>Units</guimenu> <guimenuitem>Waveforms</guimenuitem></menuchoice></term>
+<listitem><para>Draws spike waveforms for selected clusters directly on the traces (only for <filename>.dat</filename> and <filename>.fil</filename> files).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Units</guimenu>
-<guimenuitem>Next Spike</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Units</guimenu> <guimenuitem>Increase Height</guimenuitem></menuchoice> (<keycap>Ctrl++</keycap>)</term>
+<listitem><para>Increases the height of the rasters.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Units</guimenu> <guimenuitem>Decrease Height</guimenuitem></menuchoice> (<keycap>Ctrl+-</keycap>)</term>
+<listitem><para>Decreases the height of the rasters.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Units</guimenu> <guimenuitem>Next Spike</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+F</keycap>)</term>
 <listitem><para>Moves the time window to the next spike fired by one of the currently activated clusters.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Units</guimenu>
-<guimenuitem>Previous Spike</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Units</guimenu> <guimenuitem>Previous Spike</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+B</keycap>)</term>
 <listitem><para>Moves the time window to the previous spike fired by one of the currently activated clusters.</para></listitem>
 </varlistentry>
 </variablelist>
 </para>
 </sect1>
 
-
 <sect1 id="menu-events">
 <title>The Events Menu</title>
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Events</guimenu>
-<guimenuitem>Next Event</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Events</guimenu> <guimenuitem>Next Event</guimenuitem></menuchoice> (<keycap>Ctrl+F</keycap>)</term>
 <listitem><para>Moves the time window to the next activated event.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Events</guimenu>
-<guimenuitem>Previous Event</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Events</guimenu> <guimenuitem>Previous Event</guimenuitem></menuchoice> (<keycap>Ctrl+B</keycap>)</term>
 <listitem><para>Moves the time window to the previous activated event.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Events</guimenu>
-<guimenuitem>Remove Event</guimenuitem>
-</menuchoice></term>
-<listitem><para>Removes  the currently selected event.</para></listitem>
+<term><menuchoice><guimenu>Events</guimenu> <guimenuitem>Remove Event</guimenuitem></menuchoice> (<keycap>Ctrl+K</keycap>)</term>
+<listitem><para>Removes the currently selected event.</para></listitem>
 </varlistentry>
 </variablelist>
 </para>
@@ -2140,11 +1988,12 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Positions</guimenu>
-<guimenuitem>Show Position View</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Positions</guimenu> <guimenuitem>Show Position View</guimenuitem></menuchoice></term>
 <listitem><para>Shows or hides the position view.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Positions</guimenu> <guimenuitem>Show Events</guimenuitem></menuchoice></term>
+<listitem><para>Shows or hides the selected events in the position view.</para></listitem>
 </varlistentry>
 </variablelist>
 </para>
@@ -2155,96 +2004,68 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Traces</guimenu>
-<guimenuitem>Multiple Columns</guimenuitem>
-</menuchoice></term>
-<listitem><para>Toggles between single and multiple column mode. In mutiple column mode, each anatomical group is represented on a separate column.</para></listitem>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Multiple Columns</guimenuitem></menuchoice></term>
+<listitem><para>Toggles between single and multiple column mode. In multiple column mode, each anatomical group is represented on a separate column.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Traces</guimenu>
-<guimenuitem>Grey-Scale</guimenuitem>
-</menuchoice></term>
-<listitem><para>Displays the channels in gray-scale.</para></listitem>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Grey-Scale</guimenuitem></menuchoice></term>
+<listitem><para>Displays the channels in grey-scale.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>I</keycap></keycombo>
-</shortcut>
-<guimenu>Traces</guimenu>
-<guimenuitem>Increase All Channel Amplitudes</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Spectral View</guimenuitem></menuchoice> (<keycap>S</keycap>)</term>
+<listitem><para>Toggles the active display between the traces and the <link linkend="spectral-view">Spectral View</link>.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Increase All Channel Amplitudes</guimenuitem></menuchoice> (<keycap>Ctrl+I</keycap>)</term>
 <listitem><para>Increases the amplitudes of all the channels (both visible and hidden).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>D</keycap></keycombo>
-</shortcut>
-<guimenu>Traces</guimenu>
-<guimenuitem>Decrease All Channel Amplitudes</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Decrease All Channel Amplitudes</guimenuitem></menuchoice> (<keycap>Ctrl+D</keycap>)</term>
 <listitem><para>Decreases the amplitudes of all the channels (both visible and hidden).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>Shift</keycap><keycap>I</keycap></keycombo>
-</shortcut>
-<guimenu>Traces</guimenu>
-<guimenuitem>Increase Selected Channel Amplitudes</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Increase Selected Channel Amplitudes</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+I</keycap>)</term>
 <listitem><para>Increases the amplitudes of the selected channels.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>Shift</keycap><keycap>D</keycap></keycombo>
-</shortcut>
-<guimenu>Traces</guimenu>
-<guimenuitem>Decrease Selected Channel Amplitudes</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Decrease Selected Channel Amplitudes</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+D</keycap>)</term>
 <listitem><para>Decreases the amplitudes of the selected channels.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Traces</guimenu>
-<guimenuitem>Reset Selected Channel Amplitude</guimenuitem>
-</menuchoice></term>
-<listitem><para>Resets the amplitudes of the selected channels.</para></listitem>
-</varlistentry>
-<varlistentry>
-<term><menuchoice>
-<guimenu>Traces</guimenu>
-<guimenuitem>Reset Selected Channel Offsets</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Reset Selected Channel Offsets</guimenuitem></menuchoice></term>
 <listitem><para>Resets the offsets of the selected channels to the default offsets.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Traces</guimenu>
-<guimenuitem>Set Current Offsets as Defaults</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Reset Selected Channel Amplitudes</guimenuitem></menuchoice></term>
+<listitem><para>Resets the amplitudes of the selected channels.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Set Current Offsets as Defaults</guimenuitem></menuchoice></term>
 <listitem><para>Sets the current offsets as the default offsets to be stored in the parameter file.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Traces</guimenu>
-<guimenuitem>Set Default Offsets to Zero</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Set Default Offsets to Zero</guimenuitem></menuchoice></term>
 <listitem><para>Sets the default offsets to be stored in the parameter file to zero.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>L</keycap></keycombo>
-</shortcut>
-<guimenu>Traces</guimenu>
-<guimenuitem>Show Labels</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Autocenter Channels</guimenuitem></menuchoice></term>
+<listitem><para>Centres each trace on its mean value over the current time window.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Show Labels</guimenuitem></menuchoice> (<keycap>Ctrl+L</keycap>)</term>
 <listitem><para>Shows or hides the labels (channel IDs and gains).</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Auto-advance to end of recording</guimenuitem></menuchoice> (<keycap>Ctrl+Shift+Space</keycap>)</term>
+<listitem><para>Pages forward automatically, one time window at a time, until the end of the recording.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Accelerate</guimenuitem></menuchoice> (<keycap>Ctrl+Up</keycap>)</term>
+<listitem><para>Shortens the auto-advance interval by 125&nbsp;ms.</para></listitem>
+</varlistentry>
+<varlistentry>
+<term><menuchoice><guimenu>Traces</guimenu> <guimenuitem>Decelerate</guimenuitem></menuchoice> (<keycap>Ctrl+Down</keycap>)</term>
+<listitem><para>Lengthens the auto-advance interval by 125&nbsp;ms (up to 1000&nbsp;ms).</para></listitem>
 </varlistentry>
 </variablelist>
 </para>
@@ -2255,30 +2076,15 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Displays</guimenu>
-<guimenuitem>New Display</guimenuitem>
-</menuchoice></term>
-<listitem><para>Creates a new Display.</para></listitem>
+<term><menuchoice><guimenu>Displays</guimenu> <guimenuitem>New Display</guimenuitem></menuchoice> (<keycap>Ctrl+N</keycap>)</term>
+<listitem><para>Creates a new display, copied from the active one.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>R</keycap></keycombo>
-</shortcut>
-<guimenu>Displays</guimenu>
-<guimenuitem>Rename Active Display</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Displays</guimenu> <guimenuitem>Rename Active Display</guimenuitem></menuchoice> (<keycap>Ctrl+R</keycap>)</term>
 <listitem><para>Brings a dialog enabling the user to enter a new label for the currently active display.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<shortcut>
-<keycombo><keycap>Ctrl</keycap><keycap>W</keycap></keycombo>
-</shortcut>
-<guimenu>Displays</guimenu>
-<guimenuitem>Close Active Display</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Displays</guimenu> <guimenuitem>Close Active Display</guimenuitem></menuchoice> (<keycap>Ctrl+W</keycap>)</term>
 <listitem><para>Closes the currently active display; when there is only one display, closes all data files as well (will prompt for saving if necessary).</para></listitem>
 </varlistentry>
 </variablelist>
@@ -2290,53 +2096,24 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Settings</guimenu>
-<guimenuitem>Show Toolbar</guimenuitem>
-</menuchoice></term>
-<listitem><para>Shows or hides the <guilabel>Toolbar</guilabel>.</para></listitem>
+<term><menuchoice><guimenu>Settings</guimenu> <guimenuitem>Show Main Toolbar</guimenuitem></menuchoice></term>
+<listitem><para>Shows or hides the main toolbar.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Settings</guimenu>
-<guimenuitem>Show Tools</guimenuitem>
-</menuchoice></term>
-<listitem><para>Shows or hides the <guilabel>Tools</guilabel>.</para></listitem>
+<term><menuchoice><guimenu>Settings</guimenu> <guimenuitem>Show Tools</guimenuitem></menuchoice></term>
+<listitem><para>Shows or hides the tools toolbar.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Settings</guimenu>
-<guimenuitem>Show Parameters</guimenuitem>
-</menuchoice></term>
-<listitem><para>Shows or hides the <guilabel>Parameter Bar</guilabel>.</para></listitem>
-</varlistentry>
-<varlistentry>
-<term><menuchoice>
-<guimenu>Settings</guimenu>
-<guimenuitem>Show Status Bar</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Settings</guimenu> <guimenuitem>Show StatusBar</guimenuitem></menuchoice></term>
 <listitem><para>Shows or hides the <guilabel>Status Bar</guilabel>.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Settings</guimenu>
-<guimenuitem>Display Calibration</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Settings</guimenu> <guimenuitem>Display Calibration</guimenuitem></menuchoice></term>
 <listitem><para>Shows or hides a calibration bar for channel&nbsp;0 (voltage and gain are indicated).</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Settings</guimenu>
-<guimenuitem>Configure Shortcuts</guimenuitem>
-</menuchoice></term>
-<listitem><para>Lets you configure the shortcuts.</para></listitem>
-</varlistentry>
-<varlistentry>
-<term><menuchoice>
-<guimenu>Settings</guimenu>
-<guimenuitem>Configure neuroscope</guimenuitem>
-</menuchoice></term>
-<listitem><para>Lets you configure a number of settings including default behaviors.</para></listitem>
+<term><menuchoice><guimenu>Settings</guimenu> <guimenuitem>Preferences</guimenuitem></menuchoice></term>
+<listitem><para>Opens the <link linkend="settings">Preferences</link> dialog, including the keyboard and mouse bindings (<guilabel>Input</guilabel> page).</para></listitem>
 </varlistentry>
 </variablelist>
 </para>
@@ -2347,46 +2124,16 @@ The session file is where &neuroscope; stores information related to the working
 <para>
 <variablelist>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Help</guimenu>
-<guimenuitem>neuroscope Handbook</guimenuitem>
-</menuchoice></term>
-<listitem><para>Opens this user manual in the <guilabel>Help Center</guilabel>.</para></listitem>
+<term><menuchoice><guimenu>Help</guimenu> <guimenuitem>Handbook</guimenuitem></menuchoice> (<keycap>F1</keycap>)</term>
+<listitem><para>Opens this user manual.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Help</guimenu>
-<guimenuitem>Keyboard Shortcuts...</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Help</guimenu> <guimenuitem>Keyboard Shortcuts...</guimenuitem></menuchoice></term>
 <listitem><para>Opens a list of all keyboard shortcuts and mouse bindings and the commands they trigger. See <link linkend="shortcuts">Keyboard and Mouse Shortcuts</link>.</para></listitem>
 </varlistentry>
 <varlistentry>
-<term><menuchoice>
-<guimenu>Help</guimenu>
-<guimenuitem>What's this?</guimenuitem>
-</menuchoice></term>
-<listitem><para>Activates the context help tool.</para></listitem>
-</varlistentry>
-<varlistentry>
-<term><menuchoice>
-<guimenu>Help</guimenu>
-<guimenuitem>Report Bug</guimenuitem>
-</menuchoice></term>
-<listitem><para>Helps you compose an e-mail message to report a bug to the author of &neuroscope;.</para></listitem>
-</varlistentry>
-<varlistentry>
-<term><menuchoice>
-<guimenu>Help</guimenu>
-<guimenuitem>About neuroscope</guimenuitem>
-</menuchoice></term>
+<term><menuchoice><guimenu>Help</guimenu> <guimenuitem>About</guimenuitem></menuchoice></term>
 <listitem><para>Shows information about the authors of and contributors to &neuroscope;.</para></listitem>
-</varlistentry>
-<varlistentry>
-<term><menuchoice>
-<guimenu>Help</guimenu>
-<guimenuitem>About KDE</guimenuitem>
-</menuchoice></term>
-<listitem><para>Shows information about the authors of and contributors to <acronym>KDE</acronym>.</para></listitem>
 </varlistentry>
 </variablelist>
 </para>
@@ -2403,6 +2150,9 @@ The session file is where &neuroscope; stores information related to the working
 </para>
 <para>
 Program copyright 2004 Lynn Hazan <email>lynn.hazan@myrealbox.com</email>
+</para>
+<para>
+&neuroscope; is now maintained by the neurosuite-3 maintainers as part of <ulink url="https://github.com/Gravios/neurosuite-3">neurosuite-3</ulink>.
 </para>
 <para>
 Contributors:

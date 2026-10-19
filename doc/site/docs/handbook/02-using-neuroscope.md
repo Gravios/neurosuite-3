@@ -2,13 +2,13 @@
 
 ## Starting a New Session {#starting}
 
-To start a new session, select **File \> Open**. In the Open dialog, you can select any type of data file (`dat`, `eeg`, `nrs` or `xml`: see [File Formats](./04-file-formats.md#data-files)).
+To start a new session, select **File \> Open**. The Open dialog lists data files (`dat`, `lfp`, `eeg` and `fil`); choose All files to open a data file with another extension or a session file (`nrs`). See [File Formats](./04-file-formats.md#data-files).
 
-A session can also be started from Konqueror by clicking on one of the above files, or on the command line by typing:
+A session can also be started from your file manager by opening one of the above files with NeuroScope, or on the command line by typing:
 
     % neuroscope filename
 
-First, NeuroScope needs some information about the acquisition system. You will be prompted to provide this information in the Properties dialog. More generally, this dialog is where you can set all the parameters for the various files you view and edit (this will be presented in later sections of this manual). For now, suffice it to introduce the Channels tab, which is the only one enabled at this point.
+First, NeuroScope needs some information about the acquisition system. It reads this from the parameter file (`base.yaml`, see [File Formats](./04-file-formats.md#parameter_file)); if there is none, you will be prompted to provide this information in the Properties dialog. More generally, this dialog is where you can set all the parameters for the various files you view and edit (this will be presented in later sections of this manual). For now, suffice it to introduce the Channels tab, which is the only one enabled at this point.
 
 <a id="fig-properties"></a>
 
@@ -27,34 +27,26 @@ The information provided in the Properties dialog can be later displayed and mod
 When starting NeuroScope from a terminal, this information can also be provided as command line options. To list available options, type
 
     % neuroscope --help
-    Usage: neuroscope [Qt-options] [KDE-options] [options] file
-
-    NeuroScope - Viewer for local field potentials, spikes and events
-
-    Generic options:
-      --help                    Show help about options
-      --help-qt                 Show Qt specific options
-      --help-kde                Show KDE specific options
-      --help-all                Show all options
-      --author                  Show author information
-      -v, --version             Show version information
-      --license                 Show license information
-      --                        End of options
+    Usage: neuroscope [options] file
+    Neuroscope — neural data viewer
 
     Options:
-      -r, --resolution          Resolution of the acquisition system.
-      -c, --nbChannels          Number of channels.
-      -o, --offset              Initial offset.
-      -m, --voltageRange        Voltage range.
-      -a, --amplification       Amplification.
-      -g, --screenGain          Screen gain.
-      -s, --samplingRate        Sampling rate.
-      -t, --timeWindow          Initial time window (in miliseconds).
+      -h, --help                  Displays help on commandline options.
+      --help-all                  Displays help, including generic Qt options.
+      -v, --version               Displays version information.
+      -r, --resolution <value>    Resolution of the acquisition system.
+      -c, --nbChannels <value>    Number of channels.
+      -o, --offset <value>        Initial offset.
+      -m, --voltageRange <value>  Voltage range.
+      -a, --amplification <value> Amplification.
+      -g, --screenGain <value>    Screen gain.
+      -s, --samplingRate <value>  Sampling rate.
+      -t, --timeWindow <value>    Initial time window (milliseconds).
 
     Arguments:
-      file                      Document to open.
+      file                        File to open.
 
-The options provided on the command line will be displayed in the Properties dialog.
+The options provided on the command line will be displayed in the Properties dialog. If a parameter file exists, its values are used instead and the command line values are discarded.
 
 Once the information is properly set, the first 1000 ms of data are loaded and displayed in the main window, which should look like this:
 
@@ -68,7 +60,7 @@ The window contains two functionally distinct areas: the Palettes on the left, a
 
 ## Palettes
 
-NeuroScope provides several palettes to manipulate the data: the Anatomical Groups Palette, the Spike Groups Palette, as well as the Units Palette and the Events Palette (the latter two become available upon loading cluster and event files, respectively). To display a palette, click on the corresponding tab. Each tab has a distinctive icon next to the palette name to make it more easily identifiable. Optionally, palette names can be hidden, leaving only the icons, to save space in the main window (see [Settings](./03-settings.md#settings)).
+NeuroScope provides several palettes to manipulate the data, shown as tabs on the left of the main window: the Anatomical Groups Palette (Anatomy), the Spike Groups Palette (Spikes), the Spectral tab (settings of the [Spectral View](./02-using-neuroscope.md#spectral-view)), as well as the Units Palette and the Events Palette (the latter two become available upon loading cluster and event files, respectively). To display a palette, click on the corresponding tab. Each tab has a distinctive icon next to the palette name to make it more easily identifiable. Optionally, palette names can be hidden, leaving only the icons, to save space in the main window (see [Settings](./03-settings.md#settings)).
 
 <a id="fig-palettes"></a>
 
@@ -84,7 +76,7 @@ On the other hand, spike groups are related to unit activity. In most experiment
 
 ### Units
 
-Unit activity can be extracted and sorted using a combination of automatic and manual cluster cutting. Spike sorting applications include Kenneth D. Harris' [KlustaKwik](http://klustakwik.sourceforge.net) (a powerful automatic cluster cutting command-line tool) and Lynn Hazan's [Klusters](http://klusters.sourceforge.net) (an advanced cluster viewer/editor application for KDE). Cluster files can be loaded into NeuroScope, which allows for browsing identified unit activity together with local field potentials. The Units Palette is where you perform all operations related to spike clusters.
+Unit activity can be extracted and sorted using a combination of automatic and manual cluster cutting. Spike sorting applications include KiloKlustaKwik (the neurosuite-3 version of Kenneth D. Harris' KlustaKwik, an automatic cluster cutting command-line tool) and Lynn Hazan's Klusters (an advanced cluster viewer/editor); both are part of [neurosuite-3](https://github.com/Gravios/neurosuite-3). Cluster files can be loaded into NeuroScope, which allows for browsing identified unit activity together with local field potentials. The Units Palette is where you perform all operations related to spike clusters.
 
 ### Events
 
@@ -173,7 +165,7 @@ While all the above mentioned operations apply to both anatomical and spike grou
 
 ### Selecting Channels {#direct-selection}
 
-As mentioned previously, channels can be selected by clicking on the corresponding circles in the palettes. Clicking on a group ID (the number on the left side of a group box) will select or deselect all the channels in the group at once. Another, more graphical way is to directly click on the traces in the display using the Select Channels tool. To activate this tool, select **Tools \> Select Channels** or click on ![Select Channels](Images/select_tool.png). Use Ctrl for multiple selections (see [Labels and Calibration Bars](./02-using-neuroscope.md#selection-labels) for yet another way to select channels).
+As mentioned previously, channels can be selected by clicking on the corresponding circles in the palettes. Clicking on a group ID (the number on the left side of a group box) will select or deselect all the channels in the group at once. Another, more graphical way is to directly click on the traces in the display using the Select Channels tool. To activate this tool, select **Tool \> Select Channels** or click on ![Select Channels](Images/select_tool.png). Use Ctrl for multiple selections (see [Labels and Calibration Bars](./02-using-neuroscope.md#selection-labels) for yet another way to select channels).
 
 ### Channel Colors
 
@@ -206,15 +198,17 @@ To make hidden channels visible again, select the corresponding circles and choo
 
 ### Adjusting Amplitudes and Offsets
 
-Channel amplitudes can be adjusted by selecting channels and choosing **Traces \> Increase Selected Channel Amplitudes** or **Traces \> Decrease Selected Channel Amplitudes**. To adjust all channels at once, select **Traces \> Increase All Channel Amplitudes** or **Traces \> Decrease All Channel Amplitudes**. To reset the amplitudes to their default (initial) settings, select channels and choose **Traces \> Reset Selected Channel Amplitudes**.
+Channel amplitudes can be adjusted by selecting channels and choosing **Traces \> Increase Selected Channel Amplitudes** or **Traces \> Decrease Selected Channel Amplitudes**. To adjust all channels at once, select **Traces \> Increase All Channel Amplitudes** or **Traces \> Decrease All Channel Amplitudes**. To reset the amplitudes to their default (initial) settings, select channels and choose **Traces \> Reset Selected Channel Amplitudes**. With the mouse, Ctrl+Shift and the wheel increase or decrease the amplitude of all channels.
 
-Channels can be offset by clicking on the traces and dragging them by the appropriate amount using the Select Channels tool. To activate this tool, select **Tools \> Select Channels** or click on ![Select Channels](Images/select_tool.png). Use Ctrl for multiple selections (see [Labels and Calibration Bars](./02-using-neuroscope.md#selection-labels) for yet another way to select channels). Notice that in order to provide visual feedback the traces become slightly thicker when the channels are selected using the Select Channels tool. As you drag them around, their new positions are indicated by white outlines. Upon releasing the mouse button, the traces will move to their new positions.
+To centre each trace on its mean value over the current time window, toggle **Traces \> Autocenter Channels**. This is useful for channels with a large or drifting DC offset.
+
+Channels can be offset by clicking on the traces and dragging them by the appropriate amount using the Select Channels tool. To activate this tool, select **Tool \> Select Channels** or click on ![Select Channels](Images/select_tool.png). Use Ctrl for multiple selections (see [Labels and Calibration Bars](./02-using-neuroscope.md#selection-labels) for yet another way to select channels). Notice that in order to provide visual feedback the traces become slightly thicker when the channels are selected using the Select Channels tool. As you drag them around, their new positions are indicated by white outlines. Upon releasing the mouse button, the traces will move to their new positions.
 
 <a id="fig-offsets"></a>
 
 ![Offsets.](Images/offsets.png)
 
-When the physical organisation of your electrodes is more complex than vertical arrays (e.g. epidural electrodes covering the surface of the brain), NeuroScope provides a way to store your electrode layout. This can be done by redefining the default offsets which are stored in the parameter file (see [File Formats](./04-file-formats.md#parameter_file)). To set the current offsets as the default offsets, select **Traces \> Set Current Offsets as Default**. To set the default offsets back to zero, select **Traces \> Set Default Offsets to Zero**.
+When the physical organisation of your electrodes is more complex than vertical arrays (e.g. epidural electrodes covering the surface of the brain), NeuroScope provides a way to store your electrode layout. This can be done by redefining the default offsets which are stored in the parameter file (see [File Formats](./04-file-formats.md#parameter_file)). To set the current offsets as the default offsets, select **Traces \> Set Current Offsets as Defaults**. To set the default offsets back to zero, select **Traces \> Set Default Offsets to Zero**.
 
 <a id="fig-epidural"></a>
 
@@ -222,7 +216,7 @@ When the physical organisation of your electrodes is more complex than vertical 
 
 !!! note
 
-    Defaut offsets can be reused for subsequent experiments. This can be done using [NDManager](http://ndmanager.sourceforge.net), which is part of the larger data analysis framework including NeuroScope and [Klusters](http://klusters.sourceforge.net). Alternatively, this can also be done manually by duplicating and modifing the parameter file (see [File Formats](./04-file-formats.md#parameter_file)).
+    Default offsets can be reused for subsequent experiments. This can be done using NDManager, which is part of [neurosuite-3](https://github.com/Gravios/neurosuite-3) together with NeuroScope and Klusters. Alternatively, this can also be done manually by duplicating and modifing the parameter file (see [File Formats](./04-file-formats.md#parameter_file)).
 
 
 ## Advanced Display Management
@@ -252,7 +246,7 @@ Labels provide information about the traces: the ID of the corresponding channel
 
 Amplitudes are described as follows. By convention, 'x1' corresponds to the <a id="screen-gain"></a>[current screen gain](./02-using-neuroscope.md#properties). Thus, assuming for instance a screen gain of 1 mV/cm, an amplitude of 'x0.38' corresponds to 0.38 mV/cm. Notice that different traces can have different amplitudes, as is the case in the above screenshot where local field potentials have a gain of x0.38 and the synchronization pulse has a gain of x0.12.
 
-Calibration bars also provide scaling information. The horizontal bar indicates the time scale, and the vertical bar indicates the voltage scale *for channel 0* (notice that there is only one vertical bar, but each channel can have a different amplitude, hence the need for a convention). Showing calibration bars is most useful when printing traces. To display or hide the calibration bars, toggle **Settings \> Show Calibration**.
+Calibration bars also provide scaling information. The horizontal bar indicates the time scale, and the vertical bar indicates the voltage scale *for channel 0* (notice that there is only one vertical bar, but each channel can have a different amplitude, hence the need for a convention). Showing calibration bars is most useful when printing traces. To display or hide the calibration bars, toggle **Settings \> Display Calibration**.
 
 !!! note
 
@@ -271,7 +265,17 @@ All the features described up to this point are most useful in the initial stage
 
 Notice that the editing tools are now disabled: you can no longer create, modify or delete groups, nor can you change channel offsets.
 
-In View Mode, the palettes behave in the same way as in [Klusters](http://klusters.sourceforge.net). This is also how the Units Palette and the Events Palette behave.
+In View Mode, the palettes behave in the same way as in Klusters. This is also how the Units Palette and the Events Palette behave.
+
+### Spectral View
+
+Select **Traces \> Spectral View** (S) to replace the traces of the active display with a time-frequency image (multitaper spectral estimate) of the channels and time window shown. Select it again to return to the traces.
+
+The Spectral tab in the palette area sets the parameters: the mode (time-freq for one channel, band-chan for one frequency band across all channels), the number of tapers and time-bandwidth product, window, FFT length and step, the frequency band, the time window (locked to the trace window or an independent span), optional whitening, decimation and re-referencing, and the colour map and scale. Changes are not applied at once: the title of the view shows that an update is pending, and pressing U computes the image with the new settings.
+
+### Overlay Trace Files {#overlay-traces}
+
+To compare two versions of the same recording (for instance the wideband and a filtered signal), select **File \> Load Overlay Trace File...** and choose a `.dat`, `.lfp` or `.eeg` file with the same channel layout as the open file. It is drawn on top of each channel in a contrasting colour.
 
 ### Using Multiple Displays
 
@@ -283,44 +287,48 @@ There are several ways to navigate through the data:
 
 -   To move to a particular point in the data, enter the corresponding time in the Start time text boxes (below the traces). Time is typically entered in minutes, seconds and milliseconds. Alternatively, you can use cumulative seconds or milliseconds: for instance, entering `0 min 180 s 0 ms`, or `0 min 0 s 180000 ms` is equivalent to entering `3 min 0 s 0 ms`.
 
--   To modify the duration of the time window shown in the display (1 s by default), change the value in the Duration text box (below the traces). This value can be doubled by hitting the + key, or divided by two by hitting the - key.
+-   To modify the duration of the time window shown in the display (1 s by default), change the value in the Duration text box (below the traces). This value can be doubled by hitting the + key, or divided by two by hitting the - key. The mouse wheel also zooms the time axis around the pointer.
 
--   To display the next time window, click on the scroll bar below the traces, in the empty space on the right side of the slider. You can also hit the Page Down key. Similarly, clicking on the left side of the slider, or hitting the Page Up key, displays the previous time window.
+-   To display the next time window, click on the scroll bar below the traces, in the empty space on the right side of the slider. Similarly, clicking on the left side of the slider displays the previous time window. While the scroll bar has the keyboard focus, Page Down and Page Up do the same.
 
--   To move by smaller amounts, click on the arrows of the scroll bar, or hit Left Arrow or Right Arrow.
+-   To move by smaller amounts, click on the arrows of the scroll bar, or hit Left Arrow or Right Arrow (a quarter of the time window). Holding Ctrl and dragging with the left mouse button pans the view (except with the Select Channels tool, where Ctrl-click selects channels).
 
--   To move to the beginning or the end of the data, hit the Home or End keys, respectively.
+-   To move to the beginning or the end of the data, hit the Home or End keys while the scroll bar has the keyboard focus.
 
 -   Dragging the slider in the scroll bar is another way to move within the data.
 
+-   To page through the data automatically, toggle **Traces \> Auto-advance to end of recording** (Ctrl+Shift+Space). The display advances by one time window at a fixed interval until the end of the recording; changing the start time or moving the scroll bar stops it. **Traces \> Accelerate** (Ctrl+Up) and **Traces \> Decelerate** (Ctrl+Down) shorten or lengthen the interval in steps of 125 ms (between 0 and 1000 ms).
+
+-   Holding Ctrl while turning the mouse wheel zooms in or out around the pointer.
+
 !!! note
 
-    The shortcut keys described above will not work if the focus is in one of the text boxes below the traces. This is because in this case the shortcuts are applied to the text boxes rather than to the display (e.g. hitting the End key will move the insertion point to the end of the text). To activate the navigation shortcut keys, move the focus elsewhere, for instance by clicking on the scroll bar.
+    Page Up, Page Down, Home and End are handled by the scroll bar, so they only work while it has the keyboard focus (click on it). If the focus is in one of the text boxes below the traces, keys edit the text box instead (e.g. End moves the insertion point to the end of the text).
 
 
 ## Tools
 
 NeuroScope provides a set of tools to help you efficiently browse and edit your data. Whichever tool you select, when the cursor is located within the display, the time below the pointer (counted from the beginning of the data) is indicated in the Status Bar.
 
-Only one tool is active at a time: choosing a tool replaces the previous one, and the active tool stays highlighted on the toolbar. Each tool can be selected from the Tools menu, from the toolbar, or with its keyboard shortcut: Z (Zoom), C (Select Channels), V (Measure), T (Select Time), E (Select Event) and L (Draw Time Line); Add Event is chosen from its toolbar drop-down. When several displays are open, the active tool is remembered for each display, so the toolbar highlight follows the display you are working in. All of these shortcuts can be listed or changed as described in [Keyboard and Mouse Shortcuts](./02-using-neuroscope.md#shortcuts).
+Only one tool is active at a time: choosing a tool replaces the previous one, and the active tool stays highlighted on the toolbar. Each tool can be selected from the Tool menu, from the toolbar, or with its keyboard shortcut: Z (Zoom), C (Select Channels), V (Measure), T (Select Time), E (Select Event) and L (Draw Time Line); Add Event has no shortcut and is chosen from the Tool menu or its toolbar drop-down. When several displays are open, the active tool is remembered for each display, so the toolbar highlight follows the display you are working in. All of these shortcuts can be listed or changed as described in [Keyboard and Mouse Shortcuts](./02-using-neuroscope.md#shortcuts).
 
 ### Zoom
 
-To zoom on a particular area in the display, select **Tools \> Zoom** or click on ![Zoom tool.](Images/zoom_tool.png) . Now click on the center of the area you wish to enlarge. Alternatively, you can select the area to enlarge (click and hold the left button, then drag the mouse to select the area). Double-clicking will bring the zoom level back to the initial state.
+To zoom on a particular area in the display, select **Tool \> Zoom** or click on ![Zoom tool.](Images/zoom_tool.png) . Now click on the center of the area you wish to enlarge. Alternatively, you can select the area to enlarge (click and hold the left button, then drag the mouse to select the area). Double-clicking will bring the zoom level back to the initial state.
 
 ### Draw Time Line
 
-In order to quickly assess the temporal relationships between physiological events occurring on different channels, a vertical time line can be temporarily displayed on the traces. To display the time line, select **Tools \> Draw Time Line** or click on ![Time Line tool.](Images/time_line_tool.png) . Now click and drag the mouse around in the trace view: the time line follows the cursor until you release the mouse button. In multiple column mode, the time line is drawn in each of the columns at the same position in time.
+In order to quickly assess the temporal relationships between physiological events occurring on different channels, a vertical time line can be temporarily displayed on the traces. To display the time line, select **Tool \> Draw Time Line** or click on ![Time Line tool.](Images/time_line_tool.png) . Now click and drag the mouse around in the trace view: the time line follows the cursor until you release the mouse button. In multiple column mode, the time line is drawn in each of the columns at the same position in time.
 
 As usual, while you move the pointer within the display, the time at the cursor position is displayed in the Status Bar.
 
 ### Select Channels
 
-To select one or more channels directly from the display, choose **Tools \> Select Channels** or click on ![Select tool.](Images/select_tool.png) . Now hold the Ctrl key and click on the channels you wish to select. As a visual feedback, the traces become slightly thicker when the channels are selected. Notice that this does not allow for continuous selection. Use [this method](./02-using-neuroscope.md#selection-labels) instead.
+To select one or more channels directly from the display, choose **Tool \> Select Channels** or click on ![Select tool.](Images/select_tool.png) . Now hold the Ctrl key and click on the channels you wish to select. As a visual feedback, the traces become slightly thicker when the channels are selected. Notice that this does not allow for continuous selection. Use [this method](./02-using-neuroscope.md#selection-labels) instead.
 
 ### Measure
 
-To measure on the traces the amplitude and duration of a neurophysiological event (an action potential, a theta cylce, etc.), select **Tools \> Measure** or click on ![Measure tool.](Images/measure_tool.png) . Click on the upper left corner of the rectangular region you wish to measure, and drag the pointer to the lower right corner: the corresponding voltage and duration are indicated in the Status Bar.
+To measure on the traces the amplitude and duration of a neurophysiological event (an action potential, a theta cylce, etc.), select **Tool \> Measure** or click on ![Measure tool.](Images/measure_tool.png) . Click on the upper left corner of the rectangular region you wish to measure, and drag the pointer to the lower right corner: the corresponding voltage and duration are indicated in the Status Bar.
 
 <a id="fig-measure"></a>
 
@@ -328,7 +336,7 @@ To measure on the traces the amplitude and duration of a neurophysiological even
 
 ### Select Time
 
-To graphically refine the displayed time window, select **Tools \> Select Time** or click on ![Time Select tool.](Images/time_tool.png) . Click at the start time of the window you wish to define, then drag the pointer to the end time: the displayed time window will be updated accordingly. Notice that this is different from zooming in two respects: first, only the horizontal component of the selection (time) is taken into account, and second this actually redefines both the Start time and the Duration, rather than temporarily focusing on a particular portion of the display.
+To graphically refine the displayed time window, select **Tool \> Select Time** or click on ![Time Select tool.](Images/time_tool.png) . Click at the start time of the window you wish to define, then drag the pointer to the end time: the displayed time window will be updated accordingly. Notice that this is different from zooming in two respects: first, only the horizontal component of the selection (time) is taken into account, and second this actually redefines both the Start time and the Duration, rather than temporarily focusing on a particular portion of the display.
 
 <a id="fig-select-time"></a>
 
@@ -338,17 +346,17 @@ As usual, while you move the pointer within the display, the time at the cursor 
 
 ### Select Event
 
-To select a single event, choose **Tools \> Select Event** or click on ![Event Select tool.](Images/event_tool.png) , and click on the event line in the display. The event can now be moved or deleted. For more details, see [Events](./02-using-neuroscope.md#events).
+To select a single event, choose **Tool \> Select Event** or click on ![Event Select tool.](Images/event_tool.png) , and click on the event line in the display. The event can now be moved or deleted. For more details, see [Events](./02-using-neuroscope.md#events).
 
 ### Add Event
 
-To add a single event to an existing event file, select an event type under **Tools \> Add Event** or click on ![Add Event tool.](Images/add_event_tool.png) , optionally selecting an event type in the drop down menu, and click in the display where the new event should be added. For more details, see [Events](./02-using-neuroscope.md#events).
+To add a single event to an existing event file, select an event type under **Tool \> Add Event** or click on ![Add Event tool.](Images/add_event_tool.png) , optionally selecting an event type in the drop down menu, and click in the display where the new event should be added. For more details, see [Events](./02-using-neuroscope.md#events).
 
 ## Unit Activity {#units}
 
 ### Displaying Unit Activity
 
-Unit activity is described in two files: a spike time file (listing the timestamps of the spikes) and a cluster file (assigning each spike to a cluster which corresponds to a putative unit). In addition, if you are working with a `.dat` file, spike waveforms can be extracted from that file. This is explained in more detail in [File Formats](./04-file-formats.md#data-files). The spike time file and the cluster file can be loaded by selecting **File \> Load Cluster File(s)...** (multiple files can be opened in parallel). This creates a new cluster box in the Units Palette, where all the clusters are listed (the Units Palette is created upon loading the first cluster file).
+Unit activity is described in two files: a spike time file (listing the timestamps of the spikes) and a cluster file (assigning each spike to a cluster which corresponds to a putative unit). In addition, if the open trace file is the wideband (`.dat`) or high-pass filtered (`.fil`) file, spike waveforms can be highlighted on the traces. This is explained in more detail in [File Formats](./04-file-formats.md#data-files). The spike time file and the cluster file can be loaded by selecting **File \> Load Cluster File(s)...** (multiple files can be opened in parallel). This creates a new cluster box in the Units Palette, where all the clusters are listed (the Units Palette is created upon loading the first cluster file).
 
 To display the spikes fired by certain clusters, select the corresponding clusters by clicking on the colored squares in the palette. Use Shift or Ctrl for multiple selections. Clicking on a cluster file ID (the number on the left side of a unit box) will select or deselect all the clusters in the file at once. Hold the Shift key while clicking on a cluster file ID to select all clusters except 0 and 1 (artefacts and noise, respectively).
 
@@ -366,7 +374,7 @@ NeuroScope provides three different graphical representations for spikes. You ca
 
 !!! note
 
-    The waveforms can be drawn only when working with raw data (`.dat` files), as the waveform information is not available in low-pass filtered data.
+    The waveforms can be drawn only when the open trace file is a `.dat` or `.fil` file, as the waveform information is not available in low-pass filtered data (`.lfp`).
 
 
 !!! note
@@ -418,7 +426,7 @@ NeuroScope provides a mechanism to easily 'browse' events, i.e. to automatically
 
 #### Selecting Events
 
-To select a single event, choose **Tools \> Select Event** or click on ![Event Select tool.](Images/event_tool.png) , and click on the event line in the display. The event line becomes slightly thicker. The event can now be moved or deleted.
+To select a single event, choose **Tool \> Select Event** or click on ![Event Select tool.](Images/event_tool.png) , and click on the event line in the display. The event line becomes slightly thicker. The event can now be moved or deleted.
 
 #### Moving an Event
 
@@ -426,11 +434,11 @@ To move an event, i.e to change its timestamp, select it in the display, and mov
 
 #### Deleting an Event
 
-To delete an event, select it in the display, and choose **Events \> Delete Event**.
+To delete an event, select it in the display, and choose **Events \> Remove Event** (Ctrl+K).
 
 #### Adding an Event
 
-To add a single event to an existing event file, first choose in the palette the event file where the event should be added by clicking on the three-letter ID on the left side of the corresponding event box. Then, select an event type under **Tools \> Add Event** or click on ![Add Event tool.](Images/add_event_tool.png) (optionally selecting an event type in the drop down menu). Now click in the display where the new event should be added.
+To add a single event to an existing event file, first choose in the palette the event file where the event should be added by clicking on the three-letter ID on the left side of the corresponding event box. Then, select an event type under **Tool \> Add Event** or click on ![Add Event tool.](Images/add_event_tool.png) (optionally selecting an event type in the drop down menu). Now click in the display where the new event should be added.
 
 New event types can also be created, by selecting **New Event...** under either of the two menus mentioned above. A dialog box will pop up to allow you to provide a new event description.
 
@@ -466,21 +474,19 @@ One item in the File Properties dialog needs special mention: the Sampling Rate 
 
 ### Printing
 
-To print the current display, select **File \> Print**. This brings up the standard KDE print dialog. Notice the additional Background Color tab: it allows you to set the background color to white for printing (this saves printer ink). If the tabs are hidden, just click on the Expand button to display them.
-
-![Printer.](Images/printer.png)
+To print the current display, select **File \> Print**. This brings up the print dialog. To print the traces on a white background (this saves printer ink), check Use white background when printing on the General page of **Settings \> Preferences**.
 
 If a position view is opened, each view is printed on a separate page. The file name, the starting time and time frame of the trace view are printed below the figure. The filie name of the position view is printed below the position figure.
 
 ### Exporting
 
-Exporting is achieved in a similar way as printing. Select **File \> Print**. In the print dialog, click on the printer drop down list, and choose Print to File (PostScript) to export the display as a PostScript figure, or Print to File (PDF) to export it as a Portable Document File.
+Exporting is achieved in a similar way as printing. Select **File \> Print**. In the print dialog, choose Print to File (PDF) (or your system's PDF printer) to export the display as a Portable Document File.
 
-The Postscript format is ideal to import a figure into a drawing program for additional editing: it is a widely used standard, and all the information is stored in vectorial form. The PDF format is ideal for sharing a final figure with other investigators: it is platform independent (it will look identical whether in Linux, MacOS or Windows) and much more compact than PostScript (thus the output file is smaller and can easily be sent as an attachment via e-mail).
+A PDF file can be imported into a drawing program for additional editing, and it is convenient for sharing a figure with other investigators: it looks identical on Linux, macOS and Windows.
 
 ## Session Management {#saving}
 
-In a typical session, you open a data file, browse the local field potentials, maybe create several different displays, load and display spikes, events and positions, etc. You then end your session. The next time you reopen the same data file, NeuroScope will make sure that your session is restored exactly as it was when you closed it. Even better, this will happen whatever file you open from the same recording, be it the `.dat` file, the `.eeg` file, or any other recording file. This is made possible because all the relevant information is automatically saved to disk when you end a session (you do not need to explicitly save it yourself). Notice that this is different from saving your work via the Save menu entry or toolbar button, which applies to changes in the spike and anatomical groups, as well as to changes in the events.
+In a typical session, you open a data file, browse the local field potentials, maybe create several different displays, load and display spikes, events and positions, etc. You then end your session. The next time you reopen the same data file, NeuroScope will make sure that your session is restored exactly as it was when you closed it. Even better, this will happen whatever file you open from the same recording, be it the `.dat` file, the `.lfp` file, or any other recording file. This is made possible because all the relevant information is automatically saved to disk when you end a session (you do not need to explicitly save it yourself). Notice that this is different from saving your work via the Save menu entry or toolbar button, which writes the parameter file (acquisition settings, sampling rates, anatomical and spike groups, channel colours and default offsets) and any modified event files, in addition to the session file.
 
 ## Keyboard and Mouse Shortcuts {#shortcuts}
 
@@ -492,7 +498,7 @@ Select **Help \> Keyboard Shortcuts...** to open a read-only list of every comma
 
 ### Customizing the Shortcuts {#shortcuts-customizing}
 
-To change a binding, open **Settings \> Configure neuroscope** and select the Input page. Each command is shown on its own row with its current binding:
+To change a binding, open **Settings \> Preferences** and select the Input page. Each command is shown on its own row with its current binding:
 
 -   For a *keyboard* command, click the field and press the new key combination.
 

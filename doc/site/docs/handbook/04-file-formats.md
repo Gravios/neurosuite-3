@@ -1,14 +1,14 @@
 # File Formats {#data-files}
 
-NeuroScope reads electrophysiological data from a set of files. Each of these files has a name of the form `base.ext` or `base.n.ext` (or `base.ext.n`), where `base` stands for the common base name of all files belonging to a single recording session, `ext` is an extension describing the type of data stored in the file, and `n` stands for the ID of the particular group of channels from which the data was recorded. Thus, using this convention the data for session CS150612 would be named `CS150612.dat`, the filter data for local filed potentials would be named `CS150612.eeg` and the cluster file for tetrode 2 would be named `CS150612.2.clu` or `CS150612.clu.2`.
+NeuroScope reads electrophysiological data from a set of files. Each of these files has a name of the form `base.ext` or `base.n.ext` (or `base.ext.n`), where `base` stands for the common base name of all files belonging to a single recording session, `ext` is an extension describing the type of data stored in the file, and `n` stands for the ID of the particular group of channels from which the data was recorded. Thus, using this convention the data for session CS150612 would be named `CS150612.dat`, the low-pass filtered data for local field potentials would be named `CS150612.lfp` and the cluster file for tetrode 2 would be named `CS150612.2.clu` or `CS150612.clu.2`.
 
-More specifically, the data files are organized as described in the following sections.
+More specifically, the data files are organized as described in the following sections. The complete format reference for all neurosuite-3 files is in `doc/ndmanager-plugins/formats/` in the source tree.
 
 ## Data Files {#data_files}
 
 ### The data File {#data-file}
 
-Generic file name: `base.dat` for the raw data, `base.eeg` for local field potentials, and more generally `base.ext` for any other type of filtered data (where `ext` is extension describing the type of data stored in the file).
+Generic file name: `base.dat` for the raw data, `base.lfp` (formerly `base.eeg`) for local field potentials, `base.fil` for high-pass filtered data, and more generally `base.ext` for any other type of filtered data (where `ext` is extension describing the type of data stored in the file).
 
 Format: 12, 14, 16 or 32 bit binary.
 
@@ -29,9 +29,9 @@ The data file contains the data for each channel. Assuming `N1` channels (`chann
 
 Generic file name: `base.n.clu` (or `base.clu.n`)
 
-Format: ASCII
+Format: binary or ASCII (detected automatically; the `.clu` and `.res` files of a group must use the same form). The pipeline writes binary files: a 32-bit header followed by one 32-bit cluster ID per spike (see `doc/ndmanager-plugins/formats/clu.md`).
 
-The cluster file lists the cluster ID of each spike, one per line. The first line contains the total number of clusters. Assuming `N` spikes (`spike1...spikeN`), this file looks like:
+In the ASCII form, the cluster file lists the cluster ID of each spike, one per line. The first line contains the total number of clusters. Assuming `N` spikes (`spike1...spikeN`), this file looks like:
 
     nClusters
     clusterID_spike1
@@ -46,9 +46,9 @@ The cluster file lists the cluster ID of each spike, one per line. The first lin
 
 Generic file name: `base.n.res` (or `base.res.n`)
 
-Format: ASCII
+Format: binary or ASCII (detected automatically). The pipeline writes binary files: one 64-bit sample index per spike, with no header (see `doc/ndmanager-plugins/formats/res.md`).
 
-The spike time file lists the timestamp for each spike. The timestamp is expressed in multiples of the sampling interval. For instance, for a 20kHz recording (50 microsecond sampling interval), a timestamp of 200 corresponds to 200x0.000050s=0.01s from the beginning of the recording session. Assuming `N` spikes (`spike1...spikeN`), this file looks like:
+The spike time file lists the timestamp for each spike. The timestamp is expressed in multiples of the sampling interval. For instance, for a 20kHz recording (50 microsecond sampling interval), a timestamp of 200 corresponds to 200x0.000050s=0.01s from the beginning of the recording session. In the ASCII form, assuming `N` spikes (`spike1...spikeN`), this file looks like:
 
     timestamp_spike1
     timestamp_spike2
@@ -60,7 +60,7 @@ The spike time file lists the timestamp for each spike. The timestamp is express
 
 ### The Event File {#event-file}
 
-Generic file name: `basename.ext.evt` or `basename.evt.ext` (where `ext` is a three-letter extension describing the type of data stored in the file)
+Generic file name: `basename.id.evt` or `basename.evt.id`, where `id` is a three-character identifier with at least one non-digit character (e.g. `CS150612.rip.evt`, `CS150612.evt.s01`). The identifier is shown in the Events Palette.
 
 Format: ASCII
 
@@ -76,7 +76,7 @@ The event file lists the events and their timestamps. The timestamps are given i
 
 ### The Positon File {#position-file}
 
-Generic file name: `basename.ext` (where `ext` can be any three-letter extension)
+Generic file name: `basename.pos` by convention (any extension is accepted)
 
 Format: ASCII
 
@@ -93,17 +93,19 @@ By convention, spots which have not been detected by the video recording system 
 
 ## The Parameter File {#parameter_file}
 
-Generic file name: `base.xml`
+Generic file name: `base.yaml` (or `base.yml`)
 
-Format: XML
+Format: YAML
 
-The parameter file is a generic file which contains information required by many related programs; NeuroScope only needs a subset of this information. The parameter file is optional: it is usually generated using [NDManager](http://ndmanager.sourceforge.net), a dedicated application, but if you do not provide it, NeuroScope will prompt you for the necessary information and automatically generate a parameter file for you (however, contrary to NDManager, NeuroScope will actually generate only the subset of fields that it requires, and not a full parameter file).
+The parameter file is a generic file which contains information required by many related programs; NeuroScope only needs a subset of this information. The parameter file is optional: it is usually written by NDManager (part of [neurosuite-3](https://github.com/Gravios/neurosuite-3)), but if you do not provide it, NeuroScope will prompt you for the necessary information and write a parameter file when you save (however, contrary to NDManager, NeuroScope writes only the subset of fields that it requires, and not a full parameter file). When it saves, NeuroScope updates its own fields and keeps the rest of an existing file.
+
+Older parameter files in XML (`base.xml`) are not read; convert them with `ndm_xml2yaml` from the NDManager plugins.
 
 ## The Session File {#neuroscope-session-file}
 
 Generic file name: `base.nrs`
 
-Format: XML
+Format: YAML. An older XML session file cannot be read: NeuroScope ignores it, opens the data with default display settings and replaces it with a YAML file when the session is saved.
 
 The session file is where NeuroScope stores information related to the working environment: the number of displays and their settings (start time, duration, visible channels, amplitudes, etc.), loaded cluster, event and position files, etc. This ensures that when you reopen a data file, your session is restored exactly as it was when you closed it.
 
