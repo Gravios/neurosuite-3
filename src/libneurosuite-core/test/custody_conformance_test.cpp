@@ -9,7 +9,9 @@
 #include "neurosuite/core/custody.hpp"
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -66,10 +68,19 @@ int main(int argc, char** argv) {
     std::ifstream in(vpath);
     if (!in) { std::printf("FAIL: cannot open vectors %s\n", vpath.c_str()); return 2; }
 
-    char tmpl[] = "/tmp/custodyvecXXXXXX";
-    const char* dir = mkdtemp(tmpl);
-    if (!dir) { std::printf("FAIL: mkdtemp\n"); return 2; }
-    const std::string base = std::string(dir) + "/sess";
+    // A fresh directory under the system temp directory (mkdtemp is POSIX-only).
+    std::string dir;
+    {
+        std::error_code ec;
+        const std::filesystem::path tmp = std::filesystem::temp_directory_path(ec);
+        std::random_device rd;
+        for (int attempt = 0; attempt < 100 && dir.empty() && !ec; ++attempt) {
+            const std::filesystem::path p = tmp / ("custodyvec" + std::to_string(rd()));
+            if (std::filesystem::create_directory(p, ec)) dir = p.generic_string();
+        }
+    }
+    if (dir.empty()) { std::printf("FAIL: cannot create a temporary directory\n"); return 2; }
+    const std::string base = dir + "/sess";
 
     std::string line;
     while (std::getline(in, line)) {
