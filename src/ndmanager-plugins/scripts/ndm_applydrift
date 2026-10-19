@@ -126,7 +126,7 @@ check_command_status process_applydrift
 # ── Optional: re-run KlustaKwik for each target group ──────────────────────
 if [ "$runKlustaKwik" = "true" ] || [ "$runKlustaKwik" = "1" ]; then
 
-    check_commands_installed KlustaKwik
+    check_commands_installed KiloKlustaKwik
 
     minClusters=$(read_script_parameter "$session" ndm_applydrift minClusters)
     check_optional_variable $minClusters || minClusters=2
@@ -156,10 +156,10 @@ if [ "$runKlustaKwik" = "true" ] || [ "$runKlustaKwik" = "1" ]; then
         }
 
 
-        print_header "$session - KlustaKwik group $g (drift-adaptive chunks)"
+        print_header "$session - KiloKlustaKwik group $g (drift-adaptive chunks)"
         echo_message "  ChunkFile: $chunksFile"
 
-        KlustaKwik "$session" "$g" \
+        KiloKlustaKwik "$session" "$g" \
             -Method          "$method" \
             -MinClusters     "$minClusters" \
             -MaxClusters     "$maxClusters" \

@@ -112,7 +112,7 @@ ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_E
 
 print_header "$session - Re-cluster unmatched bin from shadow-cluster merge"
 
-check_commands_installed KlustaKwik python3
+check_commands_installed KiloKlustaKwik python3
 
 nElectrodeGroups=$(yaml_count $session "//spikeDetection/channelGroups/group")
 if [ "$nElectrodeGroups" -eq 0 ]; then
@@ -121,9 +121,9 @@ if [ "$nElectrodeGroups" -eq 0 ]; then
 fi
 
 # ////////////////////////////////////////////////////////////////////////////
-# //  Helper: extract unmatched rows from the .fet.<method>.N file into a
-# //  sandbox .fet file (output is always plain .fet because KlustaKwik
-# //  hard-codes that extension when reading its input).
+# //  Helper: extract unmatched rows from the .fet.<method>.N file into the
+# //  sandbox .fet.<method>.N, the name KiloKlustaKwik -Method <method>
+# //  reads (a feature file is method-specific: no untagged fallback).
 # //
 # //  The .fet.N format is:
 # //    int32 nDims header; then nSpikes × nDims × int64 rows.
@@ -138,8 +138,7 @@ fi
 # //                  (NOT inferred from max(clu_ids); see the rationale
 # //                  in once() below)
 # //
-# //  Output is a sandbox stem with the same group suffix so KlustaKwik
-# //  reads it naturally.  Returns the count on stdout, or empty string if
+# //  Output is the sandbox .fet path given by the caller.  Returns the count on stdout, or empty string if
 # //  no rows matched the supplied unmatched id.
 # ////////////////////////////////////////////////////////////////////////////
 
@@ -150,18 +149,16 @@ extract_unmatched()
     local cluFile=$3      # resolved dotted .clu.<method>.N
     local fetFile=$4      # resolved dotted .fet.<method>.N
     local unmatchedId=$5  # authoritative id from the shadowmark sidecar
+    local sandboxFet=$6   # sandbox .fet.<method>.N to write
 
-    python3 - "$group" "$sandboxStem" "$cluFile" "$fetFile" "$unmatchedId" <<'PYEOF'
+    python3 - "$group" "$sandboxStem" "$cluFile" "$fetFile" "$unmatchedId" "$sandboxFet" <<'PYEOF'
 import struct, sys, os
-group, sandboxStem, clu_path, fet_path, unmatched_id = (
-    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))
+group, sandboxStem, clu_path, fet_path, unmatched_id, out_fet = (
+    sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), sys.argv[6])
 
 # clu_path and fet_path are the resolved dotted .clu.<method>.N and
 # .fet.<method>.N (passed in by the caller via ndm_method_path).  They
-# are row-aligned.  KlustaKwik hard-codes .fet when reading
-# (klustakwik/KK.cpp:117), so the sandbox OUTPUT is always plain .fet
-# regardless of the input method.
-out_fet  = f"{sandboxStem}.fet.{group}"
+# are row-aligned.  out_fet is the sandbox .fet.<method>.N.
 
 with open(clu_path, "rb") as f:
     clu_buf = f.read()
@@ -207,7 +204,7 @@ PYEOF
 # //  Input:
 # //    $session.clu.$g       live clu with unmatched rows tagged with
 # //                          unmatched_id
-# //    $sandboxStem.clu.$g   KlustaKwik output; IDs are 1..K (or 2..K+1,
+# //    sandbox .clu.<method>.$g  KiloKlustaKwik output; IDs are 1..K (or 2..K+1,
 # //                          with cluster 1 being noise in KK convention)
 # //
 # //  Output:
@@ -224,12 +221,12 @@ merge_subcluster()
     local sandboxStem=$2
     local cluFile=$3
     local unmatchedId=$4
+    local sandboxClu=$5   # KiloKlustaKwik's sandbox .clu.<method>.N
 
-    python3 - "$group" "$sandboxStem" "$cluFile" "$unmatchedId" <<'PYEOF'
+    python3 - "$group" "$sandboxStem" "$cluFile" "$unmatchedId" "$sandboxClu" <<'PYEOF'
 import struct, sys
-group, sandboxStem, live_clu, unmatched_id = \
-    sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
-sub_clu  = f"{sandboxStem}.clu.{group}"
+group, sandboxStem, live_clu, unmatched_id, sub_clu = \
+    sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]), sys.argv[5]
 
 with open(live_clu, "rb") as f:
     lbuf = f.read()
@@ -344,25 +341,28 @@ once()
     fi
 
     local sandboxStem=$session-unmatched-$group
+    # KiloKlustaKwik -Method $method reads <stem>.fet.<method>.N and writes
+    # <stem>.clu.<method>.N (chain of custody), like the live files.
+    local sandboxFet="$sandboxStem.fet.$method.$group"
+    local sandboxClu="$sandboxStem.clu.$method.$group"
 
-    # Clean any stragglers from a previous aborted run.  Sandbox output is
-    # always .fet because KlustaKwik hard-codes that extension.  The
-    # extractor below writes {sandbox}.fet.{g} regardless of the input
-    # method (.fet.<method>.{g}).  The yaml
+    # Clean any stragglers from a previous aborted run (the untagged names
+    # are what earlier versions of this script wrote).  The yaml
     # symlink (for KK's session-param auto-detection) is also cleaned
     # so a stale dangling link does not poison this run.
-    rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group" \
+    rm -f "$sandboxFet" "$sandboxClu" \
+          "$sandboxStem.fet.$group" "$sandboxStem.clu.$group" \
           "$sandboxStem.klg.$group" "$sandboxStem.temp.clu.$group" \
           "$sandboxStem.yaml" "$sandboxStem.yml" "$sandboxStem.xml"
 
     # Pass 1: extract unmatched rows to sandbox .fet using the unmatched
     # id supplied by the shadowmark sidecar.
     local nUnmatched
-    nUnmatched=$(extract_unmatched "$group" "$sandboxStem" "$cluFile" "$fetFile" "$unmatchedId")
+    nUnmatched=$(extract_unmatched "$group" "$sandboxStem" "$cluFile" "$fetFile" "$unmatchedId" "$sandboxFet")
     if [ -z "$nUnmatched" ]; then
         echo_info "  group $group: shadowmark unmatched_id=$unmatchedId not present in live .clu — skipping"
         echo_info "    (group may have been hand-edited since the shadow merge)"
-        rm -f "$sandboxStem.fet.$group"
+        rm -f "$sandboxFet"
         return $NO_ERROR
     fi
 
@@ -397,11 +397,11 @@ once()
     local sandboxDims
     sandboxDims=$(python3 -c "
 import struct
-with open('$sandboxStem.fet.$group','rb') as f: print(struct.unpack('<i', f.read(4))[0])")
-    echo_info "  group $group: sandbox .fet.$group has $sandboxDims dims"
+with open('$sandboxFet','rb') as f: print(struct.unpack('<i', f.read(4))[0])")
+    echo_info "  group $group: sandbox $(basename "$sandboxFet") has $sandboxDims dims"
     if [ -z "$sandboxDims" ] || [ "$sandboxDims" -le 1 ]; then
         echo_error "  group $group: unreadable or degenerate sandbox .fet (nDims=$sandboxDims)"
-        rm -f "$sandboxStem.fet.$group"
+        rm -f "$sandboxFet"
         return $GENERAL_ERROR
     fi
 
@@ -512,7 +512,7 @@ PYEOF
     export OMP_NUM_THREADS=$nThreads
     export OMP_WAIT_POLICY=passive
 
-    print_header "  group $group - KlustaKwik on $nUnmatched unmatched spikes"
+    print_header "  group $group - KiloKlustaKwik on $nUnmatched unmatched spikes"
 
     # ── YAML visibility shim ────────────────────────────────────────────────
     #
@@ -548,7 +548,8 @@ PYEOF
     # Everything else — nStarts, SubspaceRecluster, TemplateMatch*, ChunkMinutes,
     # etc. — is passed through so the sub-run gets the same
     # clustering muscle as the main sort.
-    KlustaKwik "$sandboxStem" "$group" \
+    KiloKlustaKwik "$sandboxStem" "$group" \
+        -Method                  "$method"                \
         -MinClusters             $minClusters             \
         -MaxClusters             $maxClusters             \
         -MaxPossibleClusters     $maxPossibleClusters     \
@@ -589,14 +590,14 @@ PYEOF
     unset OMP_NUM_THREADS OMP_WAIT_POLICY
 
     if [ $kk_status -ne 0 ]; then
-        echo_error "  group $group: KlustaKwik on unmatched bin failed (exit $kk_status); live $cluFile untouched"
-        rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group"
+        echo_error "  group $group: KiloKlustaKwik on unmatched bin failed (exit $kk_status); live $cluFile untouched"
+        rm -f "$sandboxFet" "$sandboxClu"
         return $kk_status
     fi
 
-    if [ ! -s "$sandboxStem.clu.$group" ]; then
-        echo_error "  group $group: KlustaKwik produced empty .clu.$group; live $cluFile untouched"
-        rm -f "$sandboxStem.fet.$group" "$sandboxStem.clu.$group"
+    if [ ! -s "$sandboxClu" ]; then
+        echo_error "  group $group: KiloKlustaKwik produced no $(basename "$sandboxClu"); live $cluFile untouched"
+        rm -f "$sandboxFet" "$sandboxClu"
         return $GENERAL_ERROR
     fi
 
@@ -604,12 +605,12 @@ PYEOF
     # Atomic through temp-write + rename inside merge_subcluster.
     cp "$cluFile" "$cluFile.bak-sub"
     local merge_report
-    merge_report=$(merge_subcluster "$group" "$sandboxStem" "$cluFile" "$unmatchedId")
+    merge_report=$(merge_subcluster "$group" "$sandboxStem" "$cluFile" "$unmatchedId" "$sandboxClu")
     echo_info "  group $group: $merge_report"
 
     # Cleanup sandbox.
-    rm -f "$sandboxStem.fet.$group" \
-          "$sandboxStem.clu.$group" \
+    rm -f "$sandboxFet" \
+          "$sandboxClu" \
           "$sandboxStem.klg.$group" \
           "$sandboxStem.temp.clu.$group"
 

@@ -47,7 +47,7 @@ single chunk, which disables chunking for those groups.
 Existing `.chunks.N` files are overwritten.  The command exits 11 when
 `SESSION.drift` is missing.
 
-**Re-sorting.**  With `runKlustaKwik: true`, the `KlustaKwik` binary is run
+**Re-sorting.**  With `runKlustaKwik: true`, `KiloKlustaKwik` is run
 for each target group (not the source group) with
 `-ChunkFile SESSION.chunks.N`, `-Method <method>`, `-SaveIntermediates 0` and
 the KlustaKwik parameters below; `-UseFeatures all` uses every column of
@@ -75,7 +75,7 @@ Set under `programs:` → `- name: ndm_applydrift` → `parameters:` (see
 | `timeMergeIter` | `35` | `-TimeMergeIter`. |
 
 Also read from the YAML: `acquisitionSystem/samplingRate` (written into the
-file header and passed to KlustaKwik).
+file header and passed to KiloKlustaKwik).
 
 The helper `process_applydrift.py` also accepts `--shank-specific`, which
 ignores the probe-level average and uses the source group's own trace; the
@@ -84,7 +84,7 @@ wrapper does not pass it.
 ## See also
 
 - [`ndm_estimatedrift`](ndm_estimatedrift.md) — writes `SESSION.drift`
-- [`ndm_klustakwik`](ndm_klustakwik.md) — sorting; it does not pass `-ChunkFile`, so `.chunks.N` is used only by the `runKlustaKwik` path here or a direct `KlustaKwik … -ChunkFile` call
+- [`ndm_klustakwik`](ndm_klustakwik.md) — sorting; it does not pass `-ChunkFile`, so `.chunks.N` is used only by the `runKlustaKwik` path here or a direct `KiloKlustaKwik … -ChunkFile` call
 - [`.drift` format](../formats/drift.md), [`.chunks.N` format](../formats/chunks.md)
 - [Drift correction workflow](../../workflows/drift-correction.md)
 - [Pipeline overview](../pipeline.md)

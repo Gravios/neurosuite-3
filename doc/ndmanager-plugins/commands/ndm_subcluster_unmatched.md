@@ -27,7 +27,7 @@ holds the original clusters, one shadow cluster per parent, and a
 single **unmatched** bin with every new spike that was too far
 (χ² threshold) from all eligible parents. That bin is usually large and
 mixes novel low-amplitude units, collisions and noise.
-`ndm_subcluster_unmatched` runs KlustaKwik on just those spikes and
+`ndm_subcluster_unmatched` runs KiloKlustaKwik on just those spikes and
 writes the resulting clusters back under new IDs.
 
 Per group:
@@ -41,25 +41,26 @@ Per group:
    sub-clustered and is skipped (exit status 10); delete the `.bak-sub`
    to force a re-run.
 2. **Sandbox.** The rows of `.fet.<method>.N` whose cluster is
-   `unmatched_id` are copied to `session-unmatched-N.fet.N`. If no row
+   `unmatched_id` are copied to `session-unmatched-N.fet.<method>.N`. If no row
    carries that id (the `.clu` was edited since the merge), the group is
    skipped.
 3. **Sort.** The session YAML is symlinked as `session-unmatched-N.yaml`
-   (or `.yml`) so KlustaKwik reads the session's sampling rate and
-   geometry, then `KlustaKwik session-unmatched-N N` runs with the
+   (or `.yml`) so KiloKlustaKwik reads the session's sampling rate and
+   geometry, then `KiloKlustaKwik session-unmatched-N N -Method <method>`
+   runs, writing `session-unmatched-N.clu.<method>.N`, with the
    resolved parameters, `-UseFeatures all`, `-Log 1`, `-Screen 0`,
    `-fSaveModel 0` and `-SaveIntermediates 0`. The symlink is removed
    whatever the exit status. On failure or an empty result the live
    `.clu` is left untouched.
 4. **Merge back.** The live `.clu` is copied to `.bak-sub`, then
    sandbox cluster `k ≥ 2` becomes `unmatched_id + (k − 1)`; spikes
-   KlustaKwik put in cluster 0 or 1 stay in the unmatched bin. The
+   KiloKlustaKwik put in cluster 0 or 1 stay in the unmatched bin. The
    header is rewritten with the new cluster count.
 5. **Clean up.** Sandbox files are deleted and the sidecar is renamed to
    `.shadowmark.<method>.N.done`.
 
 Only the `.clu` changes; `.fet`, `.spk` and `.res` are not touched.
-Requires `KlustaKwik` and `python3` (with PyYAML when a prior is used)
+Requires `KiloKlustaKwik` and `python3` (with PyYAML when a prior is used)
 on `$PATH`.
 
 The re-extract step can call this command itself: set
