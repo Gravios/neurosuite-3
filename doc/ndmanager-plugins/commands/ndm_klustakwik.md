@@ -31,11 +31,16 @@ waveforms, refeaturization checkpoint, output). Groups sorted under
 different methods can therefore coexist in one session. See
 [file naming](../formats/naming.md).
 
-`-UseFeatures` is not a parameter: the wrapper builds a string of
-`nChannels × nFeatures + 2` ones (all PCA features, energy, and the
-timestamp column, which must be the last selected dimension for the
-chunked CEM to partition by time). `nFeatures` is read from
-`spikeDetection.channelGroups[g].nFeatures` and is mandatory.
+`-UseFeatures` is not a parameter: the wrapper passes a string of
+`nChannels × nFeatures + 2` ones, meant to select every column with the
+timestamp column last (the chunked CEM partitions by the last selected
+dimension). `nFeatures` is read from
+`spikeDetection.channelGroups[g].nFeatures` and is mandatory. The `.fet`
+written by `ndm_pca` (through `process_mergefeatures`) has
+`nChannels × nFeatures` PCA columns, `nChannels` peak columns only with
+`extra: true`, and the timestamp column: `nChannels × nFeatures + 1`
+columns by default. There is no energy column, so the string does not
+match the file's width in either case.
 
 A group is skipped (exit status 11) when its `.fet.<method>.N` is
 missing, and skipped (exit status 10) when its `.clu.<method>.N` already
@@ -98,8 +103,10 @@ matching, subspace reclustering, GPU dispatch) see the
 
 ### Per-group calibrated values
 
-`ndm_aom2dat` writes a per-group `klustakwik:` block into each
-`spikeDetection` group, calibrated from the group size
+`process_aomconvert`, run directly without `--no-yaml`, writes a
+per-group `klustakwik:` block into each `spikeDetection` group of the YAML
+it creates. `ndm_aom2dat` always passes `--no-yaml`, so it does not write
+these blocks. The values are calibrated from the group size
 (`nSpatialDims = nChannels × 3`):
 
 - `mergeThresh` = χ²(`nSpatialDims`, 0.9999) (Wilson–Hilferty approximation)

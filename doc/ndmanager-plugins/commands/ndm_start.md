@@ -74,7 +74,7 @@ this order:
 | # | Mode | Used when | Plugin order |
 |---|---|---|---|
 | 1 | Pipeline file | `<template>.ndm.<name>.pipeline` exists in the current directory and lists at least one plugin | Topological sort of the file's graph |
-| 2 | In-YAML graph | `programs[0]` of the template is `ndm_start` | Order of `programs:` |
+| 2 | In-YAML graph | `programs[0]` of the template is `ndm_start` (for an `.xml` template: any `<program>` is named `ndm_start`) | Order of `programs:` |
 | 3 | Legacy flags | neither of the above | Fixed sequence gated by the flag parameters |
 
 The chosen mode is printed (`ndm_start: pipeline file '…'`, `in-YAML graph

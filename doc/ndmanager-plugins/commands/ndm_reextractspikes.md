@@ -111,7 +111,7 @@ Set in the `ndm_reextractspikes` block (see [parameters](../parameters.md)):
 
 | Name | Default | Meaning |
 |---|---|---|
-| `reextractThresholdFactor` | `0.75` | Threshold factor for re-detection, used **instead of** `thresholdFactor` (baseline × factor). If left empty: 0.75 × `thresholdFactor`. For `stderiv` it multiplies the same noise base as the detection (see `thresholdNoise` below). |
+| `reextractThresholdFactor` | `0.75` [empty: 0.75 × `thresholdFactor`] | Threshold factor for re-detection, used **instead of** `thresholdFactor` (baseline × factor). For `stderiv` it multiplies the same noise base as the detection (see `thresholdNoise` below). |
 | `reextractMaskHalfWidth` | empty | Minimum distance in samples from every existing spike time. Empty: the largest `nSamples` of the active groups. |
 | `reextractMinClusterSize` | `50` | Parent clusters with fewer spikes are not eligible for shadow assignment. |
 | `reextractChi2` | `0.999` | χ² quantile for the squared-Mahalanobis admission threshold; lower is stricter (more spikes go to the unmatched bin). |
