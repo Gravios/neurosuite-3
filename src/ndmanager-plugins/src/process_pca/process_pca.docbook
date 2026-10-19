@@ -43,6 +43,26 @@
 			<option>-x</option>
 		</arg>
 		<arg>
+			<option>-t</option> <replaceable>threads</replaceable>
+		</arg>
+		<arg>
+			<option>-g</option> <replaceable>group</replaceable>
+		</arg>
+		<arg>
+			<option>-l</option> <replaceable>clu-file</replaceable>
+			<option>-e</option> <replaceable>ids</replaceable>
+		</arg>
+		<arg>
+			<option>--varimax</option>
+		</arg>
+		<arg>
+			<option>--pca-method</option> <replaceable>M</replaceable>
+		</arg>
+		<arg>
+			<option>--lag</option> <replaceable>L</replaceable>
+			<option>--lag-fet</option> <replaceable>path</replaceable>
+		</arg>
+		<arg>
 			<option>-v</option>
 		</arg>
 		<arg choice="plain">
@@ -54,7 +74,10 @@
 	<refsect1>
 		<title>Description</title>
 		<para>
-			<command>process_pca</command> performs a PCA on a spike waveform (<replaceable>.spk</replaceable>) file, keeps only the first n components and saves the projected waveforms to a feature (<replaceable>.fet</replaceable>) file.
+			<command>process_pca</command> performs a PCA on a spike waveform (<replaceable>.spk</replaceable>) file, keeps only the first n components per channel and saves the projected waveforms to a feature (<replaceable>.fet</replaceable>) file.
+		</para>
+		<para>
+			It always also writes the PCA basis next to the output: the output name with a trailing <filename>.tmp</filename> removed and <filename>.fet.</filename> replaced by <filename>.pca.</filename> (or <filename>.fetD.</filename> by <filename>.pcaD.</filename>). The basis is in the PCAE format described in <filename>doc/ndmanager-plugins/formats/pca.md</filename>; Klusters and <command>process_refeaturize</command> read it.
 		</para>
 	</refsect1>
 
@@ -113,7 +136,7 @@
 				<term><option>-d</option> <replaceable>components</replaceable></term>
 				<listitem>
 					<para>
-						number of principal components
+						number of principal components per channel
 					</para>
 				</listitem>
 			</varlistentry>
@@ -138,6 +161,94 @@
 				<listitem>
 					<para>
 						include extra features in output file (spike peak values)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-t</option> <replaceable>threads</replaceable></term>
+				<listitem>
+					<para>
+						number of OpenMP threads (ignored with a warning when built without OpenMP)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-g</option> <replaceable>group</replaceable></term>
+				<listitem>
+					<para>
+						electrode-group number, used only to label the progress bar
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-l</option> <replaceable>clu-file</replaceable></term>
+				<listitem>
+					<para>
+						<filename>.clu.N</filename> file (binary or text) giving the cluster of each spike; needed with <option>-e</option>, and only with it
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-e</option> <replaceable>ids</replaceable></term>
+				<listitem>
+					<para>
+						comma-separated cluster ids to exclude from the PCA fit (e.g. <literal>5,12</literal>). All spikes are still projected through the resulting basis. Requires <option>-l</option>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--varimax</option></term>
+				<listitem>
+					<para>
+						apply a Varimax rotation to each channel's kept components before projection; the rotated basis is the one saved
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--varimax-max-iter</option> <replaceable>N</replaceable></term>
+				<listitem>
+					<para>
+						maximum rotation sweeps (default 30)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--varimax-tol</option> <replaceable>T</replaceable></term>
+				<listitem>
+					<para>
+						relative change of the criterion that counts as converged (default 1e-6)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--pca-method</option> <replaceable>M</replaceable></term>
+				<listitem>
+					<para>
+						transform tag written into the basis header (0 standard, 1-3 sdiff, 4-6 stderiv, 7-9 stderiv custom patterns). By default it is inferred from the output name: <filename>.pcaD</filename> means stderiv all-pairs, anything else standard.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--lag</option> <replaceable>L</replaceable></term>
+				<listitem>
+					<para>
+						also write the lagged feature space: per channel PC1 at -L, 0 and +L samples (plus PC2 at 0), with its own basis fitted on a window widened by L on each side. Requires <option>--lag-fet</option>.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--lag-pc2</option> <replaceable>0|1</replaceable></term>
+				<listitem>
+					<para>
+						keep PC2 as a fourth lagged column per channel (default 1)
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>--lag-fet</option> <replaceable>path</replaceable></term>
+				<listitem>
+					<para>
+						output file for the lagged features; its basis path is derived as for <option>-f</option>
 					</para>
 				</listitem>
 			</varlistentry>

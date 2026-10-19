@@ -30,7 +30,7 @@
 			<command>process_refeaturize</command> reads spike waveforms from a binary
 			<replaceable>.spk.N</replaceable> file and projects them onto the principal
 			component eigenvectors that were saved to a <replaceable>.pca.N</replaceable>
-			file by <command>process_pca -e</command>.  The resulting feature values are
+			file by <command>process_pca</command> (which always writes it).  The resulting feature values are
 			written to standard output, one space-separated row per spike, without a
 			leading count line or a trailing timestamp column.
 		</para>
@@ -52,9 +52,10 @@
 				<listitem>
 					<para>
 						Path to the <replaceable>.pca.N</replaceable> file written by
-						<command>process_pca -e</command>.  Contains the channel count,
+						<command>process_pca</command>.  Contains the channel count,
 						waveform window parameters, per-channel means, and
-						column-major eigenvector matrices for all channels.
+						column-major eigenvector matrices for all channels
+						(see PCA File Format below).
 						(Required.)
 					</para>
 				</listitem>
@@ -139,24 +140,13 @@
 	<refsect1>
 		<title>PCA File Format</title>
 		<para>
-			The <replaceable>.pca.N</replaceable> file written by
-			<command>process_pca -e</command> contains a fixed header followed by
-			per-channel mean vectors and eigenvector matrices:
+			The <replaceable>.pca.N</replaceable> file is the PCAE basis (version 2,
+			version 1 still read): an <type>int32</type> header with magic, version,
+			nChannels, data2use, nComponents, recShift, isCentered, method and
+			nInputChannels, then all per-channel means followed by all per-channel
+			eigenvector matrices. The full layout is in
+			<filename>doc/ndmanager-plugins/formats/pca.md</filename>.
 		</para>
-		<itemizedlist>
-			<listitem><para><type>int32</type> magic — 0x50434145 (<literal>"PCAE"</literal>)</para></listitem>
-			<listitem><para><type>int32</type> version — 1</para></listitem>
-			<listitem><para><type>int32</type> nChannels</para></listitem>
-			<listitem><para><type>int32</type> data2use — samples per channel used in PCA</para></listitem>
-			<listitem><para><type>int32</type> nComponents — principal components kept</para></listitem>
-			<listitem><para><type>int32</type> recShift — first sample offset within the waveform window</para></listitem>
-			<listitem><para><type>int32</type> isCentered — 1 = centred projection; 0 = raw</para></listitem>
-			<listitem>
-				<para>For each channel: <type>double[data2use]</type> per-channel mean, followed by
-				<type>double[data2use × nComponents]</type> eigenvectors in column-major order
-				(column = component).</para>
-			</listitem>
-		</itemizedlist>
 	</refsect1>
 
 	<refsect1>
