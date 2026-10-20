@@ -18,6 +18,7 @@
 //include files for the application
 #include "configuration.h"
 #include <QSettings>
+#include <QStandardPaths>
 
 /**
   *@author Lynn Hazan
@@ -44,7 +45,10 @@ const int  Configuration::gainDefault = 200;
 const int  Configuration::timeIntervalDefault = 60;
 const int  Configuration::nbUndoDefault = 2;
 const QColor Configuration::backgroundColorDefault = QColor(Qt::black);
-const QString Configuration::reclusteringExecutableDefault = QLatin1String("KlustaKwik");
+// KiloKlustaKwik's CPU build, which every neurosuite-3 build installs (the GPU
+// builds add KiloKlustaKwik); it reads the temporary <base>.fet.standard.N that
+// slotRecluster writes for it.
+const QString Configuration::reclusteringExecutableDefault = QLatin1String("KiloKlustaKwik_cpu");
 const QString Configuration::reclusteringArgsDefault =
         "%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features";
 const QString Configuration::realignExecutableDefault = QLatin1String("");
@@ -65,6 +69,13 @@ void Configuration::read() {
     nbUndo = settings.value("nbUndo",nbUndoDefault).toInt();
     backgroundColor = settings.value("backgroundColor", backgroundColorDefault).value<QColor>();
     reclusteringExecutable = settings.value("reclusteringExecutable",reclusteringExecutableDefault).toString();
+    // Settings written by earlier versions hold their default, "KlustaKwik" (every
+    // write() stores the value).  neurosuite-3 never installs a program of that
+    // name, so where none is on PATH the stored old default becomes the new one;
+    // a KlustaKwik that is installed, or any other program, is kept.
+    if (reclusteringExecutable == QLatin1String("KlustaKwik")
+        && QStandardPaths::findExecutable(reclusteringExecutable).isEmpty())
+        reclusteringExecutable = reclusteringExecutableDefault;
     reclusteringArgs = settings.value("reclusteringArgs",reclusteringArgsDefault).toString();
     realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
     realignArgs = settings.value("realignArgs",realignArgsDefault).toString();

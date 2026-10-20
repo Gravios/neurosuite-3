@@ -1016,7 +1016,17 @@ Klusters can launch KiloKlustaKwik on the current electrode group:
 1. Select the clusters to recluster (or select all).
 2. **Actions → Recluster → Recluster** (`Shift+R`).
 3. KiloKlustaKwik runs as a subprocess; its stdout streams into the embedded process widget.
-4. When KiloKlustaKwik finishes, klusters reloads the `.clu.N` file automatically and all views update.
+4. When KiloKlustaKwik finishes, klusters reads the new clusters back and all views update.
+
+The selected clusters' features go to a temporary
+`<base>--<cluster ids>--<date>.fet.standard.N` in the session folder (with a
+copy of the session YAML under the same base, so KiloKlustaKwik reads the
+sampling rate and geometry), and KiloKlustaKwik writes
+`….clu.standard.N` beside it: the names it uses for its default method,
+`standard`, so the default arguments do not pass `-Method`. All of them are
+deleted afterwards. A program configured under another name (the original
+`KlustaKwik`, say) gets the untagged `….fet.N` and is expected to write
+`….clu.N`.
 
 The **Actions → Recluster** submenu also holds:
 
@@ -1028,7 +1038,13 @@ The **Actions → Recluster** submenu also holds:
 | Strip by Template… | `Shift+J` | Uses one selected cluster as a waveform template and pulls matching spikes out of the other selected clusters (current channel selection) |
 | DipSplit Selected Cluster | `Shift+D` | See [DipSplit](#dipsplit--automatic-bimodal-split) |
 
-KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering**.
+KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering**. The program is
+`KiloKlustaKwik_cpu` (KiloKlustaKwik's CPU build, installed by every build;
+set `KiloKlustaKwik` for a GPU build) by default, with the arguments
+`%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features`.
+Settings saved by earlier versions name `KlustaKwik`, which neurosuite-3 does
+not install; when no `KlustaKwik` is on the PATH, Klusters uses
+`KiloKlustaKwik_cpu` instead.
 
 ### Automatic feature selection
 

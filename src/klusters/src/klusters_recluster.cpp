@@ -504,10 +504,20 @@ void KlustersApp::slotRecluster(){
         arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
     }
 
-    reclusteringFetFileName  = doc->documentDirectory() + QLatin1Char('/');
-    reclusteringFetFileName += fileBaseName;
-    reclusteringFetFileName += QLatin1String(".fet.");
-    reclusteringFetFileName += electrodeGroupID;
+    // The temporary feature file goes where the reclustering program reads it.
+    // KiloKlustaKwik reads <base>.fet.<Method>.N and writes <base>.clu.<Method>.N
+    // (chain of custody; Method is "standard" unless -Method is passed); the
+    // original KlustaKwik reads <base>.fet.N and writes <base>.clu.N.  The .clu
+    // is found by replacing ".fet." with ".clu." in this name, so both work.
+    {
+        const QString dirBase = doc->documentDirectory() + QLatin1Char('/') + fileBaseName;
+        const bool kilo = QFileInfo(reclusteringExecutable).completeBaseName()
+                              .startsWith(QLatin1String("KiloKlustaKwik"), Qt::CaseInsensitive);
+        reclusteringFetFileName = dirBase + QLatin1String(".fet.")
+            + (kilo ? QLatin1String(neurosuite::custody::kDefaultMethod()) + QLatin1Char('.')
+                    : QString())
+            + electrodeGroupID;
+    }
 
     // patch81 — Make the session YAML reachable from the recluster temp
     // basename.
