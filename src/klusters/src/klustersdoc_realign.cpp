@@ -1338,6 +1338,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             do {
                 if (!PcaRefineGpu::hasGpu()) break;
                 if (N < PcaRefineGpu::gpuThreshold()) break;
+                // The GPU kernel's stderiv is fixed: the all-pairs spatial
+                // derivative seeded with zero.  The CPU loop below applies the
+                // .spk's own transform (stderivOrder: _C<n>, _S<n>, an
+                // sdiffPairs pattern or expression, seeded from the previous
+                // sample), so for a stderiv feature space the two would score
+                // different waveforms and pick different shifts.  Only the raw
+                // space, where both project the same samples, takes the GPU.
+                if (useStder) break;
                 if (nChan > 256) break;        // safety — kernel sums across nChan in one block
                 const int M       = 2 * maxShift + 1;
                 // Each candidate c in [0,M) feeds the kernel rShift+d2u raw
