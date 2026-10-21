@@ -3,9 +3,9 @@
   <img src="doc/images/banner.png" width="100%" alt="neurosuite-3">
 </picture></h1>
 
-Spike sorting and electrophysiology visualization: a **Qt 6 / C++20** revival of [Neurosuite](https://buzsakilab.com/wp/resources/neurosuite/), the toolchain for extracellular recordings that **Lynn Hazan** wrote in **György Buzsáki**'s lab with **Michaël Zugaro** (Hazan, Zugaro & Buzsáki, *J. Neurosci. Methods* 155:207–216, 2006; on [SourceForge](https://sourceforge.net/projects/neurosuite/) and [GitHub](https://github.com/neurosuite)). KiloKlustaKwik builds on **Kenneth D. Harris**'s KlustaKwik.
-
 From a raw recording to sorted single units: convert and filter the signal, detect and sort spikes automatically, curate by hand, and check everything against the LFP, events and the animal's position. GPU acceleration is optional; a CPU build is always produced.
+
+Spike sorting and electrophysiology visualization: a **Qt 6 / C++20** revival of [Neurosuite](https://buzsakilab.com/wp/resources/neurosuite/), the toolchain for extracellular recordings that **Lynn Hazan** wrote in **György Buzsáki**'s lab with **Michaël Zugaro** (Hazan, Zugaro & Buzsáki, *J. Neurosci. Methods* 155:207–216, 2006; on [SourceForge](https://sourceforge.net/projects/neurosuite/) and [GitHub](https://github.com/neurosuite)). KiloKlustaKwik builds on **Kenneth D. Harris**'s KlustaKwik.
 
 ## Start here
 
@@ -112,15 +112,15 @@ Manual: [doc/neuroscope/README.md](doc/neuroscope/README.md)
 
 </details>
 
-- **One session file.** Every tool reads the session `.yaml`; start from [`templates/template.yaml`](templates/template.yaml). Convert a legacy `.xml` with `ndm_xml2yaml`: the GUIs read YAML only (Klusters also opens `.par`), and only the `ndm_*` scripts still read `.xml`.
-- **Shared libraries:** libklustersshared (Qt widgets, the key and mouse binding engine, YAML parameter I/O) and [libneurosuite-core](src/libneurosuite-core/docs/FILE_FORMATS.md) (Qt-free reading and writing of every file format).
+- **One session file.** Every tool reads the session `.yaml`; start from [`templates/template.yaml`](templates/template.yaml).
+- **Shared libraries:** libklustersshared (Qt widgets, the key and mouse binding engine, YAML parameter I/O) and [libneurosuite-core](src/libneurosuite-core/docs/FILE_FORMATS.md)
 
 ## Workflows
 
 Walkthroughs across the toolchain; begin with the first.
 
-- [First-time spike sort](doc/workflows/first-time-sort.md): acquire, preprocess, sort, curate
-- [Cluster curation](doc/workflows/cluster-curation.md): split, merge, realign and nudge in Klusters
+- [First-time spike sort](doc/workflows/first-time-sort.md): acquire, process, sort, curate
+- [Cluster curation](doc/workflows/cluster-curation.md): split, merge, realign and nudge
 - [Re-extract with a lower threshold](doc/workflows/re-extract-lower-threshold.md): recover weak units
 - [Iterative refinement](doc/workflows/iterative-refinement.md): strip, re-detect, re-sort
 - [Drift correction](doc/workflows/drift-correction.md) · [Collision decomposition](doc/workflows/collision-decomposition.md) · [Empirical priors](doc/workflows/empirical-priors.md)
@@ -140,7 +140,7 @@ Optional and detected at build time; the CPU (OpenMP) path is always built.
 | `ndm_extractemg` | ✓ | ✓ | ✓ | | EMG extraction |
 | `ndm_decomposecollisions` | opt-in | | | | Collision decomposition fit |
 
-¹ The CUDA Butterworth kernel is not yet validated on hardware. Metal results are still to be compared with the CPU on a Mac (`scripts/metal_validate.sh`).
+¹ Metal results are still to be compared with the CPU on a Mac (`scripts/metal_validate.sh`).
 
 Toolkit setup (CUDA including Blackwell / sm_120, ROCm, oneAPI): [BUILD.md §4](doc/BUILD.md) · [doc/gpu](doc/gpu/README.md).
 
