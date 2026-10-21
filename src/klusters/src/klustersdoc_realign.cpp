@@ -1821,7 +1821,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         if (nShifted > 0) {
             log << "  shift (samples) min=" << shiftMin
                 << "  max=" << shiftMax
-                << "  mean-abs=" << QString::number(static_cast<double>(shiftMean), 'f', 2) << "\n";
+                << "  mean-abs=" << QString::number(static_cast<double>(shiftMean), 'f', 2)
+                << "  (summed over the passes: maxShift limits each pass)\n";
         }
         log << "\n";
         emitFlush();
