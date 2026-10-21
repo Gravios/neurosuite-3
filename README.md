@@ -7,7 +7,19 @@ Spike sorting and electrophysiology visualization — a modern **Qt 6 / C++20** 
 [![macOS](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml)
 [![Docs](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml)
 
-neurosuite-3 takes you from a raw recording to sorted single units: convert and filter the signal, detect and automatically sort spikes, curate the result by hand, and inspect everything against the LFP, events, and the animal's position. It builds on Linux (Ubuntu 24.04 / Debian 12; WSL2 works), natively on Windows 10/11 (everything except KiloKlustaKwik, which runs under WSL2) and on macOS with Homebrew — see [INSTALL.md](doc/INSTALL.md). The badges above show the latest CI build on `main` for each: Linux builds and runs the tests on Ubuntu 24.04–26.10, Windows builds with MSVC, macOS builds on Apple silicon (its tests are not yet required to pass). Optional GPU acceleration (CUDA / ROCm / SYCL) sits over a CPU fallback that is always available.
+neurosuite-3 takes you from a raw recording to sorted single units: convert and filter the signal, detect and automatically sort spikes, curate the result by hand, and inspect everything against the LFP, events, and the animal's position. Optional GPU acceleration (CUDA / ROCm / SYCL) sits over a CPU fallback that is always available.
+
+## Platforms
+
+The badges above show the latest CI run on `main` for each platform.
+
+| Platform | Status |
+|---|---|
+| **Linux** — Ubuntu 24.04 and newer, Debian 12; WSL2 works | Reference platform. CI builds everything and runs the test suite on Ubuntu 24.04, 25.10, 26.04 and 26.10 (Qt 6.4 is the oldest Qt supported). |
+| **Windows 10 / 11** — Visual Studio 2022 | Klusters, NeuroScope, NDManager and the processing programs build natively; the `ndm_*` steps run from cmd and PowerShell through Git Bash. KiloKlustaKwik is not built on Windows yet: run it, or the whole pipeline, under WSL2. CI builds with MSVC (no tests yet). |
+| **macOS** — Apple silicon, Homebrew | Builds with Homebrew's Qt 6 and libraries; CI builds it on macOS 15, its tests not yet required to pass. The `ndm_*` steps need bash 4 (`brew install bash`). |
+
+Step-by-step installation for each: **[INSTALL.md](doc/INSTALL.md)**.
 
 ## Start here
 
@@ -37,7 +49,7 @@ cmake --install build
 
 `-DNS_INSTALL_DEPS=ON` installs the required packages for you (apt / Homebrew / vcpkg); drop it if you'd rather manage them yourself. Choosing a build type, picking or disabling GPU backends, skipping a component (e.g. `-DNS_SKIP_KILOKLUSTAKWIK=ON`), the macOS Qt path and the Windows/vcpkg setup, a sanitizer build, and reproducing CI — all live in **[BUILD.md](doc/BUILD.md)**.
 
-That is the Linux route (macOS: the same commands with Homebrew). On **Windows**, start with `scripts\install-deps-windows.bat`, which installs the compiler, the libraries and Qt, then `cmake --preset windows`. Every platform, step by step: **[INSTALL.md](doc/INSTALL.md)**.
+That is the Linux route (macOS: the same commands with Homebrew). On **Windows**, start with `scripts\install-deps-windows.bat`, which installs the compiler, the libraries and Qt, then `cmake --preset windows`, `cmake --build --preset windows` and `cmake --install build`; the install puts the programs on your PATH. Every platform, step by step: **[INSTALL.md](doc/INSTALL.md)**.
 
 ---
 
@@ -45,11 +57,13 @@ That is the Linux route (macOS: the same commands with Homebrew). On **Windows**
 
 | Program | What it does |
 |---|---|
-| **[ndmanager](doc/ndmanager/README.md)** | Set up a session and run the preprocessing pipeline |
-| **[ndmanager-plugins](doc/ndmanager-plugins/README.md)** | The command-line pipeline — conversion, filtering, PCA, spike detection (`ndm_*`) |
-| **[kiloklustakwik](doc/kiloklustakwik/README.md)** | Automatic spike sorter (classification EM) |
-| **[klusters](doc/klusters/README.md)** | Interactive manual spike-sorting & curation GUI |
-| **[neuroscope](doc/neuroscope/README.md)** | Multi-channel signal, event & position viewer |
+| **[ndmanager](doc/ndmanager/README.md)** | Set up a session — acquisition, probes and channel groups, each step's parameters with their help — and lay out the processing pipeline as a graph |
+| **[ndmanager-plugins](doc/ndmanager-plugins/README.md)** | The command-line pipeline (`ndm_*`) — conversion, filtering, spike detection and extraction, PCA, sorting, and the post-sorting steps (re-extraction, spike subtraction, drift, collisions) |
+| **[kiloklustakwik](doc/kiloklustakwik/README.md)** | Automatic spike sorter (classification EM, chunked for long recordings) |
+| **[klusters](doc/klusters/README.md)** | Interactive spike-sorting and curation GUI |
+| **[neuroscope](doc/neuroscope/README.md)** | Multi-channel signal, spectral, event & position viewer |
+
+External sorters plug into NDManager through the ndm plugin protocol: the [fiber-kit](https://github.com/Gravios/fiber-kit) sorter runs as `ndm_fiber-kit` (see [`ndm_klustakwik`](doc/ndmanager-plugins/commands/ndm_klustakwik.md#external-sorter-ndm_fiber-kit)).
 
 Shared foundations: **libklustersshared** (Qt widgets, the shared `input::` key/mouse engine, YAML parameter I/O) and **[libneurosuite-core](src/libneurosuite-core/docs/FILE_FORMATS.md)** (the Qt-free `neurofileio` reader/writer for every on-disk format). Spike-waveform realignment (`spikerealign`) is built into klusters and KiloKlustaKwik.
 
@@ -77,8 +91,11 @@ Optional and auto-detected — a CPU/OpenMP build is always produced, so no GPU 
 |---|---|---|
 | kiloklustakwik | CUDA / HIP / SYCL | CEM E-step + waveform realignment |
 | klusters | CUDA / HIP / SYCL | Grouping Assistant + interactive realignment |
+| neuroscope | CUDA (cuFFT) | spectrogram FFTs |
 | `ndm_hipass` | CUDA / OpenMP | zero-phase Butterworth filter (default; the CUDA kernel is not yet validated on hardware) · median filter |
-| `ndm_extractspikes` · `ndm_spikegrouper` | CUDA | thresholding, channel grouping |
+| `ndm_detectspikes` · `ndm_spikegrouper` | CUDA | noise thresholds, channel grouping |
+| `ndm_extractemg` | CUDA / HIP / SYCL | EMG extraction |
+| `ndm_decomposecollisions` | CUDA (opt-in) | collision decomposition fit |
 
 Toolkit setup (CUDA including Blackwell / sm_120, AMD ROCm, Intel oneAPI/SYCL): [BUILD.md §4](doc/BUILD.md) and [doc/gpu/](doc/gpu/README.md).
 
@@ -86,11 +103,13 @@ Toolkit setup (CUDA including Blackwell / sm_120, AMD ROCm, Intel oneAPI/SYCL): 
 
 ## Highlights
 
-- **AlphaOmega support** — `ndm_aom2dat` converts `.mat` recordings and writes a calibrated session YAML.
-- **Cleaner high-pass filtering** — `ndm_hipass` now defaults to a zero-phase Butterworth filter; set `filter: median` to keep the old median filter.
-- **Smarter auto-sorting** — three-tier KiloKlustaKwik parameters (per-probe → session → defaults) and chunked CEM for long recordings.
-- **Post-sorting pipeline** — spike subtraction (`ndm_stripdat`), second-pass re-detection, drift estimation, and collision decomposition.
-- **Modern stack** — Qt 6 / C++20 across every app, one YAML parameter format, and a 50-probe NeuroNexus library.
+- **Curation in Klusters** — [hierarchical clustering](doc/klusters/hierarchical-clustering.md) into fibers and atoms, template curation in the feature space, t-SNE and oblique views, multi-lasso, DipSplit and watershed splits, merge recommendations and drift / template / residual matrices; a rebindable keyboard and mouse and a right-click radial menu.
+- **Safe sessions** — Klusters saves all-or-nothing and skips unchanged files, autosaves for crash recovery, and keeps a JSON-lines log of curation actions (`.cur`) that the curation and prior-training tools learn from.
+- **NDManager** — a Pipeline tab that builds and saves pipelines as a graph, plugins grouped by purpose, each parameter with its help and an **Add** list of the ones a step reads, session templates you can export and apply, and a probe library (43 NeuroNexus models) with a geometry editor.
+- **Recording formats** — Neuralynx, CED, AlphaOmega and Plexon (`.plx` / `.pl2`) recordings convert to `.dat`; the AlphaOmega and Plexon converters also fill in the session YAML from the recording.
+- **Detection and sorting** — a zero-phase Butterworth high-pass by default; spatial-derivative detection methods (`sdiff`, `stderiv`); every per-group file named for its method (`SESSION.<type>.<method>.N`), so methods coexist in one session; three-tier KiloKlustaKwik parameters (per group → session → defaults) and chunked CEM for long recordings.
+- **After sorting** — re-extraction at a lower threshold, spike subtraction (`ndm_stripdat`) and re-detection, drift estimation and correction, collision decomposition, learned curation (`ndm_autoklusta`) and empirical priors from curation logs.
+- **Everywhere** — Qt 6 / C++20 across every app, one YAML parameter format, native Windows and macOS builds, and current manuals built into the apps (**F1**) and [online](https://gravios.github.io/neurosuite-3/).
 
 See [CHANGELOG.md](CHANGELOG.md) for the full history.
 
