@@ -170,12 +170,10 @@ void sycl_upload_data(KK_GPU *gpu, const float *h_Data_pointMajor) {
 // LogP[self] - LogP[best] > DistThresh, skip recomputing this cluster.
 // Identical logic to the CUDA kernel.
 // ===========================================================================
-void sycl_estep_submit(KK_GPU *gpu,
+void sycl_estep_submit(KK_GPU *gpu, int nD, int nD2,
     int nClustersAlive, float DistThresh, int FullStep, float log2piHalf)
 {
     const int nP      = gpu->nPoints;
-    const int nD      = gpu->nDims;
-    const int nD2     = gpu->nDims2;
 
     float       *d_LogP       = gpu->d_LogP;
     const float *d_Data       = gpu->d_Data;
@@ -679,11 +677,12 @@ void sycl_estep(
     const int   *h_OldClass,
           float *h_LogP,
     int nClustersAlive, float DistThresh, int FullStep,
-    double PI, int MaxClusters)
+    double PI, int MaxClusters, int nDims, int nDims2)
 {
+    // KK's current dimensions, not the loaded ones (see cuda_estep).
     const int nP  = gpu->nPoints;
-    const int nD  = gpu->nDims;
-    const int nD2 = gpu->nDims2;
+    const int nD  = nDims;
+    const int nD2 = nDims2;
     const int maxC= gpu->MaxClusters;
     (void)MaxClusters; // parameter kept for API consistency with CUDA path
     auto &q = gpu->q;
@@ -730,7 +729,7 @@ void sycl_estep(
     }
 
     // Launch E-step kernel
-    sycl_estep_submit(gpu, nClustersAlive, DistThresh, FullStep, log2piHalf);
+    sycl_estep_submit(gpu, nD, nD2, nClustersAlive, DistThresh, FullStep, log2piHalf);
     q.wait();
 
     // LogP remains device-resident after EStep.  The host h_LogP array is

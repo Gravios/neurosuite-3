@@ -411,10 +411,14 @@ extern "C" void cuda_estep(
     const int   *h_OldClass,
           float *h_LogP,         // nullptr on normal path; non-null for DistDump only
     int nClustersAlive, float DistThresh, int FullStep,
-    double PI, int MaxClusters
+    double PI, int MaxClusters, int nDims, int nDims2
 )
 {
-    const int nP = gpu->nPoints, nD = gpu->nDims, nD2 = gpu->nDims2;
+    // KK's current dimensions, not the loaded ones: CEMTwoPhase's spatial
+    // phase leaves out the time column, with Mean rows nDims long and Chol
+    // blocks nDims2 apart.  d_Data is dimension-major, so its first nDims
+    // rows are those dimensions.
+    const int nP = gpu->nPoints, nD = nDims, nD2 = nDims2;
 
     CUDA_CHECK(cudaMemcpy(gpu->d_Mean,       h_Mean,       sizeof(float)*MaxClusters*nD,  cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(gpu->d_Weight,     h_Weight,     sizeof(float)*MaxClusters,      cudaMemcpyHostToDevice));

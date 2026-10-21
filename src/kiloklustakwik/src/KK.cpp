@@ -325,7 +325,8 @@ void KK::EStep() {
             Mean.m_Data, Weight.m_Data, h_chol.data(),
             AliveIndex.m_Data, Class.m_Data, OldClass.m_Data,
             DistDump ? LogP.m_Data : nullptr,
-            nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters);
+            nClustersAlive, DistThresh, FullStep, PI, MaxPossibleClusters,
+            nDims, nDims2);
         return;
     }
 #endif

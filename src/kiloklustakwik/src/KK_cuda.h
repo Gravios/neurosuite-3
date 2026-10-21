@@ -73,7 +73,7 @@ void cuda_estep(
     const int   *h_OldClass,    // [nPoints]
           float *h_LogP,        // [nPoints * MaxClusters] out (point-major)
     int nClustersAlive, float DistThresh, int FullStep,
-    double PI, int MaxClusters);
+    double PI, int MaxClusters, int nDims, int nDims2);
 
 // M-step: accumulate means and covariances on GPU, normalise on host.
 // h_Mean, h_Cov, h_Weight are output arrays (updated in-place).

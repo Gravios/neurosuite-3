@@ -104,7 +104,7 @@ void sycl_estep(
     const int   *h_OldClass,
           float *h_LogP,
     int nClustersAlive, float DistThresh, int FullStep,
-    double PI, int MaxClusters);
+    double PI, int MaxClusters, int nDims, int nDims2);
 
 // M-step: scatter-accumulate means and covariances on GPU, normalise on host.
 void sycl_mstep(

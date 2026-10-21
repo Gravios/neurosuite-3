@@ -398,11 +398,12 @@ extern "C" void hip_estep(
     const int   *h_OldClass,
           float *h_LogP,         // nullptr on normal path; non-null for DistDump only
     int nClustersAlive, float DistThresh, int FullStep,
-    double PI, int MaxClusters)
+    double PI, int MaxClusters, int nDims, int nDims2)
 {
+    // KK's current dimensions, not the loaded ones (see cuda_estep).
     const int nP  = gpu->nPoints;
-    const int nD  = gpu->nDims;
-    const int nD2 = gpu->nDims2;
+    const int nD  = nDims;
+    const int nD2 = nDims2;
     const int maxC= gpu->MaxClusters;
 
     HIP_CHECK(hipMemcpy(gpu->d_Mean,       h_Mean,       sizeof(float)*maxC*nD,       hipMemcpyHostToDevice));

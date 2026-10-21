@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [KiloKlustaKwik GPU builds: the spatial phase of CEMTwoPhase computes the right distances](#2026-10-21--kiloklustakwik-gpu-builds-the-spatial-phase-of-cemtwophase-computes-the-right-distances) |
 | 2026-10-21 | [macOS: Klusters on the Apple GPU (realignment, error matrix)](#2026-10-21--macos-klusters-on-the-apple-gpu-realignment-error-matrix) |
 | 2026-10-21 | [Klusters realign: moved spikes get a fresh window from the .fil, never the rolled copy](#2026-10-21--klusters-realign-moved-spikes-get-a-fresh-window-from-the-fil-never-the-rolled-copy) |
 | 2026-10-21 | [ndm_extractspikes: noise statistics for the clusterers' whitener (`.nst`)](#2026-10-21--ndm_extractspikes-noise-statistics-for-the-clusterers-whitener-nst) |
@@ -98,6 +99,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — KiloKlustaKwik GPU builds: the spatial phase of CEMTwoPhase computes the right distances
+
+<details>
+<summary>Details</summary>
+
+`KK::CEMTwoPhase` first clusters on the spatial dimensions only: it lowers
+`nDims` by one (the time column) while the arrays keep their loaded size.
+The CPU E-step and every M-step followed KK's `nDims`; the CUDA, HIP and
+SYCL E-steps used the dimensions they were allocated with, so in that phase
+they read the means and Cholesky factors with the wrong stride and added
+the time column to every distance.  The global preseed of a chunked run
+(the master KK has the GPU) and every unchunked run go through this phase.
+
+`gpu_estep` now takes KK's `nDims`/`nDims2`.  On a synthetic session
+(20000 spikes, 12 Gaussian clusters) run through the same code path, the
+old dimensions put every spike in the noise cluster; the fixed ones find
+the 12 clusters.  Not yet run on an NVIDIA, AMD or Intel GPU: expect GPU
+clusterings to change, and compare a before/after run on the reference
+session.
+
+</details>
 
 ## 2026-10-21 — macOS: Klusters on the Apple GPU (realignment, error matrix)
 
