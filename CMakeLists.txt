@@ -78,6 +78,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/GpuBackends.cmake)
 option(USE_CUDA "Enable NVIDIA CUDA GPU backends" ON)
 option(USE_HIP  "Enable AMD ROCm/HIP GPU backends" ON)
 option(USE_SYCL "Enable Intel oneAPI SYCL GPU backends" ON)
+# macOS only: Apple's Accelerate framework (part of the OS) for the spectral
+# FFT (vDSP) and process_extractemg's BLAS kernel.  Ignored elsewhere.
+option(NS_USE_ACCELERATE "Use Apple's Accelerate framework (vDSP, BLAS) on macOS" ON)
 
 if(USE_CUDA)
     # Locate nvcc (PATH then conventional toolkit dirs) so the CUDA language is

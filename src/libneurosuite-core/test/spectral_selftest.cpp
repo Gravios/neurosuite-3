@@ -3,11 +3,13 @@
 //
 //   g++ -O2 -fopenmp -std=c++20 spectral_selftest.cpp dpss.cpp multitaper.cpp -o selftest
 //
-// Checks: FFT against a naive DFT, DPSS concentration/orthonormality/polarity,
+// Checks: FFT against a naive DFT, every built FFT provider (FFTW, vDSP,
+// radix-2) against a direct DFT, with a timing line per provider, DPSS concentration/orthonormality/polarity,
 // multitaper PSD Parseval normalisation and peak localisation for a pure
 // tone, white-noise flatness, and ZCA common-whitening of correlated data.
 
 #include <neurosuite/spectral/realfft.h>
+#include <neurosuite/spectral/spectralfft.h>
 #include <neurosuite/spectral/dpss.h>
 #include <neurosuite/spectral/multitaper.h>
 #include <neurosuite/spectral/spectralengine.h>
@@ -18,6 +20,8 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <map>
 #include <random>
 #include <vector>
 #include <atomic>
@@ -254,6 +258,129 @@ int main()
             double integral = 0; for (double v : psd) integral += v * df;
             const double var = amp * amp / 2.0;
             check(std::abs(integral - var) / var < 0.02, "non-pow2 mtm Parseval", integral, var);
+        }
+    }
+
+    // ---- Every FFT provider against a direct DFT ---------------------------
+    // RealFftPlan's providers (FFTW, Apple vDSP, radix-2) must all return the
+    // unscaled |X(k)|^2. vDSP is only built on macOS, so this block is what
+    // checks it there (the macOS CI job runs it). Sizes: powers of two, 1920
+    // (15 * 2^7: FFTW and vDSP exactly) and 1000 (FFTW exactly, the others at
+    // the next power of two).
+    {
+        std::printf("  ....  FFT providers built: fftw %s, vdsp %s, radix2 yes\n",
+                    fftwAvailable() ? "yes" : "no", vdspAvailable() ? "yes" : "no");
+        std::vector<FftBackend> built{FftBackend::Radix2};
+        if (fftwAvailable()) built.push_back(FftBackend::Fftw);
+        if (vdspAvailable()) built.push_back(FftBackend::Vdsp);
+
+        auto signal = [](int n, unsigned seed) {
+            std::mt19937 rng(seed);
+            std::uniform_real_distribution<double> u(-1, 1);
+            std::vector<double> x(n);
+            for (double& v : x) v = u(rng) + 0.25;   // a DC term too
+            return x;
+        };
+        std::map<int, std::vector<double>> directPower;   // by nfft
+        auto direct = [&](int n) -> const std::vector<double>& {
+            auto it = directPower.find(n);
+            if (it != directPower.end()) return it->second;
+            const std::vector<double> x = signal(n, 7u);
+            std::vector<double> p(n / 2 + 1);
+            for (int k = 0; k <= n / 2; ++k) {
+                std::complex<double> acc(0, 0);
+                for (int t = 0; t < n; ++t) {
+                    const double a = -2.0 * std::numbers::pi * double(k) * t / n;
+                    acc += x[t] * std::complex<double>(std::cos(a), std::sin(a));
+                }
+                p[k] = std::norm(acc);
+            }
+            return directPower.emplace(n, std::move(p)).first->second;
+        };
+
+        for (FftBackend b : built) {
+            for (int size : {16, 64, 1024, 1920, 1000}) {
+                RealFftPlan plan(size, b);
+                char name[96];
+                std::snprintf(name, sizeof name, "%s plan for nfft %d uses %s",
+                              fftBackendName(b), size, fftBackendName(b));
+                check(plan.backend() == b, name, int(plan.backend()), int(b));
+                const int n = plan.nfft();
+                const std::vector<double> x = signal(n, 7u);
+                std::vector<double> got;
+                plan.power(x.data(), got);
+                const std::vector<double>& want = direct(n);
+                double maxRel = got.size() == want.size() ? 0.0 : 1.0;
+                double peak = 0.0;
+                for (double v : want) peak = std::max(peak, v);
+                for (std::size_t k = 0; k < got.size() && k < want.size(); ++k)
+                    maxRel = std::max(maxRel, std::abs(got[k] - want[k]) / peak);
+                std::snprintf(name, sizeof name, "%s power spectrum, nfft %d, matches direct DFT",
+                              fftBackendName(b), n);
+                check(maxRel < 1e-10, name, maxRel, 0);
+            }
+        }
+
+        // Sizing is stable: the engine sizes a plan, then builds the
+        // spectrogram's plan from its nfft().
+        for (int size : {100, 1000, 1920, 1024, 3}) {
+            RealFftPlan a(size);
+            RealFftPlan b(a.nfft());
+            char name[96];
+            std::snprintf(name, sizeof name, "auto plan for nfft %d re-plans to the same size (%d, %s)",
+                          size, a.nfft(), fftBackendName(a.backend()));
+            check(b.nfft() == a.nfft() && b.backend() == a.backend(), name, b.nfft(), a.nfft());
+        }
+
+        // Concurrent power() calls on one plan give the serial results (the
+        // OpenMP spectrogram loop shares one plan across threads).
+        for (FftBackend b : built) {
+            RealFftPlan plan(2048, b);
+            const int jobs = 64;
+            std::vector<std::vector<double>> in(jobs), serial(jobs), parallel(jobs);
+            for (int j = 0; j < jobs; ++j) {
+                in[j] = signal(plan.nfft(), 100u + unsigned(j));
+                plan.power(in[j].data(), serial[j]);
+            }
+            std::vector<std::thread> pool;
+            for (int t = 0; t < 4; ++t)
+                pool.emplace_back([&, t] {
+                    for (int j = t; j < jobs; j += 4) plan.power(in[j].data(), parallel[j]);
+                });
+            for (std::thread& th : pool) th.join();
+            bool same = true;
+            for (int j = 0; j < jobs; ++j) same = same && parallel[j] == serial[j];
+            char name[96];
+            std::snprintf(name, sizeof name, "%s: concurrent power() matches serial",
+                          fftBackendName(plan.backend()));
+            check(same, name);
+        }
+
+#ifndef _WIN32
+        // NS_SPECTRAL_FFT picks the provider of Auto plans.
+        setenv("NS_SPECTRAL_FFT", "radix2", 1);
+        {
+            RealFftPlan forced(1000);
+            check(forced.backend() == FftBackend::Radix2 && forced.nfft() == 1024,
+                  "NS_SPECTRAL_FFT=radix2 forces the radix-2 provider", forced.nfft(), 1024);
+        }
+        unsetenv("NS_SPECTRAL_FFT");
+#endif
+
+        // Timing, for comparing providers on a given machine (not a check).
+        for (FftBackend b : built) {
+            for (int size : {1024, 4096}) {
+                RealFftPlan plan(size, b);
+                const std::vector<double> x = signal(plan.nfft(), 3u);
+                std::vector<double> out;
+                const int reps = 2000;
+                const auto t0 = std::chrono::steady_clock::now();
+                for (int r = 0; r < reps; ++r) plan.power(x.data(), out);
+                const double us = std::chrono::duration<double, std::micro>(
+                                      std::chrono::steady_clock::now() - t0).count() / reps;
+                std::printf("  ....  timing  %-6s nfft %5d  %8.2f us per power spectrum\n",
+                            fftBackendName(plan.backend()), plan.nfft(), us);
+            }
         }
     }
 

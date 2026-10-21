@@ -108,7 +108,7 @@ spike_extract.hpp ─── stderiv_transform.hpp ─── pca_projection.hpp (
 version_contract.hpp ─── neurofileio.h, pca_projection.hpp
 dipsplit.hpp, watershed2d.hpp ─── std only
 tsne_embed.hpp, oblique_embed.hpp, waveformiou.hpp, mergerecommend.hpp ─── std only (tsne_embed: OpenMP if the includer uses it)
-spectral/*.h (static target Neurosuite::spectral) ─── std only (+ optional FFTW, CUDA, OpenMP)
+spectral/*.h (static target Neurosuite::spectral) ─── std only (+ optional FFTW, Accelerate, CUDA, OpenMP)
 custody.hpp, decollide.hpp, running_stats.hpp, pca_projection.hpp, channel_expr.hpp ─── std only
 fileio64.hpp, fileops.hpp, strsep.hpp ─── std + platform C headers only
 mappedfile.hpp ─── neurosuite_core_export.h          mappedfile.cpp ─── POSIX mmap / Win32 file mapping
@@ -606,13 +606,13 @@ Histogram on a square grid over the points' bounding box, Gaussian smoothing, lo
 
 ### 3.16 `neurosuite/spectral/` — multitaper spectral estimation (`Neurosuite::spectral`)
 
-A static library of its own, beside the `neurosuite-core` shared library, because it brings optional FFTW (real FFTs at any size), CUDA (cuFFT backend) and OpenMP with it. Without them it uses an in-tree radix-2 FFT and a CPU backend that runs serially. Moved from NeuroScope (`src/neuroscope/src/spectral/`) unchanged, so that it builds and is tested without Qt; its namespace is still `neuroscope::spectral`. Link `Neurosuite::spectral` and include `<neurosuite/spectral/…>`.
+A static library of its own, beside the `neurosuite-core` shared library, because it brings optional FFTW (real FFTs at any size), Apple Accelerate (vDSP real FFTs, macOS), CUDA (cuFFT backend) and OpenMP with it. Without them it uses an in-tree radix-2 FFT and a CPU backend that runs serially. Each `RealFftPlan` takes FFTW when it can do the size exactly, then vDSP, else the next power of two with vDSP or radix-2; `NS_SPECTRAL_FFT=fftw|vdsp|radix2` overrides the choice at run time, and `core_test_spectral` checks every built provider against a direct DFT and prints its timing. Moved from NeuroScope (`src/neuroscope/src/spectral/`) unchanged, so that it builds and is tested without Qt; its namespace is still `neuroscope::spectral`. Link `Neurosuite::spectral` and include `<neurosuite/spectral/…>`.
 
 | Header | What it gives |
 |---|---|
 | `dpss.h` | `computeDpss(N, NW, K)`: DPSS (Slepian) tapers and their eigenvalues |
 | `multitaper.h` | `multitaperPsd`, `multitaperSpectrogram`, `psdFrequencies`; cross-channel `commonWhiten` (ZCA), `commonAverageReference`, `referenceRegress` |
-| `spectralfft.h`, `realfft.h` | `RealFftPlan` (FFTW when available, else radix-2), `fftwAvailable()` |
+| `spectralfft.h`, `realfft.h` | `RealFftPlan` (FFTW, Apple vDSP or the in-tree radix-2; `FftBackend`, `NS_SPECTRAL_FFT`), `fftwAvailable()`, `vdspAvailable()` |
 | `decimate.h` | `decimationFactor`, `decimate` (anti-aliased) |
 | `spectralengine.h` | `SpectralEngine`: the two display images (band power across channels; one channel's spectrogram), with taper and result caching; `SpectralParams`, `SpectralImage` |
 | `chunkcache.h` | `SpectralChunkCache`: background fill of engine results by time chunk (`std::thread`) |

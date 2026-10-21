@@ -7,8 +7,8 @@
 # its Qt rendering layer stays in src/neuroscope/src/spectral.  It lives in
 # libneurosuite-core so it is built and tested without Qt
 # (core_test_spectral).  A static library of its own, not part of the
-# neurosuite-core shared library, because it brings optional FFTW, CUDA and
-# OpenMP with it.  The code keeps its namespace, neuroscope::spectral.
+# neurosuite-core shared library, because it brings optional FFTW, CUDA,
+# Accelerate (macOS) and OpenMP with it.  The code keeps its namespace, neuroscope::spectral.
 #
 # OpenMP parallelises the per-window spectrogram loop when available; the
 # source guards every use behind _OPENMP, so a build without OpenMP is
@@ -82,6 +82,26 @@ if(_ns_have_fftw)
     message(STATUS "neurosuite-spectral: FFTW backend enabled")
 else()
     message(STATUS "neurosuite-spectral: FFTW not found — using in-tree radix-2 FFT")
+endif()
+
+# Apple Accelerate (macOS): vDSP's real DFT, a second SIMD provider beside
+# FFTW. Without FFTW (the Homebrew build does not install it) it replaces the
+# radix-2 fallback; with FFTW, FFTW stays the default and NS_SPECTRAL_FFT=vdsp
+# selects vDSP at run time. Accelerate is part of macOS: no extra dependency.
+if(APPLE)
+    if(NOT DEFINED NS_USE_ACCELERATE)
+        option(NS_USE_ACCELERATE "Use Apple's Accelerate framework (vDSP, BLAS) on macOS" ON)
+    endif()
+    if(NS_USE_ACCELERATE)
+        find_library(NS_ACCELERATE_FRAMEWORK Accelerate)
+        if(NS_ACCELERATE_FRAMEWORK)
+            target_link_libraries(neurosuite-spectral PUBLIC "${NS_ACCELERATE_FRAMEWORK}")
+            target_compile_definitions(neurosuite-spectral PUBLIC HAVE_VDSP)
+            message(STATUS "neurosuite-spectral: Accelerate vDSP backend enabled")
+        else()
+            message(STATUS "neurosuite-spectral: Accelerate framework not found — no vDSP backend")
+        endif()
+    endif()
 endif()
 
 find_package(OpenMP QUIET COMPONENTS CXX)
