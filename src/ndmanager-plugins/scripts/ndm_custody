@@ -267,11 +267,13 @@ ndm_resolve_any() {
     # Any other method-tagged copy, including suffixed tokens (stderiv_C4) that
     # are not in the fixed list above.  Shared artifacts have one physical copy
     # whatever produced it, so finding it matters more than which token it wears.
-    # The glob is sorted in byte order (LC_COLLATE=C), as custody::resolveAny and
+    # The glob is sorted in byte order (the C locale), as custody::resolveAny and
     # resolve_any sort, and the token must be bare (no dot), as theirs must; with
     # the locale's collation and ndm_method_of's looser test the three could
-    # return different copies.
-    local LC_COLLATE=C
+    # return different copies.  LC_ALL, not LC_COLLATE: a set LC_ALL (macOS CI
+    # runners export LC_ALL=en_US.UTF-8) overrides LC_COLLATE, and the glob was
+    # then sorted 's' < 'S'.
+    local LC_ALL=C
     for cand in "$base.$type."*".$group"; do
         [ -f "$cand" ] || continue
         mm="${cand#"$base.$type."}"; mm="${mm%".$group"}"
