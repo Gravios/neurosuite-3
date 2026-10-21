@@ -48,11 +48,11 @@ cmake --install build
 
 ## Platforms
 
-| Platform | Builds | Tests in CI | Notes |
-|---|---|---|---|
-| **Linux**<br>[![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-linux.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml) | Everything | Required | Ubuntu 24.04 and newer, Debian 12, WSL2. The reference platform: CI on Ubuntu 24.04, 25.10, 26.04 and 26.10. Oldest Qt: 6.4. |
-| **Windows 10 / 11**<br>[![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-windows.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml) | All but KiloKlustaKwik | Not yet | Visual Studio 2022. The `ndm_*` steps run from cmd and PowerShell through Git Bash. For KiloKlustaKwik, or the whole pipeline, use WSL2. |
-| **macOS**<br>[![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-macos.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml) | Everything | Informational | Apple silicon, Homebrew. Metal (Apple GPU) and Accelerate paths. The `ndm_*` steps need bash 4: `brew install bash`. |
+| Platform | CI | Notes |
+|---|---|---|
+| **Linux** | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-linux.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml) | Ubuntu 24.04 and newer, Debian 12, WSL2. |
+| **Windows** | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-windows.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml) | Visual Studio 2022. The `ndm_*` steps run from cmd and PowerShell through Git Bash. |
+| **macOS** | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-macos.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml) | Apple silicon, Homebrew. Metal (Apple GPU) and Accelerate paths. |
 
 ## The programs
 
