@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [Klusters: Align All realigns as Realign Spikes does](#2026-10-21--klusters-align-all-realigns-as-realign-spikes-does) |
 | 2026-10-21 | [Klusters: Align All and post-edit realigns update the other feature spaces](#2026-10-21--klusters-align-all-and-post-edit-realigns-update-the-other-feature-spaces) |
 | 2026-10-21 | [ndm_pca: `--force` refits and overwrites stale features](#2026-10-21--ndm_pca---force-refits-and-overwrites-stale-features) |
 | 2026-10-21 | [ndm_extractspikes: a session-file check per method, and `--allMethods`](#2026-10-21--ndm_extractspikes-a-session-file-check-per-method-and---allmethods) |
@@ -104,6 +105,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — Klusters: Align All realigns as Realign Spikes does
+
+<details>
+<summary>Details</summary>
+
+"PCA-Center Align All Clusters" and the automatic realign after an edit
+built their own arguments. They took Realign Spikes' threshold, iterations
+and maximum shift, but replaced the post-alignment mode with a forced
+`--pca-refine` on every cluster. The single-cluster command uses the mode set
+in the preferences, and with a top-channel count it uses no post-alignment
+pass at all.
+
+So a batch moved spikes differently from the same cluster realigned on its
+own, although the README calls it the same alignment. On
+`sirotaA-jg-000005-20120316` group 6:
+- the refine moved about 90% of each large cluster's spikes, by up to ±30
+  samples in total;
+- it halved the xcorr score against the cluster template;
+- about half of each cluster's spikes ended up away from the template.
+
+Both batch paths now run exactly Realign Spikes' settings, and the
+confirmation shows them. The action is renamed **Align All Clusters**
+(`Shift+P`, action id unchanged). For the PCA refine, choose it as the
+post-alignment mode in Preferences → Refinement.
+
+</details>
 
 ## 2026-10-21 — Klusters: Align All and post-edit realigns update the other feature spaces
 

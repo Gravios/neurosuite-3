@@ -772,14 +772,13 @@ void KlustersApp::createMenus()
         "Works on a parent or, in child view, on an atom."));
     connect(mPartitionByTime, &QAction::triggered, this, &KlustersApp::slotPartitionClusterByTime);
 
-    mPcaAlignAllClusters = actionMenu->addAction(tr("&PCA-Center Align All Clusters (top-N ch)"));
+    mPcaAlignAllClusters = actionMenu->addAction(tr("&Align All Clusters"));
     mPcaAlignAllClusters->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
     mPcaAlignAllClusters->setToolTip(tr(
-        "Run PCA-centered spike alignment across every cluster (skipping "
-        "noise=0 and artifact=1) using the channel count from the Top-Channels "
-        "spin box (0 = all channels). "
-        "Each cluster's result is auto-accepted as a pending change; the "
-        "batch can be aborted via \"Abort Realignment\"."));
+        "Run Realign Spikes on every cluster (skipping noise=0 and "
+        "artifact=1) with its settings: the Refinement preferences and the "
+        "Top-Channels spin box.  Each cluster's result is auto-accepted as a "
+        "pending change; the batch can be aborted via \"Abort Realignment\"."));
     connect(mPcaAlignAllClusters, &QAction::triggered,
             this, &KlustersApp::slotPcaAlignAllClusters);
 

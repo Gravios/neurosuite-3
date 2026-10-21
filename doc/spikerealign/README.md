@@ -7,8 +7,8 @@ KiloKlustaKwik as Phase 1.5 of chunked CEM sorting.
 
 In Klusters it is **Actions → Realign Spikes…** (`Shift+L`), which realigns
 the first selected cluster of the active display, and **Actions →
-PCA-Center Align All Clusters** (`Shift+P`), which runs over every cluster
-except 0 and 1.
+Align All Clusters** (`Shift+P`), which runs it, with the same settings, over
+every cluster except 0 and 1.
 
 There is no standalone binary and no single realignment class. The pieces are:
 

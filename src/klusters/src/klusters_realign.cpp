@@ -294,7 +294,7 @@ void KlustersApp::slotRealignClusterDone(int pos, int /*total*/, int clusterId,
     }
     if (realignProgressBar)
         realignProgressBar->setValue(pos);
-    slotStatusMsg(tr("PCA-Center align: %1 / %2 clusters …")
+    slotStatusMsg(tr("Align All: %1 / %2 clusters …")
                   .arg(pos).arg(realignBatchTotal));
 }
 
@@ -330,7 +330,7 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     flushRealignBatchRefresh();   // one deferred view refresh for all clusters
 
     if (realignProgressBar) realignProgressBar->hide();
-    slotStatusMsg(tr("PCA-Center align complete: %1 accepted, %2 failed, "
+    slotStatusMsg(tr("Align All complete: %1 accepted, %2 failed, "
                      "%3 spike(s) shifted total.")
                   .arg(realignBatchAccepted)
                   .arg(realignBatchFailed)
@@ -396,31 +396,12 @@ void KlustersApp::startPostOpRealign(const QList<int>& parents, bool setChanged)
     // .clu's own space too (when the preference allows; skipped silently
     // otherwise), and the other spaces follow the moved spikes.
     if (realignBlockedHere(tr("Realign"), /*silent=*/true)) return;
-    // Refresh the saved-mode args (top-ch gate + --pca-refine) like the
-    // single-cluster and Align-All paths, then derive the batch args: strip any
-    // top-ch / pca-refine tokens and re-add for the current top-channel count.
+    // The same realignment as the single-cluster command: its saved settings
+    // (threshold, iterations, max shift, top-channels gate, post-alignment
+    // mode).  The batch used to replace the mode with a forced --pca-refine,
+    // so an automatic realign moved spikes differently from a manual one.
     realignArgs = buildRealignArgs();
-    const int topCh = realignTopChanSpinBox ? realignTopChanSpinBox->value() : 2;
-    {
-        const QStringList toks =
-            realignArgs.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        QStringList kept;
-        for (qsizetype i = 0; i < toks.size(); ++i) {
-            const QString& tok = toks[i];
-            if (tok == QStringLiteral("--topchannels") || tok == QStringLiteral("-k")) {
-                ++i;                  // also skip the value
-                continue;
-            }
-            if (tok == QStringLiteral("--pca-refine") || tok == QStringLiteral("-p")) {
-                continue;
-            }
-            kept << tok;
-        }
-        realignBatchArgs = kept.join(QLatin1Char(' ')).trimmed();
-        if (!realignBatchArgs.isEmpty()) realignBatchArgs += QLatin1Char(' ');
-        realignBatchArgs +=
-            QStringLiteral("--topchannels %1 --pca-refine").arg(topCh);
-    }
+    realignBatchArgs = realignArgs;
     // Status-bar progress widget (the same one Align-All uses).
     if (!realignProgressBar) {
         realignProgressBar = new QProgressBar(this);
@@ -584,62 +565,35 @@ void KlustersApp::slotPcaAlignAllClusters()
         }
     }
     if (clusters.isEmpty()) {
-        QMessageBox::information(this, tr("PCA-Center Align All Clusters"),
+        QMessageBox::information(this, tr("Align All Clusters"),
             tr("No clusters with id > 1 found in the current document."));
         return;
     }
 
-    // Channel count comes from the Top-Channels spin box (shared with the
-    // single-cluster realign).  0 = use all channels.
-    const int topCh = realignTopChanSpinBox ? realignTopChanSpinBox->value() : 2;
-    const QString chanDesc = (topCh > 0)
-        ? tr("the top %1 channel(s)").arg(topCh)
-        : tr("all channels");
+    // The same realignment as Realign Spikes, cluster by cluster: its saved
+    // settings (threshold, iterations, max shift, the Top-Channels gate and the
+    // post-alignment mode).  This batch used to drop the mode and force
+    // --pca-refine on every cluster, so Align All moved spikes differently from
+    // the single-cluster command (the README describes them as the same).  For
+    // the PCA refine, choose it as the post-alignment mode in the preferences.
+    realignArgs = buildRealignArgs();
+    realignBatchArgs = realignArgs;
 
     // Confirm — this commits a pending change to every cluster.  No per-cluster
     // review dialog is shown during the batch, so we want the user to opt in
     // up front rather than discover the commit mid-flight.
     const QString question = tr(
-        "Run PCA-centered spike alignment on %1 cluster(s) using %2 "
-        "per cluster?\n\n"
+        "Realign %1 cluster(s) with the Realign Spikes settings (%2)?\n\n"
         "Each cluster's result is auto-accepted as a pending change. "
         "Save the document to commit or close without saving to discard "
         "the batch.  Use \"Abort Realignment\" to stop mid-batch.")
         .arg(clusters.size())
-        .arg(chanDesc);
-    if (QMessageBox::question(this, tr("PCA-Center Align All Clusters"),
+        .arg(realignBatchArgs);
+    if (QMessageBox::question(this, tr("Align All Clusters"),
                               question,
                               QMessageBox::Yes | QMessageBox::No,
                               QMessageBox::No) != QMessageBox::Yes) {
         return;
-    }
-
-    // Build the args string for every worker invocation in this batch.  Start
-    // from realignArgs (carries the user's threshold / iterations / maxshift
-    // preferences) and normalise --topchannels and --pca-refine: the channel
-    // count comes from the Top-Channels spin box (topCh, 0 = all channels) and
-    // refine is forced on (this action is defined as PCA-centred).  Stripping
-    // any pre-existing instance before appending avoids duplicate tokens that
-    // the parser would silently last-write-wins.
-    {
-        const QStringList toks =
-            realignArgs.split(QLatin1Char(' '), Qt::SkipEmptyParts);
-        QStringList kept;
-        for (qsizetype i = 0; i < toks.size(); ++i) {
-            const QString& tok = toks[i];
-            if (tok == QStringLiteral("--topchannels") || tok == QStringLiteral("-k")) {
-                ++i;                  // also skip the value
-                continue;
-            }
-            if (tok == QStringLiteral("--pca-refine") || tok == QStringLiteral("-p")) {
-                continue;
-            }
-            kept << tok;
-        }
-        realignBatchArgs = kept.join(QLatin1Char(' ')).trimmed();
-        if (!realignBatchArgs.isEmpty()) realignBatchArgs += QLatin1Char(' ');
-        realignBatchArgs +=
-            QStringLiteral("--topchannels %1 --pca-refine").arg(topCh);
     }
 
     // ── Status-bar progress widget ───────────────────────────────────────────
@@ -657,7 +611,7 @@ void KlustersApp::slotPcaAlignAllClusters()
     }
     realignProgressBar->setRange(0, clusters.size());
     realignProgressBar->setValue(0);
-    realignProgressBar->setFormat(tr("PCA align: %v / %m clusters"));
+    realignProgressBar->setFormat(tr("Align: %v / %m clusters"));
     realignProgressBar->show();
 
     // Clean up any leftover thread / worker from a prior single-cluster run.
@@ -693,7 +647,7 @@ void KlustersApp::slotPcaAlignAllClusters()
 
     realignRunning = true;
     slotStateChanged(QStringLiteral("realignState"));
-    slotStatusMsg(tr("PCA-Center align: 0 / %1 clusters …").arg(clusters.size()));
+    slotStatusMsg(tr("Align All: 0 / %1 clusters …").arg(clusters.size()));
     startRealignBatchWorker(clusters, realignBatchArgs);
 }
 

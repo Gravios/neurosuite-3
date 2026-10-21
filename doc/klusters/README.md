@@ -1078,9 +1078,12 @@ When no clusters are selected or auto-select is disabled, klusters falls back to
 **Actions → Realign Spikes…** (`Shift+L`) realigns the first selected
 cluster (ID above 1) of the active display at once, with the settings in
 **Settings → Preferences → Refinement**; there is no dialog. **Actions →
-PCA-Center Align All Clusters** (`Shift+P`) runs the same alignment over
-every cluster except 0 and 1, using the channel count in the Parameters
-toolbar's top-channels box (0 = all channels).
+Align All Clusters** (`Shift+P`) runs the same alignment, with the same
+settings (including the Parameters toolbar's top-channels box and the
+post-alignment mode), over every cluster except 0 and 1. Before 2026-10-21 it
+always added the PCA refine pass whatever the mode, so its results differed
+from Realign Spikes'; choose the PCA refine as the post-alignment mode to get
+that behaviour.
 
 ### How it works
 
