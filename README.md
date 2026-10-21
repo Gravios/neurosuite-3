@@ -3,9 +3,12 @@
   <img src="doc/images/banner.png" width="100%" alt="neurosuite-3">
 </picture></h1>
 
+
 From a raw recording to sorted single units: convert and filter the signal, detect and sort spikes automatically, curate by hand, and check everything against the LFP, events and the animal's position. GPU acceleration is optional; a CPU build is always produced.
 
+
 Spike sorting and electrophysiology visualization: a **Qt 6 / C++20** revival of [Neurosuite](https://buzsakilab.com/wp/resources/neurosuite/), the toolchain for extracellular recordings that **Lynn Hazan** wrote in **György Buzsáki**'s lab with **Michaël Zugaro** (Hazan, Zugaro & Buzsáki, *J. Neurosci. Methods* 155:207–216, 2006; on [SourceForge](https://sourceforge.net/projects/neurosuite/) and [GitHub](https://github.com/neurosuite)). KiloKlustaKwik builds on **Kenneth D. Harris**'s KlustaKwik.
+
 
 ## Start here
 
