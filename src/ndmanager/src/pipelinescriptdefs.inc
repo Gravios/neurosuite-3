@@ -134,7 +134,8 @@
 { "ndm_extractspikes", "Extract Spikes", ".res + .fil → .spk (after Detect Spikes)", "detection", "spikes",
     {{ "method", "standard", "Optional" },
      { "methodOrder", "3", "Optional" },
-     { "inputExtension", "fil", "Optional" }} },
+     { "inputExtension", "fil", "Optional" },
+     { "noiseWindows", "20000", "Optional" }} },
 { "ndm_extractspikes_sdiff", "Extract Spikes (SDiff)", "Detect + Extract with method sdiff (alias; set parameters on Detect / Extract Spikes)", "detection", "spikes", {} },
 { "ndm_extractspikes_stderiv", "Extract Spikes (StDeriv)", "Detect + Extract with method stderiv (alias; set parameters on Detect / Extract Spikes)", "detection", "spikes", {} },
 // ── alignment ──

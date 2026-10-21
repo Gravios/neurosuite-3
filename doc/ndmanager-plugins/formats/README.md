@@ -21,6 +21,7 @@ naming scheme, `SESSION.<type>.<method>.N` — start with
 | [`.spk.<method>.N`](spk.md) | Spike waveforms |
 | [`.fet.<method>.N`](fet.md) | Feature vectors |
 | [`.pca.<method>.N`](pca.md) | PCA basis |
+| [`.nst.<method>.N`](nst.md) | Noise statistics (mean + covariance of spike-free windows) of a waveform space |
 | [`.clu.<method>.N`](clu.md) | Cluster assignments |
 | [`.clc.<method>.N`](clc.md) | Child (atom) clusters of a hierarchical clustering |
 | [`.clp.<method>.N`](clp.md) | Atom → fiber map |

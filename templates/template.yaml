@@ -1421,6 +1421,17 @@ programs:
       # - name: dedupSamples
       #   value: 0
       #   status: Optional
+    # noiseWindows / noiseRejectZ / noiseGuard: the group's noise statistics
+    # (.nst.<method>.N), the clusterers' whitener for this waveform space -- see help.
+      - name: noiseWindows
+        value: 20000
+        status: Optional
+      # - name: noiseRejectZ
+      #   value: 5
+      #   status: Optional
+      # - name: noiseGuard
+      #   value: 32
+      #   status: Optional
     help: |-
       Extract spike waveforms (creates .spk files) at previously-detected spike
       times.  Requires the shared .res written by ndm_detectspikes; it never detects
@@ -1451,6 +1462,30 @@ programs:
       original count (.spk/.fet/.clu/.clc of any method, post-group stages) with the
       same mask; a file at another count is reported and left alone.  The original
       spike times are kept once as <res>.prefilter.
+
+      NOISE STATISTICS
+
+      Each group also gets <session>.nst.<method>.<group>: the mean window and the
+      covariance of random windows drawn clear of every spike, cut exactly like the
+      rows of the .spk just written (same transform: raw, sdiff, stderiv with any
+      sdiffPairs).  It is the noise model of those waveforms, for whitening them
+      when clustering.  Random windows still catch undetected spikes, artifacts and
+      zero-filled gaps, so outliers are rejected first: a window goes when any
+      sample, or the window's energy, lies more than noiseRejectZ robust standard
+      deviations (median / MAD) out, or when a channel is flat.
+
+      # noiseWindows
+
+      Windows drawn per group (default 20000).  0 = no .nst.
+
+      # noiseRejectZ
+
+      Rejection gate in robust standard deviations (default 5).
+
+      # noiseGuard
+
+      Clearance in samples added around every spike window before a noise window
+      may be drawn (default: the waveform length, nSamples).
 
       OPTIONAL PARAMETERS
 

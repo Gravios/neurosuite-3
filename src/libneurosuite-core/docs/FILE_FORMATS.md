@@ -41,6 +41,7 @@ This is the sibling of the cluster/spike document reference, [DOCUMENT_MODEL.md]
 | `.wtl(.N)` | text | ASCII, version-tagged | `readWtl` · `writeWtl` | manual template-lineage forest |
 | `.pos` | text | ASCII, whitespace-separated | NeuroScope `PositionsProvider` (**not** `neurofileio`) | video tracking positions (adjacent) |
 | `.pca(.N)` | binary | float basis | `neurosuite::core::loadPca` (**not** `neurofileio`) | PCA eigenvector basis (adjacent) |
+| `.nst(.N)` | binary | `float64` mean + covariance | `neurosuite::core::loadNoiseStats` · `writeNoiseStats` (**not** `neurofileio`) | noise statistics of a waveform space (adjacent) |
 | `.mti` / `.mtf` | text / binary | reuse `.wti` / `.spk` | `writeWti`/`writeSpk` via klusters (**not** `neurofileio`) | final committed template model (adjacent) |
 
 **`.wtfinfo` does not exist.** A repo-wide search (`*.cpp`/`*.h`/`*.hpp`/`*.md`, excluding `build/`) returns zero hits; there is no struct, function, or doc for it. Do not document or invent one.
@@ -229,9 +230,10 @@ Then `nRecords` × 60 B records (`ts i64, spikeIdx i32, best_single_unit i32, be
 
 > **`.col` is binary, not YAML.** The authoritative reader parses a **binary** format with a `{'C','O','L',0x01}` magic (`readColAccepted`); `STANDARDIZATION.md` §3.3 ("32B + 32B params | template table + record table") and — since the 2026-10-10 reconciliation — `col.md` both describe this layout. An earlier `col.md` draft sketched a `collisions:`/`spikes:` YAML document that no in-repo reader consumed; it has been rewritten to the binary layout (§6).
 
-### 4.7 Adjacent: `.pca`, `.mti`/`.mtf`, `.pos`
+### 4.7 Adjacent: `.pca`, `.nst`, `.mti`/`.mtf`, `.pos`
 
 - **`.pca`** (binary eigenvector basis, `pca.md`) is **not** parsed by `neurofileio`; it is read by `neurosuite::core::loadPca` (`klustersdoc_realign.cpp:386`). Its validity/geometry bound is discussed in §6 (the §6.6 item).
+- **`.nst`** (binary noise statistics, NSTE, `nst.md`) is **not** parsed by `neurofileio`; `noise_stats.hpp` holds its reader/writer (`loadNoiseStats` / `writeNoiseStats`) and its estimator (`estimateNoiseStats`), which the three extractors call from `extractspikes_reextract.h` (`-R -N`). Version-tagged in `contract.yaml`.
 - **`.mti` / `.mtf`** are the curator's *final committed model* files. They **reuse the `.wti` v2 and `.spk` on-disk schemas** (`writeWti`/`writeSpk`) and are written by `templategen::renderLineageToFiles` (`template_generate.hpp`, called from klusters' `templatelineagestore.cpp`), not by a dedicated `neurofileio` function (`claude/template-curation-plan.md` §10: "`.mti`/`.mtf` reuse the `.wti` v2 / `.spk` on-disk schema … the distinction is role/lifecycle, not format"). Downstream consumers of the *final* templates should read `.mti`/`.mtf`; the distinction from the auto-generated `.wti`/`.wtf` library is lifecycle, not byte layout. The names are composed in `template_generate.hpp` (`renderLineageToFiles`): `<base>.mti.<group>[.<stage>]` (method-less) and `<base>.mtf.<variant>.<group>[.<stage>]`. fiber-kit reads them with `neuro_io.read_mti` / `read_mtf` (0.45.0).
 - **`.pos`** (ASCII video-tracking positions) is **not** a `neurofileio` format; NeuroScope reads it with `PositionsProvider` (`positionsprovider.cpp:48-124`) via File ▸ "Load Position File" (`neuroscopedoc.cpp:2055`). Format spec in [`pos.md`](../../../doc/ndmanager-plugins/formats/pos.md); user-facing description in the handbook §Position File.
 

@@ -275,7 +275,8 @@ ndm_extractspikes [session.yaml] [--method M] [--methodOrder N] [--inputExtensio
 `session.res.<m>.N` from `ndm_detectspikes`; `spikeDetection` groups from the
 session YAML
 
-**Output:** `session.spk.<method>.N` per spike group (see [`.spk` format](../formats/spk.md));
+**Output:** `session.spk.<method>.N` per spike group (see [`.spk` format](../formats/spk.md))
+and its noise statistics `session.nst.<method>.N` (see [`.nst` format](../formats/nst.md));
 the post-extraction filter may also shrink the shared `.res` and other
 per-spike files (below)
 
@@ -318,12 +319,41 @@ group processed; a group with different values gets a warning.
 | `memCapGB` | `2` | memory cap for the engine (GB) |
 | `flatRunMax` | off | post-extraction filter: drop spikes with a flat run longer than N samples (any method) |
 | `dedupSamples` | `0` | post-extraction filter: drop a spike within N samples of the previous kept one; `-1` = off |
+| `noiseWindows` | `20000` | spike-free windows drawn per group for the `.nst`; `0` = no `.nst` |
+| `noiseRejectZ` | `5` | `.nst` outlier gate, in robust standard deviations |
+| `noiseGuard` | `nSamples` | clearance (samples) around every spike window before a noise window may be drawn |
 
 ```yaml
 - name: ndm_extractspikes
   parameters:
   - {name: method,      value: standard, status: Optional}
   - {name: methodOrder, value: 3,        status: Optional}
+```
+
+### Noise statistics (`noiseWindows`, `noiseRejectZ`, `noiseGuard`)
+
+With the waveforms, each group gets `session.nst.<method>.N`: the mean window
+and the covariance of `noiseWindows` random windows drawn clear of every spike
+in the group's `.res` (by a window's length plus `noiseGuard` samples), cut
+exactly like the rows of the `.spk` just written -- same geometry, same
+transform (raw, `sdiff`, `stderiv` with any `sdiffPairs`), same int16 rounding.
+It is the noise model of those waveforms, which a clusterer needs to whiten
+them; a covariance taken from the `.fil` in another domain describes a
+different signal.  The engines' flags are `-N`/`-E`/`-G` (with `-R`).
+
+Random windows still catch undetected spikes, artifacts and zero-filled gaps,
+which inflate the covariance along the directions the clusterer most needs.
+Before the moments are taken, a window is rejected when a channel is flat for
+the whole window, when any sample lies more than `noiseRejectZ` robust standard
+deviations (median / 1.4826 MAD per channel) from the channel median, or when
+the window's energy lies more than `noiseRejectZ` robust standard deviations
+above the median energy; the gates are applied twice, each time on the
+surviving set.  The counts are recorded in the file.  The draw is seeded by the
+group number, so a re-run writes the same file.
+
+```yaml
+  - {name: noiseWindows, value: 20000, status: Optional}
+  - {name: noiseRejectZ, value: 5,     status: Optional}
 ```
 
 ### Post-extraction filter (`flatRunMax`, `dedupSamples`)

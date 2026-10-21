@@ -47,7 +47,8 @@ PROCESS_SPIKES = {
                          "thresholdNoise", "recenterMode", "recenterHalfWidth", "detectArms",
                          "flatRunMax", "dedupSamples", "memCapGB"],
     "ndm_extractspikes": ["method", "methodOrder", "inputExtension", "memCapGB",
-                          "flatRunMax", "dedupSamples"],
+                          "flatRunMax", "dedupSamples",
+                          "noiseWindows", "noiseRejectZ", "noiseGuard"],
 }
 
 RSP = re.compile(r'(?:(\w+)=\$\(\s*)?read_script_parameter\s+([^)|;`]*)')

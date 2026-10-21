@@ -1889,6 +1889,36 @@ ndm_process_spikes()
 			else xMsg="$xMsg; duplicates off"; fi
 			echo_info " Post-extraction filter     : $xMsg"
 		fi
+		# Noise statistics (.nst.<method>.N): the mean and covariance of random
+		# spike-free windows cut exactly like the .spk rows (same transform),
+		# outliers rejected -- the clusterers' whitener for this waveform space.
+		# noiseWindows 0 = off; noiseRejectZ = gate in robust SDs; noiseGuard =
+		# clearance around each spike window (unset: the waveform length).
+		noiseWindows=$(read_script_parameter $session noiseWindows)
+		noiseRejectZ=$(read_script_parameter $session noiseRejectZ)
+		noiseGuard=$(read_script_parameter $session noiseGuard)
+		noiseWindows=${noiseWindows:-20000}
+		case "$noiseWindows" in
+			''|*[!0-9]*) echo_error "noiseWindows must be a non-negative integer (got '$noiseWindows')"
+			             exit $GENERAL_ERROR ;;
+		esac
+		noiseArgs=()
+		if [ "$noiseWindows" -gt 0 ]; then
+			noiseRejectZ=${noiseRejectZ:-5}
+			case "$noiseRejectZ" in
+				''|*[!0-9.]*|*.*.*|.) echo_error "noiseRejectZ must be a positive number (got '$noiseRejectZ')"
+				                      exit $GENERAL_ERROR ;;
+			esac
+			noiseArgs=(-N "$noiseWindows" -E "$noiseRejectZ")
+			if [ -n "$noiseGuard" ]; then
+				case "$noiseGuard" in
+					''|*[!0-9]*) echo_error "noiseGuard must be a non-negative integer (got '$noiseGuard')"
+					             exit $GENERAL_ERROR ;;
+				esac
+				noiseArgs+=(-G "$noiseGuard")
+			fi
+			echo_info " Noise statistics (.nst)    : $noiseWindows windows, reject beyond $noiseRejectZ robust SD${noiseGuard:+, guard $noiseGuard samples}"
+		fi
 		declare -a sharedRes=()
 		declare -i i=0
 		for group in $electrodeGroups; do
@@ -1928,6 +1958,7 @@ ndm_process_spikes()
 				process_extractspikes \
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
+					"${noiseArgs[@]}" \
 					-R $tmp
 			fi
 			;;
@@ -1952,6 +1983,7 @@ ndm_process_spikes()
 					-n $nChannels -c $electrodeList \
 					-w $samplesInWaveform -p $peakSample \
 					$sdiffOrderArg "${sdiffPairsArg[@]}" \
+					"${noiseArgs[@]}" \
 					-R $tmp
 			fi
 			;;
@@ -1974,6 +2006,7 @@ ndm_process_spikes()
 			rm -f $tmp.res.$i
 			spkOut="$(ndm_method_path "$session" spk "$group" "$method")"
 			mv $tmp.spk.$i "$spkOut"
+			[ ${#noiseArgs[@]} -gt 0 ] && mv $tmp.nst.$i "$(ndm_method_path "$session" nst "$group" "$method")"
 			if [ "$xFilter" = 1 ]; then
 				groupCh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel")
 				nGroupCh=$(echo $groupCh | wc -w)
