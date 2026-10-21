@@ -83,6 +83,19 @@ jobs:
       - name: Build
         run: cmake --build build --parallel -- -k 0
 
+      # Apple Accelerate (vDSP real FFT, BLAS pow3 kernel): the only code
+      # built for macOS alone, so it is checked here and nowhere else.  Each
+      # test checks every provider against a direct computation and prints
+      # its timing; required to pass, unlike the full suite below.
+      - name: Test the Accelerate paths (vDSP FFT, BLAS kernel)
+        run: ctest --test-dir build --output-on-failure -V -R '^(core_test_spectral|ndm_test_extractemg_pow3)$'
+
+      - name: Time the pow3 kernels at a realistic size (informational)
+        continue-on-error: true
+        run: |
+          bin=$(find build -name process_extractemg_pow3_test -type f -perm -u+x | head -1)
+          "$bin" --bench 2000000 32
+
       - name: Test (informational for now)
         continue-on-error: true
         env:

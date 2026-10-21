@@ -112,6 +112,7 @@ All are passed with `-D` at configure time.
 | `USE_CUDA` | `ON` (auto) | NVIDIA CUDA backends; auto-disabled if no `nvcc` is found |
 | `USE_HIP` | `ON` (auto) | AMD ROCm/HIP backends |
 | `USE_SYCL` | `ON` (auto) | Intel oneAPI SYCL backend (see §4 for the compiler caveat) |
+| `NS_USE_ACCELERATE` | `ON` | macOS only: Apple's Accelerate framework (part of macOS) for NeuroScope's spectrogram FFT (vDSP) and `process_extractemg --backend accelerate` |
 | `CMAKE_CUDA_ARCHITECTURES` | native, else fallback list | e.g. `"86;89;120"` |
 | `NS_BUILD_TESTS` | `OFF` | build the ctest regression suite (§6) |
 | `NS_ASAN` | `OFF` | build host code with AddressSanitizer (§7) |

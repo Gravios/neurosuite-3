@@ -38,6 +38,7 @@ the time-ordered index; the design docs are the durable reference.
 | [`substrate-labeling-refactor.md`](substrate-labeling-refactor.md) | Split the spike substrate from cluster labeling; unify flat + hierarchical as an N-layer model |
 | [`errormatrix-compute-optimization.md`](errormatrix-compute-optimization.md) | Error-matrix compute — profiling and optimization roadmap |
 | [`realign-gpu-batch.md`](realign-gpu-batch.md) | Cross-cluster GPU-batched PCA-Center "Align All" (design; hardware-only) |
+| [`metal-backend.md`](metal-backend.md) | Apple GPU (Metal) backend: site inventory, the fp64 constraint, architecture, phases, validation; Phase 0 (Accelerate) as built |
 | [`probe-maker.md`](probe-maker.md) | Probe Maker — interactive probe design and editing |
 
 ## Related

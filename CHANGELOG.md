@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [macOS: Apple Accelerate for the spectrogram FFT and the EMG kernel](#2026-10-21--macos-apple-accelerate-for-the-spectrogram-fft-and-the-emg-kernel) |
 | 2026-10-21 | [CI: one workflow per operating system, with a status badge each](#2026-10-21--ci-one-workflow-per-operating-system-with-a-status-badge-each) |
 | 2026-10-21 | [CI: a macOS build](#2026-10-21--ci-a-macos-build) |
 | 2026-10-21 | [Klusters: the curation log is `<base>.cur.<method>.<group>`](#2026-10-21--klusters-the-curation-log-is-basecurmethodgroup) |
@@ -91,6 +92,40 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — macOS: Apple Accelerate for the spectrogram FFT and the EMG kernel
+
+<details>
+<summary>Details</summary>
+
+Phase 0 of the Apple GPU (Metal) plan (`doc/design/metal-backend.md`): the CPU-side
+work, using Apple's Accelerate framework, part of macOS.  New CMake option
+`NS_USE_ACCELERATE` (default `ON`, macOS only).
+
+- **Spectrogram FFT (vDSP).**  `RealFftPlan` gains a third provider beside
+  FFTW and the in-tree radix-2 transform: vDSP's real DFT, at sizes 2^n and
+  f·2^n (f = 3, 5, 15).  Auto order: FFTW at the exact size, vDSP at the
+  exact size, else the next power of two with vDSP or radix-2.  The Homebrew
+  build has no FFTW, so on a Mac NeuroScope's spectrogram moves from radix-2
+  to vDSP; with FFTW installed nothing changes unless `NS_SPECTRAL_FFT=vdsp`
+  (also `fftw`, `radix2`).  Each plan checks vDSP's packing and scale against
+  a direct DFT at start-up and falls back, with one message, if they differ
+  from Apple's documentation.
+- **EMG kernel (BLAS).**  `process_extractemg --backend accelerate`: the
+  FastICA pow3 step as two `cblas_dgemv` per cache-sized block of rows, so
+  the data are still read once per step.  Not taken by `--backend auto`
+  until a Mac benchmark shows it ahead of the OpenMP kernel.
+- **Tests.**  `core_test_spectral` checks every built FFT provider against a
+  direct DFT, re-planning, concurrent use and the override, and times each;
+  the new `ndm_test_extractemg_pow3` checks the CPU and Accelerate kernels
+  against a direct evaluation and times both (`--bench N nch` for a real
+  size).  The macOS CI job runs both as a required step, then a timing run.
+- **Not yet shown:** none of this was compiled against the real Accelerate
+  when written (no Mac): the vDSP and BLAS paths were exercised on Linux
+  against a mock header written from Apple's documentation.  The macOS CI
+  job is the first real build; timings need an Apple-silicon Mac.
+
+</details>
 
 ## 2026-10-21 — CI: one workflow per operating system, with a status badge each
 
@@ -3552,6 +3587,7 @@ for the full detail of the recent plugin patch series.
 | ndmanager Pipeline tab (editable node graph + YAML-driven `ndm_start` dispatcher) | `doc/design/ndm-start-root.md` |
 | Hardware / OS tuning recipe | `doc/design/optimization.md` |
 | Modeling comparison (Layer 1/2 vs BOTM) | `doc/design/modeling-l1-vs-botm.md` |
+| Apple GPU (Metal) backend plan; Accelerate (Phase 0) | `doc/design/metal-backend.md` |
 | KK prior operational workflow | `doc/workflows/empirical-priors.md` |
 | Input binding system — the shared engine (Klusters) | `src/klusters/docs/INPUT_SYSTEM.md` |
 | Input binding system — NeuroScope adoption | `src/neuroscope/docs/INPUT_SYSTEM.md` |

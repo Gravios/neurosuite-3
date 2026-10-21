@@ -187,6 +187,13 @@ Apple's compiler has no OpenMP of its own; if the configure output says
 OpenMP was not found, add
 `-DCMAKE_PREFIX_PATH="$(brew --prefix libomp)"` for the multithreaded build.
 
+There is no CUDA, HIP or SYCL on a Mac, so the GPU backends are not built
+(a Metal backend is planned: `doc/dev/ROADMAP.md`). Apple's Accelerate
+framework, part of macOS, is used instead where it applies: NeuroScope's
+spectrogram FFT runs on vDSP (unless FFTW is installed, `brew install fftw`;
+then `NS_SPECTRAL_FFT=vdsp` selects vDSP), and `process_extractemg` has a
+`--backend accelerate` kernel. `-DNS_USE_ACCELERATE=OFF` leaves both out.
+
 The `ndm_*` steps need bash 4 or newer and macOS ships bash 3.2:
 `brew install bash`, and run a step as `bash ndm_hipass ...` until the scripts
 are adapted. CI builds this configuration on macOS 15 (Apple silicon) (the

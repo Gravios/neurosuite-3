@@ -62,6 +62,25 @@ outstanding from the Qt 6.4–6.12 work: the per-release matrix covers
 
 ### 📋 planned
 
+**Apple GPU (Metal) backend.**
+macOS has no CUDA, HIP or SYCL, so every GPU site needs a Metal
+implementation beside the others.  Decided: Apple silicon only (M1+, macOS
+14+), host code on Apple's C++ wrapper (metal-cpp, vendored), kernels
+embedded as source and compiled at run time (no full Xcode needed), one more
+`USE_METAL` block in the existing runtime dispatchers.  Apple GPUs have no
+fp64, so the sites split three ways: fp32/int16 ones port directly (KK CEM,
+realign xcorr, PCA refine, decomposecollisions, medianfilter,
+medianthreshold, spikegrouper, Butterworth in single precision);
+the shift probe and the Grouping Assistant (FP32 option) port if a float
+version validates; the spectrogram (cuFFT D2Z), EMG (Dgemv) and the fiber
+mean-shift stay on the CPU, with Accelerate.  Phases: 0 Accelerate (done
+2026-10-21, awaiting a Mac run), 1 CMake + MetalContext +
+`process_medianthreshold`, 2 the other plugins, 3 Klusters, 4 KiloKlustaKwik,
+5 CI and docs.  Every GPU result needs a run on an Apple-silicon Mac against
+the `_cpu` binaries; for KiloKlustaKwik the bar is "no further from the CPU
+than CUDA is".  Full plan: [`doc/design/metal-backend.md`](../design/metal-backend.md).
+Estimate: 20–25 patches.
+
 **Wire `process_pca` exit paths to call `setFailed()`.**
 The `setFailed()` API exists on `ProgressBar` but `process_pca.cpp`'s
 `exit(1)` paths don't call it.  Means red ✗ on direct CLI failure.
