@@ -90,6 +90,13 @@ jobs:
       - name: Test the Accelerate paths (vDSP FFT, BLAS kernel)
         run: ctest --test-dir build --output-on-failure -V -R '^(core_test_spectral|ndm_test_extractemg_pow3)$'
 
+      # The Metal backend (USE_METAL, on by default): the context and the first
+      # port, against the CPU exactly.  Each prints SKIPPED when the runner
+      # exposes no Metal device; the build itself proves the host code and
+      # the metal-cpp fetch.
+      - name: Test the Metal backend (context, medianthreshold)
+        run: ctest --test-dir build --output-on-failure -V -R '^(core_test_metal|ndm_test_medianthreshold_metal)$'
+
       - name: Time the pow3 kernels at a realistic size (informational)
         continue-on-error: true
         run: |

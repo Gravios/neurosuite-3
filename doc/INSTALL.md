@@ -187,8 +187,11 @@ Apple's compiler has no OpenMP of its own; if the configure output says
 OpenMP was not found, add
 `-DCMAKE_PREFIX_PATH="$(brew --prefix libomp)"` for the multithreaded build.
 
-There is no CUDA, HIP or SYCL on a Mac, so the GPU backends are not built
-(a Metal backend is planned: `doc/dev/ROADMAP.md`). Apple's Accelerate
+There is no CUDA, HIP or SYCL on a Mac. A Metal (Apple GPU) backend is being
+added (`doc/design/metal-backend.md`); so far it covers the noise thresholds
+(`process_medianthreshold`). The configure step downloads Apple's metal-cpp
+headers from GitHub; for an offline build, point `-DNS_METAL_CPP_DIR=` at a
+copy, or turn it off with `-DUSE_METAL=OFF`. Apple's Accelerate
 framework, part of macOS, is used instead where it applies: NeuroScope's
 spectrogram FFT runs on vDSP (unless FFTW is installed, `brew install fftw`;
 then `NS_SPECTRAL_FFT=vdsp` selects vDSP), and `process_extractemg` has a

@@ -17,7 +17,7 @@ The badges above show the latest CI run on `main` for each platform.
 |---|---|
 | **Linux** — Ubuntu 24.04 and newer, Debian 12; WSL2 works | Reference platform. CI builds everything and runs the test suite on Ubuntu 24.04, 25.10, 26.04 and 26.10 (Qt 6.4 is the oldest Qt supported). |
 | **Windows 10 / 11** — Visual Studio 2022 | Klusters, NeuroScope, NDManager and the processing programs build natively; the `ndm_*` steps run from cmd and PowerShell through Git Bash. KiloKlustaKwik is not built on Windows yet: run it, or the whole pipeline, under WSL2. CI builds with MSVC (no tests yet). |
-| **macOS** — Apple silicon, Homebrew | Builds with Homebrew's Qt 6 and libraries; CI builds it on macOS 15, its tests not yet required to pass. No GPU backend yet (a Metal one is planned); the spectrogram FFT uses Apple's Accelerate. The `ndm_*` steps need bash 4 (`brew install bash`). |
+| **macOS** — Apple silicon, Homebrew | Builds with Homebrew's Qt 6 and libraries; CI builds it on macOS 15, its tests not yet required to pass. A Metal (Apple GPU) backend is being added, so far for the noise thresholds; the spectrogram FFT uses Apple's Accelerate. The `ndm_*` steps need bash 4 (`brew install bash`). |
 
 Step-by-step installation for each: **[INSTALL.md](doc/INSTALL.md)**.
 
@@ -93,7 +93,7 @@ Optional and auto-detected — a CPU/OpenMP build is always produced, so no GPU 
 | klusters | CUDA / HIP / SYCL | Grouping Assistant + interactive realignment |
 | neuroscope | CUDA (cuFFT) | spectrogram FFTs |
 | `ndm_hipass` | CUDA / OpenMP | zero-phase Butterworth filter (default; the CUDA kernel is not yet validated on hardware) · median filter |
-| `ndm_detectspikes` · `ndm_spikegrouper` | CUDA | noise thresholds, channel grouping |
+| `ndm_detectspikes` · `ndm_spikegrouper` | CUDA · Metal (thresholds; macOS, not yet run on a Mac) | noise thresholds, channel grouping |
 | `ndm_extractemg` | CUDA / HIP / SYCL | EMG extraction |
 | `ndm_decomposecollisions` | CUDA (opt-in) | collision decomposition fit |
 

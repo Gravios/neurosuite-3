@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [macOS: a Metal (Apple GPU) backend, first for the noise thresholds](#2026-10-21--macos-a-metal-apple-gpu-backend-first-for-the-noise-thresholds) |
 | 2026-10-21 | [macOS: Apple Accelerate for the spectrogram FFT and the EMG kernel](#2026-10-21--macos-apple-accelerate-for-the-spectrogram-fft-and-the-emg-kernel) |
 | 2026-10-21 | [CI: one workflow per operating system, with a status badge each](#2026-10-21--ci-one-workflow-per-operating-system-with-a-status-badge-each) |
 | 2026-10-21 | [CI: a macOS build](#2026-10-21--ci-a-macos-build) |
@@ -92,6 +93,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — macOS: a Metal (Apple GPU) backend, first for the noise thresholds
+
+<details>
+<summary>Details</summary>
+
+Phase 1 of the Apple GPU plan (`doc/design/metal-backend.md`).
+
+- **Build:** `USE_METAL` (default `ON`, macOS only).  Configure fetches Apple's
+  metal-cpp headers from GitHub at a pinned commit (`NS_METAL_CPP_DIR` for an
+  offline copy).  Kernels are embedded as source and compiled by the OS at run
+  time, so neither full Xcode nor the Metal compiler is needed.
+- **`Neurosuite::metal`:** the shared device context (`MetalContext`): pipeline
+  compile and cache, shared CPU/GPU buffers, error reporting.  Tested by
+  `core_test_metal`.
+- **`process_medianthreshold`:** the per-channel medians on the GPU, exactly
+  equal to the CPU path's (checked by `ndm_test_medianthreshold_metal`).  With
+  no Metal device, or on a GPU error, the CPU computes them.
+- **Found, not changed:** the CUDA path of `process_medianthreshold` differs
+  from its CPU path.  For an even sample count it takes the upper middle value
+  (the CPU averages the two middle values), and it treats -32768 as the largest
+  value.
+- **Not yet shown:** nothing here has run on a Mac.  The host code was
+  syntax-checked against the real metal-cpp headers; the macOS CI job is the
+  first build, and its two Metal tests print SKIPPED when the VM has no GPU.
+
+</details>
 
 ## 2026-10-21 — macOS: Apple Accelerate for the spectrogram FFT and the EMG kernel
 

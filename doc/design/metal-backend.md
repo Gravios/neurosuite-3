@@ -1,7 +1,8 @@
 # Apple GPU (Metal) backend — integration plan
 
-*Written 2026-10-21 against `0d1c903`. Status: decisions taken (§8); Phase 0
-(Accelerate) implemented, awaiting a run on a Mac; Phases 1–5 not started.*
+*Written 2026-10-21 against `0d1c903`. Status: decisions taken (§8); Phases 0
+(Accelerate) and 1 (Metal infrastructure, `process_medianthreshold`)
+implemented, awaiting a run on a Mac (§9, §10); Phases 2–5 not started.*
 
 ## 1. Goal and scope
 
@@ -103,8 +104,9 @@ The repo already has the shape a fourth backend needs:
 
 ### 4.2 Language: metal-cpp, with Objective-C++ only where MPS is needed
 
-- **metal-cpp (decided).** Apple's header-only C++ wrapper for Metal (Apache-2.0), vendored
-  under `third_party/metal-cpp`. It keeps host code in C++20 under the existing
+- **metal-cpp (decided).** Apple's header-only C++ wrapper for Metal (Apache-2.0),
+  fetched at configure time from github.com/apple/metal-cpp at a pinned commit
+  (or taken from `NS_METAL_CPP_DIR`), not vendored. It keeps host code in C++20 under the existing
   conventions: no `m_`, no C-style casts. Its objects are manually
   retain/release'd, so they get a small RAII holder in core (§4.4).
 - **Objective-C++ (`.mm`) only for Metal Performance Shaders.** metal-cpp does not
@@ -128,7 +130,7 @@ to get them into the binary:
    and compile errors at build time. The `.metallib` is embedded as bytes, so the
    installed command-line plugins never have to locate a sidecar file.
 
-Both paths share one `ns_metal_add_kernels(<target> SOURCES …)` CMake helper in a
+Both paths would share one CMake helper (as built: `ns_metal_embed`, §10) in a
 new `cmake/MetalBackend.cmake`, alongside `GpuBackends.cmake`.
 
 ### 4.4 Shared core support (new, in libneurosuite-core)
@@ -192,10 +194,10 @@ Each phase ends with a validation gate (§6). Patch counts are rough.
 ### Phase 1: Infrastructure and the first kernel
 
 4. `cmake/MetalBackend.cmake`: `USE_METAL` (default ON when `APPLE`), detection
-   (`find_library(Metal)`, `Foundation`, `QuartzCore`), the
-   `ns_metal_add_kernels` helper, and vendored metal-cpp. Off everywhere else, so
-   Linux and Windows builds are unchanged. *(1 patch)*
-5. `MetalContext` in libneurosuite-core, plus a smoke-test kernel (saxpy) as a
+   (`find_library(Metal)`, `Foundation`), the `ns_metal_embed` helper, and
+   metal-cpp fetched at a pinned commit. Off everywhere else, so Linux and
+   Windows builds are unchanged. *(1 patch; done, §10)*
+5. `MetalContext` in libneurosuite-core, plus a smoke-test kernel as a
    unit test that **skips** with exit code 0 and a message when no device is
    present. *(1 patch)*
 6. **First real port: `process_medianthreshold`** (2 small int16 kernels, exact
@@ -314,3 +316,37 @@ so the Mac result has something to compare against.
 
 Next is Phase 1, up to `process_medianthreshold`: it proves the toolchain end
 to end on the simplest kernel, with an exact-match test.
+
+## 10. Phase 1 as implemented (2026-10-21)
+
+- **`cmake/MetalBackend.cmake`:** `USE_METAL` (default ON, macOS only).
+  `ns_metal_setup()` finds Metal + Foundation and metal-cpp, which is fetched
+  from github.com/apple/metal-cpp at the macOS 15.2 release commit, or taken
+  from `NS_METAL_CPP_DIR`. It defines `ns_metalcpp`. `ns_metal_embed(target
+  symbol file.metal)` puts a kernel source into a target as
+  `extern const char symbol[]`.
+- **`Neurosuite::metal`** (`neurosuite/gpu/metalcontext.{h,cpp}`):
+  - `MetalContext::instance()`;
+  - `pipeline()`: run-time compile with fast math off, cached, thread-safe;
+  - shared buffers, `succeeded()`, `threadgroupWidth()`, `MetalRef`,
+    `AutoreleaseScope`;
+  - metal-cpp's one implementation unit.
+
+  Tested by `core_test_metal`.
+- **`process_medianthreshold`:** an exact per-channel histogram of |x| on the
+  GPU (32769 bins), with the medians read off it on the CPU using `medianOf()`'s
+  definition. The result is identical to the CPU path, and the test
+  (`ndm_test_medianthreshold_metal`) requires equality.
+  - The CUDA path is not identical to the CPU: it returns the upper middle
+    value for even counts and treats -32768 as the largest value. This is
+    reported, not changed.
+  - Performance: one global atomic per sample. Contention on common bins may
+    make it slower than the CPU's `nth_element`; the test prints a timing to
+    decide. A two-pass radix histogram in threadgroup memory is the known
+    faster design.
+- **CI:** the macOS job builds with Metal on (proving the host code and the
+  fetch) and runs both tests. They print SKIPPED if the VM has no Metal device.
+- **Checked without a Mac:** clang `-fsyntax-only` against the real metal-cpp
+  headers, with stand-ins for the few macOS system headers, and the embed
+  helper round-trip. The MSL kernels themselves have not been compiled. The
+  run-time compile reports any error and the program falls back to the CPU.

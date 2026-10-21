@@ -73,9 +73,9 @@ realign xcorr, PCA refine, decomposecollisions, medianfilter,
 medianthreshold, spikegrouper, Butterworth in single precision);
 the shift probe and the Grouping Assistant (FP32 option) port if a float
 version validates; the spectrogram (cuFFT D2Z), EMG (Dgemv) and the fiber
-mean-shift stay on the CPU, with Accelerate.  Phases: 0 Accelerate (done
-2026-10-21, awaiting a Mac run), 1 CMake + MetalContext +
-`process_medianthreshold`, 2 the other plugins, 3 Klusters, 4 KiloKlustaKwik,
+mean-shift stay on the CPU, with Accelerate.  Phases: 0 Accelerate and 1
+CMake + MetalContext + `process_medianthreshold` (both done 2026-10-21,
+awaiting a Mac run), 2 the other plugins, 3 Klusters, 4 KiloKlustaKwik,
 5 CI and docs.  Every GPU result needs a run on an Apple-silicon Mac against
 the `_cpu` binaries; for KiloKlustaKwik the bar is "no further from the CPU
 than CUDA is".  Full plan: [`doc/design/metal-backend.md`](../design/metal-backend.md).
