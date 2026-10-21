@@ -2,6 +2,8 @@
     process_medianfilter.cpp  (CUDA-aware entry point)
     Dispatches to CUDA GPU path when compiled with USE_CUDA,
     falls back to OpenMP CPU path otherwise.
+    The filter is defined (and tested, test/test_medianfilter.py) above
+    slideWindow() below.
  ***************************************************************************/
 
 #define _LARGEFILE_SOURCE64
@@ -28,71 +30,62 @@ using namespace std;
 bool verbose = false;
 
 // ---------------------------------------------------------------------------
-// CPU: per-channel sliding sorted-window median filter
+// The filter, as the CPU computes it (and the Metal path reproduces):
+//
+//   out[t] = x[t] - median(x[t - w .. t + w])      (w = windowHalfLength)
+//
+// per channel, with x = 0 before the first and after the last frame of the
+// recording, and the difference stored back in a short (wrapping, as it
+// always has).  The data are filtered in chunks; each chunk is handed over
+// with w frames of context on either side, so chunk boundaries do not show.
 // ---------------------------------------------------------------------------
-static void filterChannel(short windowHalfLength, const short* widebandData,
-                           short* filteredData, long long int nSamplesPerChannel,
-                           int nChannels, int channel)
+
+// Removes `oldV` from the sorted window and inserts `newV`, keeping it sorted.
+static inline void slideWindow(short* win, int wLen, short oldV, short newV)
 {
-    const int windowLength = 2 * windowHalfLength + 1;
-    vector<short> window(windowLength);
-    const int halfOffset = nChannels * windowHalfLength;
-    const int offset     = nChannels * windowLength;
+    if (newV == oldV) return;
+    int idx = static_cast<int>(std::lower_bound(win, win + wLen, oldV) - win);
+    if (newV > oldV) {
+        while (idx + 1 < wLen && win[idx + 1] < newV) { win[idx] = win[idx + 1]; ++idx; }
+    } else {
+        while (idx > 0 && win[idx - 1] > newV) { win[idx] = win[idx - 1]; --idx; }
+    }
+    win[idx] = newV;
+}
 
-    const short* input = widebandData + channel - halfOffset;
-    for (int i = 0; i < windowLength; ++i, input += nChannels)
-        window[i] = *input;
-    sort(window.begin(), window.end());
+// Filters frames [0, nFrames) of one channel.  `data` points at frame 0 of
+// an interleaved buffer that also holds frames -w .. -1 and nFrames ..
+// nFrames + w - 1.
+static void filterChannel(int windowHalfLength, const short* data, short* filtered,
+                          long long nFrames, int nChannels, int channel)
+{
+    const int wLen = 2 * windowHalfLength + 1;
+    std::vector<short> win(static_cast<std::size_t>(wLen));
+    const short* x = data + channel;
+    short* out = filtered + channel;
+    auto at = [&](long long t) { return x[t * nChannels]; };
 
-    input  = widebandData + channel + halfOffset + nChannels;
-    short* output = filteredData + channel;
-
-    for (long int samplesLeft = nSamplesPerChannel * nChannels;
-         samplesLeft > 0;
-         samplesLeft -= nChannels, input += nChannels, output += nChannels)
-    {
-        const short newVal = *input;
-        const short oldVal = *(input - offset);
-        if (newVal != oldVal) {
-            int lo = 0, hi = windowLength - 1, idx = 0;
-            while (lo <= hi) {
-                idx = (lo + hi) / 2;
-                if      (oldVal > window[idx]) lo = idx + 1;
-                else if (oldVal < window[idx]) hi = idx - 1;
-                else break;
-            }
-            if (newVal > oldVal) {
-                while (newVal > window[idx] && idx < windowLength - 1) {
-                    window[idx] = window[idx + 1]; ++idx;
-                }
-                if (newVal > window[idx]) window[idx] = newVal;
-                else                      window[idx - 1] = newVal;
-            } else {
-                while (newVal < window[idx] && idx > 0) {
-                    window[idx] = window[idx - 1]; --idx;
-                }
-                if (newVal < window[idx]) window[idx] = newVal;
-                else                      window[idx + 1] = newVal;
-            }
-        }
-        *output = *(input - halfOffset - nChannels) - window[windowHalfLength];
+    for (int i = 0; i < wLen; ++i) win[i] = at(i - windowHalfLength);
+    std::sort(win.begin(), win.end());
+    out[0] = static_cast<short>(at(0) - win[windowHalfLength]);
+    for (long long t = 1; t < nFrames; ++t) {
+        slideWindow(win.data(), wLen, at(t - windowHalfLength - 1), at(t + windowHalfLength));
+        out[t * nChannels] = static_cast<short>(at(t) - win[windowHalfLength]);
     }
 }
 
-// Filters one chunk.  @p prog is moved from @p pos0 by @p span as the
-// channels finish (the progress bar replaces the old per-channel '#' marks).
-static void filterCPU(short windowHalfLength, short* widebandData,
-                       short* filteredData, long long int nSamplesPerChannel,
-                       short nChannels, BlockProgress& prog,
-                       long long pos0, long long span)
+// Filters one chunk on the CPU.  @p prog is moved from @p pos0 by @p span as
+// the channels finish.
+static void filterCPU(int windowHalfLength, const short* data, short* filtered,
+                      long long nFrames, int nChannels, BlockProgress& prog,
+                      long long pos0, long long span)
 {
     int channelsDone = 0;
 #ifdef _OPENMP
     #pragma omp parallel for schedule(dynamic)
 #endif
     for (int channel = 0; channel < nChannels; ++channel) {
-        filterChannel(windowHalfLength, widebandData, filteredData,
-                      nSamplesPerChannel, nChannels, channel);
+        filterChannel(windowHalfLength, data, filtered, nFrames, nChannels, channel);
 #ifdef _OPENMP
         #pragma omp critical(median_progress)
 #endif
@@ -149,7 +142,7 @@ int main(int argc, char *argv[])
     // with typical 64-128 GB RAM and 256-channel recordings.
     // ndm_hipass does not pass -b, so this is the operative default.
     long int chunkSize        = 128L * 1024 * 1024;
-    bool     forceCPU         = false;
+    [[maybe_unused]] bool forceCPU = false;   // -c; read by the GPU builds
 
     int i = 0;
     while (true) {
@@ -216,16 +209,19 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    long long int nSamples = size / sampleSize;
-    long long int nSamplesPerChannel = nSamples / nChannels;
-    long long int nSamplesPerChunkPerChannel = chunkSize / sampleSize / nChannels;
-    chunkSize = nSamplesPerChunkPerChannel * sampleSize * nChannels;
-    long long int nSamplesPerChunk = chunkSize / sampleSize;
+    // Whole frames are filtered; a trailing partial frame (a file whose size
+    // is not a multiple of the frame) is copied through unchanged.
+    const long long frameBytes = static_cast<long long>(nChannels) * sampleSize;
+    const long long nFrames = size / frameBytes;
+    const long long tailBytes = size - nFrames * frameBytes;
+    const long long w = windowHalfLength;
+    long long chunkFrames = chunkSize / frameBytes;
+    if (chunkFrames < 1) chunkFrames = 1;
+    if (chunkFrames > nFrames && nFrames > 0) chunkFrames = nFrames;
 
-    long long int nPaddingSamples = (long long int)nChannels * windowHalfLength;
-    long long int nOverlapSamples = (long long int)nChannels * windowHalfLength;
-    long long int overlapSize     = nOverlapSamples * sampleSize;
-    short   *input, *output;
+    // input: w frames of context, the chunk, w frames of context.
+    std::vector<short> input(static_cast<std::size_t>((chunkFrames + 2 * w) * nChannels));
+    std::vector<short> output(static_cast<std::size_t>(chunkFrames * nChannels));
 
     // Stage progress on the terminal (drawn to /dev/tty, so it shows under the
     // wrapper's output capture), by bytes of the input.
@@ -235,52 +231,30 @@ int main(int argc, char *argv[])
     BlockProgress prog(label);
     prog.beginStage("MEDIAN", size);
 
-    // Use single-chunk path only when the entire file is smaller than the
-    // chunk budget.  For large recordings the chunked path is always used,
-    // regardless of how nSamplesPerChunk compares to nSamples, to avoid
-    // allocating two full-file buffers simultaneously.
-    if (size <= chunkSize) {
-        input  = new short[nPaddingSamples + nSamples];
-        memset(input, 0, (size_t)(nPaddingSamples * sizeof(short)));
-        output = new short[nSamples];
-        { size_t _r = fread((char*)&input[nPaddingSamples], sizeof(char), (size_t)size, inputFile); (void)_r; }
-        filterCPU(windowHalfLength, &input[nPaddingSamples], output,
-                  nSamplesPerChannel, nChannels, prog, 0, size);
-        fwrite((char*)output, sizeof(char), (size_t)size, outputFile);
-    } else {
-        input  = new short[nSamplesPerChunk + 2 * nOverlapSamples];
-        output = new short[nSamplesPerChunk];
-        // Zero the leading overlap region — represents silence before the
-        // recording starts.  The original code left this uninitialised.
-        memset(input, 0, (size_t)(nOverlapSamples * sizeof(short)));
-        for (long long int sizeLeft = size; sizeLeft > 0; sizeLeft -= chunkSize) {
-            if (sizeLeft <= chunkSize) {
-                chunkSize = sizeLeft;
-                nSamplesPerChunkPerChannel = sizeLeft / nChannels / sampleSize;
-            }
-            if (sizeLeft == size) {
-                // First chunk: leading overlap region already zeroed above.
-                // Read chunkSize bytes only — the trailing overlap comes from
-                // the next fread on the following iteration.
-                { size_t _r = fread((char*)&input[nOverlapSamples], sizeof(char),
-                                    (size_t)chunkSize, inputFile); (void)_r; }
-                filterCPU(windowHalfLength, &input[nOverlapSamples], output,
-                          nSamplesPerChunkPerChannel, nChannels,
-                          prog, size - sizeLeft, chunkSize);
-            } else {
-                memcpy(input, &input[nSamplesPerChunk], (size_t)(2 * overlapSize));
-                { size_t _r = fread((char*)&input[2 * nOverlapSamples], sizeof(char),
-                                    (size_t)chunkSize, inputFile); (void)_r; }
-                filterCPU(windowHalfLength, &input[nOverlapSamples], output,
-                          nSamplesPerChunkPerChannel, nChannels,
-                          prog, size - sizeLeft, chunkSize);
-            }
-            fwrite((char*)output, sizeof(char), (size_t)chunkSize, outputFile);
+    for (long long f0 = 0; f0 < nFrames; f0 += chunkFrames) {
+        const long long nf = std::min(chunkFrames, nFrames - f0);
+        // Frames f0 - w .. f0 + nf + w - 1, zero outside the recording.
+        const long long first = std::max(0LL, f0 - w);
+        const long long last = std::min(nFrames, f0 + nf + w);     // exclusive
+        std::fill(input.begin(), input.end(), short(0));
+        short* dst = input.data() + (first - (f0 - w)) * nChannels;
+        neurosuite::core::fseek64(inputFile, first * frameBytes, SEEK_SET);
+        const std::size_t want = static_cast<std::size_t>((last - first) * nChannels);
+        if (fread(dst, sizeof(short), want, inputFile) != want) {
+            cerr << "error: cannot read '" << inputPath << "'\n";
+            exit(1);
         }
+        filterCPU(windowHalfLength, input.data() + w * nChannels, output.data(), nf,
+                  nChannels, prog, f0 * frameBytes, nf * frameBytes);
+        fwrite(output.data(), sizeof(short), static_cast<std::size_t>(nf * nChannels), outputFile);
+    }
+    if (tailBytes > 0) {
+        std::vector<char> tail(static_cast<std::size_t>(tailBytes));
+        neurosuite::core::fseek64(inputFile, nFrames * frameBytes, SEEK_SET);
+        if (fread(tail.data(), 1, tail.size(), inputFile) == tail.size())
+            fwrite(tail.data(), 1, tail.size(), outputFile);
     }
 
-    delete[] input;
-    delete[] output;
     fclose(inputFile);
     fclose(outputFile);
     prog.endStage();
