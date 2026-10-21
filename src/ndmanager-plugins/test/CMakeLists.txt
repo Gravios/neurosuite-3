@@ -28,6 +28,10 @@ set(_ndm_bin_test_extract_alignment
     PROCESS_EXTRACTSPIKES_BIN         process_extractspikes
     PROCESS_EXTRACTSPIKES_SDIFF_BIN   process_extractspikes_sdiff
     PROCESS_EXTRACTSPIKES_STDERIV_BIN process_extractspikes_stderiv)
+set(_ndm_bin_test_extract_noise
+    PROCESS_EXTRACTSPIKES_BIN         process_extractspikes
+    PROCESS_EXTRACTSPIKES_SDIFF_BIN   process_extractspikes_sdiff
+    PROCESS_EXTRACTSPIKES_STDERIV_BIN process_extractspikes_stderiv)
 
 foreach(_t IN LISTS _ndm_tests)
     get_filename_component(_name "${_t}" NAME_WE)

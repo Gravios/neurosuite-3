@@ -40,6 +40,15 @@
 			<option>-R</option>
 		</arg>
 		<arg>
+			<option>-N</option> <replaceable>count</replaceable>
+		</arg>
+		<arg>
+			<option>-E</option> <replaceable>zMax</replaceable>
+		</arg>
+		<arg>
+			<option>-G</option> <replaceable>guard</replaceable>
+		</arg>
+		<arg>
 			<option>-v</option>
 		</arg>
 		<arg choice="plain">
@@ -124,6 +133,37 @@
 				<listitem>
 					<para>
 						re-extract mode: skip detection, read the spike times from <filename>basename.res.N</filename> and write one raw waveform per time to <filename>basename.spk.N</filename>. <option>-t</option>, <option>-r</option> and <option>-l</option> are not needed in this mode.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-N</option> <replaceable>count</replaceable></term>
+				<listitem>
+					<para>
+						With <option>-R</option>: also write <filename>basename.nst.N</filename>, the
+						group's noise statistics -- the mean window and covariance of
+						<replaceable>count</replaceable> random spike-free windows, cut exactly like the
+						<filename>.spk</filename> rows (same transform), with outliers rejected. 0 (the
+						default) writes none.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-E</option> <replaceable>zMax</replaceable></term>
+				<listitem>
+					<para>
+						Rejection gate for <option>-N</option>, in robust standard deviations (median /
+						MAD): a window is dropped when any sample, or the window's energy, lies beyond it.
+						Default 5.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-G</option> <replaceable>guard</replaceable></term>
+				<listitem>
+					<para>
+						Clearance, in samples, added around every spike window before a noise window may
+						be drawn. Default: the waveform length.
 					</para>
 				</listitem>
 			</varlistentry>

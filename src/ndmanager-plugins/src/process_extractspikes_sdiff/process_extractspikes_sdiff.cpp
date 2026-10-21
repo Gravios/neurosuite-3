@@ -63,6 +63,7 @@ using namespace std;
 
 static int  buffer_size     = BUFFER_CHANNEL_SIZE; // scaled by nChanTot in main
 static bool verbose         = false;
+static extractspikes::NoiseOptions g_noise;           // -N/-E/-G: the .nst written with -R
 static const char *program_version = "process_extractspikes_sdiff 1.1";
 
 // =========================================================================
@@ -275,6 +276,7 @@ static void help(const char *name)
          << "                  and re-extract waveforms at those exact timestamps,\n"
          << "                  applying the same spatial-derivative transform as\n"
          << "                  the detection path.  Ignores -r/-f/-l/-Z.\n\n"
+         << extractspikes::noiseHelp()
          << "  -v              verbose\n"
          << "  -h              this message\n\n"
          << "Order 3 (allpairs): s[i] = n*x[i] - sum_j(x[j])\n"
@@ -320,6 +322,8 @@ void parseArgs(int argc, char **argv, arguments &a)
         case 'v': verbose = true; break;
         case 'a': a.isDisableAbs = false; break;
         case 'R': a.useExistingRes = true; break;  // patch86
+        case 'N': case 'E': case 'G':
+                  extractspikes::parseNoiseFlag(i, argc, argv, g_noise); break;
         case 'n': a.totalChannelNumber = atoi(argv[++i]);
                   a.isTotalChannelNumberProvided = true; break;
         case 'c': a.channelList = argv[++i];
@@ -395,7 +399,7 @@ static int runFromRes(const arguments &args,
             spec.applyTransform = true;
             spec.temporalDiff   = false;
             spec.order          = static_cast<neurosuite::core::SdiffOrder>(args.sdiffOrder);
-        });
+        }, g_noise);
 }
 
 // =========================================================================
@@ -408,6 +412,10 @@ int main(int argc, char *argv[])
     buffer_size *= args.totalChannelNumber;
 
     FILE *inputFile = fopen(args.inputFileName, "rb");
+    if(g_noise.windows > 0 && !args.useExistingRes) {
+        cerr << "error: -N (noise statistics) needs -R." << endl;
+        exit(1);
+    }
     // patch86: skip checkInputs in -R mode (refractoryPeriod stays -1)
     if(!args.useExistingRes && !checkInputs(args, buffer_size, inputFile)) exit(1);
     if(args.useExistingRes && !inputFile) {
