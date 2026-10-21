@@ -27,6 +27,7 @@
 std::unique_ptr<Pow3Kernel> makePow3KernelCuda();
 std::unique_ptr<Pow3Kernel> makePow3KernelHip();
 std::unique_ptr<Pow3Kernel> makePow3KernelSycl();
+std::unique_ptr<Pow3Kernel> makePow3KernelAccelerate();
 
 bool gpuCudaRuntimeAvailable();
 bool gpuHipRuntimeAvailable();
@@ -98,6 +99,7 @@ const char *icaBackendName(IcaBackend b)
         case IcaBackend::Cuda: return "cuda";
         case IcaBackend::Hip:  return "hip";
         case IcaBackend::Sycl: return "sycl";
+        case IcaBackend::Accelerate: return "accelerate";
     }
     return "?";
 }
@@ -109,7 +111,8 @@ IcaBackend icaBackendFromString(const std::string &s, std::string *err)
     if (s == "cuda" || s == "nvidia")        return IcaBackend::Cuda;
     if (s == "hip"  || s == "rocm" || s == "amd") return IcaBackend::Hip;
     if (s == "sycl" || s == "intel" || s == "oneapi") return IcaBackend::Sycl;
-    if (err) *err = "unknown backend '" + s + "'; expected auto|cpu|cuda|hip|sycl";
+    if (s == "accelerate") return IcaBackend::Accelerate;
+    if (err) *err = "unknown backend '" + s + "'; expected auto|cpu|cuda|hip|sycl|accelerate";
     return IcaBackend::Cpu;
 }
 
@@ -136,6 +139,12 @@ bool icaBackendAvailable(IcaBackend b)
 #else
             return false;
 #endif
+        case IcaBackend::Accelerate:
+#ifdef USE_ACCELERATE
+            return true;
+#else
+            return false;
+#endif
     }
     return false;
 }
@@ -152,6 +161,8 @@ IcaBackend icaPickBackend(IcaBackend requested)
     if (icaBackendAvailable(IcaBackend::Cuda)) return IcaBackend::Cuda;
     if (icaBackendAvailable(IcaBackend::Hip))  return IcaBackend::Hip;
     if (icaBackendAvailable(IcaBackend::Sycl)) return IcaBackend::Sycl;
+    // Not Accelerate: the OpenMP kernel reads Z once per step and may be as
+    // fast; Auto takes Accelerate only once a Mac benchmark shows it ahead.
     return IcaBackend::Cpu;
 }
 
@@ -182,6 +193,12 @@ std::unique_ptr<Pow3Kernel> makePow3Kernel(IcaBackend backend)
             if (k) return k;
 #endif
             break;
+        case IcaBackend::Accelerate:
+#ifdef USE_ACCELERATE
+            k = makePow3KernelAccelerate();
+            if (k) return k;
+#endif
+            break;
         default: break;
     }
     return std::unique_ptr<Pow3Kernel>(new Pow3KernelCpu());
@@ -203,4 +220,7 @@ bool gpuHipRuntimeAvailable()  { return false; }
 #ifndef USE_SYCL
 std::unique_ptr<Pow3Kernel> makePow3KernelSycl() { return {}; }
 bool gpuSyclRuntimeAvailable() { return false; }
+#endif
+#ifndef USE_ACCELERATE
+std::unique_ptr<Pow3Kernel> makePow3KernelAccelerate() { return {}; }
 #endif

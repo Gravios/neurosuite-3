@@ -18,9 +18,10 @@
 #//   pre-dating the Probe tab), falls back to one group per
 #//   spikeDetection.channelGroups entry — the earlier behaviour.
 #//
-#//   Compute backend (CPU / CUDA / HIP / SYCL) is selected via the
-#//   `backend` parameter; `auto` picks the first available among CUDA,
-#//   HIP, SYCL, falling back to CPU.
+#//   Compute backend (CPU / CUDA / HIP / SYCL / Accelerate) is selected
+#//   via the `backend` parameter; `auto` picks the first available among
+#//   CUDA, HIP, SYCL, falling back to CPU.  `accelerate` (Apple's BLAS on
+#//   macOS) is used only when named.
 #//
 #//   The cleaned recording is also reachable as <session>.emgclean (a
 #//   symlink to <session>-emgclean.dat), so a later step can read it with

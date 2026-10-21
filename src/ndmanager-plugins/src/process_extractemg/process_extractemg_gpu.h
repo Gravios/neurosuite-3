@@ -44,21 +44,23 @@ enum class IcaBackend {
     Cuda,
     Hip,
     Sycl,
+    Accelerate, // Apple Accelerate BLAS (macOS, CPU); explicit only, not in Auto
 };
 
 // Parse / format a backend name, mirroring CLI strings.
-//   "auto" / "cpu" / "cuda" / "hip" / "sycl"
+//   "auto" / "cpu" / "cuda" / "hip" / "sycl" / "accelerate"
 // Returns IcaBackend::Cpu on unknown input (with err set).
 IcaBackend     icaBackendFromString(const std::string &s, std::string *err = nullptr);
 const char    *icaBackendName(IcaBackend b);
 
 // Compile-time + runtime availability.  An "available" backend was
 // compiled in AND its device runtime is reachable (CUDA driver loaded,
-// HIP runtime loaded, SYCL device discovered).
+// HIP runtime loaded, SYCL device discovered; Accelerate: built on macOS).
 bool icaBackendAvailable(IcaBackend b);
 
 // Resolve Auto → first available among CUDA, HIP, SYCL, falling back to
-// Cpu.  Pass-through for explicit backends.
+// Cpu (never Accelerate: see process_extractemg_accelerate.cpp).
+// Pass-through for explicit backends.
 IcaBackend icaPickBackend(IcaBackend requested);
 
 // ---------------------------------------------------------------------------

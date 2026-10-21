@@ -280,10 +280,13 @@
 						Compute backend for the FastICA pow3 inner
 						kernel: one of <literal>auto</literal>,
 						<literal>cpu</literal>, <literal>cuda</literal>,
-						<literal>hip</literal>, <literal>sycl</literal>
+						<literal>hip</literal>, <literal>sycl</literal>,
+						<literal>accelerate</literal>
 						(default <literal>auto</literal>).
 						<literal>auto</literal> picks the first available
-						among CUDA &gt; HIP &gt; SYCL &gt; CPU; falls
+						among CUDA &gt; HIP &gt; SYCL &gt; CPU, never
+						<literal>accelerate</literal> (Apple's BLAS on
+						macOS, used only when named); falls
 						back to CPU at runtime if the requested backend
 						is compiled out or no device is reachable.  GPU
 						backends skip device offload when N·nch &lt;
@@ -486,6 +489,17 @@
 				</para>
 			</listitem>
 		</itemizedlist>
+		<para>
+			On macOS, where none of these exists, a fourth kernel runs on
+			the CPU with Apple's Accelerate BLAS (two
+			<literal>cblas_dgemv</literal> per cache-sized block of rows,
+			so the data matrix is still read once per step).  It is built
+			when <literal>NS_USE_ACCELERATE</literal> is on (the default)
+			and used only with <option>--backend accelerate</option>:
+			whether it beats the OpenMP kernel is for a benchmark on the
+			Mac to show (<command>process_extractemg_pow3_test --bench
+			N nch</command>, built with the tests, times both).
+		</para>
 		<para>
 			The three options default to <literal>ON</literal> and are
 			auto-detected: the first backend whose toolkit is found is built

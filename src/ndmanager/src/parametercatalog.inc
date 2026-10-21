@@ -233,7 +233,7 @@
 { "ndm_extractemg", "chunkSamples", "1048576", "Optional", true,
   "Samples per channel per streaming chunk (default 1048576)." },
 { "ndm_extractemg", "backend", "auto", "Optional", true,
-  "auto (default), cpu, cuda, hip or sycl for the FastICA kernel; falls back to CPU when the backend is not built or no device is found." },
+  "auto (default), cpu, cuda, hip, sycl or accelerate (Apple's BLAS, macOS; only when named) for the FastICA kernel; falls back to CPU when the backend is not built or no device is found." },
 { "ndm_extractemg", "emgClean", "yes", "Optional", true,
   "yes / no for each output (default yes)." },
 { "ndm_extractemg", "emgTrace", "yes", "Optional", true,

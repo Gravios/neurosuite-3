@@ -9,6 +9,9 @@
 #   USE_HIP  — AMD GPUs via hipcc/ROCm     (requires ROCm + rocBLAS)
 #   USE_SYCL — Intel Arc/Xe via icpx       (requires oneAPI + oneMKL)
 #
+# On macOS, NS_USE_ACCELERATE (default ON) adds a CPU kernel on Apple's
+# Accelerate BLAS, selected with --backend accelerate.
+#
 # All three default ON; whichever toolkit is present is auto-selected.
 # Priority when multiple are found: CUDA > HIP > SYCL > CPU.  This
 # matches the convention used by KiloKlustaKwik (src/kiloklustakwik/CMakeLists.txt
@@ -226,7 +229,49 @@ if(_emg_sycl_active)
         -lmkl_sycl -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core)
 endif()
 
+# =============================================================================
+# Apple Accelerate (macOS) — a BLAS pow3 kernel on the CPU, chosen with
+# --backend accelerate (never by auto; see process_extractemg_accelerate.cpp).
+# =============================================================================
+set(_emg_accelerate_active FALSE)
+if(APPLE)
+    if(NOT DEFINED NS_USE_ACCELERATE)
+        option(NS_USE_ACCELERATE "Use Apple's Accelerate framework (vDSP, BLAS) on macOS" ON)
+    endif()
+    if(NS_USE_ACCELERATE)
+        find_library(NS_ACCELERATE_FRAMEWORK Accelerate)
+        if(NS_ACCELERATE_FRAMEWORK)
+            set(_emg_accelerate_active TRUE)
+            target_sources(process_extractemg PRIVATE process_extractemg_accelerate.cpp)
+            target_compile_definitions(process_extractemg PRIVATE USE_ACCELERATE)
+            target_link_libraries(process_extractemg PRIVATE "${NS_ACCELERATE_FRAMEWORK}")
+            message(STATUS "process_extractemg: Accelerate BLAS kernel built (--backend accelerate)")
+        endif()
+    endif()
+endif()
+
 install(TARGETS process_extractemg
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+# =============================================================================
+# Kernel test (NS_BUILD_TESTS): the CPU kernel, and Accelerate's when built,
+# against a direct evaluation of the pow3 step, with a timing line for each.
+# =============================================================================
+if(NS_BUILD_TESTS)
+    add_executable(process_extractemg_pow3_test
+        process_extractemg_pow3_test.cpp
+        process_extractemg_gpu_cpu.cpp)
+    target_compile_features(process_extractemg_pow3_test PRIVATE cxx_std_20)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(process_extractemg_pow3_test PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    if(_emg_accelerate_active)
+        target_sources(process_extractemg_pow3_test PRIVATE process_extractemg_accelerate.cpp)
+        target_compile_definitions(process_extractemg_pow3_test PRIVATE USE_ACCELERATE)
+        target_link_libraries(process_extractemg_pow3_test PRIVATE "${NS_ACCELERATE_FRAMEWORK}")
+    endif()
+    add_test(NAME ndm_test_extractemg_pow3 COMMAND process_extractemg_pow3_test)
+    set_tests_properties(ndm_test_extractemg_pow3 PROPERTIES LABELS "ndmanager-plugins")
+endif()
 
 add_manpage(process_extractemg)
