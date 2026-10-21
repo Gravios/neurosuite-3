@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [Klusters: the curation log is `<base>.cur.<method>.<group>`](#2026-10-21--klusters-the-curation-log-is-basecurmethodgroup) |
 | 2026-10-19 | [Pipeline: the KiloKlustaKwik calls match KiloKlustaKwik](#2026-10-19--pipeline-the-kiloklustakwik-calls-match-kiloklustakwik) |
 | 2026-10-19 | [NDManager: Add offers the parameters a plugin reads](#2026-10-19--ndmanager-add-offers-the-parameters-a-plugin-reads) |
 | 2026-10-19 | [Docs: every page checked against the code; current in-app handbooks; the site covers all documentation](#2026-10-19--docs-every-page-checked-against-the-code-current-in-app-handbooks-the-site-covers-all-documentation) |
@@ -88,6 +89,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — Klusters: the curation log is `<base>.cur.<method>.<group>`
+
+<details>
+<summary>Details</summary>
+
+- The curation log was `<base>.curation_log.<group>.<method>`, group before
+  method, unlike every other per-group file.  Klusters now writes
+  `<base>.cur.<method>.<group>[.<stage>]`, named for the `.clu` it records,
+  stage included (`rat.clu.stderiv.5.final` → `rat.cur.stderiv.5.final`).
+  Opening an unstaged `.clu` renames an existing log under the old name, so
+  the session keeps appending to it.  Which sessions are logged is
+  unchanged (not those sorted under `standard`).
+- `ndm_autoklusta` (`curationLog: auto`) finds the new name first (unstaged,
+  then staged) and the old one otherwise; `kk_build_prior.py`, the template help and the docs use
+  the new name.  `cur` stays outside the custody type tables, like `.clp`.
+
+</details>
 
 ## 2026-10-19 — Pipeline: the KiloKlustaKwik calls match KiloKlustaKwik
 
