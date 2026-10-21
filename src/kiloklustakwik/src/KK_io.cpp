@@ -250,6 +250,20 @@ void KK::LoadData() {
         Output("GPU context initialised (%s, %d points, %d dims).\n",
                GPU_BACKEND_NAME, nPoints, nDims);
     }
+#elif defined(USE_METAL)
+    // allocate() can refuse (buffers too large for the device, nDims > 64, a
+    // kernel that does not compile); the run then stays on the CPU.
+    if (!suppressBestSave && gpu_device_available()) {
+        gpu = new KK_GPU();
+        if (gpu->allocate(nPoints, nDims, nDims2, MaxPossibleClusters)) {
+            gpu_upload_data(gpu, Data.m_Data);
+            Output("GPU context initialised (%s, %d points, %d dims).\n",
+                   GPU_BACKEND_NAME, nPoints, nDims);
+        } else {
+            delete gpu;
+            gpu = nullptr;
+        }
+    }
 #elif defined(USE_SYCL)
     if (!suppressBestSave) {
         sycl::device sycl_dev;

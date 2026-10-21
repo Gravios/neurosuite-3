@@ -197,7 +197,7 @@ set(_cpu_srcs src/KlustaKwik.cpp src/KK.cpp src/KK_templatematch.cpp src/KK_qual
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
     ${_xcorr_dir}/realign_center.cpp
     ${_neurofileio_dir}/neurofileio.cpp)
-set(_headers  src/KlustaKwik.h src/KK.h src/KK_internal.h src/KK_cuda.h src/KK_sycl.h src/KK_hip.h
+set(_headers  src/KlustaKwik.h src/KK.h src/KK_internal.h src/KK_cuda.h src/KK_sycl.h src/KK_hip.h src/KK_metal.h
               src/Array.h src/KlustaSave.h src/KlustaKwikYaml.h src/param.h
               src/proxy_isi.h
               src/wave_knn_split.h
@@ -480,21 +480,24 @@ endif()
 # Needs the Neurosuite::metal target (libneurosuite-core, macOS with USE_METAL;
 # cmake/MetalBackend.cmake), so it is built in the monorepo only, not by a
 # standalone kiloklustakwik configure.  Kernel sources are embedded and
-# compiled at run time; on a machine without a Metal device the binary runs
-# everything on the CPU.  Design: doc/design/metal-backend.md (Phase 4).
+# compiled at run time; on a machine without a Metal device (or when the
+# device cannot hold the session) the binary runs everything on the CPU.
+# Design: doc/design/metal-backend.md (Phase 4).
 # =============================================================================
 set(_METAL_ACTIVE FALSE)
 if(TARGET Neurosuite::metal AND NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE AND NOT _SYCL_ACTIVE)
     set(_METAL_ACTIVE TRUE)
     include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/MetalBackend.cmake")   # ns_metal_embed
     add_executable(KiloKlustaKwik ${_cpu_srcs}
+        src/KK_metal.cpp
         ${_xcorr_dir}/realign_xcorr_metal.cpp
         ${_headers})
+    ns_metal_embed(KiloKlustaKwik kk_cem_kernels src/KK_metal.metal)
     ns_metal_embed(KiloKlustaKwik realign_xcorr_kernels ${_xcorr_dir}/realign_xcorr.metal)
     target_compile_definitions(KiloKlustaKwik PRIVATE USE_METAL)
     kk_exp_configure_exe(KiloKlustaKwik LINK_LIBS Neurosuite::metal)
     install(TARGETS KiloKlustaKwik DESTINATION "${CMAKE_INSTALL_BINDIR}")
-    message(STATUS "KiloKlustaKwik: Metal backend (realign cross-correlation)")
+    message(STATUS "KiloKlustaKwik: Metal backend (CEM steps, realign cross-correlation)")
 endif()
 
 # CPU-only: also install KiloKlustaKwik_cpu as the canonical KiloKlustaKwik

@@ -12,6 +12,7 @@ extern KlustaSave kSv;  // global in KlustaKwik.cpp
 #include "KK_cuda.h"   // no-op when USE_CUDA not defined
 #include "KK_sycl.h"   // no-op when USE_SYCL not defined
 #include "KK_hip.h"    // no-op when USE_HIP  not defined
+#include "KK_metal.h"  // no-op when USE_METAL not defined
 
 // ---------------------------------------------------------------------------
 // GPU dispatch macros — map backend-agnostic names to the active backend.
@@ -48,13 +49,23 @@ extern KlustaSave kSv;  // global in KlustaKwik.cpp
 #  define gpu_download_logp  hip_download_logp
 #  define gpu_device_available() hip_device_available()
 #  define GPU_BACKEND_NAME   "HIP"
+#elif defined(USE_METAL)
+#  define gpu_upload_data    metal_upload_data
+#  define gpu_estep          metal_estep
+#  define gpu_mstep          metal_mstep
+#  define gpu_cstep          metal_cstep
+#  define gpu_deletion_loss  metal_deletion_loss
+#  define gpu_compute_score  metal_compute_score
+#  define gpu_download_logp  metal_download_logp
+#  define gpu_device_available() kk_metal_device_available()
+#  define GPU_BACKEND_NAME   "Metal"
 #endif
 
 // KK_HAS_GPU: this build has a CEM GPU backend, so KK carries a `gpu`
 // context and the EM steps have a GPU branch.  Every "is there a GPU
 // backend" test in KiloKlustaKwik uses this one macro, so a new backend
 // is added here and in the block above, not at each call site.
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP) || defined(USE_METAL)
 #  define KK_HAS_GPU 1
 #endif
 #include <functional>

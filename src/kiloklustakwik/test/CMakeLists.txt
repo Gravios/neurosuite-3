@@ -41,3 +41,17 @@ endforeach()
 # quarantined (DISABLED) so the baseline stays green.  Re-enable once the
 # per_channel_split phase-disable path (or the test's expectation) is fixed.
 set_tests_properties(kk_test_per_channel_split PROPERTIES DISABLED TRUE)
+
+# KiloKlustaKwik's Metal CEM steps against double references (macOS with
+# Neurosuite::metal; SKIPPED without a Metal device).
+if(TARGET Neurosuite::metal)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../../../cmake/MetalBackend.cmake")   # ns_metal_embed
+    add_executable(kk_test_metal_cem test_kk_metal.cpp ${_src}/KK_metal.cpp)
+    ns_metal_embed(kk_test_metal_cem kk_cem_kernels ${_src}/KK_metal.metal)
+    target_compile_features(kk_test_metal_cem PRIVATE cxx_std_20)
+    target_compile_definitions(kk_test_metal_cem PRIVATE USE_METAL)
+    target_include_directories(kk_test_metal_cem PRIVATE "${_src}")
+    target_link_libraries(kk_test_metal_cem PRIVATE Neurosuite::metal)
+    add_test(NAME kk_test_metal_cem COMMAND kk_test_metal_cem)
+    set_tests_properties(kk_test_metal_cem PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED")
+endif()
