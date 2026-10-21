@@ -2,10 +2,12 @@
 
 Spike sorting and electrophysiology visualization — a modern **Qt 6 / C++20** revival of the Neurosuite toolchain for extracellular recordings.
 
-[![CI](https://github.com/Gravios/neurosuite-3/actions/workflows/ci.yml/badge.svg)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci.yml)
-[![Docs](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml/badge.svg)](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml)
+[![Linux](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml)
+[![Windows](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml)
+[![macOS](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml)
+[![Docs](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml)
 
-neurosuite-3 takes you from a raw recording to sorted single units: convert and filter the signal, detect and automatically sort spikes, curate the result by hand, and inspect everything against the LFP, events, and the animal's position. It builds on Linux (Ubuntu 24.04 / Debian 12; WSL2 works) and natively on Windows 10/11 (everything except KiloKlustaKwik, which runs under WSL2); macOS configures and builds but is not checked in CI — see [INSTALL.md](doc/INSTALL.md). Optional GPU acceleration (CUDA / ROCm / SYCL) sits over a CPU fallback that is always available.
+neurosuite-3 takes you from a raw recording to sorted single units: convert and filter the signal, detect and automatically sort spikes, curate the result by hand, and inspect everything against the LFP, events, and the animal's position. It builds on Linux (Ubuntu 24.04 / Debian 12; WSL2 works), natively on Windows 10/11 (everything except KiloKlustaKwik, which runs under WSL2) and on macOS with Homebrew — see [INSTALL.md](doc/INSTALL.md). The badges above show the latest CI build on `main` for each: Linux builds and runs the tests on Ubuntu 24.04–26.10, Windows builds with MSVC, macOS builds on Apple silicon (its tests are not yet required to pass). Optional GPU acceleration (CUDA / ROCm / SYCL) sits over a CPU fallback that is always available.
 
 ## Start here
 

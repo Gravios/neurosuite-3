@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [CI: one workflow per operating system, with a status badge each](#2026-10-21--ci-one-workflow-per-operating-system-with-a-status-badge-each) |
 | 2026-10-21 | [CI: a macOS build](#2026-10-21--ci-a-macos-build) |
 | 2026-10-21 | [Klusters: the curation log is `<base>.cur.<method>.<group>`](#2026-10-21--klusters-the-curation-log-is-basecurmethodgroup) |
 | 2026-10-19 | [Pipeline: the KiloKlustaKwik calls match KiloKlustaKwik](#2026-10-19--pipeline-the-kiloklustakwik-calls-match-kiloklustakwik) |
@@ -90,6 +91,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — CI: one workflow per operating system, with a status badge each
+
+<details>
+<summary>Details</summary>
+
+- `ci.yml` is split into `ci-linux.yml` (lint, and the Ubuntu build-and-test
+  matrix), `ci-windows.yml` and `ci-macos.yml`.  GitHub's badges are per
+  workflow, so the README now shows Linux, Windows and macOS separately,
+  next to Docs.
+- The Windows and macOS jobs no longer `continue-on-error`: in their own
+  workflows they hold up nothing else, and their badges show the real
+  result.  macOS's test step stays informational for now (the `ndm_*`
+  scripts use `#!/bin/bash`, macOS's bash 3.2), so its badge reports the
+  build.
+- All three can also be started by hand (`workflow_dispatch`).
+
+</details>
 
 ## 2026-10-21 — CI: a macOS build
 

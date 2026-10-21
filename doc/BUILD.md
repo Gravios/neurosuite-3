@@ -262,11 +262,13 @@ rationale is in the `NS_ASAN` block of `CMakeLists.txt`.
 <details>
 <summary>Reproducing CI locally</summary>
 
-Two workflows ([`.github/workflows/`](../.github/workflows/)): `ci.yml` runs on
-pushes to `main` and pull requests into it; `docs.yml` runs on pushes to `main`
-and on manual dispatch only.
+Four workflows ([`.github/workflows/`](../.github/workflows/)), one per
+operating system plus the docs, so each has its own status badge in the
+README. `ci-linux.yml`, `ci-windows.yml` and `ci-macos.yml` run on pushes to
+`main`, pull requests into it and manual dispatch; `docs.yml` runs on pushes to
+`main` and on manual dispatch only.
 
-- **`ci.yml`** has three jobs, which run side by side.
+- **`ci-linux.yml`** has two jobs, which run side by side.
   - **`lint`** runs [`scripts/lint.sh`](../scripts/lint.sh): `bash -n`, ruff's
     defect rules and the build invariants, with no build. Run it locally the
     same way.
@@ -293,16 +295,20 @@ and on manual dispatch only.
   (see [`STANDARDIZATION.md`](dev/STANDARDIZATION.md)), while kiloklustakwik,
   ndmanager and neuroscope have not been shadow-audited, so promoting it to
   `-Werror=shadow` must wait for a green baseline there.
-  - **`windows`** builds the GUI programs (Klusters, NeuroScope, NDManager),
-    their libraries and the ndmanager-plugins programs with MSVC on
-    `windows-2022`, against Qt 6.8 and vcpkg's yaml-cpp, GSL and libxml2.
-    HDF5 and FFmpeg are not installed, so `process_aomconvert` and
-    `process_extractleds` are skipped; libsamplerate is not installed, so
-    `process_resample` compiles its bundled copy. KiloKlustaKwik is skipped
-    (`-DNS_SKIP_KILOKLUSTAKWIK=ON`); on Windows it still needs WSL2. The
-    `ndm_*` steps run on Windows through their `.bat` launchers and Git
-    Bash. It builds without tests and does not fail the run until it
-    has passed once.
+- **`ci-windows.yml`** builds the GUI programs (Klusters, NeuroScope,
+  NDManager), their libraries and the ndmanager-plugins programs with MSVC on
+  `windows-2022`, against Qt 6.8 and vcpkg's yaml-cpp, GSL and libxml2. HDF5
+  and FFmpeg are not installed, so `process_aomconvert` and
+  `process_extractleds` are skipped; libsamplerate is not installed, so
+  `process_resample` compiles its bundled copy. KiloKlustaKwik is skipped
+  (`-DNS_SKIP_KILOKLUSTAKWIK=ON`); on Windows it still needs WSL2. The `ndm_*`
+  steps run on Windows through their `.bat` launchers and Git Bash. It builds
+  without tests.
+- **`ci-macos.yml`** builds everything on `macos-15` (Apple silicon) with
+  Apple clang and Homebrew's Qt 6, yaml-cpp, GSL, libomp, libsamplerate,
+  FFmpeg, HDF5 and bash, as [INSTALL.md](INSTALL.md#macos) installs them,
+  with `-DNS_NATIVE_ARCH=OFF` and `-k 0`. Its tests run but do not fail it
+  yet: the `ndm_*` scripts start with `#!/bin/bash`, macOS's bash 3.2.
 
 - **`docs.yml`** — builds the documentation site and deploys it to GitHub Pages.
   It runs `doc/site/gen.sh` (the same pandoc pipeline that produces NeuroScope's
@@ -313,7 +319,7 @@ and on manual dispatch only.
   broken internal link fails the deploy. Keep cross-document links relative and
   correct.
 
-The CI dependency list (in `ci.yml`) is the canonical "what to `apt-get
+The CI dependency list (in `ci-linux.yml`) is the canonical "what to `apt-get
 install`" for a Linux build.
 
 </details>

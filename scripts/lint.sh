@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # lint.sh — the fast checks that need no build: run before sending a patch,
-# and by the `lint` job in .github/workflows/ci.yml.
+# and by the `lint` job in .github/workflows/ci-linux.yml.
 #
 #   scripts/lint.sh            # from anywhere inside the repository
 #

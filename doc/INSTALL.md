@@ -11,7 +11,7 @@ developer details.
 |---|---|
 | **Linux** (Ubuntu 24.04 / Debian 12 and newer) | Reference platform. CI builds and tests Ubuntu 24.04, 25.10, 26.04 and 26.10. |
 | **Windows 10 / 11** | Klusters, NeuroScope, NDManager and the processing programs build natively with Visual Studio 2022 (or Intel `icx` for the Intel GPU). The `ndm_*` steps run through Git Bash. KiloKlustaKwik is not yet part of the Windows build; use WSL2 for it (below). |
-| **macOS** (Homebrew) | Built in CI on macOS 15 (Apple silicon), without failing the run yet; the `ndm_*` steps need bash 4 (below). |
+| **macOS** (Homebrew) | Built in CI on macOS 15 (Apple silicon); its tests are not yet required to pass, and the `ndm_*` steps need bash 4 (below). |
 
 GPU acceleration (CUDA, ROCm, Intel SYCL) is optional; a CPU build always
 works. See [gpu/README.md](gpu/README.md).
@@ -189,8 +189,9 @@ OpenMP was not found, add
 
 The `ndm_*` steps need bash 4 or newer and macOS ships bash 3.2:
 `brew install bash`, and run a step as `bash ndm_hipass ...` until the scripts
-are adapted. CI builds this configuration on macOS 15 (Apple silicon) but
-does not yet fail on it, so report what fails.
+are adapted. CI builds this configuration on macOS 15 (Apple silicon) (the
+macOS badge in the README); its tests are not yet required to pass, so report
+what fails.
 
 ---
 

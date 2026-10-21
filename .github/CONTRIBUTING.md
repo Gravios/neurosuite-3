@@ -149,19 +149,24 @@ shipping the series:
 
 ## 7. Continuous integration
 
-Two workflows run on `main` (see [`BUILD.md`](../doc/BUILD.md) §8):
+Four workflows run on `main` (see [`BUILD.md`](../doc/BUILD.md) §8), one per
+operating system plus the docs, each with its own badge in the README:
 
-- **`ci.yml`** gates pushes to `main` and pull requests into it. Its jobs
+- **`ci-linux.yml`** gates pushes to `main` and pull requests into it. Its jobs
   run side by side (none waits for another): `lint` runs `scripts/lint.sh`;
   `build` builds the whole monorepo on Ubuntu 24.04, 25.10, 26.04 and
   26.10 (one container per release) with the GPU backends off and `-Wall
   -Wextra -Wshadow` surfaced (non-fatal), and runs the regression suite
   with ctest. Reproduce a failure locally with the exact configure line in
   `BUILD.md` §8. klusters and libklustersshared are shadow-clean; keep
-  them that way. Job `windows` builds the GUI programs and the processing
-  programs with MSVC, without KiloKlustaKwik (no tests yet, not yet a
-  gate): keep POSIX calls behind `_WIN32` / `Q_OS_UNIX` and use
-  `std::numbers::pi`, not `M_PI`.
+  them that way.
+- **`ci-windows.yml`** builds the GUI programs and the processing programs
+  with MSVC, without KiloKlustaKwik (no tests yet): keep POSIX calls behind
+  `_WIN32` / `Q_OS_UNIX` and use `std::numbers::pi`, not `M_PI`.
+- **`ci-macos.yml`** builds everything with Apple clang and Homebrew (tests
+  informational for now): no Linux-only APIs unguarded (`st_mtim`,
+  `<sys/sysinfo.h>`, `/proc`), and no floating-point `std::from_chars`
+  without the `__cpp_lib_to_chars` check.
 - **`docs.yml`** runs on pushes to `main` and on manual dispatch, not on
   pull requests. It builds the documentation site with `mkdocs build
   --strict` and deploys to GitHub Pages. It watches `doc/site/**`, the

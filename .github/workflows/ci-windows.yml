@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# Continuous integration on Windows (MSVC).  One workflow per operating system
+# so each has its own status badge in README.md; see ci-linux.yml.
+# ---------------------------------------------------------------------------
+name: windows
+
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'doc/**', 'templates/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci-windows.yml']
+  pull_request:
+    branches: [main]
+    paths: ['src/**', 'tests/**', 'doc/**', 'templates/**', 'CMakeLists.txt', 'cmake/**', 'scripts/**', '.github/workflows/ci-windows.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ci-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The GUI programs (Klusters, NeuroScope, NDManager), their libraries and
+  # the ndmanager-plugins programs with MSVC on Windows.  KiloKlustaKwik is
+  # skipped (POSIX-only still).  The ndm_* steps are bash scripts and are not
+  # built.  vcpkg gives the plugins GSL and libxml2; HDF5 and FFmpeg are left
+  # out (long vcpkg builds), so process_aomconvert and process_extractleds
+  # report themselves skipped, and libsamplerate is left out so that
+  # process_resample's vendored copy is the one compiled.
+  # Build only, no tests yet.  It does not hold up the Linux gate (a separate
+  # workflow), and its status is the Windows badge in README.md.
+  windows:
+    name: build (windows-2022, MSVC, Qt 6.8, GUIs + plugins)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          arch: win64_msvc2022_64
+          cache: true
+
+      # vcpkg ships with the runner (VCPKG_INSTALLATION_ROOT).
+      - name: Install yaml-cpp, GSL, libxml2
+        shell: pwsh
+        run: '& "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install yaml-cpp:x64-windows gsl:x64-windows libxml2:x64-windows'
+
+      # cl.exe and the Windows SDK on PATH, so CMake's Ninja generator finds them.
+      - uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure (GUIs, libraries and plugins; GPU backends off)
+        shell: pwsh
+        run: >-
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF
+          -DNS_SKIP_KILOKLUSTAKWIK=ON
+          "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      # -k 0: keep going, so one run lists every compile error.
+      - name: Build
+        run: cmake --build build --parallel -- -k 0

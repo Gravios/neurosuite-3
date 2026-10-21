@@ -5,7 +5,8 @@ opt-in (`NS_BUILD_TESTS`, off by default), so normal builds are unaffected.
 Everything runs under `ctest`: the C++ unit tests, the ndmanager-plugins script
 tests, the fiber-kit contract check (when a fiber-kit checkout is given) and
 the build-system checks. CI runs all of it on every push
-(`.github/workflows/ci.yml`).
+(`.github/workflows/ci-linux.yml`; Windows and macOS build in
+`ci-windows.yml` and `ci-macos.yml`).
 
 ## Running everything
 

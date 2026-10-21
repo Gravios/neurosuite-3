@@ -46,7 +46,7 @@ Check Preferences ▸ Input / Reset all before suspecting a regression (a
 stale saved override reads exactly like one).  Estimate: 1 session.
 
 **Make the CI `-Wshadow` warnings a hard gate.**
-CI exists (`.github/workflows/ci.yml`, Ubuntu 24.04 / 25.10 / 26.04 /
+CI exists (`.github/workflows/ci-linux.yml`, Ubuntu 24.04 / 25.10 / 26.04 /
 26.10, CPU, Qt6) and builds
 with `-Wall -Wextra -Wshadow`, but warnings are non-fatal: klusters and
 libklustersshared are shadow-clean, the other components are not yet
@@ -335,7 +335,7 @@ questions) are under Soon.
 `doc/ndmanager-plugins/formats/` (including `.col`) and
 `src/libneurosuite-core/docs/FILE_FORMATS.md`.  A ctest suite (format I/O
 for `.spk` / `.wti` / `.wtl`, custody conformance, the input registry,
-template lineage, …) and a CI build (`.github/workflows/ci.yml`) are in
+template lineage, …) and CI builds (`.github/workflows/ci-*.yml`) are in
 place.  Golden-file tests for the template-library formats
 (`core_test_golden_formats`) and `.res` / `.fet` / `.col` robustness and
 round-trip checks (`core_test_neurofileio_robust`) have since been added.
