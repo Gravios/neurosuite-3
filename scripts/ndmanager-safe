@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ndmanager wrapper — forces software OpenGL to avoid MESA/ZINK segfault
 # on systems where Vulkan/Zink is present but incomplete.
 #

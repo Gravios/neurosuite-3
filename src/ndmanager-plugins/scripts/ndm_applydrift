@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #////////////////////////////////////////////////////////////////////////////
 #//  ndm_applydrift — apply probe drift from a curated shank to its siblings
 #//

@@ -22,9 +22,13 @@ add `-DCMAKE_PREFIX_PATH="$(brew --prefix libomp)"`.
 
 ## bash 4 or newer
 
-The `ndm_*` steps need bash 4 or newer; macOS ships bash 3.2. Install it with
-Homebrew (above) and, until the scripts are adapted, run a step as
-`bash ndm_hipass ...` so the Homebrew bash is used.
+The `ndm_*` steps need bash 4 or newer; macOS ships bash 3.2 as `/bin/bash`.
+Install a newer one with Homebrew (above). The scripts start with
+`#!/usr/bin/env bash`, so they run with the first bash on `PATH`: check that
+`bash --version` says 4 or newer in the shell you start them (or NDManager)
+from. Homebrew's shell setup, `eval "$(brew shellenv)"` in `~/.zprofile`, puts
+its `bin` before `/bin`. A step started with bash 3.2 stops at once with a
+message saying so.
 
 ## Python packages
 

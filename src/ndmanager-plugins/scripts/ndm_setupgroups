@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #////////////////////////////////////////////////////////////////////////////
 #//  ndm_setupgroups — build anatomicalDescription and spikeDetection groups
 #//                    from the probe library entries in the session YAML

@@ -208,9 +208,11 @@ spectrogram FFT runs on vDSP (unless FFTW is installed, `brew install fftw`;
 then `NS_SPECTRAL_FFT=vdsp` selects vDSP), and `process_extractemg` has a
 `--backend accelerate` kernel. `-DNS_USE_ACCELERATE=OFF` leaves both out.
 
-The `ndm_*` steps need bash 4 or newer and macOS ships bash 3.2:
-`brew install bash`, and run a step as `bash ndm_hipass ...` until the scripts
-are adapted. CI builds this configuration on macOS 15 (Apple silicon) (the
+The `ndm_*` steps need bash 4 or newer and macOS ships bash 3.2 as
+`/bin/bash`: `brew install bash`. The scripts start with `#!/usr/bin/env bash`,
+so they use the first bash on `PATH`; Homebrew's shell setup
+(`eval "$(brew shellenv)"`) puts its `bin` before `/bin`. Started with bash
+3.2, a step stops at once and says so. CI builds this configuration on macOS 15 (Apple silicon) (the
 macOS badge in the README); its tests are not yet required to pass, so report
 what fails.
 

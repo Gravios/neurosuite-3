@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #////////////////////////////////////////////////////////////////////////////
 #//   DEPRECATED: folded into ndm_pca.
 #//   `ndm_pca_stderiv [args]` == `ndm_pca --method stderiv [args]`.

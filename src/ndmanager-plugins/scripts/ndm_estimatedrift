@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #////////////////////////////////////////////////////////////////////////////
 #//  ndm_estimatedrift — estimate spatial drift from curated .clu files
 #//

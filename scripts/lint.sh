@@ -54,6 +54,19 @@ for f in "${shells[@]}"; do
 done
 [ $bad -eq 0 ] && echo "ok" || fail=1
 
+section "bash scripts use #!/usr/bin/env bash"
+# /bin/bash is bash 3.2 on macOS; the scripts need 4+, which Homebrew puts
+# first on PATH (doc/INSTALL.md, macOS).
+bad=0
+for f in "${shells[@]}"; do
+    IFS= read -r first < "$f" || true
+    case "$first" in
+        '#!/bin/bash'*|'#! /bin/bash'*|'#!/usr/bin/bash'*)
+            printf 'FAIL %s: %s (use #!/usr/bin/env bash)\n' "$f" "$first"; bad=1 ;;
+    esac
+done
+[ $bad -eq 0 ] && echo "ok" || fail=1
+
 if [ ${#zshs[@]} -gt 0 ]; then
     section "zsh -n (${#zshs[@]} scripts)"
     if command -v zsh >/dev/null 2>&1; then

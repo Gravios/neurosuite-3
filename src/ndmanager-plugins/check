@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 manpages=$(find . -name '*.docbook'|wc -l)
 scripts=$(find scripts -name 'ndm_*'|grep -v docbook|wc -l)

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #////////////////////////////////////////////////////////////////////////////
 #//  ndm_autoklusta — learn manual curation from (auto, curated) .clu pairs
 #//                   and replay it on fresh KlustaKwik output

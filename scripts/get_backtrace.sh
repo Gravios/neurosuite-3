@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Run this to get a backtrace of the ndmanager crash.
 # Requires: gdb (sudo apt install gdb)
 # Usage: ./get_backtrace.sh path/to/jg05-20120316.xml

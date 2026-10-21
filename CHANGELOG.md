@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [macOS: the `ndm_*` steps run with Homebrew's bash](#2026-10-21--macos-the-ndm_-steps-run-with-homebrews-bash) |
 | 2026-10-21 | [New icons for neurosuite-3, Klusters, NeuroScope and NDManager](#2026-10-21--new-icons-for-neurosuite-3-klusters-neuroscope-and-ndmanager) |
 | 2026-10-21 | [macOS: checking the Metal backend (kernel lint, on-device compile test, `NS_DISABLE_METAL`, `metal_validate.sh`)](#2026-10-21--macos-checking-the-metal-backend-kernel-lint-on-device-compile-test-ns_disable_metal-metal_validatesh) |
 | 2026-10-21 | [Klusters: Align All realigns as Realign Spikes does](#2026-10-21--klusters-align-all-realigns-as-realign-spikes-does) |
@@ -107,6 +108,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — macOS: the `ndm_*` steps run with Homebrew's bash
+
+<details>
+<summary>Details</summary>
+
+macOS's `/bin/bash` is bash 3.2; the `ndm_*` steps need 4 or newer.
+
+- Every script now starts with `#!/usr/bin/env bash`, so it runs with the
+  first bash on `PATH` -- Homebrew's, once `brew install bash` and Homebrew's
+  shell setup are in place. Running a step as `bash ndm_hipass ...` is no
+  longer needed.
+- Started with bash 3.2 anyway, a step stops at once and says what to install
+  (`ndm_functions`), instead of failing later on bash-4 syntax.
+- `scripts/lint.sh` refuses a script that starts with `#!/bin/bash`.
+
+</details>
 
 ## 2026-10-21 — New icons for neurosuite-3, Klusters, NeuroScope and NDManager
 

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #////////////////////////////////////////////////////////////////////////////
 #//   DEPRECATED: spike processing is now split into detection and extraction.
 #//   `ndm_extractspikes_sdiff [args]` was a single detect+extract pass; it now runs

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #////////////////////////////////////////////////////////////////////////////
 #//
 #//   Re-cluster the "unmatched" bin produced by process_shadowcluster.

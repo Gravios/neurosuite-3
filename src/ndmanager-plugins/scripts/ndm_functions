@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 #////////////////////////////////////////////////////////////////////////////
 #//
@@ -15,6 +15,16 @@
 #//   (at your option) any later version.
 #//
 #////////////////////////////////////////////////////////////////////////////
+
+# The ndm_ scripts need bash 4 or newer (associative arrays, ${var,,}, ...).
+# macOS ships bash 3.2 as /bin/bash; the scripts run "#!/usr/bin/env bash", so
+# a newer bash first on PATH is used (Homebrew: brew install bash).  Refuse
+# plainly here, before a 3.2 parse error or a silently wrong result.
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+	echo "${0##*/}: needs bash 4 or newer; this is bash ${BASH_VERSION:-(not bash)} (${BASH:-?})." >&2
+	echo "  On macOS: brew install bash, and put \"\$(brew --prefix)/bin\" before /bin on PATH." >&2
+	exit 2
+fi
 
 # Guidelines for NDManager plugins (ndm_ scripts):
 #

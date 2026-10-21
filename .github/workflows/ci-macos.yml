@@ -26,11 +26,10 @@ jobs:
   # x86 -march tuning does not apply.  Everything is built, KiloKlustaKwik
   # and the plugins included; -k 0 lists every compile error in one run.  The
   # tests run but do not fail the job yet (continue-on-error on the step):
-  # bash 4 is first on PATH, which covers the test scripts (#!/usr/bin/env
-  # bash), but the ndm_* scripts start with #!/bin/bash, macOS's 3.2, so the
-  # tests that run them directly are expected to fail until they use
-  # #!/usr/bin/env bash; then drop the step's continue-on-error.  The badge
-  # in README.md therefore reports the build.
+  # bash 4 is first on PATH, and every script now starts with
+  # #!/usr/bin/env bash, so it is the one they use (macOS's /bin/bash is
+  # 3.2).  Drop the step's continue-on-error once a run shows the suite
+  # passing.  The badge in README.md therefore reports the build.
   macos:
     name: build (macos-15, Apple clang, Homebrew Qt6)
     runs-on: macos-15
