@@ -2,8 +2,8 @@
 
 *Written 2026-10-21 against `0d1c903`. Status: decisions taken (§8); Phases 0
 (Accelerate), 1 (Metal infrastructure, `process_medianthreshold`), 2 (the
-other plugins) and 3 (Klusters) implemented and run by the macOS CI (§9–§12);
-Phases 4–5 not started.*
+other plugins), 3 (Klusters) and 4 (KiloKlustaKwik) implemented and run by
+the macOS CI (§9–§13); Phase 5 not started.*
 
 ## 1. Goal and scope
 
@@ -229,8 +229,10 @@ Each phase ends with a validation gate (§6). Patch counts are rough.
 14. The CEM kernels (9, all float), ported from `KK_hip.cpp`. M-step
     accumulation uses float atomics. Because atomic order is not deterministic,
     run-to-run results can differ in the last bits, exactly as on CUDA.
-    *(2–3 patches: E/C-step, M-step, score/deletion)*
-15. Shift probe (float eigvecs/means, class B). *(1 patch)*
+    *(2–3 patches: E/C-step, M-step, score/deletion)* — as built, the M-step
+    uses no atomics and runs are deterministic (§13).
+15. Shift probe (float eigvecs/means, class B). *(1 patch)* — dropped: the
+    probe is disabled in every build (`shiftprobe_disabled.cpp`), §13.
 16. Fiber mean-shift stays on CPU/OpenMP (class C); no patch unless profiling
     shows otherwise.
 
@@ -428,3 +430,53 @@ Checked without a Mac:
   wrote circularly rolled windows for every `.pending` or method-tagged
   `.spk`. It now re-cuts from `rawRecordingPath()`, or refuses. See the
   CHANGELOG.
+
+## 13. Phase 4 as implemented (2026-10-21)
+
+- **One macro.** KiloKlustaKwik tested `USE_CUDA || USE_SYCL || USE_HIP` at
+  39 sites; `KK_HAS_GPU` (KK.h) replaces them, and Metal is added there.
+- **A macOS `KiloKlustaKwik`** is built beside `KiloKlustaKwik_cpu` when the
+  monorepo has `Neurosuite::metal`. It includes the realign cross-correlation
+  of Phase 3, so template matching uses it.
+- **CEM steps** (`KK_metal.{h,cpp,metal}`, `kk_test_metal_cem`), with the
+  `gpu_*` entry points and data layouts of the CUDA backend:
+  - E-step: one thread per point, the CPU path's formula, KK_cuda's
+    DistThresh skip; clusters split over command buffers (watchdog).
+  - M-step without atomics: the host counting-sorts the points by class and
+    cuts each cluster into tiles of 4096; the GPU sums each tile; the host
+    adds the tiles in order, in double. Runs are deterministic, unlike CUDA,
+    and the sums are more accurate than the CPU's float accumulator.
+  - C-step as `KK::CStep`; score and deletion loss summed on the host in
+    double.
+  - Shared buffers, so uploads are memcpy. `allocate()` refuses a session
+    that does not fit (buffers, nDims > 64, a kernel that does not compile)
+    and KiloKlustaKwik stays on the CPU.
+- **Found while porting** (a separate fix, all GPU backends):
+  `CEMTwoPhase`'s spatial phase lowers `nDims` by one, but the CUDA, HIP and
+  SYCL E-steps used the dimensions they were allocated with, so that phase's
+  distances were garbage. `gpu_estep` now takes KK's `nDims`/`nDims2`. See
+  the CHANGELOG.
+- **Shift probe: nothing to port.** It is disabled in every build
+  (`shiftprobe_disabled.cpp`); the CUDA/HIP/SYCL files are not compiled.
+- **Fiber mean-shift** stays on the CPU (class C), as planned.
+
+Checked without a Mac:
+- host code and test with clang `-fsyntax-only -Wall -Wextra -Wshadow`
+  against the pinned metal-cpp;
+- the kernels compiled as C++ and run behind a CPU stand-in for metal-cpp,
+  with each threadgroup's threads as coroutines that switch at every barrier
+  (a divergent barrier fails): `kk_test_metal_cem` passes at widths 64, 96,
+  256 and 1024, and fails when a kernel is broken on purpose;
+- the whole KiloKlustaKwik built against that stand-in, on a synthetic
+  session (20000 spikes, 12 Gaussian clusters, 12 features + time,
+  `-ChunkMinutes 0`), against `KiloKlustaKwik_cpu`:
+
+  | clusters tried | CPU: clusters, ARI vs truth | Metal: clusters, ARI vs truth | ARI CPU vs Metal |
+  |---|---|---|---|
+  | 2–30 | 12, 1.000 | 12, 1.000 | 1.000 |
+  | 10–16 | 5, 0.345 | 12, 1.000 | 0.345 |
+  | 12–14 | 6, 0.427 | 12, 1.000 | 0.427 |
+
+  Float E- and M-steps take a different trajectory from the CPU's, so the
+  clusterings differ; §6's bar (no further from the CPU than CUDA is, on the
+  reference sessions) still needs a Mac.

@@ -4,7 +4,7 @@ Several neurosuite-3 components optionally use GPU acceleration:
 
 | Component | GPU path | What is accelerated |
 |---|---|---|
-| `kiloklustakwik` | CUDA / HIP / SYCL | CEM E-step distance computations + waveform cross-correlation (xcorr) |
+| `kiloklustakwik` | CUDA / HIP / SYCL · Metal (macOS: CEM steps, xcorr) | CEM E-step distance computations + waveform cross-correlation (xcorr) |
 | `klusters` | CUDA / HIP / SYCL · Metal (macOS: realignment xcorr, FP32 error matrix) | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr) |
 | `process_butterworth` | CUDA · Metal (macOS, single precision) | Butterworth filtering |
 | `process_medianfilter` | CUDA · Metal (macOS) | Median-subtraction high-pass filter |

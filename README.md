@@ -17,7 +17,7 @@ The badges above show the latest CI run on `main` for each platform.
 |---|---|
 | **Linux** — Ubuntu 24.04 and newer, Debian 12; WSL2 works | Reference platform. CI builds everything and runs the test suite on Ubuntu 24.04, 25.10, 26.04 and 26.10 (Qt 6.4 is the oldest Qt supported). |
 | **Windows 10 / 11** — Visual Studio 2022 | Klusters, NeuroScope, NDManager and the processing programs build natively; the `ndm_*` steps run from cmd and PowerShell through Git Bash. KiloKlustaKwik is not built on Windows yet: run it, or the whole pipeline, under WSL2. CI builds with MSVC (no tests yet). |
-| **macOS** — Apple silicon, Homebrew | Builds with Homebrew's Qt 6 and libraries; CI builds it on macOS 15, its tests not yet required to pass. A Metal (Apple GPU) backend is being added (so far the high-pass filters, noise thresholds, channel grouping and Klusters); the spectrogram FFT uses Apple's Accelerate. The `ndm_*` steps need bash 4 (`brew install bash`). |
+| **macOS** — Apple silicon, Homebrew | Builds with Homebrew's Qt 6 and libraries; CI builds it on macOS 15, its tests not yet required to pass. A Metal (Apple GPU) backend is being added (the high-pass filters, noise thresholds, channel grouping, Klusters and KiloKlustaKwik's CEM steps); the spectrogram FFT uses Apple's Accelerate. The `ndm_*` steps need bash 4 (`brew install bash`). |
 
 Step-by-step installation for each: **[INSTALL.md](doc/INSTALL.md)**.
 
@@ -89,7 +89,7 @@ Optional and auto-detected — a CPU/OpenMP build is always produced, so no GPU 
 
 | Component | Backends | Accelerates |
 |---|---|---|
-| kiloklustakwik | CUDA / HIP / SYCL | CEM E-step + waveform realignment |
+| kiloklustakwik | CUDA / HIP / SYCL · Metal (macOS) | CEM E-step + waveform realignment |
 | klusters | CUDA / HIP / SYCL · Metal (macOS) | Grouping Assistant + interactive realignment |
 | neuroscope | CUDA (cuFFT) | spectrogram FFTs |
 | `ndm_hipass` | CUDA · Metal (macOS) / OpenMP | zero-phase Butterworth filter (default; the CUDA kernel is not yet validated on hardware) · median filter |

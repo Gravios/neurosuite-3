@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [macOS: KiloKlustaKwik on the Apple GPU (CEM steps)](#2026-10-21--macos-kiloklustakwik-on-the-apple-gpu-cem-steps) |
 | 2026-10-21 | [KiloKlustaKwik GPU builds: the spatial phase of CEMTwoPhase computes the right distances](#2026-10-21--kiloklustakwik-gpu-builds-the-spatial-phase-of-cemtwophase-computes-the-right-distances) |
 | 2026-10-21 | [macOS: Klusters on the Apple GPU (realignment, error matrix)](#2026-10-21--macos-klusters-on-the-apple-gpu-realignment-error-matrix) |
 | 2026-10-21 | [Klusters realign: moved spikes get a fresh window from the .fil, never the rolled copy](#2026-10-21--klusters-realign-moved-spikes-get-a-fresh-window-from-the-fil-never-the-rolled-copy) |
@@ -99,6 +100,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — macOS: KiloKlustaKwik on the Apple GPU (CEM steps)
+
+<details>
+<summary>Details</summary>
+
+Phase 4 of the Apple GPU plan (`doc/design/metal-backend.md` §13).
+
+- macOS builds now install a `KiloKlustaKwik` with a Metal backend beside
+  `KiloKlustaKwik_cpu`. On a Mac whose GPU cannot hold the session it runs
+  on the CPU.
+- E-, M- and C-steps, the score and the deletion loss run on the GPU in
+  float. The M-step uses no atomics, so runs are deterministic (CUDA's are
+  not).
+- Template matching uses the Metal cross-correlation of Phase 3.
+- The time-shift probe is disabled in every build; nothing was ported.
+- The macOS CI runs `kk_test_metal_cem`. Clusterings still need comparing
+  with `KiloKlustaKwik_cpu` on the reference sessions on a Mac.
+
+</details>
 
 ## 2026-10-21 — KiloKlustaKwik GPU builds: the spatial phase of CEMTwoPhase computes the right distances
 
