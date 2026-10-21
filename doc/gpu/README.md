@@ -245,4 +245,7 @@ as on a Mac without a Metal device: Klusters, KiloKlustaKwik and the
 `process_*` plugins all take their CPU paths. Use it to compare a program's
 Metal and CPU results on the same machine, for example
 `NS_DISABLE_METAL=1 process_medianfilter ...` against the same command
-without it.
+without it. `scripts/metal_validate.sh` does this for every plugin with a
+Metal path, and for KiloKlustaKwik against `KiloKlustaKwik_cpu`, on an
+excerpt of a session, and checks the criteria of
+`doc/design/metal-backend.md` §6.

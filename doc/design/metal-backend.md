@@ -2,8 +2,9 @@
 
 *Written 2026-10-21 against `0d1c903`. Status: decisions taken (§8); Phases 0
 (Accelerate), 1 (Metal infrastructure, `process_medianthreshold`), 2 (the
-other plugins), 3 (Klusters) and 4 (KiloKlustaKwik) implemented and run by
-the macOS CI (§9–§13); Phase 5 not started.*
+other plugins), 3 (Klusters), 4 (KiloKlustaKwik) and 5 (CI, docs)
+implemented and run by the macOS CI (§9–§14). Left: the §6 validation on an
+Apple-silicon Mac (`scripts/metal_validate.sh`).*
 
 ## 1. Goal and scope
 
@@ -488,3 +489,42 @@ Checked without a Mac:
   Float E- and M-steps take a different trajectory from the CPU's, so the
   clusterings differ; §6's bar (no further from the CPU than CUDA is, on the
   reference sessions) still needs a Mac.
+
+## 14. Phase 5 as implemented (2026-10-21)
+
+- **A lint for what only Apple's compiler checks.** `scripts/msl_lint.py`,
+  run by `scripts/lint.sh` on every `*.metal`, refuses a kernel whose
+  position/size attributes mix scalars and vectors (the error that broke
+  the Grouping Assistant and spikegrouper kernels on the first Mac run),
+  two parameters on one `[[buffer(n)]]` or `[[threadgroup(n)]]`, and a
+  `threadgroup` pointer without its index. It runs on Linux, so the
+  mistake is caught before a Mac sees it.
+- **Every kernel compiled on the device.** `metal_kernels_compile` (in
+  `tests/`) embeds every `*.metal` under `src/` (globbed at configure time,
+  so a new kernel is covered without editing the test) and compiles each
+  with the options the programs use; one failure names the file and
+  Apple's message. It replaces §5's `--metal-selftest`: one test covers
+  every program. Without a device it prints SKIPPED, as on a hosted
+  runner without a GPU.
+- **`NS_DISABLE_METAL`.** Set and not `0`, `MetalContext::instance()`
+  returns null, so every program takes its CPU path as on a Mac without a
+  Metal device (`core_test_metal_disabled`). It makes Metal and CPU
+  comparable on one machine without a second build.
+- **`scripts/metal_validate.sh`** runs §6 on an excerpt of a session:
+  medianfilter and medianthreshold identical, Butterworth (single) within
+  1 LSB on under 0.5 % of samples, and with `--kk GROUP` KiloKlustaKwik
+  against `KiloKlustaKwik_cpu` (adjusted Rand index, reported, to set
+  against the CUDA figure). Klusters (realignment, Grouping Assistant) is
+  interactive and has no batch comparison: its Metal tests cover the
+  kernels against the CPU on synthetic data.
+- **Docs:** README platform row, `doc/INSTALL.md` macOS, `doc/gpu/README.md`,
+  `tests/README.md`, ROADMAP, CHANGELOG. The macOS CI regex runs the new
+  tests.
+
+Checked without a Mac: `msl_lint.py` on every kernel in the tree (clean),
+and on the two kernels as they were before the fix (both refused);
+`metal_validate.sh` on Linux, where both runs take the CPU (all PASS) and
+KiloKlustaKwik runs against the CPU stand-in for metal-cpp (ARI 0.427 on
+the synthetic 12–14 cluster case, as in §13); `metal_kernels_compile` and
+`NS_DISABLE_METAL` with clang `-fsyntax-only` against the pinned metal-cpp.
+None of it has run on a Mac.

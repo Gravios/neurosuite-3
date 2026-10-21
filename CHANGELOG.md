@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [macOS: checking the Metal backend (kernel lint, on-device compile test, `NS_DISABLE_METAL`, `metal_validate.sh`)](#2026-10-21--macos-checking-the-metal-backend-kernel-lint-on-device-compile-test-ns_disable_metal-metal_validatesh) |
 | 2026-10-21 | [Klusters: Align All realigns as Realign Spikes does](#2026-10-21--klusters-align-all-realigns-as-realign-spikes-does) |
 | 2026-10-21 | [Klusters: Align All and post-edit realigns update the other feature spaces](#2026-10-21--klusters-align-all-and-post-edit-realigns-update-the-other-feature-spaces) |
 | 2026-10-21 | [ndm_pca: `--force` refits and overwrites stale features](#2026-10-21--ndm_pca---force-refits-and-overwrites-stale-features) |
@@ -105,6 +106,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — macOS: checking the Metal backend (kernel lint, on-device compile test, `NS_DISABLE_METAL`, `metal_validate.sh`)
+
+<details>
+<summary>Details</summary>
+
+Phase 5 of the Apple GPU plan (`doc/design/metal-backend.md` §14).
+
+- `scripts/lint.sh` checks the Metal kernel signatures
+  (`scripts/msl_lint.py`) on any platform: mixed scalar/vector position
+  attributes, which Apple's compiler refuses, and duplicate buffer indices.
+- `metal_kernels_compile` compiles every kernel in the tree on the Mac's
+  GPU, so a kernel that does not compile fails one test instead of falling
+  back to the CPU unnoticed.
+- `NS_DISABLE_METAL=1` makes every program take its CPU path.
+- `scripts/metal_validate.sh SESSION NCHANNELS SAMPLERATE [--kk GROUP]`
+  compares the Metal and CPU results of each program on a recording.
+- The Metal backend is complete; what is left is running
+  `metal_validate.sh` on the reference sessions on a Mac.
+
+</details>
 
 ## 2026-10-21 — Klusters: Align All realigns as Realign Spikes does
 

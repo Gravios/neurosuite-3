@@ -78,11 +78,14 @@ CMake + MetalContext + `process_medianthreshold`, 2 the other plugins
 (medianfilter, butterworth, spikegrouper; decomposecollisions has nothing
 to accelerate), 3 Klusters (realign xcorr, FP32 error matrix; PCA refine
 stays on the CPU), 4 KiloKlustaKwik (CEM steps, xcorr; the shift probe is
-disabled in every build, so nothing to port) — all done 2026-10-21 and run
-by the macOS CI; 5 CI and docs.  Every GPU result needs a run on an Apple-silicon Mac against
-the `_cpu` binaries; for KiloKlustaKwik the bar is "no further from the CPU
-than CUDA is".  Full plan: [`doc/design/metal-backend.md`](../design/metal-backend.md).
-Estimate: 20–25 patches.
+disabled in every build, so nothing to port), 5 CI and docs (a lint of the
+kernel signatures, `metal_kernels_compile`, `NS_DISABLE_METAL`,
+`scripts/metal_validate.sh`) — all done 2026-10-21 and run by the macOS CI.
+**Left: validation on an Apple-silicon Mac.**  Every GPU result needs
+`scripts/metal_validate.sh` on the reference sessions against the CPU
+paths; for KiloKlustaKwik the bar is "no further from the CPU than CUDA
+is", so record the CUDA-vs-CPU figure on the workstation first.  Full plan:
+[`doc/design/metal-backend.md`](../design/metal-backend.md).
 
 **Wire `process_pca` exit paths to call `setFailed()`.**
 The `setFailed()` API exists on `ProgressBar` but `process_pca.cpp`'s

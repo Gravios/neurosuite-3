@@ -187,13 +187,22 @@ Apple's compiler has no OpenMP of its own; if the configure output says
 OpenMP was not found, add
 `-DCMAKE_PREFIX_PATH="$(brew --prefix libomp)"` for the multithreaded build.
 
-There is no CUDA, HIP or SYCL on a Mac. A Metal (Apple GPU) backend is being
-added (`doc/design/metal-backend.md`); so far it covers the Butterworth and
-median high-pass filters, the noise thresholds and the channel grouping
-(`process_butterworth`, `process_medianfilter`, `process_medianthreshold`,
-`process_spikegrouper`). The configure step downloads Apple's metal-cpp
-headers from GitHub; for an offline build, point `-DNS_METAL_CPP_DIR=` at a
-copy, or turn it off with `-DUSE_METAL=OFF`. Apple's Accelerate
+There is no CUDA, HIP or SYCL on a Mac. A Metal (Apple GPU) backend
+(`doc/design/metal-backend.md`, Apple silicon, macOS 14 or newer) covers the
+Butterworth and median high-pass filters, the noise thresholds and the
+channel grouping (`process_butterworth`, `process_medianfilter`,
+`process_medianthreshold`, `process_spikegrouper`), Klusters' realignment
+and Grouping Assistant (FP32 option), and KiloKlustaKwik's CEM steps (the
+`KiloKlustaKwik` binary; `KiloKlustaKwik_cpu` beside it stays on the CPU).
+The kernels are compiled when a program first uses the GPU, so no Xcode is
+needed; without a Metal device, or with `NS_DISABLE_METAL=1` in the
+environment, every program takes its CPU path. `ctest -R metal` runs the
+Metal tests, including `metal_kernels_compile`, which compiles every kernel
+on the device. To compare the GPU with the CPU on your own recording, run
+`scripts/metal_validate.sh SESSION NCHANNELS SAMPLERATE [--kk GROUP]` (see
+its header); please report what it prints. The configure step downloads
+Apple's metal-cpp headers from GitHub; for an offline build, point
+`-DNS_METAL_CPP_DIR=` at a copy, or turn it off with `-DUSE_METAL=OFF`. Apple's Accelerate
 framework, part of macOS, is used instead where it applies: NeuroScope's
 spectrogram FFT runs on vDSP (unless FFTW is installed, `brew install fftw`;
 then `NS_SPECTRAL_FFT=vdsp` selects vDSP), and `process_extractemg` has a
