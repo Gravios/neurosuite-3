@@ -14,7 +14,7 @@ Naming model::
 
 Classes::
 
-    MethodSpecific  clu fet pca col model klg   strict, no fallback
+    MethodSpecific  clu fet pca col model klg nst   strict, no fallback
     Shared          res spk                     method -> waveform token -> standard -> untagged
     SessionWide     fil dat xml yaml par ...     <base>.<type>
 
@@ -36,7 +36,7 @@ __all__ = [
 
 DEFAULT_METHOD = "standard"
 
-_PER_GROUP = {"res", "spk", "clu", "clc", "fet", "pca", "col", "model", "klg"}
+_PER_GROUP = {"res", "spk", "clu", "clc", "fet", "pca", "col", "model", "klg", "nst"}
 _SESSION_WIDE = {"fil", "dat", "xml", "yaml", "nrs", "par", "eeg", "lfp"}
 
 

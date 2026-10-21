@@ -58,7 +58,7 @@ Each known type belongs to exactly one class, which fixes how it is resolved
 
 | Class | Types | Name | Resolution |
 |---|---|---|---|
-| **MethodSpecific** | `clu`, `clc`, `fet`, `pca`, `col`, `model`, `klg` | `<base>.<type>.<method>.<group>` | **Strict** — exactly that path, no fallback. |
+| **MethodSpecific** | `clu`, `clc`, `fet`, `pca`, `col`, `model`, `klg`, `nst` | `<base>.<type>.<method>.<group>` | **Strict** — exactly that path, no fallback. |
 | **Shared** | `res`, `spk` | `<base>.<type>.<method>.<group>` | First existing of a fixed candidate list (below). |
 | **SessionWide** | `fil`, `dat`, `xml`, `yaml`, `nrs`, `par`, `eeg`, `lfp` | `<base>.<type>` | No method, no group. |
 

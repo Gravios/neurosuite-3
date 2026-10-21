@@ -145,7 +145,7 @@ Every type belongs to one class:
 
 | Class | Types | Path | Resolution |
 |---|---|---|---|
-| MethodSpecific | `clu`, `clc`, `fet`, `pca`, `col`, `model`, `klg` (and any unknown type) | `base.type.method.group` | Exactly that path, no fallback |
+| MethodSpecific | `clu`, `clc`, `fet`, `pca`, `col`, `model`, `klg`, `nst` (and any unknown type) | `base.type.method.group` | Exactly that path, no fallback |
 | Shared | `res`, `spk` | `base.type.method.group` | `method`, then its waveform token (`stderiv_C5_D34` → `stderiv_C5`), then `standard`, then untagged `base.type.group` |
 | SessionWide | `fil`, `dat`, `xml`, `yaml`, `nrs`, `par`, `eeg`, `lfp` | `base.type` | No method, no group |
 

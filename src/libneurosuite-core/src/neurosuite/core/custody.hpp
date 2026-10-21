@@ -191,7 +191,8 @@ inline bool isPerGroupType(const std::string& type)
     return type == "res" || type == "spk" || type == "clu" ||
            type == "clc" ||                                  // microfiber / pure-shape children (writeClu format)
            type == "fet" || type == "pca" || type == "col" ||
-           type == "model" || type == "klg";
+           type == "model" || type == "klg" ||
+           type == "nst";                                    // noise statistics (noise_stats.hpp)
 }
 
 // Session-wide types (no method, no group).

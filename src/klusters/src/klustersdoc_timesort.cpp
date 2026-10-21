@@ -49,11 +49,11 @@ bool isPerSpikeType(const std::string& t)
     return t == "res" || t == "spk" || t == "fet" || t == "clu" || t == "clc";
 }
 
-/// Per-group types that are not per spike: a basis, a model, a log,
+/// Per-group types that are not per spike: a basis, a model, a log, noise statistics,
 /// child-cluster properties, and the template library's per-template files.
 bool isPerClusterType(const QString& t)
 {
-    static const QStringList types{ "pca", "model", "klg",
+    static const QStringList types{ "pca", "model", "klg", "nst",
                                     "clp", "tcl", "wti", "wtf", "wtl" };
     return types.contains(t);
 }
