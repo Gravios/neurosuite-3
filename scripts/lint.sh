@@ -13,6 +13,10 @@
 # 3. No tracked file matches .gitignore (generated output committed by hand).
 # 4. The build-system invariants (tests/cmake_invariants.cmake), which need
 #    only cmake.
+# 5. The Metal kernels (*.metal), with scripts/msl_lint.py: the signature rules
+#    only Apple's run-time compiler enforces (position/size attributes all of
+#    one vector width; no repeated buffer/threadgroup index), so they fail
+#    here and not first on a Mac.
 #
 # Vendored code (libsamplerate) is skipped.  Exits non-zero if any check fails.
 set -u
@@ -89,6 +93,16 @@ if out=$(cmake -DREPO="$root" -P tests/cmake_invariants.cmake 2>&1); then
     echo "ok"
 else
     printf '%s\n' "$out" | grep -E 'FAIL|Error|error' ; fail=1
+fi
+
+mapfile -t metals < <(git ls-files '*.metal')
+section "Metal kernel signatures (${#metals[@]} files)"
+if [ ${#metals[@]} -eq 0 ]; then
+    echo "ok (none)"
+elif python3 scripts/msl_lint.py "${metals[@]}"; then
+    echo "ok"
+else
+    fail=1
 fi
 
 printf '\n%s\n' "$([ $fail -eq 0 ] && echo 'lint: all checks passed' || echo 'lint: FAILED')"
