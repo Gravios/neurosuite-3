@@ -6,6 +6,8 @@
 #include "metalcontext.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 
 namespace neurosuite {
@@ -32,6 +34,11 @@ MetalContext* MetalContext::instance()
     // Created once, never destroyed: Metal objects outlive static destruction
     // order safely only if nobody releases them during exit.
     static MetalContext* const shared = [] () -> MetalContext* {
+        // NS_DISABLE_METAL (set, and not "0"): behave as a machine without a
+        // Metal device, so every program takes its CPU path -- one switch to
+        // compare a program's Metal and CPU results on the same Mac.
+        if (const char* off = std::getenv("NS_DISABLE_METAL"); off && *off && std::strcmp(off, "0") != 0)
+            return nullptr;
         AutoreleaseScope pool;
         MTL::Device* device = MTL::CreateSystemDefaultDevice();
         if (!device) return nullptr;

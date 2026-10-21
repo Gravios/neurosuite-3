@@ -85,7 +85,9 @@ private:
 class MetalContext {
 public:
     // The process-wide context, created on first use; nullptr when the
-    // machine has no Metal device.  Thread-safe.
+    // machine has no Metal device, or when the environment sets
+    // NS_DISABLE_METAL (to anything but "0"), so every Metal path falls back
+    // to the CPU.  Thread-safe.
     static MetalContext* instance();
 
     MTL::Device* device() const { return dev.get(); }

@@ -219,6 +219,12 @@ if(TARGET Neurosuite::metal)
     ns_metal_embed(core_test_metal metal_selftest_kernels metal_selftest.metal)
     add_test(NAME core_test_metal COMMAND core_test_metal)
     set_tests_properties(core_test_metal PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED")
+    # NS_DISABLE_METAL makes MetalContext report no device, so the same test
+    # must take its no-device branch (and pass) whatever the machine has.
+    add_test(NAME core_test_metal_disabled COMMAND core_test_metal)
+    set_tests_properties(core_test_metal_disabled PROPERTIES
+        ENVIRONMENT "NS_DISABLE_METAL=1"
+        PASS_REGULAR_EXPRESSION "SKIPPED: no Metal device")
 endif()
 
 # tsne_embed.hpp and oblique_embed.hpp (Klusters' feature-view presentations)

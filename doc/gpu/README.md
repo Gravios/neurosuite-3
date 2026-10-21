@@ -239,3 +239,10 @@ Each GPU-enabled binary probes for available devices at startup and selects the 
 | `process_decomposecollisions` | CPU unless `--gpu true` is given |
 
 For klusters, the xcorr backend is selected at runtime via `KLUSTERS_USE_SYCL=1` (SYCL only; CUDA and HIP are probed automatically).
+
+On macOS, `NS_DISABLE_METAL=1` in the environment makes every program behave
+as on a Mac without a Metal device: Klusters, KiloKlustaKwik and the
+`process_*` plugins all take their CPU paths. Use it to compare a program's
+Metal and CPU results on the same machine, for example
+`NS_DISABLE_METAL=1 process_medianfilter ...` against the same command
+without it.
