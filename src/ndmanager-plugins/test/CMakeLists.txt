@@ -23,6 +23,7 @@ set(_ndm_bin_test_adapt_format PROCESS_REASSIGNSPIKES_BIN process_reassignspikes
 set(_ndm_bin_test_plx2dat      PROCESS_PLXCONVERT_BIN     process_plxconvert)
 set(_ndm_bin_test_subset_pca   PROCESS_PCA_BIN            process_pca)
 set(_ndm_bin_test_medianfilter PROCESS_MEDIANFILTER_BIN  process_medianfilter)
+set(_ndm_bin_test_butterworth PROCESS_BUTTERWORTH_BIN  process_butterworth)
 set(_ndm_bin_test_extract_alignment
     PROCESS_EXTRACTSPIKES_BIN         process_extractspikes
     PROCESS_EXTRACTSPIKES_SDIFF_BIN   process_extractspikes_sdiff
