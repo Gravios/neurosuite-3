@@ -10,6 +10,8 @@ trough, a short low rebound).  Each icon puts its own motif above the trace.
 | Klusters | three clusters of points, as in its feature-space view | `src/klusters/src/app-klusters.svg` |
 | NeuroScope | three stacked channel traces with the spike lined up across them | `src/neuroscope/src/app-neuroscope.svg` |
 | NDManager | three processing steps in a row | `src/ndmanager/src/app-ndmanager.svg` |
+| ndmanager-plugins (README only) | a command prompt | `doc/images/ndmanager-plugins.svg` |
+| KiloKlustaKwik (README only) | a mixture of three Gaussians and their centres | `doc/images/kiloklustakwik.svg` |
 
 Palette:
 
