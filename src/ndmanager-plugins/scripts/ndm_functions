@@ -1491,6 +1491,123 @@ ndm_parse_method()
 # ndm_resolve_io.py (Python), kept honest by custody_vectors.tsv.
 source ndm_custody
 
+# Number of per-channel entries in one group's sdiffPairs pattern: comma-separated
+# entries, counting only commas outside parentheses (an expression may hold
+# them inside a function-like group).
+ndm_sdiff_entry_count()
+{
+	echo "$1" | awk '{ d = 0; n = 1; for (i = 1; i <= length($0); i++) { c = substr($0, i, 1);
+		if (c == "(") d++; else if (c == ")") d--; else if (c == "," && d == 0) n++ } print n }'
+}
+
+# Largest channel index a pattern names (expressions: cN; partner / reference-set
+# forms: the bare numbers), or -1 when it names none.
+ndm_sdiff_max_index()
+{
+	local nums
+	case "$(ndm_sdiff_pattern_order "$1")" in
+		6) nums=$(echo "$1" | grep -o '[cC][0-9]\+' | tr -d 'cC') ;;
+		*) nums=$(echo "$1" | grep -o '[0-9]\+') ;;
+	esac
+	echo "$nums" | awk 'BEGIN { m = -1 } NF { if ($1 + 0 > m) m = $1 + 0 } END { print m }'
+}
+
+# ndm_extract_preflight SESSION METHOD METHODORDER
+# Checks, before any engine runs, that the session file holds everything
+# extracting METHOD needs, and that what the engine would run is what the
+# token names.  Prints one line per finding, "error: ..." or "warning: ...";
+# returns 1 if there is any error.  METHODORDER is the node / CLI order (used by
+# sdiff and the bare stderiv token without a pattern).
+#   - acquisitionSystem nChannels, nBits, samplingRate;
+#   - per group with channels: nSamples and peakSampleIndex, numeric, the peak
+#     inside the window, channel numbers inside nChannels;
+#   - sdiff / stderiv with a spatial order: no one-channel group;
+#   - stderiv_C<n>: every group has sdiffPairs, of order <n>, with one entry per
+#     channel and no index beyond the group (the engine would otherwise run
+#     all-pairs for that group, under a _C name, without a word);
+#   - bare stderiv: the same entry / index checks where a group has a pattern,
+#     and a warning when only some groups have one (the others run order
+#     METHODORDER under the same name);
+#   - a shared .res for every group.
+ndm_extract_preflight()
+{
+	local sess=$1 m=$2 ord=$3 errors=0
+	local fam kind tokOrd nCh nBits sr nG g chans nChG ns ps pairs pOrd nEnt maxIdx c
+	local withPairs=0 withoutPairs=0
+	_pf_err()  { echo "error: $*"; errors=$((errors + 1)); }
+	_pf_warn() { echo "warning: $*"; }
+	if ! ndm_check_method_token "$m"; then _pf_err "$NDM_M_ERROR"; return 1; fi
+	fam=$NDM_M_FAMILY; kind=$NDM_M_KIND; tokOrd=$NDM_M_ORDER
+	local effOrd=$ord                                       # the spatial order the engine runs
+	[ -n "$kind" ] && effOrd=$tokOrd
+	if [ -n "$NDM_M_LAG" ]; then
+		_pf_err "'$m' names a feature space (_D$NDM_M_LAG$NDM_M_DIMS); its waveforms are method $(ndm_waveform_token "$m")"
+		return 1
+	fi
+	nCh=$(yaml_read "$sess" "//acquisitionSystem/nChannels")
+	nBits=$(yaml_read "$sess" "//acquisitionSystem/nBits")
+	sr=$(yaml_read "$sess" "//acquisitionSystem/samplingRate")
+	xml_read_failed "$nCh" && _pf_err "acquisitionSystem.nChannels is missing"
+	xml_read_failed "$nBits" && _pf_err "acquisitionSystem.nBits is missing"
+	xml_read_failed "$sr" && _pf_err "acquisitionSystem.samplingRate is missing"
+	nG=$(yaml_count "$sess" "//spikeDetection/channelGroups/group")
+	[ "${nG:-0}" -gt 0 ] 2>/dev/null || { _pf_err "spikeDetection.channelGroups has no group"; return 1; }
+	for g in $(seq 1 "$nG"); do
+		chans=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/channels/channel")
+		xml_read_failed "$chans" && continue                  # empty group: skipped by the run
+		nChG=$(echo $chans | wc -w)
+		if ! xml_read_failed "$nCh"; then
+			for c in $chans; do
+				case "$c" in *[!0-9]*) _pf_err "group $g: channel '$c' is not a channel number"; continue ;; esac
+				[ "$c" -lt "$nCh" ] || _pf_err "group $g: channel $c is beyond nChannels ($nCh)"
+			done
+		fi
+		ns=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/nSamples")
+		ps=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/peakSampleIndex")
+		if xml_read_failed "$ns"; then _pf_err "group $g: nSamples is missing"
+		elif xml_read_failed "$ps"; then _pf_err "group $g: peakSampleIndex is missing"
+		else
+			case "$ns$ps" in
+				*[!0-9]*) _pf_err "group $g: nSamples ($ns) and peakSampleIndex ($ps) must be whole numbers" ;;
+				*) [ "$ps" -lt "$ns" ] || _pf_err "group $g: peakSampleIndex ($ps) is not inside the $ns-sample window" ;;
+			esac
+		fi
+		if [ "$fam" != standard ] && [ "$nChG" -eq 1 ] && [ "$effOrd" != 0 ]; then
+			_pf_err "group $g has one channel: a spatial derivative (order $effOrd) needs two (use standard, or order 0)"
+		fi
+		[ "$fam" = stderiv ] || continue
+		pairs=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/sdiffPairs")
+		xml_read_failed "$pairs" && pairs=
+		pairs=${pairs//[[:space:]]/}
+		if [ -z "$pairs" ]; then
+			withoutPairs=$((withoutPairs + 1))
+			[ "$kind" = C ] && _pf_err "group $g has no sdiffPairs; $m needs the custom pattern on every group"
+			continue
+		fi
+		withPairs=$((withPairs + 1))
+		[ "$kind" = S ] && continue                            # the pattern is deliberately unused
+		pOrd=$(ndm_sdiff_pattern_order "$pairs")
+		[ "$kind" = C ] && [ "$pOrd" != "$tokOrd" ] && \
+			_pf_err "group $g: sdiffPairs '$pairs' is an order-$pOrd pattern, the method says $tokOrd"
+		nEnt=$(ndm_sdiff_entry_count "$pairs")
+		[ "$nEnt" -eq "$nChG" ] || \
+			_pf_err "group $g: sdiffPairs has $nEnt entries for $nChG channels (the engine would difference this group all-pairs)"
+		maxIdx=$(ndm_sdiff_max_index "$pairs")
+		[ "$maxIdx" -lt "$nChG" ] || \
+			_pf_err "group $g: sdiffPairs names channel $maxIdx; the group has channels 0-$((nChG - 1))"
+	done
+	if [ "$fam" = stderiv ] && [ -z "$kind" ] && [ $withPairs -gt 0 ] && [ $withoutPairs -gt 0 ]; then
+		_pf_warn "$withPairs group(s) have sdiffPairs and $withoutPairs do not: under the bare token '$m' the latter run order $ord; name the method stderiv_C<n> or stderiv_S<n>"
+	fi
+	for g in $(seq 1 "$nG"); do
+		chans=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/channels/channel")
+		xml_read_failed "$chans" && continue
+		ndm_resolve_any "$sess" res "$g" "$m" > /dev/null || _pf_err "group $g has no .res (run ndm_detectspikes first)"
+	done
+	unset -f _pf_err _pf_warn
+	[ $errors -eq 0 ]
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ndm_process_spikes <mode> [parameter-file] [--method M] [--methodOrder N]
 #                          [--inputExtension EXT] [--force]
@@ -1522,7 +1639,7 @@ ndm_process_spikes()
 	esac
 
 	# ── Parse command-line: <=1 positional (parameter file) + override flags ──
-	local methodOverride= methodOrderOverride= inputExtensionOverride= force=
+	local methodOverride= methodOrderOverride= inputExtensionOverride= force= checkOnly=
 	local -a positionals=()
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -1533,6 +1650,7 @@ ndm_process_spikes()
 			--inputExtension)   inputExtensionOverride="$2";     shift 2 ;;
 			--inputExtension=*) inputExtensionOverride="${1#*=}"; shift ;;
 			--force)            force=1;                         shift ;;
+			--check)            checkOnly=1;                     shift ;;
 			--)                 shift; while [ $# -gt 0 ]; do positionals+=("$1"); shift; done ;;
 			-*)                 echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
 			*)                  positionals+=("$1");             shift ;;
@@ -1579,6 +1697,29 @@ ndm_process_spikes()
 		sdiff)    binary=process_extractspikes_sdiff ;;
 		stderiv)  binary=process_extractspikes_stderiv ;;
 	esac
+
+	# Extraction: check the session file covers this method before anything runs
+	# (ndm_extract_preflight).  --check stops after the check.
+	if [ "$mode" = extract ]; then
+		local pfOut pfStatus=0
+		pfOut=$(ndm_extract_preflight "$session" "$method" "$methodOrder") || pfStatus=1
+		if [ -n "$pfOut" ]; then
+			while IFS= read -r _l; do
+				case "$_l" in error:*) echo_error "${_l#error: }" ;; *) echo_warning "${_l#warning: }" ;; esac
+			done <<< "$pfOut"
+		fi
+		if [ $pfStatus -ne 0 ]; then
+			echo_error "method '$method': the session file does not hold what extraction needs (above); nothing was run."
+			exit $GENERAL_ERROR
+		fi
+		if [ -n "$checkOnly" ]; then
+			echo_info "method '$method': the session file holds what extraction needs."
+			exit $NO_ERROR
+		fi
+	elif [ -n "$checkOnly" ]; then
+		echo_error "--check applies to ndm_extractspikes only"
+		exit $GENERAL_ERROR
+	fi
 
 	if [ "$mode" = detect ]; then
 		print_header "$session - Detecting spikes [method=$method]"
@@ -1923,8 +2064,10 @@ ndm_process_spikes()
 		# left untouched.  Every group is checked before any engine runs.
 		local -A sharedRes=()
 		for group in $electrodeGroups; do
-			r=$(ndm_resolve_any "$session" res "$group" "$method")
-			if [ -z "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then
+			# (ndm_resolve_any names the expected path even when it finds none:
+			# its status says whether it did.)
+			if ! r=$(ndm_resolve_any "$session" res "$group" "$method") \
+			   || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then
 				echo_error "no valid shared .res for group $group — run ndm_detectspikes first"
 				exit $INPUTS_MISSING
 			fi
@@ -2062,4 +2205,117 @@ ndm_process_spikes()
 			fi
 		done
 	done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ndm_extract_all_methods [parameter-file] [--check] [--inputExtension EXT]
+#
+# ndm_extractspikes --allMethods: re-extract every group's waveforms for every
+# waveform method the session already has files for.  The methods are the
+# tokens of the session's per-group .spk, .nst, .fet, .pca and .clu files, a
+# feature-space token (_D<lag><dims>) standing for its waveform method.  Each
+# method is checked first (ndm_extract_preflight); a method the session file
+# does not cover is reported and not run, the others are re-extracted with
+# --force.  --check reports and stops.  Exits non-zero when any method was
+# refused or failed.  The feature files projected from re-extracted waveforms
+# are listed at the end: re-project them.
+# ─────────────────────────────────────────────────────────────────────────────
+ndm_extract_all_methods()
+{
+	local checkOnly= inputExtArg=()
+	local -a positionals=()
+	while [ $# -gt 0 ]; do
+		case "$1" in
+			--allMethods)       shift ;;
+			--check)            checkOnly=1; shift ;;
+			--force)            shift ;;      # implied
+			--inputExtension)   inputExtArg=(--inputExtension "$2"); shift 2 ;;
+			--inputExtension=*) inputExtArg=(--inputExtension "${1#*=}"); shift ;;
+			--method|--method=*|--methodOrder|--methodOrder=*)
+			                    echo_error "--allMethods takes the methods from the session's files; drop $1"
+			                    exit $GENERAL_ERROR ;;
+			-*)                 echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
+			*)                  positionals+=("$1"); shift ;;
+		esac
+	done
+	if [ ${#positionals[@]} -gt 1 ]; then
+		echo_error "usage: $program [parameter-file] --allMethods [--check] [--inputExtension EXT]"
+		exit $GENERAL_ERROR
+	fi
+	ndm_resolve_session "${positionals[@]}"
+	print_header "$session - Re-extracting waveforms for every method"
+
+	# ── Discover the methods ────────────────────────────────────────────────
+	local -A wave=() spkGroups=() features=() opaque=()
+	local -a order=()
+	local f t w
+	for f in "$session".spk.* "$session".nst.* "$session".fet.* "$session".pca.* "$session".clu.*; do
+		[ -f "$f" ] || continue
+		ndm_parse_anchor "$f"
+		[ "$NDM_A_OK" = 1 ] && [ "$NDM_A_BASE" = "$(basename "$session")" ] && [ -n "$NDM_A_METHOD" ] || continue
+		t=$NDM_A_METHOD
+		w=$(ndm_waveform_token "$t")
+		if ! ndm_check_method_token "$w"; then
+			opaque[$t]=1
+			continue
+		fi
+		if [ -z "${wave[$w]:-}" ]; then wave[$w]=1; order+=("$w"); fi
+		[ "$NDM_A_TYPE" = spk ] && [ -z "$NDM_A_SUFFIX" ] && spkGroups[$w]="${spkGroups[$w]:-} $NDM_A_GROUP"
+		case "$NDM_A_TYPE" in fet|pca)
+			case " ${features[$w]:-} " in *" $t "*) : ;; *) features[$w]="${features[$w]:-} $t" ;; esac ;;
+		esac
+	done
+	for t in "${!opaque[@]}"; do
+		echo_warning "files tagged '$t' are not of an extraction method (standard, sdiff, stderiv[_S<n>|_C<n>]): skipped"
+	done
+	if [ ${#order[@]} -eq 0 ]; then
+		echo_error "no method-tagged .spk, .nst, .fet, .pca or .clu files for $session"
+		exit $INPUTS_MISSING
+	fi
+
+	# ── Check each against the session file ─────────────────────────────────
+	local nodeOrder pf st m
+	nodeOrder=$(read_script_parameter $session methodOrder sdiffOrder)
+	nodeOrder=${nodeOrder:-3}
+	local -a runnable=() refused=()
+	for m in "${order[@]}"; do
+		echo_info "method $m"
+		echo_info "  .spk groups:${spkGroups[$m]:- none}"
+		echo_info "  feature spaces:${features[$m]:- none}"
+		ndm_parse_method_token "$m"
+		if [ "$NDM_M_FAMILY" != standard ] && [ -z "$NDM_M_KIND" ]; then
+			echo_warning "  '$m' does not name its spatial order: the node's methodOrder ($nodeOrder) or the sdiffPairs decide it, as for the files already there only if neither changed"
+		fi
+		st=0
+		pf=$(ndm_extract_preflight "$session" "$m" "$nodeOrder") || st=1
+		[ -n "$pf" ] && while IFS= read -r _l; do echo_info "  $_l"; done <<< "$pf"
+		if [ $st -eq 0 ]; then runnable+=("$m"); echo_info "  ok"; else refused+=("$m"); fi
+	done
+	if [ -n "$checkOnly" ]; then
+		[ ${#refused[@]} -eq 0 ] && { echo_info "every method can be re-extracted"; exit $NO_ERROR; }
+		echo_error "cannot be re-extracted as the session file stands: ${refused[*]}"
+		exit $GENERAL_ERROR
+	fi
+
+	# ── Re-extract ─────────────────────────────────────────────────────────
+	local -a failed=() done_=()
+	for m in "${runnable[@]}"; do
+		if ( ndm_process_spikes extract "$session" --method "$m" --force "${inputExtArg[@]}" ); then
+			done_+=("$m")
+		else
+			failed+=("$m")
+		fi
+	done
+
+	print_header "$session - Re-extraction summary"
+	[ ${#done_[@]} -gt 0 ] && echo_info "re-extracted: ${done_[*]}"
+	[ ${#refused[@]} -gt 0 ] && echo_error "not run (session file incomplete, above): ${refused[*]}"
+	[ ${#failed[@]} -gt 0 ] && echo_error "failed: ${failed[*]}"
+	local stale=
+	for m in "${done_[@]}"; do stale="$stale${features[$m]:-}"; done
+	if [ -n "$stale" ]; then
+		echo_warning "these feature spaces were projected from the old waveforms; re-project them (PCA step):$stale"
+	fi
+	[ ${#refused[@]} -eq 0 ] && [ ${#failed[@]} -eq 0 ] || exit $GENERAL_ERROR
+	exit $NO_ERROR
 }

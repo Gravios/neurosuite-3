@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [ndm_extractspikes: a session-file check per method, and `--allMethods`](#2026-10-21--ndm_extractspikes-a-session-file-check-per-method-and---allmethods) |
 | 2026-10-21 | [ndm_detectspikes / ndm_extractspikes: each spike group cut with its own window](#2026-10-21--ndm_detectspikes--ndm_extractspikes-each-spike-group-cut-with-its-own-window) |
 | 2026-10-21 | [macOS: KiloKlustaKwik on the Apple GPU (CEM steps)](#2026-10-21--macos-kiloklustakwik-on-the-apple-gpu-cem-steps) |
 | 2026-10-21 | [KiloKlustaKwik GPU builds: the spatial phase of CEMTwoPhase computes the right distances](#2026-10-21--kiloklustakwik-gpu-builds-the-spatial-phase-of-cemtwophase-computes-the-right-distances) |
@@ -101,6 +102,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — ndm_extractspikes: a session-file check per method, and `--allMethods`
+
+<details>
+<summary>Details</summary>
+
+- **The session file is checked before anything runs.** This covers the
+  geometry, channels within `nChannels`, and no one-channel group under a
+  spatial order. It also checks that `stderiv_C<n>` has a pattern on every
+  group, of order `<n>`, with one entry per channel and no index beyond the
+  group, and that every group has a `.res`. Any error stops the step.
+  - Until now, a group whose pattern was missing or did not fit was
+    differenced all-pairs by the engine under a `_C` name, without a word.
+  - `--check` runs the check alone.
+- **`--allMethods`.** It re-extracts (overwrites) every group for every
+  waveform method the session has `.spk`, `.nst`, `.fet`, `.pca` or `.clu`
+  files for, a `_D` feature token standing for its waveform method. Each
+  method is checked first; the ones the session file does not cover are
+  reported and not run. At the end it lists the feature spaces to re-project.
+  `--allMethods --check` only lists and checks.
+- **Missing `.res`.** A group without a `.res` now stops extraction with
+  "run ndm_detectspikes first". Before, the resolver's "expected path" answer
+  was taken for a file, and the step failed with a shell arithmetic error.
+
+</details>
 
 ## 2026-10-21 — ndm_detectspikes / ndm_extractspikes: each spike group cut with its own window
 

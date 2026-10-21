@@ -268,7 +268,8 @@ Run-time log line:
 ### Synopsis
 
 ```bash
-ndm_extractspikes [session.yaml] [--method M] [--methodOrder N] [--inputExtension EXT] [--force]
+ndm_extractspikes [session.yaml] [--method M] [--methodOrder N] [--inputExtension EXT] [--force] [--check]
+ndm_extractspikes [session.yaml] --allMethods [--check] [--inputExtension EXT]
 ```
 
 **Input:** `session.fil` (or `session.<inputExtension>`); the shared
@@ -305,6 +306,51 @@ and `.clu`.  A time whose window does not lie inside the `.fil` (within
 `peakSampleIndex` of the start, or a window's length of the end) gets a row of
 zeros and a warning; before 2026-10-17 such a time was skipped, which shifted
 every later waveform against its spike.
+
+### Session-file check (`--check`)
+
+Before any engine runs, the step checks that the session file holds
+everything the method needs, and that what the engine would run is what the
+method token names. Any error stops the step; nothing is written. `--check`
+runs the check alone and exits 0 when it passes.
+
+| Checked | Error when |
+|---|---|
+| `acquisitionSystem` | `nChannels`, `nBits` or `samplingRate` missing |
+| every group with channels | `nSamples` or `peakSampleIndex` missing or not a whole number; `peakSampleIndex` ≥ `nSamples`; a channel number ≥ `nChannels` |
+| `sdiff`, `stderiv` with a spatial order | a one-channel group |
+| `stderiv_C<n>` | a group without `sdiffPairs`; a pattern of another order than `<n>`; a pattern whose entry count differs from the group's channel count, or that names a channel beyond the group |
+| bare `stderiv` | the entry-count and channel checks, for groups that have a pattern |
+| the method token | not an extraction method, or a feature-space token (`_D<lag><dims>`: extract its waveform method) |
+| spike times | a group without a `.res` (any method) |
+
+Without the `stderiv_C<n>` checks, a group whose pattern is missing or does not
+fit its channels is differenced all-pairs by the engine without a word, under a
+name that says otherwise. A bare `stderiv` token where only some groups have a
+pattern gets a warning: the others run order `methodOrder` under the same name.
+
+### All methods (`--allMethods`)
+
+`--allMethods` re-extracts the waveforms of every group for every waveform
+method the session already has files for. The methods are the tokens of the
+session's per-group `.spk`, `.nst`, `.fet`, `.pca` and `.clu` files. A
+feature-space token stands for its waveform method (`stderiv_C5_D34` →
+`stderiv_C5`), and a token that is not an extraction method is skipped with a
+warning.
+
+1. **List.** For each method, it lists the groups that have a `.spk` and the
+   feature spaces built on it.
+2. **Check.** It runs the session-file check (above) on each method, and warns
+   when a bare token does not name its spatial order: such a method is
+   re-extracted with the order the node and patterns give now.
+3. **Re-extract.** It re-extracts each method that passes, with `--force`:
+   existing `.spk` files are overwritten.
+4. **Report.** It reports the methods it refused and lists the feature spaces
+   projected from re-extracted waveforms. Re-project those with the PCA step.
+
+It exits non-zero when any method was refused or failed. With `--check` it
+lists and checks the methods and runs nothing. `--method` and `--methodOrder`
+are refused alongside it.
 
 Each group is cut with its own `nSamples` and `peakSampleIndex`. The engines
 take one geometry per run, so when groups differ the step runs the engine

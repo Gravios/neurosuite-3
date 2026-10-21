@@ -34,13 +34,22 @@
 #
 #  USAGE
 #    ndm_extractspikes [parameter-file] [--method M] [--methodOrder N]
-#                      [--inputExtension EXT] [--force]
+#                      [--inputExtension EXT] [--force] [--check]
+#    ndm_extractspikes [parameter-file] --allMethods [--check] [--inputExtension EXT]
 #    CLI flags override the YAML fields; --force re-extracts even when a .spk
-#    already exists (overwriting it).
+#    already exists (overwriting it).  Before running, the session file is
+#    checked for everything the method needs (geometry, sdiffPairs matching the
+#    token, a .res per group); --check stops after the check.  --allMethods
+#    re-extracts (overwrites) every group for every waveform method the session
+#    has .spk/.nst/.fet/.pca/.clu files for, skipping and reporting the ones the
+#    session file does not cover, and lists the feature spaces to re-project.
 #////////////////////////////////////////////////////////////////////////////
 
 # Source helper functions
 source ndm_functions
 
 program=$(basename $0)
+for _a in "$@"; do
+	[ "$_a" = --allMethods ] && { ndm_extract_all_methods "$@"; exit $?; }
+done
 ndm_process_spikes extract "$@"
