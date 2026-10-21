@@ -5,11 +5,6 @@
 
 Spike sorting and electrophysiology visualization: a **Qt 6 / C++20** revival of the Neurosuite toolchain for extracellular recordings.
 
-[![Linux](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml)
-[![Windows](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml)
-[![macOS](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml)
-[![Docs](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml)
-
 From a raw recording to sorted single units: convert and filter the signal, detect and sort spikes automatically, curate by hand, and check everything against the LFP, events and the animal's position. GPU acceleration is optional; a CPU build is always produced.
 
 ## Start here
@@ -22,7 +17,7 @@ From a raw recording to sorted single units: convert and filter the signal, dete
 | Look up a term | [Glossary](doc/GLOSSARY.md) |
 | Work on the code | [Developer guide](doc/dev/DEVELOPER_GUIDE.md) · [Contributing](.github/CONTRIBUTING.md) |
 
-All documentation online: **https://gravios.github.io/neurosuite-3/**
+All documentation online: **https://gravios.github.io/neurosuite-3/** [![docs](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/docs.yml?branch=main&label=docs&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/docs.yml)
 
 ## Quick start
 
@@ -50,13 +45,11 @@ cmake --install build
 
 ## Platforms
 
-| Platform | Builds | Tests in CI | Notes |
-|---|---|---|---|
-| **Linux**: Ubuntu 24.04+, Debian 12, WSL2 | Everything | Required | The reference platform. CI: Ubuntu 24.04, 25.10, 26.04 and 26.10. Oldest Qt: 6.4. |
-| **Windows 10 / 11**: Visual Studio 2022 | All but KiloKlustaKwik | Not yet | The `ndm_*` steps run from cmd and PowerShell through Git Bash. For KiloKlustaKwik, or the whole pipeline, use WSL2. |
-| **macOS**: Apple silicon, Homebrew | Everything | Informational | Metal (Apple GPU) and Accelerate paths. The `ndm_*` steps need bash 4: `brew install bash`. |
-
-The badges above show the latest CI run on `main`.
+| Platform | Latest CI on `main` | Builds | Tests in CI | Notes |
+|---|---|---|---|---|
+| **Linux**: Ubuntu 24.04+, Debian 12, WSL2 | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-linux.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml) | Everything | Required | The reference platform. CI: Ubuntu 24.04, 25.10, 26.04 and 26.10. Oldest Qt: 6.4. |
+| **Windows 10 / 11**: Visual Studio 2022 | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-windows.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml) | All but KiloKlustaKwik | Not yet | The `ndm_*` steps run from cmd and PowerShell through Git Bash. For KiloKlustaKwik, or the whole pipeline, use WSL2. |
+| **macOS**: Apple silicon, Homebrew | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-macos.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml) | Everything | Informational | Metal (Apple GPU) and Accelerate paths. The `ndm_*` steps need bash 4: `brew install bash`. |
 
 ## The programs
 
