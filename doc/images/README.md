@@ -33,7 +33,9 @@ from them, with a transparent background outside the tile:
   `<name>.rc`: the Windows executable's icon in Explorer, the Start menu and
   shortcuts;
 - `doc/images/banner.png` (2560 × 800, shown at half size): the top of the
-  README;
+  README; `banner-narrow.png` (1600 × 680: icon, name, a short line) replaces
+  it in windows narrower than 600 px, where the wide one's small text cannot
+  be read;
 - `doc/images/social-preview.png` (1280 × 640): GitHub's link preview, uploaded
   by hand under the repository's Settings → General → Social preview.
 

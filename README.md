@@ -1,4 +1,7 @@
-<h1><img src="doc/images/banner.png" width="100%" alt="neurosuite-3"></h1>
+<h1><picture>
+  <source media="(max-width: 600px)" srcset="doc/images/banner-narrow.png">
+  <img src="doc/images/banner.png" width="100%" alt="neurosuite-3">
+</picture></h1>
 
 Spike sorting and electrophysiology visualization — a modern **Qt 6 / C++20** revival of the Neurosuite toolchain for extracellular recordings.
 
