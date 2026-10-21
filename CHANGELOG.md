@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [Klusters: Align All and post-edit realigns update the other feature spaces](#2026-10-21--klusters-align-all-and-post-edit-realigns-update-the-other-feature-spaces) |
 | 2026-10-21 | [ndm_pca: `--force` refits and overwrites stale features](#2026-10-21--ndm_pca---force-refits-and-overwrites-stale-features) |
 | 2026-10-21 | [ndm_extractspikes: a session-file check per method, and `--allMethods`](#2026-10-21--ndm_extractspikes-a-session-file-check-per-method-and---allmethods) |
 | 2026-10-21 | [ndm_detectspikes / ndm_extractspikes: each spike group cut with its own window](#2026-10-21--ndm_detectspikes--ndm_extractspikes-each-spike-group-cut-with-its-own-window) |
@@ -103,6 +104,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — Klusters: Align All and post-edit realigns update the other feature spaces
+
+<details>
+<summary>Details</summary>
+
+When a single-cluster realign finishes, the other feature spaces follow the
+moved spikes: their `.spk` rows are re-cut and their `.fet` rows re-projected
+at the new times. A realign started from another space then returns there.
+The batch path, used by PCA-Center Align All and by the automatic realign
+after an edit, never did either. The `.clu`'s own space was updated, but every
+other space kept the old spike times and waveforms, and the display stayed in
+the `.clu`'s space. A user who switched back saw no change.
+
+The batch finish now runs the same follow-and-return step.
+
+</details>
 
 ## 2026-10-21 — ndm_pca: `--force` refits and overwrites stale features
 

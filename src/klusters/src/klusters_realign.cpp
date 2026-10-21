@@ -367,6 +367,13 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     // Authoritative final step: land on the parents the op produced (ids already
     // translated through the renumber above).  No-op if nothing is pending.
     applyPendingParentSelection();
+    // As the single-cluster path does when its queue drains: the other feature
+    // spaces follow the moved spikes (followMovedSpikes re-cuts and re-projects
+    // them at the new times), and a batch started from another space goes back
+    // to it.  Without this an Align All, or a post-edit auto realign, left every
+    // other space at the old spike times and the display in the .clu's space
+    // (or, switched back by hand, showing the unfollowed old waveforms).
+    QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
 }
 
 // ---------------------------------------------------------------------------
