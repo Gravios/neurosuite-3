@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "neurofileio.h"        // kWtiVersion, kWtlVersion, kTclVersion, kEapVersion
+#include "noise_stats.hpp"      // kNsteVersion
 #include "pca_projection.hpp"   // kPcaeVersion
 
 namespace neurosuite {
@@ -33,7 +34,7 @@ namespace contract {
 
 // Bumped whenever a value below changes, so two contract.yaml files can be
 // compared by one number first.
-inline constexpr int kContractVersion = 1;
+inline constexpr int kContractVersion = 2;
 
 // The ndm-plugin-protocol this build speaks; ndmanager skips a plugin that
 // declares a newer one.
@@ -59,6 +60,7 @@ inline std::vector<FormatVersion> formats() {
         {"wtl", kWtlVersion, kWtlVersion},
         {"tcl", kTclVersion, kTclVersion},
         {"eap", kEapVersion, kEapVersion},
+        {"nst", core::kNsteVersion, core::kNsteVersion},
     };
 }
 

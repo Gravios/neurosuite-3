@@ -15,7 +15,7 @@
 # fiber-kit checkout, against fiber-kit's contract.yaml).  Kept flat, in this
 # layout, so both are read without a YAML library.  Changing it is a recipe in
 # doc/dev/RECIPES.md §2.5.
-contract: 1
+contract: 2
 repository: neurosuite-3
 plugin_protocol: 1
 session_schema: '1.0'
@@ -25,6 +25,7 @@ formats:
   wtl: {read: 2, write: 2}
   tcl: {read: 1, write: 1}
   eap: {read: 1, write: 1}
+  nst: {read: 1, write: 1}
 vectors:
   custody_vectors.tsv: 51d6647663ba117ed064fbe645052ae4
   pca_method_vectors.tsv: f3f475f25582f3d9518b1ac7f5c36908

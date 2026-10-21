@@ -301,12 +301,12 @@ promises at the boundary:
 - `plugin_protocol`: the ndm-plugin-protocol it speaks;
 - `session_schema`: the `parameters.version` it writes;
 - `formats`: for each version-tagged format (`pca`, `wti`, `wtl`, `tcl`,
-  `eap`), the highest version it reads and the version it writes;
+  `eap`, `nst`), the highest version it reads and the version it writes;
 - `vectors`: the MD5 of each shared table and reference file.
 
 The code states the same values: in neurosuite-3, the constants in
 `core/version_contract.hpp`, `neurofileio.h` (`kWtiVersion`, `kWtlVersion`,
-`kTclVersion`, `kEapVersion`) and `core/pca_projection.hpp` (`kPcaeVersion`).
+`kTclVersion`, `kEapVersion`), `core/pca_projection.hpp` (`kPcaeVersion`) and `core/noise_stats.hpp` (`kNsteVersion`).
 In fiber-kit they are the version constants in `src/fiber_kit/neuro_io.py`,
 `fiber_pca.py` and `ndm_fiber_kit.py`. The rule between the repositories is
 that each reads every version the other writes.

@@ -10,6 +10,7 @@
 // flat for that), so this needs no YAML library.
 #include <neurosuite/core/version_contract.hpp>
 #include <neurosuite/core/neurofileio.h>
+#include <neurosuite/core/noise_stats.hpp>
 #include <neurosuite/core/pca_projection.hpp>
 
 #include <chrono>
@@ -168,6 +169,26 @@ int main(int argc, char** argv) {
         io.write(reinterpret_cast<const char*>(&newer), 4);
         io.close();
         check(!neurosuite::core::loadPca(P("a.pca"), back), "loadPca rejects a newer version");
+    }
+    {   // .nst (NSTE): the header's second int32
+        neurosuite::core::NoiseStats s;
+        s.nSamp = 2; s.nChan = 1;
+        s.sigma = {1.0}; s.mean = {0.0, 0.0}; s.cov = {1.0, 0.0, 0.0, 1.0};
+        check(neurosuite::core::writeNoiseStats(P("a.nst"), s), "writeNoiseStats");
+        std::ifstream in(P("a.nst"), std::ios::binary);
+        int32_t hdr[2] = {0, 0};
+        in.read(reinterpret_cast<char*>(hdr), 8);
+        check(hdr[1] == neurosuite::core::kNsteVersion,
+              "writeNoiseStats writes version " + std::to_string(neurosuite::core::kNsteVersion));
+        in.close();
+        neurosuite::core::NoiseStats back;
+        check(neurosuite::core::loadNoiseStats(P("a.nst"), back), "loadNoiseStats reads what writeNoiseStats wrote");
+        std::fstream io(P("a.nst"), std::ios::binary | std::ios::in | std::ios::out);
+        const int32_t newer = neurosuite::core::kNsteVersion + 1;
+        io.seekp(4);
+        io.write(reinterpret_cast<const char*>(&newer), 4);
+        io.close();
+        check(!neurosuite::core::loadNoiseStats(P("a.nst"), back), "loadNoiseStats rejects a newer version");
     }
     fs::remove_all(dir);
 
