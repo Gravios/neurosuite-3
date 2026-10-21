@@ -125,8 +125,17 @@ FileStamp stampOf(const std::string& path)
     s.size    = static_cast<std::uint64_t>(st.st_size);
     s.inode   = static_cast<std::uint64_t>(st.st_ino);
     s.device  = static_cast<std::uint64_t>(st.st_dev);
-    s.mtimeNs = static_cast<std::int64_t>(st.st_mtim.tv_sec) * 1'000'000'000LL + st.st_mtim.tv_nsec;
-    s.ctimeNs = static_cast<std::int64_t>(st.st_ctim.tv_sec) * 1'000'000'000LL + st.st_ctim.tv_nsec;
+    // Nanosecond stamps: POSIX 2008 names them st_mtim / st_ctim; macOS keeps
+    // its own st_mtimespec / st_ctimespec.
+#if defined(__APPLE__)
+    const struct timespec& mtimeSpec = st.st_mtimespec;
+    const struct timespec& ctimeSpec = st.st_ctimespec;
+#else
+    const struct timespec& mtimeSpec = st.st_mtim;
+    const struct timespec& ctimeSpec = st.st_ctim;
+#endif
+    s.mtimeNs = static_cast<std::int64_t>(mtimeSpec.tv_sec) * 1'000'000'000LL + mtimeSpec.tv_nsec;
+    s.ctimeNs = static_cast<std::int64_t>(ctimeSpec.tv_sec) * 1'000'000'000LL + ctimeSpec.tv_nsec;
 #endif
     return s;
 }
