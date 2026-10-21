@@ -2315,6 +2315,16 @@ ndm_extract_all_methods()
 	for m in "${done_[@]}"; do stale="$stale${features[$m]:-}"; done
 	if [ -n "$stale" ]; then
 		echo_warning "these feature spaces were projected from the old waveforms; re-project them (PCA step):$stale"
+		local ft
+		for ft in $stale; do
+			ndm_parse_method_token "$ft"
+			if [ -n "$NDM_M_LAG" ]; then
+				echo_info "  ndm_pca $session --method $ft --force          (refits both pairs)"
+			else
+				echo_info "  ndm_refeaturize $session --method $ft          (keeps the basis), or"
+				echo_info "  ndm_pca $session --method $ft --force          (refits)"
+			fi
+		done
 	fi
 	[ ${#refused[@]} -eq 0 ] && [ ${#failed[@]} -eq 0 ] || exit $GENERAL_ERROR
 	exit $NO_ERROR

@@ -147,6 +147,7 @@ check 'grep -q old s.spk.stderiv_C5.1' "refused stderiv_C5 .spk untouched"
 check '[ -e s.spk.stderiv_S3.1 ] && [ -e s.spk.stderiv_S3.2 ]' "stderiv_S3 extracted for both groups"
 check 'grep -q "not run.*stderiv_C5" out.log' "summary names the refused method"
 check 'grep -q "re-project them.*stderiv_S3" out.log' "stale feature spaces listed"
+check 'grep -q "ndm_refeaturize s --method stderiv_S3" out.log && grep -q "ndm_pca s --method stderiv_S3 --force" out.log' "... with both commands for an ordinary space"
 
 make_session_files; session_yaml
 xs --allMethods; st=$?
@@ -154,6 +155,7 @@ check '[ $st -eq 0 ] && [ $(wc -l < "$ARGLOG") -eq 3 ]' "complete session file: 
 check 'grep -q -- "-P 0-1+2,1-0+2,2-1+3,3-2+1:0-1+3,1-0+2,2-3+1,3-2+0 -R" "$ARGLOG"' "stderiv_C5 with both groups' patterns"
 check 'grep -q new s.spk.stderiv_C5.2' "stderiv_C5 .spk re-extracted"
 check 'grep -q "re-project them.*stderiv_C5_D34" out.log' "stderiv_C5_D34 listed for re-projection"
+check 'grep -q "ndm_pca s --method stderiv_C5_D34 --force" out.log' "... with the ndm_pca --force command for the lag space"
 check 'xs --allMethods --method standard; [ $? -ne 0 ] && grep -q "drop --method" out.log' "--method is refused with --allMethods"
 
 echo

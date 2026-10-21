@@ -346,7 +346,10 @@ warning.
 3. **Re-extract.** It re-extracts each method that passes, with `--force`:
    existing `.spk` files are overwritten.
 4. **Report.** It reports the methods it refused and lists the feature spaces
-   projected from re-extracted waveforms. Re-project those with the PCA step.
+   projected from re-extracted waveforms, with the command for each:
+   `ndm_refeaturize --method <token>` (keeps the stored basis) or
+   `ndm_pca --method <token> --force` (refits); for a `_D` token, only the
+   latter.
 
 It exits non-zero when any method was refused or failed. With `--check` it
 lists and checks the methods and runs nothing. `--method` and `--methodOrder`
