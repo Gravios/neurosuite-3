@@ -115,6 +115,17 @@ target_include_directories(core_test_spike_extract
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
 add_test(NAME core_test_spike_extract COMMAND core_test_spike_extract)
 
+# .nst noise statistics (noise_stats.hpp): random spike-free windows cut through
+# extractSpikeWindows (the .spk's own bytes, any transform), robust flat /
+# amplitude / energy rejection, mean + covariance; recovery on a synthetic AR(1)
+# .fil, rejection of planted transients and a zero gap, and the .nst round trip.
+# Header-only.
+add_executable(core_test_noise_stats noise_stats_test.cpp)
+target_compile_features(core_test_noise_stats PRIVATE cxx_std_20)
+target_include_directories(core_test_noise_stats
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_noise_stats COMMAND core_test_noise_stats)
+
 # .wtl manual template-linkage sidecar (readWtl/writeWtl + the wtl* view-model
 # helpers): the per-node curator lineage (v2 running mean/std/count).  Links the
 # library (the readers/writers live in neurofileio.cpp), like the .spk test.
