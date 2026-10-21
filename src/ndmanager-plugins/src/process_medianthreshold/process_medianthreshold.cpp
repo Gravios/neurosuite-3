@@ -52,6 +52,12 @@ extern "C" void runCudaMedianThreshold(const short* hostData,
                                         double*      sigmasOut,
                                         bool         verbose);
 #endif
+#ifdef USE_METAL
+#include "process_medianthreshold_metal.h"
+#endif
+// Medians of every channel computed up front by a GPU path that reproduces
+// medianOf() exactly (the Metal one); empty when the CPU computes them.
+static std::vector<long double> precomputedMedians;
 static bool verbose = false;
 const char *program_version = "process_medianthreshold 0.3b (21-12-2007)";
 long long allChannels_nbRecords = 0; // number of records in all channels
@@ -242,6 +248,13 @@ int main(int argc,char *argv[]) {
         return 0;
     }
 #endif
+#ifdef USE_METAL
+	// --- Metal path: the same medians as medianOf(), for all channels at
+	// once on the GPU; the group loop below is unchanged.  No device, or a
+	// GPU failure, leaves precomputedMedians empty: the CPU computes them.
+	metalChannelMedians(input, oneChannel_nbRecords, arguments.totalChannelNumber,
+	                    precomputedMedians, verbose);
+#endif
 	while(currentGroup != NULL) {
 		// initialization
 		delete[] groupChannelId; // free memory
@@ -371,7 +384,10 @@ long double* groupThresholds(const short* allRecords, int allChannelsNb,
 	if ( verbose ) cout << "Computing medians..." << endl;
 	for(int i = 0; i < groupChannelNb; i++) {
 		// O(N) median via nth_element instead of O(N log N) full sort
-		sigma_n = medianOf(records[i], oneChannel_nbRecords) / SIGMA_DIVISOR;
+		const long double median = precomputedMedians.empty()
+			? medianOf(records[i], oneChannel_nbRecords)
+			: precomputedMedians[groupChannelId[i]];
+		sigma_n = median / SIGMA_DIVISOR;
 
 		thres[i] = (4*sigma_n); // Threshold = 4*sigma_n
 		if ( verbose) {
