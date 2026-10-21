@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [macOS: Klusters on the Apple GPU (realignment, error matrix)](#2026-10-21--macos-klusters-on-the-apple-gpu-realignment-error-matrix) |
 | 2026-10-21 | [Klusters realign: moved spikes get a fresh window from the .fil, never the rolled copy](#2026-10-21--klusters-realign-moved-spikes-get-a-fresh-window-from-the-fil-never-the-rolled-copy) |
 | 2026-10-21 | [ndm_extractspikes: noise statistics for the clusterers' whitener (`.nst`)](#2026-10-21--ndm_extractspikes-noise-statistics-for-the-clusterers-whitener-nst) |
 | 2026-10-21 | [process_medianfilter: CPU builds no longer corrupt recordings larger than one chunk](#2026-10-21--process_medianfilter-cpu-builds-no-longer-corrupt-recordings-larger-than-one-chunk) |
@@ -97,6 +98,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — macOS: Klusters on the Apple GPU (realignment, error matrix)
+
+<details>
+<summary>Details</summary>
+
+Phase 3 of the Apple GPU plan (`doc/design/metal-backend.md` §12).
+
+- **Realignment cross-correlation:** exact integer sums on the GPU, scored
+  on the host as the OpenMP back end does, so shifts and scores are
+  bit-identical to OpenMP.
+- **Grouping Assistant error matrix (FP32, the default):** within 2e-3 of
+  FP64, processed in chunks so it never holds the full posterior matrix.
+  FP64 runs on the CPU.  HIP and SYCL builds no longer print "GPU
+  error-matrix aggregation failed" on every matrix.
+- **PCA refine:** stays on the CPU on a Mac.  The CUDA kernel now handles
+  only the raw feature space, where it computes what the CPU computes.
+- The macOS CI runs both new tests.
+
+</details>
 
 ## 2026-10-21 — Klusters realign: moved spikes get a fresh window from the .fil, never the rolled copy
 

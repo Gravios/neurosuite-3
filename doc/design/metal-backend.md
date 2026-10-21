@@ -1,9 +1,9 @@
 # Apple GPU (Metal) backend — integration plan
 
 *Written 2026-10-21 against `0d1c903`. Status: decisions taken (§8); Phases 0
-(Accelerate), 1 (Metal infrastructure, `process_medianthreshold`) and 2 (the
-other plugins) implemented and run by the macOS CI (§9–§11); Phases 3–5 not
-started.*
+(Accelerate), 1 (Metal infrastructure, `process_medianthreshold`), 2 (the
+other plugins) and 3 (Klusters) implemented and run by the macOS CI (§9–§12);
+Phases 4–5 not started.*
 
 ## 1. Goal and scope
 
@@ -390,3 +390,41 @@ Checked without a Mac:
   headers;
 - every kernel compiled as C++ through a shim (`mslemu`) and run thread by
   thread against the CPU rule, with zero mismatches.
+
+## 12. Phase 3 as implemented (2026-10-21)
+
+- **Realign cross-correlation** (`klustersshared_xcorr_metal_test`):
+  - the numerators sum int16 × int16 products, which are exact in 64-bit
+    integers, so the kernel needs no floating point at all: one thread per
+    (spike, lag), plus one for each spike's energy;
+  - the host then runs `xcorr_omp_compute`'s own scoring on those sums, so
+    the result is **bit-identical** to the OpenMP back end, near-ties
+    included;
+  - it has no block-size limit on `maxShift`;
+  - `XcorrDispatch` probes CUDA → HIP → SYCL → Metal → OpenMP;
+  - Klusters builds it in; KiloKlustaKwik's build will in Phase 4.
+- **Grouping Assistant error matrix**, FP32, Klusters' default
+  (`klusters_test_groupingassistant_metal`):
+  - the three CUDA FP32 kernels (Mahalanobis log-posterior, stabilised
+    softmax, per-cluster mean) are written in MSL;
+  - spikes are processed in chunks of positions, so it never needs the full
+    posterior matrix;
+  - it is within 2e-3 of an FP64 reference;
+  - the FP64 option and the full posteriors stay on the CPU.
+
+  The dispatcher now tells the caller which GPU routes a back end has.
+  HIP/SYCL builds no longer try the CUDA-only aggregation and print a failure
+  on every matrix.
+- **PCA refine: not ported.**
+  - The CUDA kernel's stderiv is fixed (all-pairs, zero seed). The CPU loop
+    uses the `.spk`'s own transform, so for stderiv spaces CUDA and CPU
+    picked different shifts.
+  - This never showed, because refine could not find the raw file and never
+    ran.
+  - The GPU path is now restricted to the raw feature space. Porting that
+    remainder to Metal would help few sessions (the reference sessions are
+    stderiv). The OpenMP CPU loop serves Macs.
+- **Found while porting** (a separate fix, not Metal): Klusters realign
+  wrote circularly rolled windows for every `.pending` or method-tagged
+  `.spk`. It now re-cuts from `rawRecordingPath()`, or refuses. See the
+  CHANGELOG.
