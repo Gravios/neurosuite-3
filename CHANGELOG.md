@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [ndm_extractspikes: noise statistics for the clusterers' whitener (`.nst`)](#2026-10-21--ndm_extractspikes-noise-statistics-for-the-clusterers-whitener-nst) |
 | 2026-10-21 | [process_medianfilter: CPU builds no longer corrupt recordings larger than one chunk](#2026-10-21--process_medianfilter-cpu-builds-no-longer-corrupt-recordings-larger-than-one-chunk) |
 | 2026-10-21 | [macOS: Metal paths for the high-pass filters and channel grouping](#2026-10-21--macos-metal-paths-for-the-high-pass-filters-and-channel-grouping) |
 | 2026-10-21 | [macOS: a Metal (Apple GPU) backend, first for the noise thresholds](#2026-10-21--macos-a-metal-apple-gpu-backend-first-for-the-noise-thresholds) |
@@ -95,6 +96,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — ndm_extractspikes: noise statistics for the clusterers' whitener (`.nst`)
+
+<details>
+<summary>Details</summary>
+
+- `ndm_extractspikes` writes `<session>.nst.<method>.<group>` beside each
+  `.spk`: the mean window and the covariance of random windows drawn clear
+  of every spike, cut exactly like the `.spk` rows (same transform, raw /
+  sdiff / stderiv with any `sdiffPairs`), with outliers rejected first --
+  flat channels, any sample beyond `noiseRejectZ` robust SDs (median / MAD),
+  window energy beyond the same.  Parameters `noiseWindows` (default
+  20000; 0 = off), `noiseRejectZ` (5), `noiseGuard` (nSamples); the engines'
+  flags are `-N` / `-E` / `-G` with `-R`.  A clusterer whitening with it
+  uses the noise of the waveforms it sorts, not the `.fil` in another
+  domain.
+- Format NSTE v1 (`doc/ndmanager-plugins/formats/nst.md`), reader, writer
+  and estimator in `core/noise_stats.hpp`; version-tagged in
+  `contract.yaml`, which moves to contract 2 (fiber-kit 0.48.0 reads it).
+- `nst` is a MethodSpecific custody type (`custody.hpp`, `ndm_custody`,
+  `ndm_resolve_io.py`, `custody_vectors.tsv`); Klusters' time sort carries
+  it over as a per-group, not per-spike, file.
+- Tests: `core_test_noise_stats`, `ndm_test_extract_noise` (the three
+  extractors on a synthetic `.fil`), `ndm_test_extract_noise_params` (the
+  driver); `core_test_contract` covers NSTE.
+
+</details>
 
 ## 2026-10-21 — process_medianfilter: CPU builds no longer corrupt recordings larger than one chunk
 
