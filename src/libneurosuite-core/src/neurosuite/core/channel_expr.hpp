@@ -43,9 +43,12 @@
 #include <charconv>
 #include <cmath>
 #include <cstdint>
+#include <locale>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <vector>
+#include <version>
 
 namespace neurosuite {
 namespace core {
@@ -129,6 +132,33 @@ struct ChannelExprSet {
 namespace detail {
 inline bool isBlank(char c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' || c == '\v'; }
 inline bool isDigit(char c) { return c >= '0' && c <= '9'; }
+
+// [first, last) as a double, all of it, or false.  Independent of the process
+// locale (Qt applications call setlocale, which can make the decimal point a
+// comma) and correctly rounded, like Python's float().  std::from_chars does
+// that, but Apple's libc++ has no floating-point overload (and no
+// __cpp_lib_to_chars); there a stream imbued with the classic "C" locale reads
+// the token (the caller has already checked its shape: digits, an optional
+// '.', an optional exponent), which libc++ hands to strtod_l.
+inline bool readNumber(const char* first, const char* last, double& value)
+{
+#if defined(__cpp_lib_to_chars)
+    const std::from_chars_result r = std::from_chars(first, last, value, std::chars_format::general);
+    return r.ec == std::errc() && r.ptr == last;
+#else
+    std::istringstream in(std::string(first, last));
+    in.imbue(std::locale::classic());
+    in >> value;
+    if (in.fail() || in.peek() != std::char_traits<char>::eof() || std::isinf(value))
+        return false;
+    // Underflow: from_chars rejects a nonzero number too small for a double
+    // (result_out_of_range); a stream may read it as 0.
+    if (value == 0.0)
+        for (const char* c = first; c != last && *c != 'e' && *c != 'E'; ++c)
+            if (*c >= '1' && *c <= '9') return false;
+    return true;
+#endif
+}
 // A character for a message: itself, or a description when it is not printable ASCII.
 inline std::string shown(char c) {
     const unsigned char u = static_cast<unsigned char>(c);
@@ -269,12 +299,8 @@ private:
                     while (p_ < s_.size() && isDigit(s_[p_])) ++p_;
                 }
             }
-            // from_chars: the C locale's decimal point, whatever the process locale
-            // (Qt applications call setlocale), and correctly rounded like Python's float().
             double value = 0.0;
-            const std::from_chars_result r =
-                std::from_chars(s_.data() + start, s_.data() + p_, value, std::chars_format::general);
-            if (r.ec != std::errc() || r.ptr != s_.data() + p_) {
+            if (!readNumber(s_.data() + start, s_.data() + p_, value)) {
                 p_ = start;
                 return err("has a number that cannot be read");
             }
