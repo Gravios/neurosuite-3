@@ -106,6 +106,11 @@ static void filterCPU(int windowHalfLength, const short* data, short* filtered,
 extern "C" bool cudaMedianFilterChunk(const short* data, short* filtered, long long nFrames,
                                       int nChannels, int windowHalfLength, bool verbose);
 #endif
+#ifdef USE_METAL
+// process_medianfilter_metal.cpp
+bool metalMedianFilterChunk(const short* data, short* filtered, long long nFrames,
+                            int nChannels, int windowHalfLength, bool verbose);
+#endif
 
 static bool gpuFilterChunk([[maybe_unused]] const short* data, [[maybe_unused]] short* filtered,
                            [[maybe_unused]] long long nFrames, [[maybe_unused]] int nChannels,
@@ -113,6 +118,8 @@ static bool gpuFilterChunk([[maybe_unused]] const short* data, [[maybe_unused]] 
 {
 #if defined(USE_CUDA)
     return cudaMedianFilterChunk(data, filtered, nFrames, nChannels, windowHalfLength, verbose);
+#elif defined(USE_METAL)
+    return metalMedianFilterChunk(data, filtered, nFrames, nChannels, windowHalfLength, verbose);
 #else
     return false;
 #endif
@@ -135,7 +142,7 @@ static void help(char* name)
          << " -w nSamples    window half length\n"
          << " -b buffer      chunk size in bytes (default 512MB)\n"
          << " -t nThreads    CPU OpenMP threads (default: all cores)\n"
-#if defined(USE_CUDA)
+#if defined(USE_CUDA) || defined(USE_METAL)
          << " -c             force CPU path\n"
 #endif
          << " -v             verbose mode\n";
@@ -182,9 +189,13 @@ int main(int argc, char *argv[])
     const char* inputPath  = argv[argc - 2];
     const char* outputPath = argv[argc - 1];
 
-#if defined(USE_CUDA)
+#if defined(USE_CUDA) || defined(USE_METAL)
     bool useGpu = !forceCPU;
+#if defined(USE_CUDA)
     if (verbose) cout << (useGpu ? "Using CUDA GPU path\n" : "Using CPU path (-c)\n");
+#else
+    if (verbose) cout << (useGpu ? "Using Metal GPU path\n" : "Using CPU path (-c)\n");
+#endif
 #else
     bool useGpu = false;
     if (verbose) cout << "Using CPU"

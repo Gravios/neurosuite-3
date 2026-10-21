@@ -7,7 +7,7 @@ Several neurosuite-3 components optionally use GPU acceleration:
 | `kiloklustakwik` | CUDA / HIP / SYCL | CEM E-step distance computations + waveform cross-correlation (xcorr) |
 | `klusters` | CUDA / HIP / SYCL | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr) |
 | `process_butterworth` | CUDA | Butterworth filtering |
-| `process_medianfilter` | CUDA | Median-subtraction high-pass filter |
+| `process_medianfilter` | CUDA · Metal (macOS) | Median-subtraction high-pass filter |
 | `process_medianthreshold` | CUDA · Metal (macOS) | Per-channel noise threshold estimation |
 | `process_spikegrouper` | CUDA / OpenMP | Coincidence matrix construction |
 | `process_decomposecollisions` | CUDA | Collision decomposition fit (opt-in with `--gpu true`) |
