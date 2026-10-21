@@ -9,7 +9,8 @@
     speed; on the reference data single changes 0.04% of samples by 1 LSB).  The
     computation is split into independent (channel, block) units with a settling
     margin (see butterworth_core.h), run with OpenMP on the CPU or one thread per
-    unit on a CUDA GPU when one is available (-c forces the CPU).
+    unit on a CUDA or Apple (Metal, single precision only) GPU when one is
+    available (-c forces the CPU).
 
     copyright  (C) 2026 neurosuite-3 contributors
     This program is free software; you can redistribute it and/or modify
@@ -49,6 +50,15 @@ extern "C" void  bwCudaChunk(void* handle, const short* chunk, long long row0,
                              long long c1, short* out);
 extern "C" void  bwCudaFree(void* handle);
 #endif
+#ifdef USE_METAL
+// process_butterworth_metal.cpp: single precision only (Apple GPUs have no double)
+bool  bwMetalAvailable(bool verbose);
+void* bwMetalInit(const BwCoefs<float>& coefs, int nCh, long long maxChunkRows,
+                  long long maxOutRows, int M, long long B);
+bool  bwMetalChunk(void* handle, const short* chunk, long long row0, long long rows,
+                   long long nRows, long long c0, long long c1, short* out);
+void  bwMetalFree(void* handle);
+#endif
 
 static void usage(const char* name)
 {
@@ -62,11 +72,12 @@ static void usage(const char* name)
          << " sections in total (default 3;\n"
          << "                zero phase doubles the effective order; -6 dB at each corner)\n"
          << " -p auto|double|single  arithmetic precision (default auto: double on the\n"
-         << "                CPU, single on a GPU)\n"
+         << "                CPU, single on a GPU; an Apple GPU does single only, so\n"
+         << "                double runs on the CPU there)\n"
          << " -b bytes       input bytes per chunk (default 256 MiB)\n"
          << " -B samples     samples per parallel block (default: CPU 65536, GPU 8192)\n"
          << " -t nThreads    CPU threads (default: all cores)\n"
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_METAL)
          << " -c             force the CPU path\n"
 #endif
          << " -v             verbose\n";
@@ -205,12 +216,23 @@ int main(int argc, char* argv[])
 #endif
 
     bool gpu = false;
-#ifdef USE_CUDA
+    const char* gpuName = "";
+#if defined(USE_CUDA)
     if (!forceCPU) gpu = bwCudaAvailable(verbose ? 1 : 0) != 0;
+    gpuName = "CUDA GPU";
+#elif defined(USE_METAL)
+    if (!forceCPU) gpu = bwMetalAvailable(verbose);
+    gpuName = "Metal GPU";
 #else
     (void)forceCPU;
 #endif
     const bool useDouble = precision < 0 ? !gpu : precision == 1;
+#ifdef USE_METAL
+    if (gpu && useDouble) {
+        if (verbose) cout << "  -p double: Apple GPUs have no double precision; using the CPU path\n";
+        gpu = false;
+    }
+#endif
     if (B <= 0) B = gpu ? 8192 : 65536;
     if (B < 16LL * M && !gpu) B = 16LL * M;     // keep the margin overhead small
     long long C = chunkBytes / ((long long)nCh * (long long)sizeof(short));
@@ -226,7 +248,7 @@ int main(int argc, char* argv[])
         cout << "order " << order << ", zero phase (" << sos.size() << " sections, effective order "
              << 2 * order << ")\n  precision: " << (useDouble ? "double" : "single")
              << ", settling margin " << M << " samples, block " << B << ", chunk " << C
-             << " samples\n  path: " << (gpu ? "CUDA GPU" : "CPU")
+             << " samples\n  path: " << (gpu ? gpuName : "CPU")
 #ifdef _OPENMP
              << (gpu ? "" : " (OpenMP " + std::to_string(omp_get_max_threads()) + " threads)")
 #endif
@@ -248,6 +270,13 @@ int main(int argc, char* argv[])
         dev = bwCudaInit(useDouble ? 1 : 0, flat.data(), (int)sos.size(), nCh, C + 2LL * M, C, M, (int)B);
     }
 #endif
+#ifdef USE_METAL
+    void* metalDev = nullptr;
+    if (gpu) {
+        metalDev = bwMetalInit(cf, nCh, C + 2LL * M, C, M, B);
+        if (!metalDev) gpu = false;
+    }
+#endif
     // Stage progress on the terminal (drawn to /dev/tty, so it shows under the
     // wrapper's output capture), by output samples; a red cross on failure.
     std::string label = outPath;
@@ -267,18 +296,29 @@ int main(int argc, char* argv[])
         const long long r0 = (c0 - M > 0) ? c0 - M : 0;
         const long long r1 = (c1 + M < nRows) ? c1 + M : nRows;
         if (!readRows(inF, in.data(), r0, r1 - r0, nCh)) { cerr << "error: read failed" << endl; return 1; }
+        bool done = false;
 #ifdef USE_CUDA
-        if (gpu) bwCudaChunk(dev, in.data(), r0, r1 - r0, nRows, c0, c1, out.data());
-        else
+        if (gpu) { bwCudaChunk(dev, in.data(), r0, r1 - r0, nRows, c0, c1, out.data()); done = true; }
 #endif
-        if (useDouble) cpuChunk<double>(cd, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
-        else           cpuChunk<float>(cf, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
+#ifdef USE_METAL
+        if (gpu) {
+            done = bwMetalChunk(metalDev, in.data(), r0, r1 - r0, nRows, c0, c1, out.data());
+            if (!done) { cerr << "process_butterworth: continuing on the CPU" << endl; gpu = false; }
+        }
+#endif
+        if (!done) {
+            if (useDouble) cpuChunk<double>(cd, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
+            else           cpuChunk<float>(cf, in.data(), r0, nRows, nCh, c0, c1, M, B, out.data(), &prog);
+        }
         if (!writeRows(outF, out.data(), c0, c1 - c0, nCh)) { cerr << "error: write failed" << endl; return 1; }
         prog.setPosition(c1);
     }
     prog.endStage();
 #ifdef USE_CUDA
     if (dev) bwCudaFree(dev);
+#endif
+#ifdef USE_METAL
+    if (metalDev) bwMetalFree(metalDev);
 #endif
     std::fclose(inF);
     if (std::fclose(outF) != 0) { cerr << "error: closing output failed" << endl; return 1; }

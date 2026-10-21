@@ -12,6 +12,16 @@ if(CMAKE_CUDA_COMPILER)
         process_butterworth_cuda.cu)
     target_compile_definitions(process_butterworth PRIVATE USE_CUDA)
     message(STATUS "process_butterworth: CUDA build (${CMAKE_CUDA_ARCHITECTURES})")
+elseif(TARGET Neurosuite::metal)
+    # Apple GPU (Metal, single precision), doc/design/metal-backend.md; the
+    # kernel is embedded and compiled at run time; no device: the CPU path.
+    add_executable(process_butterworth
+        process_butterworth.cpp
+        process_butterworth_metal.cpp)
+    ns_metal_embed(process_butterworth butterworth_kernels process_butterworth.metal)
+    target_compile_definitions(process_butterworth PRIVATE USE_METAL)
+    target_link_libraries(process_butterworth PRIVATE Neurosuite::metal)
+    message(STATUS "process_butterworth: Metal build")
 else()
     add_executable(process_butterworth process_butterworth.cpp)
     message(STATUS "process_butterworth: CPU build")
