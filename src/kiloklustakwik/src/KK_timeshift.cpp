@@ -267,7 +267,7 @@ bool KK::InitTimeShift(int nChan, int nSamplesPerSpike, int N_halfWidth)
                spkPath, spkBytes / (1024.0 * 1024.0));
     }
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     // Initialise GPU shift-probe context if a GPU is in play.
     // Implementation lives in shiftprobe_<backend>.{cu,hip,cpp}.
     // gpu_timeshift_init returns nullptr on failure; the probe then
@@ -307,7 +307,7 @@ void KK::CloseTimeShift()
         m_timeShiftSpkMap = nullptr;
         m_timeShiftSpkLen = 0;
     }
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (m_timeShiftGpuCtx) {
         extern void gpu_timeshift_free(TimeShiftGpuCtx* ctx);
         gpu_timeshift_free(m_timeShiftGpuCtx);
@@ -463,7 +463,7 @@ int KK::TimeShiftSplit(const std::vector<int>& globalSpikeIndices,
     const int   rs       = pca.recShift;
     const bool  isCen    = pca.isCentered;
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     // GPU fast path: dispatcher runs the (2N+1)-candidate projection on-device
     // and returns trial features in the same layout as the CPU path.  Falls
     // back to CPU when the context is null or the cluster is too small to
@@ -592,7 +592,7 @@ int KK::TimeShiftSplit(const std::vector<int>& globalSpikeIndices,
         if (nSkippedRead == nMem) return 0;
     }
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
 pick_best_and_commit:
 #endif
 
@@ -634,7 +634,7 @@ pick_best_and_commit:
         }
     }
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     // Data[] changed on host.  Re-upload to device so the next MStep/EStep
     // reads the refreshed features.  Scatter-upload would be cheaper; for
     // now a full upload is simpler and still substantially cheaper than
@@ -925,7 +925,7 @@ int KK::TimeShiftMergeTighten(
 
     (void)nSkippedRead;  // not fatal; partial commits still valid
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (nChanged > 0 && gpu)
         gpu_upload_data(gpu, Data.m_Data);
 #endif
@@ -1258,7 +1258,7 @@ void KK::TimeShiftMergeCommit(const TimeShiftMergePlan& plan)
         ++nWritten;
     }
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (nWritten > 0 && gpu)
         gpu_upload_data(gpu, Data.m_Data);
 #endif

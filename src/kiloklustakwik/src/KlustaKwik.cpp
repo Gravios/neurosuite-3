@@ -1926,7 +1926,7 @@ int main(int argc, char **argv) {
             fprintf(stderr, "  %d spikes, %d dims, clusters %d-%d\n",
                     K1.nPoints, K1.nDims, MinClusters, MaxClusters);
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             if (K1.gpu)
                 fprintf(stderr, "  compute: GPU (%s)\n", GPU_BACKEND_NAME);
             else

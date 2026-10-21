@@ -49,6 +49,14 @@ extern KlustaSave kSv;  // global in KlustaKwik.cpp
 #  define gpu_device_available() hip_device_available()
 #  define GPU_BACKEND_NAME   "HIP"
 #endif
+
+// KK_HAS_GPU: this build has a CEM GPU backend, so KK carries a `gpu`
+// context and the EM steps have a GPU branch.  Every "is there a GPU
+// backend" test in KiloKlustaKwik uses this one macro, so a new backend
+// is added here and in the block above, not at each call site.
+#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#  define KK_HAS_GPU 1
+#endif
 #include <functional>
 #include <memory>
 #include <numeric>
@@ -676,7 +684,7 @@ public:
     std::unordered_map<long long,
         std::pair<uint64_t, std::vector<int16_t>>> m_medianCache;
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     // Opaque GPU handle for shift-probe kernels.  Allocated by InitTimeShift
     // when a GPU device is available; null otherwise (falls through to CPU
     // path).  Freed by CloseTimeShift().
@@ -1201,7 +1209,7 @@ public:
     int64_t              m_filGroupSessionSamples = 0;
     int                  m_filGroupNChan          = 0;
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     // GPU context — allocated by LoadData() when a device is present.
     // nullptr on chunk sub-objects (K2/K3/Kc) which always run on the CPU.
     // Freed by ~KK() when non-null.

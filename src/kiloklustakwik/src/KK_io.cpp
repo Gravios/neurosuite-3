@@ -298,7 +298,7 @@ void KK::cloneInto(KK& out, int ompTeamSz) const
     out.log2piHalf          = log2piHalf;
     out.suppressBestSave    = false;
     out.ompTeamSize         = ompTeamSz;  // 0 = all threads; >0 = nested team size
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     out.gpu                 = nullptr;   // CPU-only; GPU stays on master K1
 #endif
     out.pKsv                = nullptr;   // caller must set before running EM

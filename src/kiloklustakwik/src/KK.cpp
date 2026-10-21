@@ -212,7 +212,7 @@ void KK::MStep() {
     // alive set, which it never does — skip the redundant O(MaxClusters) pass.
     // (Reindex already called above after the size-deletion loop.)
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (gpu) {
         gpu_mstep(gpu,
             Class.m_Data, AliveIndex.m_Data,
@@ -255,7 +255,7 @@ void KK::MStep() {
             for (int j = i; j < nDims; j++)
                 Cov[c * nDims2 + i * nDims + j] *= inv;
     }
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     } // end CPU path
 #endif
 
@@ -310,7 +310,7 @@ void KK::EStep() {
     }
     Reindex();
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (gpu) {
         // Flatten Cholesky factors into a contiguous host array for upload.
         std::vector<float> h_chol(static_cast<size_t>(MaxPossibleClusters) * nDims2, 0.0f);
@@ -513,7 +513,7 @@ void KK::EStep() {
 // so the per-point read strides by nPoints through cluster rows (fix #2).
 // ---------------------------------------------------------------------------
 int KK::CStep() {
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (gpu) {
         gpu_cstep(gpu,
             Class.m_Data, OldClass.m_Data, Class2.m_Data,
@@ -559,7 +559,7 @@ void KK::ConsiderDeletion() {
     for (int c = 0; c < MaxPossibleClusters; c++)
         DeletionLoss[c] = ClassAlive[c] ? 0.0f : HugeScore;
 
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (gpu) {
         gpu_deletion_loss(gpu, DeletionLoss.m_Data, MaxPossibleClusters);
         // gpu_deletion_loss downloads d_Loss directly into DeletionLoss, overwriting
@@ -575,7 +575,7 @@ void KK::ConsiderDeletion() {
         DeletionLoss[Class[p]] +=
             LogP.m_Data[static_cast<size_t>(Class2[p]) * nPoints + p] -   // cluster-major
             LogP.m_Data[static_cast<size_t>(Class[p]) * nPoints + p];
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     }
 #endif
 
@@ -995,7 +995,7 @@ int KK::TrySplits() {
 // The CPU path is unchanged.
 // ---------------------------------------------------------------------------
 float KK::ComputeScore() const {
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
     if (gpu)
         return gpu_compute_score(gpu, Penalty(nClustersAlive));
 #endif

@@ -53,7 +53,7 @@
 // the TimeShiftGpuCtx forward declaration, and KK.cpp does not reference
 // gpu_timeshift_{init,free,project_batch} — so these stubs are neither
 // available to define nor needed.
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
 
 // The KK::TimeShiftGpuCtx struct is forward-declared in KK.h and defined
 // per-backend in shiftprobe_{cuda,hip,sycl}.{cu,cpp}.  None of those files
@@ -113,4 +113,4 @@ bool gpu_timeshift_project_batch(
     return false;
 }
 
-#endif // USE_CUDA || USE_SYCL || USE_HIP
+#endif // KK_HAS_GPU

@@ -1433,7 +1433,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
         // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
         // ComputeScore all run on CPU, where LogP.m_Data is authoritative.
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         void* savedGpu = static_cast<void*>(gpu); gpu = nullptr;
 #endif
         MStep();
@@ -1455,7 +1455,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 Output("Phase3-skip: clamped %d non-finite LogP entries\n", nNan);
         }
         score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         gpu = static_cast<decltype(gpu)>(savedGpu);
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
@@ -1464,7 +1464,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
         Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         void* savedGpu2 = static_cast<void*>(gpu); gpu = nullptr;
 #endif
         MStep();
@@ -1481,7 +1481,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             }
         }
         score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         gpu = static_cast<decltype(gpu)>(savedGpu2);
 #endif
         FullStep = 1;
@@ -1531,7 +1531,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             // Refresh global state after realignment: MStep recomputes
             // Mean/Cov from updated Data[], EStep populates LogP, then a
             // ComputeScore captures the post-realignment score.
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             void* savedGpuR = static_cast<void*>(gpu); gpu = nullptr;
 #endif
             MStep();
@@ -1548,7 +1548,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 }
             }
             score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             gpu = static_cast<decltype(gpu)>(savedGpuR);
 #endif
             if (score < ksv().BestScoreSave) {
@@ -1579,7 +1579,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
             // Same state-refresh dance as Phase 6a — Class[] now points
             // to consolidated roots; MStep recomputes Mean/Cov, Reindex
             // compacts dead IDs, EStep populates LogP for the new layout.
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             void* savedGpuB = static_cast<void*>(gpu); gpu = nullptr;
 #endif
             MStep();
@@ -1596,7 +1596,7 @@ float KK::RunChunkedCEM(const std::vector<float>& chunkBoundsSec,
                 }
             }
             score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             gpu = static_cast<decltype(gpu)>(savedGpuB);
 #endif
             if (score < ksv().BestScoreSave) {
@@ -3071,7 +3071,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         // GPU EStep writes d_LogP in GPU memory; the CPU LogP.m_Data clamp below
         // would be a no-op on the GPU path.  Temporarily null gpu so MStep/EStep/
         // ComputeScore all run on CPU, where LogP.m_Data is authoritative.
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         void* savedGpu = static_cast<void*>(gpu); gpu = nullptr;
 #endif
         MStep();
@@ -3093,7 +3093,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 Output("Phase3-skip: clamped %d non-finite LogP entries\n", nNan);
         }
         score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         gpu = static_cast<decltype(gpu)>(savedGpu);
 #endif
         if (score < ksv().BestScoreSave) { SaveBestMeans(); ksv().BestScoreSave = score; }
@@ -3102,7 +3102,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         Output("Phase 7: global warm-start EM — %d clusters, max %d iters\n",
                nClustersAlive, globalMergeIter);
         int   iter = 0, nChanged = 1;
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         void* savedGpu2 = static_cast<void*>(gpu); gpu = nullptr;
 #endif
         MStep();
@@ -3119,7 +3119,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             }
         }
         score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
         gpu = static_cast<decltype(gpu)>(savedGpu2);
 #endif
         FullStep = 1;
@@ -3154,7 +3154,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
             nCOMShifted = EnergyCOMRealignPhase(NbChannels, NbSamplesPerSpike);
         }
         if (nShifted > 0 || nCOMShifted > 0) {
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             void* savedGpuR = static_cast<void*>(gpu); gpu = nullptr;
 #endif
             MStep();
@@ -3171,7 +3171,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 }
             }
             score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             gpu = static_cast<decltype(gpu)>(savedGpuR);
 #endif
             if (score < ksv().BestScoreSave) {
@@ -3194,7 +3194,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
         const int nMergedSub =
             FinalMeanSubtractionMerge(NbChannels, NbSamplesPerSpike);
         if (nMergedSub > 0) {
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             void* savedGpuB = static_cast<void*>(gpu); gpu = nullptr;
 #endif
             MStep();
@@ -3211,7 +3211,7 @@ float KK::RunChunkedCEM(float chunkMinutes,
                 }
             }
             score = ComputeScore();
-#if defined(USE_CUDA) || defined(USE_SYCL) || defined(USE_HIP)
+#if defined(KK_HAS_GPU)
             gpu = static_cast<decltype(gpu)>(savedGpuB);
 #endif
             if (score < ksv().BestScoreSave) {
