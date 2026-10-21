@@ -105,11 +105,14 @@ install(FILES ndManagerDefault.yaml
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications/ndmanager")
 
 # Application and mimetype icons
-foreach(_size IN ITEMS 16 22 32 48 64)
+foreach(_size IN ITEMS 16 22 32 48 64 128 256)
     install(FILES "hi${_size}-app-ndmanager.png"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
         RENAME ndmanager.png)
 endforeach()
+install(FILES app-ndmanager.svg
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
+    RENAME ndmanager.svg)
 
 install(FILES ndmanager.desktop
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")

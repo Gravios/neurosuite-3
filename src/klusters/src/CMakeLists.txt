@@ -315,6 +315,9 @@ install(FILES hi22-app-klusters.png DESTINATION share/icons/hicolor/22x22/apps/ 
 install(FILES hi32-app-klusters.png DESTINATION share/icons/hicolor/32x32/apps/ RENAME klusters.png)
 install(FILES hi48-app-klusters.png DESTINATION share/icons/hicolor/48x48/apps/ RENAME klusters.png)
 install(FILES hi64-app-klusters.png DESTINATION share/icons/hicolor/64x64/apps/ RENAME klusters.png)
+install(FILES hi128-app-klusters.png DESTINATION share/icons/hicolor/128x128/apps/ RENAME klusters.png)
+install(FILES hi256-app-klusters.png DESTINATION share/icons/hicolor/256x256/apps/ RENAME klusters.png)
+install(FILES app-klusters.svg DESTINATION share/icons/hicolor/scalable/apps/ RENAME klusters.svg)
 install(FILES klusters.desktop DESTINATION share/applications/)
 
 # ---------------------------------------------------------------------------

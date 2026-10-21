@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [New icons for neurosuite-3, Klusters, NeuroScope and NDManager](#2026-10-21--new-icons-for-neurosuite-3-klusters-neuroscope-and-ndmanager) |
 | 2026-10-21 | [macOS: checking the Metal backend (kernel lint, on-device compile test, `NS_DISABLE_METAL`, `metal_validate.sh`)](#2026-10-21--macos-checking-the-metal-backend-kernel-lint-on-device-compile-test-ns_disable_metal-metal_validatesh) |
 | 2026-10-21 | [Klusters: Align All realigns as Realign Spikes does](#2026-10-21--klusters-align-all-realigns-as-realign-spikes-does) |
 | 2026-10-21 | [Klusters: Align All and post-edit realigns update the other feature spaces](#2026-10-21--klusters-align-all-and-post-edit-realigns-update-the-other-feature-spaces) |
@@ -106,6 +107,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — New icons for neurosuite-3, Klusters, NeuroScope and NDManager
+
+<details>
+<summary>Details</summary>
+
+One family: a navy tile with a recording trace and one spike running off
+both edges; above it "NS3" for the suite, three clusters of points for
+Klusters, three channel traces for NeuroScope, three processing steps for
+NDManager.  Sources and palette: `doc/images/README.md`.
+
+- The installed application icons (hicolor theme, 16–256 px and a
+  scalable SVG) and NDManager's icons for the other two programs are the
+  new ones.
+
+</details>
 
 ## 2026-10-21 — macOS: checking the Metal backend (kernel lint, on-device compile test, `NS_DISABLE_METAL`, `metal_validate.sh`)
 

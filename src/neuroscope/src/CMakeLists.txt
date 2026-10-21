@@ -90,13 +90,18 @@ install(TARGETS neuroscope
 
 # Application icons
 foreach(_size IN ITEMS 16 22 32 48 64)
-    install(FILES "hi${_size}-app-neuroscope.png"
-        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
-        RENAME neuroscope.png)
     install(FILES "hi${_size}-nphys-nrs.png"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/mimetypes"
         RENAME application-nphys-nrs.png)
 endforeach()
+foreach(_size IN ITEMS 16 22 32 48 64 128 256)
+    install(FILES "hi${_size}-app-neuroscope.png"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${_size}x${_size}/apps"
+        RENAME neuroscope.png)
+endforeach()
+install(FILES app-neuroscope.svg
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps"
+    RENAME neuroscope.svg)
 
 install(FILES neuroscope.desktop
     DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
