@@ -62,6 +62,7 @@
 #include <QApplication>
 
 #include <QList>
+#include <QMap>
 
 #include <QEvent>
 #include <QMessageBox>
@@ -1989,112 +1990,195 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     pending.records.reserve(static_cast<size_t>(N));
 
     // -----------------------------------------------------------------------
-    // patch69 — verify that the chosen raw source (.fil or .dat) actually
-    // matches what's stored in .spk.  Without this check, if .fil got
-    // deleted but the .spk was originally extracted FROM .fil (filtered),
-    // the code at lines 4013-4016 silently falls back to .dat (unfiltered)
-    // and re-extracts unfiltered waveforms into .spk slots that were
-    // filtered, corrupting the cluster a little more on every nudge.
+    // Verify the stored .spk against the raw file before writing anything.
+    // Every spike this run moves is re-cut from the raw file; every other
+    // spike keeps its stored row.  Both are right only if the stored rows are
+    // the windows at their .res in this raw file (and this .spk's transform).
     //
-    // Algorithm: pick the first cluster spike whose extraction window fits
-    // entirely within the raw file, read it, apply the same stderiv
-    // transform we'd apply during normal extraction, and compare to that
-    // spike's existing .spk slot (the channel-major copy currently in
-    // wavBuf).  If RMS difference exceeds 50% of the .spk content's RMS,
-    // the chosen raw source does not match — abort with a clear error
-    // rather than silently corrupting more waveforms.
+    // Up to 64 of the cluster's spikes, spread over it, are classified (a row
+    // "is" a window when every element is within 1 of it, bar a stderiv
+    // window's first sample, which depends on the seed convention):
+    //   intact     the window at .res;
+    //   rolled     the window at .res - s rolled circularly by s,
+    //              row[t] = W(res - s)[(t + s) mod nSamp], |s| <= 3 nSamp:
+    //              what Klusters realign wrote before 2026-10-21, cumulated
+    //              over runs (CHANGELOG);
+    //   stale      the window at .res - s: .res moved, the row was not re-cut;
+    //   all-pairs  (stderiv only) the window at .res with the all-pairs,
+    //              unseeded derivative: KiloKlustaKwik's re-cuts;
+    //   unexplained none of these (another raw source or transform).
+    // Any explained mismatch, or more unexplained rows than intact ones,
+    // stops the run with the diagnosis; nothing is written.
     //
     // (filF is always open here: realign stops earlier without a raw file.)
     // -----------------------------------------------------------------------
-    if (filF) {
-        bool verifyDone = false;
-        int  verifySkipped = 0;
-        for (int64_t csV = 0; csV < N && !verifyDone; ++csV) {
-            const int64_t tsV          = resTs[static_cast<size_t>(csV)];
-            const int64_t startSampleV = tsV - static_cast<int64_t>(peakSamp0);
-            if (startSampleV < 0 || startSampleV + nSamp > totalSamples) {
-                ++verifySkipped;
-                continue;
-            }
-            const std::int64_t rawOffV = static_cast<std::int64_t>(startSampleV)
-                                * static_cast<std::int64_t>(totalNbChan)
-                                * static_cast<std::int64_t>(sizeof(short));
-            if (neurosuite::core::fseek64(filF, rawOffV, SEEK_SET) != 0) { ++verifySkipped; continue; }
-            std::vector<int16_t> rawFrameV(static_cast<size_t>(nSamp * totalNbChan));
-            if (fread(rawFrameV.data(), sizeof(short),
-                      rawFrameV.size(), filF) != rawFrameV.size()) {
-                ++verifySkipped; continue;
-            }
-            // Channel-major raw waveform for the group's channels
-            std::vector<int16_t> verifyWav(static_cast<size_t>(nChan * nSamp));
-            for (int s = 0; s < nSamp; ++s)
-                for (int ci = 0; ci < nChan; ++ci)
-                    verifyWav[static_cast<size_t>(ci * nSamp + s)] =
-                        rawFrameV[static_cast<size_t>(s * totalNbChan + groupChannels[ci])];
-
-            // Mirror the stderiv transform used in the per-spike loop, so
-            // verifyWav lives in the same space as wavBuf for raw OR stderiv
-            // .spk formats.
-            if (spkIsTransformed) {
-                std::vector<int16_t> seedBuf;
-                const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, rawOffV, totalNbChan, groupChannels,
-                    stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
-                neurosuite::core::applyStderivTransform(stderivOrder, verifyWav.data(), nChan, nSamp, verifyWav.data(), stderivPartnerPtr,
-                    seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
-            }
-
-            // Compare to the STORED .spk row (channel-major, as verifyWav above).
-            // Not wavBuf: the shift passes have rolled it, and PCA refine re-cut
-            // it at the refined time, so it no longer holds the window at resTs.
-            const int16_t* refSpk = storedWav.data()
-                + static_cast<ptrdiff_t>(csV) * static_cast<ptrdiff_t>(spkElems);
-            double sumDiff2 = 0.0, sumRef2 = 0.0;
-            for (int e = 0; e < spkElems; ++e) {
-                const double dv = static_cast<double>(verifyWav[static_cast<size_t>(e)])
-                                - static_cast<double>(refSpk[static_cast<size_t>(e)]);
-                sumDiff2 += dv * dv;
-                sumRef2  += static_cast<double>(refSpk[static_cast<size_t>(e)])
-                          * static_cast<double>(refSpk[static_cast<size_t>(e)]);
-            }
-            const double rmsRatio = (sumRef2 > 0.0)
-                ? std::sqrt(sumDiff2 / sumRef2)
-                : 0.0;
-
-            if (rmsRatio > 0.5) {
-                log << "ERROR: raw source verification FAILED\n"
-                    << "  raw file:           " << filPath << "\n"
-                    << "  verify spike index: " << csV
-                    << " (ts=" << tsV << ")\n"
-                    << "  RMS difference:     "
-                    << QString::number(rmsRatio * 100.0, 'f', 1)
-                    << "% of .spk content (threshold 50%)\n"
-                    << "  Likely cause: .spk was extracted from a different raw\n"
-                    << "  source than the one currently on disk (e.g. .fil was\n"
-                    << "  deleted and the code fell back to .dat, or the raw file\n"
-                    << "  was overwritten by a later pipeline stage).\n"
-                    << "  Aborting realignment to avoid further .spk corruption.\n"
-                    << "  Re-extract waveforms with process_extractspikes before\n"
-                    << "  retrying the nudge.\n";
-                emitFlush();
-                if (spkW) fclose(spkW);
-                if (resW) fclose(resW);
-                if (fetW) fclose(fetW);
-                fclose(filF);
-                return false;
-            }
-            log << "Raw source verified: " << filPath
-                << " matches .spk (verify spike " << csV
-                << ", RMS diff "
-                << QString::number(rmsRatio * 100.0, 'f', 1)
-                << "%, skipped " << verifySkipped
-                << " spikes near file edges)\n";
-            emitFlush();
-            verifyDone = true;
+    // The group's window starting at `startSample`, read from the raw file and
+    // put in the .spk's space (channel-major, stderiv transform when the .spk
+    // has one), as the verification below and its diagnosis compare it.
+    // With `allPairs`, the transform is all-pairs and unseeded instead: what
+    // KiloKlustaKwik's checkpoint and Phase-2b re-cuts write (ApplySdiffAllpairs-
+    // TemporalDiff), whatever the group's pattern.
+    auto cutStoredSpace = [&](int64_t startSample, std::vector<int16_t>& out,
+                              bool allPairs = false) -> bool {
+        if (startSample < 0 || startSample + nSamp > totalSamples) return false;
+        const std::int64_t off = static_cast<std::int64_t>(startSample)
+                               * static_cast<std::int64_t>(totalNbChan)
+                               * static_cast<std::int64_t>(sizeof(short));
+        std::vector<int16_t> frame(static_cast<size_t>(nSamp * totalNbChan));
+        if (neurosuite::core::fseek64(filF, off, SEEK_SET) != 0
+            || fread(frame.data(), sizeof(short), frame.size(), filF) != frame.size())
+            return false;
+        out.assign(static_cast<size_t>(nChan * nSamp), 0);
+        for (int sm = 0; sm < nSamp; ++sm)
+            for (int ci = 0; ci < nChan; ++ci)
+                out[static_cast<size_t>(ci * nSamp + sm)] =
+                    frame[static_cast<size_t>(sm * totalNbChan + groupChannels[ci])];
+        if (spkIsTransformed && allPairs) {
+            neurosuite::core::applyStderivTransform(neurosuite::core::SdiffOrder::AllPairs,
+                out.data(), nChan, nSamp, out.data());
+        } else if (spkIsTransformed) {
+            std::vector<int16_t> seedBuf;
+            const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, off, totalNbChan, groupChannels,
+                stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
+            neurosuite::core::applyStderivTransform(stderivOrder, out.data(), nChan, nSamp, out.data(), stderivPartnerPtr,
+                seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
         }
-        if (!verifyDone) {
+        return true;
+    };
+    // Whether two channel-major rows are the same window: every element within
+    // 1 of the other, except, in a stderiv .spk, sample `seedAt` of each channel
+    // (the window's first sample, which depends on the seed convention; -1 for
+    // none).
+    auto sameRow = [&](const int16_t* a, const int16_t* b, int seedAt) {
+        if (!spkIsTransformed) seedAt = -1;
+        for (int ci = 0; ci < nChan; ++ci)
+            for (int t = 0; t < nSamp; ++t) {
+                const int e = ci * nSamp + t;
+                if (t != seedAt && std::abs(static_cast<int>(a[e]) - static_cast<int>(b[e])) > 1)
+                    return false;
+            }
+        return true;
+    };
+    // RMS of (a - b) relative to the RMS of b, over one spike's elements.
+    auto rmsRatioOf = [&](const int16_t* a, const int16_t* b) {
+        double d2 = 0.0, b2 = 0.0;
+        for (int e = 0; e < spkElems; ++e) {
+            const double dv = static_cast<double>(a[e]) - static_cast<double>(b[e]);
+            d2 += dv * dv;
+            b2 += static_cast<double>(b[e]) * static_cast<double>(b[e]);
+        }
+        return b2 > 0.0 ? std::sqrt(d2 / b2) : 0.0;
+    };
+
+    {
+        const int maxRoll = 3 * nSamp;
+        const int64_t nCheck = std::min<int64_t>(N, 64);
+        int nIntact = 0, nRolled = 0, nStale = 0, nAllPairs = 0, nOther = 0, nOut = 0;
+        int64_t firstBad = -1;
+        double worstOther = 0.0;
+        QMap<int, int> rolls, stales;
+        std::vector<int16_t> cut, rolled(static_cast<size_t>(spkElems));
+        for (int64_t k = 0; k < nCheck; ++k) {
+            const int64_t i = (nCheck == N) ? k : k * N / nCheck;
+            const int16_t* stored = storedWav.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            const int64_t start = resTs[static_cast<size_t>(i)] - static_cast<int64_t>(peakSamp0);
+            if (!cutStoredSpace(start, cut)) { ++nOut; continue; }
+            if (sameRow(cut.data(), stored, 0)) { ++nIntact; continue; }
+            if (firstBad < 0) firstBad = i;
+            const double rmsAtRes = rmsRatioOf(cut.data(), stored);
+            bool found = false;
+            // .res moved, row not rewritten: the window at .res - s itself.
+            for (int sh = -maxRoll; sh <= maxRoll && !found; ++sh) {
+                if (sh == 0 || !cutStoredSpace(start - sh, cut)) continue;
+                if (sameRow(cut.data(), stored, 0)) { ++nStale; ++stales[sh]; found = true; break; }
+                // Older Klusters realign: that window rolled circularly by s.
+                for (int ci = 0; ci < nChan; ++ci)
+                    for (int t = 0; t < nSamp; ++t)
+                        rolled[static_cast<size_t>(ci * nSamp + t)] =
+                            cut[static_cast<size_t>(ci * nSamp + (((t + sh) % nSamp) + nSamp) % nSamp)];
+                // (the cut's first sample lands where (t + s) mod nSamp == 0)
+                if (sameRow(rolled.data(), stored, ((-sh % nSamp) + nSamp) % nSamp)) {
+                    ++nRolled;
+                    ++rolls[sh];
+                    found = true;
+                }
+            }
+            // KiloKlustaKwik's all-pairs re-cut, at .res.
+            if (!found && spkIsTransformed && cutStoredSpace(start, cut, true)
+                && sameRow(cut.data(), stored, 0)) {
+                ++nAllPairs;
+                found = true;
+            }
+            if (!found) {
+                ++nOther;
+                worstOther = std::max(worstOther, rmsAtRes);
+            }
+        }
+        const int nChecked = static_cast<int>(nCheck) - nOut;
+        const int nExplained = nRolled + nStale + nAllPairs;
+        auto listOf = [](const QMap<int, int>& m) {
+            QStringList l;
+            for (auto it = m.cbegin(); it != m.cend(); ++it)
+                l << QStringLiteral("%1 (x%2)").arg(it.key()).arg(it.value());
+            return l.join(QStringLiteral(", "));
+        };
+        if (nChecked == 0) {
             log << "WARNING: could not verify raw source — no spike's extraction\n"
                 << "  window fit within the raw file (all near boundaries).\n"
                 << "  Proceeding without verification.\n";
+            emitFlush();
+        } else if (nExplained > 0 || nOther > nIntact) {
+            log << "ERROR: raw source verification FAILED\n"
+                << "  raw file: " << filPath << "\n"
+                << "  checked " << nChecked << " of the cluster's " << N
+                << " stored .spk rows against it (first mismatch: spike " << firstBad
+                << ", ts=" << (firstBad >= 0 ? resTs[static_cast<size_t>(firstBad)] : 0) << "):\n"
+                << "    the window at .res (intact):                  " << nIntact << "\n"
+                << "    the window at .res - s, rolled by s:          " << nRolled << "\n"
+                << "    the window at .res - s (.res moved, row not): " << nStale << "\n";
+            if (spkIsTransformed)
+                log << "    the window at .res, all-pairs stderiv:        " << nAllPairs << "\n";
+            log << "    unexplained:                                  " << nOther;
+            if (nOther > 0)
+                log << "  (RMS difference up to " << QString::number(worstOther * 100.0, 'f', 1) << "%)";
+            log << "\n";
+            if (nRolled > 0)
+                log << "  rolled by s = " << listOf(rolls) << "\n"
+                    << "  Rolled rows are what Klusters realign wrote before 2026-10-21\n"
+                    << "  (CHANGELOG).\n";
+            if (nStale > 0)
+                log << "  stale by s = " << listOf(stales) << "\n"
+                    << "  Stale rows: a step moved .res without re-cutting the .spk\n"
+                    << "  (KiloKlustaKwik's Phase-1.5 checkpoint does so without a .fil).\n";
+            if (nAllPairs > 0)
+                log << "  All-pairs rows: KiloKlustaKwik re-cut them with the all-pairs\n"
+                    << "  derivative, not this group's pattern (checkpoint / Phase 2b).\n";
+            if (nExplained > 0)
+                log << "  The .res times are kept; the stored waveforms are wrong.  Repair\n"
+                    << "  first: back up the .spk and the .fet files projected from it, turn\n"
+                    << "  on Preferences > Refinement > \"Re-extract spike waveforms from\n"
+                    << "  .fil on save\", Save, then re-project those .fet files from the\n"
+                    << "  rebuilt .spk.\n";
+            else
+                log << "  Likely cause: .spk was extracted from a different raw source\n"
+                    << "  than the one on disk (e.g. .fil deleted and .dat used, or the\n"
+                    << "  raw file overwritten by a later stage), or with a different\n"
+                    << "  transform than this group's current pattern (was the session's\n"
+                    << "  sdiffPairs changed after extraction?).  Re-extract the\n"
+                    << "  waveforms (ndm_extractspikes) before retrying.\n";
+            log << "  Aborting realignment; nothing was changed.\n";
+            emitFlush();
+            if (spkW) fclose(spkW);
+            if (resW) fclose(resW);
+            if (fetW) fclose(fetW);
+            fclose(filF);
+            return false;
+        } else {
+            log << "Raw source verified: " << filPath << " — " << nIntact << " of "
+                << nChecked << " sampled .spk rows are the windows at their .res";
+            if (nOther > 0) log << " (" << nOther << " unexplained)";
+            log << "\n";
             emitFlush();
         }
     }
