@@ -1,0 +1,3 @@
+// The icon of neuroscope.exe in Explorer, the Start menu and shortcuts; rendered from
+// app-neuroscope.svg (doc/images/README.md).  The window icon is set at run time.
+IDI_ICON1 ICON "app-neuroscope.ico"

@@ -75,6 +75,11 @@ set(_srcs
 # WIN32: a windowed program (no console) on Windows; ignored on Linux/macOS.
 add_executable(ndmanager WIN32 ${_srcs})
 
+# The executable's icon (Explorer, Start menu, shortcuts).
+if(WIN32)
+    target_sources(ndmanager PRIVATE ndmanager.rc)
+endif()
+
 target_include_directories(ndmanager PRIVATE
     # KlustersShared headers first so moved types (GeneralInformation etc)
     # are found in libklustersshared rather than stale local copies.

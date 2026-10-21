@@ -125,6 +125,8 @@ NDManager.  Sources and palette: `doc/images/README.md`.
   in the title bar and taskbar on Windows and Linux and in the macOS Dock,
   and name their desktop file, so Wayland desktops find the installed
   icon.
+- On Windows the `.exe` files carry the icons too, for Explorer, the Start
+  menu and shortcuts.
 
 </details>
 

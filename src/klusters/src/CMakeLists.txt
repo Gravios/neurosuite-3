@@ -155,6 +155,11 @@ qt_wrap_ui(klusters_SRCS ${klusters_UI})
 
 add_executable(klusters WIN32 ${klusters_SRCS})
 
+# The executable's icon (Explorer, Start menu, shortcuts).
+if(WIN32)
+    target_sources(klusters PRIVATE klusters.rc)
+endif()
+
 # ---------------------------------------------------------------------------
 # Apple GPU (Metal) backend — macOS with USE_METAL (doc/design/metal-backend.md).
 # Kernel sources are embedded and compiled at run time; no Metal device at run

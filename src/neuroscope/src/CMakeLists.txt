@@ -68,6 +68,11 @@ add_subdirectory(spectral)
 # It must be the literal keyword: a generator expression is read as a source file.
 add_executable(neuroscope WIN32 ${_srcs})
 
+# The executable's icon (Explorer, Start menu, shortcuts).
+if(WIN32)
+    target_sources(neuroscope PRIVATE neuroscope.rc)
+endif()
+
 target_include_directories(neuroscope PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_CURRENT_BINARY_DIR}")   # for config-neuroscope.h and AUTOUIC output
