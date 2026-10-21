@@ -96,7 +96,7 @@ prior so future runs use the recalibrated values:
 
 ```sh
 kk_build_prior.py \
-    /data/session_*/session_*.curation_log.N.stderiv \
+    /data/session_*/session_*.cur.stderiv.N \
     --session-yaml /data/session_001/session_001.yaml \
     --electrode-group N \
     --out-dir ~/.ndm/priors

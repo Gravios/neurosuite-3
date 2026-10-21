@@ -575,7 +575,7 @@ def recover_actions(g: Group):
 # ════════════════════════════════════════════════════════════════════════
 #
 # Klusters appends a per-group JSON-Lines action log,
-# <session>.curation_log.<group>.<method>, recording every GROUP/SPLIT/DELETE/...
+# <session>.cur.<method>.<group>[.<stage>], recording every GROUP/SPLIT/DELETE/...
 # action with before/after cluster snapshots.  Unlike endpoint-diffing the
 # (raw, curated) .clu pair, this captures SPLITs — a raw cluster the human
 # fanned into several units — which endpoint-diffing can detect (low purity)
@@ -595,21 +595,28 @@ def recover_actions(g: Group):
 def curation_log_path(args, group):
     """Resolve the optional curation log for a group, or None when disabled.
 
-    --curation-log: ""/false -> off; true/auto -> the staged Klusters log
-    <session>.curation_log.<group>.<method> (matched by suffix); a directory
-    -> the matching log in that dir; else an explicit path (may contain {g})."""
+    --curation-log: ""/false -> off; true/auto -> the Klusters log
+    <session>.cur.<method>.<group> (any method; else a staged
+    <session>.cur.<method>.<group>.<stage>; else the pre-2026-10-21 name
+    <session>.curation_log.<group>.<method>); a directory -> the matching log in
+    that dir; else an explicit path (may contain {g})."""
     v = (getattr(args, "curation_log", "") or "").strip()
     if v == "" or v.lower() in ("false", "no", "0", "off"):
         return None
 
     def _staged_log(dirpath):
-        # Klusters names the log for the clustering stage,
-        # <session>.curation_log.<group>.<method> (no ".jl"). Match whichever
-        # staged log exists for this group, ignoring .bak backups.
+        # Klusters names the log for the .clu it records,
+        # <session>.cur.<method>.<group>[.<stage>] (no ".jl"). Match whichever
+        # log exists for this group, unstaged first, ignoring .bak backups;
+        # logs from before 2026-10-21 are <session>.curation_log.<group>.<method>.
         stem = os.path.basename(args.session)
-        pat = os.path.join(dirpath, f"{stem}.curation_log.{group}.*")
-        hits = sorted(p for p in glob.glob(pat) if not p.endswith(".bak"))
-        return hits[0] if hits else None
+        for pat in (f"{stem}.cur.*.{group}", f"{stem}.cur.*.{group}.*",
+                    f"{stem}.curation_log.{group}.*"):
+            hits = sorted(p for p in glob.glob(os.path.join(dirpath, pat))
+                          if not p.endswith(".bak"))
+            if hits:
+                return hits[0]
+        return None
 
     if v.lower() in ("true", "auto", "yes", "on", "1"):
         return _staged_log(os.path.dirname(args.session) or ".")
@@ -1387,7 +1394,7 @@ def parse_args():
     p.add_argument("--probe-library", default="")
     p.add_argument("--curation-log", default="",
                    help="optional Klusters curation log for split supervision: "
-                        "''/false=off, true/auto=<session>.curation_log.<g>.<method>, "
+                        "''/false=off, true/auto=<session>.cur.<method>.<g>, "
                         "or a directory / explicit path (may contain {g})")
     return p.parse_args()
 

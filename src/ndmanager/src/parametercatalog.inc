@@ -85,7 +85,7 @@
 { "ndm_autoklusta", "splitThreshold", "-1", "Optional", true,
   "p(split) above which a kept cluster is flagged as a split candidate when the model is applied. Negative (default -1) uses the value stored with the trained model, or 0.5 if it has none." },
 { "ndm_autoklusta", "curationLog", "", "Optional", true,
-  "Klusters curation log used to supervise split training. Empty or false (default) = off; true or auto = <session>.curation_log.<group>.<method>; otherwise a directory or a file path, which may contain {g} for the group number." },
+  "Klusters curation log used to supervise split training. Empty or false (default) = off; true or auto = <session>.cur.<method>.<group>[.<stage>]; otherwise a directory or a file path, which may contain {g} for the group number." },
 { "ndm_bandpass", "windowHalfLength", "16", "Mandatory", true,
   "Half-length (samples) of the median high-pass window; sets the lower cutoff (identical to ndm_hipass). At 32 kHz, 16 samples gives approximately 600 Hz." },
 { "ndm_bandpass", "lowpassCutoff", "6000", "Mandatory", true,

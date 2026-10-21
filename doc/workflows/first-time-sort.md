@@ -79,7 +79,7 @@ quality, notes — all free text).
 
 Save with `Ctrl+S`. Klusters writes
 `recording_001.clu.stderiv.N` and appends to
-`recording_001.curation_log.N.stderiv` (no curation log is kept for the
+`recording_001.cur.stderiv.N` (no curation log is kept for the
 `standard` method).
 
 Repeat for each shank.

@@ -136,7 +136,7 @@ annotations.
 ### 6. Save
 
 `Ctrl+S` writes `session.clu.<method>.N` and appends to
-`session.curation_log.<group>.<method>`. The log is one JSON-line record per
+`session.cur.<method>.<group>`. The log is one JSON-line record per
 editing operation; see [Curation logging](../klusters/README.md#curation-logging)
 for the schema.
 

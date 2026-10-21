@@ -104,7 +104,7 @@ the cluster passes the structural filters (`--min-spikes`,
 cluster information dialog is not logged and does not affect the prior.
 Klusters keeps a curation log only for non-`standard` methods.
 
-When you save and close, `session_a.curation_log.<group>.<method>` accumulates
+When you save and close, `session_a.cur.<method>.<group>` accumulates
 one JSON-line record per action. See
 [klusters/README.md](../klusters/README.md) for the
 log schema.
@@ -124,9 +124,9 @@ representative session YAML:
 mkdir -p ~/.ndm/priors
 
 kk_build_prior.py \
-    /data/session_a/session_a.curation_log.7.stderiv \
-    /data/session_b/session_b.curation_log.7.stderiv \
-    /data/session_c/session_c.curation_log.7.stderiv \
+    /data/session_a/session_a.cur.stderiv.7 \
+    /data/session_b/session_b.cur.stderiv.7 \
+    /data/session_c/session_c.cur.stderiv.7 \
     --session-yaml /data/session_a/session_a.yaml \
     --electrode-group 7 \
     --out-dir ~/.ndm/priors
@@ -241,7 +241,7 @@ old one in place:
 
 ```sh
 kk_build_prior.py \
-    /data/session_*/session_*.curation_log.7.stderiv \
+    /data/session_*/session_*.cur.stderiv.7 \
     --session-yaml /data/session_a/session_a.yaml \
     --electrode-group 7 \
     --out-dir ~/.ndm/priors

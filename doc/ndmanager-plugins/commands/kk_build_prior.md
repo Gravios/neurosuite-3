@@ -1,4 +1,4 @@
-# `kk_build_prior.py` — train a per-probe empirical KiloKlustaKwik prior (`.curation_log` → `.prior.yaml`)
+# `kk_build_prior.py` — train a per-probe empirical KiloKlustaKwik prior (`.cur` → `.prior.yaml`)
 
 ## Synopsis
 
@@ -10,7 +10,7 @@ kk_build_prior.py <log_files...> \
 ```
 
 **Input:** one or more Klusters curation logs
-`session.curation_log.<group>.<method>` for the same shank; any session
+`session.cur.<method>.<group>` for the same shank; any session
 YAML recorded on the same probe
 
 **Output:** `<probe_id>.<N>.prior.yaml` in `--out-dir` (or the path
@@ -53,7 +53,7 @@ and the source tree's `src/ndmanager/src`.
 
 | Option | Default | Meaning |
 |---|---|---|
-| `log_files` | — | One or more `.curation_log.<group>.<method>` files for the same shank. |
+| `log_files` | — | One or more `.cur.<method>.<group>` files for the same shank. |
 | `--session-yaml` | required | Session YAML on the target probe; used only for the probe identity. |
 | `--electrode-group` | required | 1-based group (shank) the prior is for. |
 | `--out-dir` | `.` | Output directory (created if needed); file name `<probe_id>.<N>.prior.yaml`. |

@@ -3016,7 +3016,7 @@ programs:
       # curationLog
 
       Klusters curation log used to supervise split training.  Empty or false
-      (default) = off; true or auto = <session>.curation_log.<group>.<method>;
+      (default) = off; true or auto = <session>.cur.<method>.<group>[.<stage>];
       otherwise a directory or a file path, which may contain {g} for the
       group number.
 

@@ -167,7 +167,7 @@ fewer split candidates. `eval` uses `keepThreshold` and
 ## Curation log (split supervision)
 
 With `curationLog` set, `train` also reads the Klusters curation log of
-each group (`SESSION.curation_log.<group>.<method>`; see
+each group (`SESSION.cur.<method>.<group>[.<stage>]`; see
 [curation logging](../../klusters/README.md#curation-logging)) and fits
 a third, split classifier:
 
@@ -184,8 +184,10 @@ a third, split classifier:
   `.fet`/`.spk` of each kept cluster.
 
 `curationLog` values: empty or `false` — off; `true` or `auto` — the
-first `SESSION.curation_log.<group>.*` next to the session (`.bak`
-files ignored); a directory — the same pattern in that directory;
+first `SESSION.cur.*.<group>` next to the session, else the first staged
+`SESSION.cur.*.<group>.<stage>`, else the first
+`SESSION.curation_log.<group>.*` (the name Klusters used before 2026-10-21;
+`.bak` files ignored); a directory — the same pattern in that directory;
 anything else — a file path, where `{g}` is replaced by the group
 number. A log is ingested once per group (again with `force: true`).
 
