@@ -27,6 +27,7 @@
 // Application-specific include files
 #include "neuroscope.h"
 
+#include <klustersshared/appicon.h>
 #include <klustersshared/theme.h>
 
 int main(int argc, char *argv[])
@@ -50,6 +51,9 @@ int main(int argc, char *argv[])
 
     // Apply the suite-wide light/dark/system theme preference.
     neurosuite::initThemeFromSettings();
+
+    // Window / taskbar / Dock icon, and the desktop file Wayland matches it by.
+    neurosuite::installApplicationIcon(QStringLiteral("neuroscope"));
 
     // ---- Command-line parsing with QCommandLineParser (Qt5+) ----
     QCommandLineParser parser;

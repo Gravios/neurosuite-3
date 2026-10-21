@@ -1,0 +1,13 @@
+<RCC>
+    <!-- The window icon: neurosuite::installApplicationIcon() (klustersshared/appicon.h)
+         loads ":/app-icon/<size>".  Rendered from app-klusters.svg (doc/images/README.md). -->
+    <qresource prefix="/">
+        <file alias="app-icon/16">hi16-app-klusters.png</file>
+        <file alias="app-icon/22">hi22-app-klusters.png</file>
+        <file alias="app-icon/32">hi32-app-klusters.png</file>
+        <file alias="app-icon/48">hi48-app-klusters.png</file>
+        <file alias="app-icon/64">hi64-app-klusters.png</file>
+        <file alias="app-icon/128">hi128-app-klusters.png</file>
+        <file alias="app-icon/256">hi256-app-klusters.png</file>
+    </qresource>
+</RCC>

@@ -32,6 +32,7 @@
 //Application specific include files
 #include "ndmanager.h"
 
+#include <klustersshared/appicon.h>
 #include <klustersshared/theme.h>
 
 QString version;
@@ -63,6 +64,9 @@ int main(int argc, char **argv)
 
     // Apply the suite-wide light/dark/system theme preference.
     neurosuite::initThemeFromSettings();
+
+    // Window / taskbar / Dock icon, and the desktop file Wayland matches it by.
+    neurosuite::installApplicationIcon(QStringLiteral("ndmanager"));
 
     // Pin the C locale for all numeric input and formatting.  ndmanager's
     // parameter pages (acquisition system, LFP, clusters, video, probe, ...)

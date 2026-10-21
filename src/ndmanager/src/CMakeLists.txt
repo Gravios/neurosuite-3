@@ -69,6 +69,7 @@ set(_srcs
     unitlistlayout.cpp
     videolayout.cpp
     ndmanager-icons.qrc
+    ndmanager-appicon.qrc
     ndmanager-html.qrc)
 
 # WIN32: a windowed program (no console) on Windows; ignored on Linux/macOS.

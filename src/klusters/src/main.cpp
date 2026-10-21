@@ -28,6 +28,7 @@
 #include <sys/resource.h>   // RLIMIT_NOFILE headroom for over-clustered sessions
 #endif
 
+#include <klustersshared/appicon.h>
 #include <klustersshared/theme.h>
 #include "config-klusters.h"
 
@@ -62,6 +63,9 @@ int main(int argc, char* argv[])
 
     // Apply the suite-wide light/dark/system theme preference.
     neurosuite::initThemeFromSettings();
+
+    // Window / taskbar / Dock icon, and the desktop file Wayland matches it by.
+    neurosuite::installApplicationIcon(QStringLiteral("klusters"));
 
     // Pin the C locale for all numeric input and formatting.  Without this the
     // spin boxes and the QIntValidator / QDoubleValidator input fields inherit

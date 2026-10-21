@@ -1,0 +1,13 @@
+<RCC>
+    <!-- The window icon: neurosuite::installApplicationIcon() (klustersshared/appicon.h)
+         loads ":/app-icon/<size>".  Rendered from app-neuroscope.svg (doc/images/README.md). -->
+    <qresource prefix="/">
+        <file alias="app-icon/16">hi16-app-neuroscope.png</file>
+        <file alias="app-icon/22">hi22-app-neuroscope.png</file>
+        <file alias="app-icon/32">hi32-app-neuroscope.png</file>
+        <file alias="app-icon/48">hi48-app-neuroscope.png</file>
+        <file alias="app-icon/64">hi64-app-neuroscope.png</file>
+        <file alias="app-icon/128">hi128-app-neuroscope.png</file>
+        <file alias="app-icon/256">hi256-app-neuroscope.png</file>
+    </qresource>
+</RCC>

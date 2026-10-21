@@ -52,7 +52,7 @@ set(_srcs
     prefgenerallayout.cpp
     propertieslayout.cpp)
 
-qt_add_resources(_srcs neuroscope-icons.qrc neuroscope-keymaps.qrc)   # S6: bundled :/keymaps presets
+qt_add_resources(_srcs neuroscope-icons.qrc neuroscope-keymaps.qrc neuroscope-appicon.qrc)   # S6: bundled :/keymaps presets
 
 # The spectral view's rendering layer (Qt).  The DSP it renders is
 # Neurosuite::spectral, from libneurosuite-core.  The monorepo build has the

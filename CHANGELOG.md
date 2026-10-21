@@ -121,6 +121,10 @@ NDManager.  Sources and palette: `doc/images/README.md`.
 - The installed application icons (hicolor theme, 16–256 px and a
   scalable SVG) and NDManager's icons for the other two programs are the
   new ones.
+- Klusters, NeuroScope and NDManager set their own window icon, so it shows
+  in the title bar and taskbar on Windows and Linux and in the macOS Dock,
+  and name their desktop file, so Wayland desktops find the installed
+  icon.
 
 </details>
 
