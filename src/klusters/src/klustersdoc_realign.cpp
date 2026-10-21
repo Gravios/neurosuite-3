@@ -670,6 +670,25 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     const QString fetPath = pendingOrOrig(origFetPath, pendingFetPath);
     const QString cluPath = resolveFeature(dir + "/" + base, "clu", grpId,
                                            featureMethod(origFetPath));
+
+    // The raw recording every moved spike's window is re-cut from: the
+    // session's .fil, else .dat (rawRecordingPath, as re-extract and the
+    // follow use).  It was once derived by cutting two suffixes off spkPath,
+    // which only worked for an untagged, non-pending S.spk.N; with the
+    // .pending copy (always there after open) or a method-tagged name it
+    // pointed at no file, and the write fell back to the circularly rolled
+    // working copy (docs: claude/klusters-realign-wraparound-2026-10-21).
+    // Without the raw file realign cannot keep .spk[i] == raw at .res[i], so
+    // it refuses before computing or writing anything.
+    const QString rawPath = rawRecordingPath();
+    if (!QFileInfo::exists(rawPath)) {
+        log << "ERROR: no raw recording for this session (" << rawPath
+            << ", or the .fil beside it).  Realign moves spike times and re-cuts\n"
+            << "  their windows from it; without it the .spk would no longer match\n"
+            << "  the .res.  Nothing was changed.\n";
+        emitFlush();
+        return false;
+    }
     // Pipeline detection — decouple .spk storage format from .fet feature
     // space.  These are orthogonal signals in Pipeline C (raw .spk + stderiv
     // .fetD/.pcaD) and only coincide in Pipeline A (both raw) and Pipeline D
@@ -876,6 +895,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         }
         wavBuf = std::move(cm);
     }
+    // The stored windows, unrolled (channel-major).  The shift passes roll
+    // wavBuf circularly as a working copy; what is written is either a fresh
+    // cut from the raw file at the new time or, for a spike that does not
+    // move (or cannot be re-cut), this stored row at its old time.
+    const std::vector<int16_t> storedWav = wavBuf;
 
     // Capture before-mean in channel-major order for the review dialog.
     if (meanBefore) {
@@ -968,15 +992,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // PCA basis fit on the file stay consistent.
     bool stderivSeeded = true;
     if (spkIsTransformed) {
-        QString seedFilPath;
-        {
-            const QString spkBase = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
-            const QString noExt = spkBase.left(spkBase.lastIndexOf(QLatin1Char('.')));
-            seedFilPath = QFileInfo::exists(noExt + QStringLiteral(".fil"))
-                        ? noExt + QStringLiteral(".fil") : noExt + QStringLiteral(".dat");
-        }
         const auto conv = detectSpkSeeding(
-            seedFilPath, clusteringData->getTotalNbChannels(),
+            rawPath, clusteringData->getTotalNbChannels(),
             clusteringData->getCurrentChannels(), nSamp, peakSamp0, stderivOrder,
             stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr, N,
             [&](int64_t i) { return clusterTs[static_cast<size_t>(i)]; },
@@ -1280,15 +1297,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
 
         const int totalNbChanP82 = clusteringData->getTotalNbChannels();
         const QList<int>& groupChannelsP82 = clusteringData->getCurrentChannels();
-        QString filPathP82;
-        {
-            const QString baseSpk = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
-            const QString noExt = baseSpk.left(baseSpk.lastIndexOf(QLatin1Char('.')));
-            if (QFileInfo::exists(noExt + QStringLiteral(".fil")))
-                filPathP82 = noExt + QStringLiteral(".fil");
-            else
-                filPathP82 = noExt + QStringLiteral(".dat");
-        }
+        const QString& filPathP82 = rawPath;
         FILE* filFp82 = fopen(filPathP82.toLocal8Bit().constData(), "rb");
         if (!filFp82) {
             log << "  WARNING: cannot open " << filPathP82
@@ -1932,26 +1941,19 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     const int totalNbChan = clusteringData->getTotalNbChannels();
     const QList<int>& groupChannels = clusteringData->getCurrentChannels();
 
-    // Resolve .fil / .dat path
-    QString filPath;
-    {
-        const QString spkBase = spkPath.left(spkPath.lastIndexOf(QLatin1Char('.')));
-        const QString noExt = spkBase.left(spkBase.lastIndexOf(QLatin1Char('.')));
-        if (QFileInfo::exists(noExt + QStringLiteral(".fil")))
-            filPath = noExt + QStringLiteral(".fil");
-        else
-            filPath = noExt + QStringLiteral(".dat");
-    }
+    const QString& filPath = rawPath;
     _rtWprepMs = _rtmr.elapsed();
     FILE* filF = fopen(filPath.toLocal8Bit().constData(), "rb");
-    if (!filF)
-        log << "WARNING: cannot open raw file " << filPath
-            << " — waveforms will not be re-extracted\n";
+    if (!filF) {
+        log << "ERROR: cannot open raw file " << filPath
+            << " to re-cut the moved windows.  Nothing was changed.\n";
+        emitFlush();
+        return false;
+    }
 
-    const int64_t totalSamples = filF
-        ? (static_cast<int64_t>(QFileInfo(filPath).size())
-           / (static_cast<int64_t>(sizeof(short)) * totalNbChan))
-        : 0LL;
+    const int64_t totalSamples =
+        static_cast<int64_t>(QFileInfo(filPath).size())
+        / (static_cast<int64_t>(sizeof(short)) * totalNbChan);
 
     // -----------------------------------------------------------------------
     // Write realignment results directly into the persistent .pending files.
@@ -1994,7 +1996,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // the chosen raw source does not match — abort with a clear error
     // rather than silently corrupting more waveforms.
     //
-    // Skipped only when filF is null (no raw source — log already warned).
+    // (filF is always open here: realign stops earlier without a raw file.)
     // -----------------------------------------------------------------------
     if (filF) {
         bool verifyDone = false;
@@ -2033,9 +2035,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
             }
 
-            // Compare to wavBuf[csV * spkElems ..] which holds the .spk
-            // contents in channel-major layout (same as verifyWav above).
-            const int16_t* refSpk = wavBuf.data()
+            // Compare to the STORED .spk row (channel-major, as verifyWav above).
+            // Not wavBuf: the shift passes have rolled it, and PCA refine re-cut
+            // it at the refined time, so it no longer holds the window at resTs.
+            const int16_t* refSpk = storedWav.data()
                 + static_cast<ptrdiff_t>(csV) * static_cast<ptrdiff_t>(spkElems);
             double sumDiff2 = 0.0, sumRef2 = 0.0;
             for (int e = 0; e < spkElems; ++e) {
@@ -2094,13 +2097,60 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     //snapshots from then on serve these bytes from memory while epochs
     //pinned before this batch never see them.
     QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
+    int64_t notRecut = 0;   // moved spikes whose window could not be re-cut: left in place
     for (int64_t j = 0; j < N; ++j) {
         const int64_t csIdx = j;                              // no reorder: each spike keeps its row
         const int64_t dest  = gidx[static_cast<size_t>(j)];
-        const int64_t ts = newTs[static_cast<size_t>(csIdx)]; // extTs: re-extraction window AND .res/.fet/in-memory timestamp (kept consistent)
-
         int16_t* w = wavBuf.data()
             + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
+        const int16_t* stored = storedWav.data()
+            + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
+
+        // A moved spike's window is cut afresh from the raw file at its new
+        // time (extTs).  The rolled working copy in w is never written: if the
+        // cut is impossible (window outside the file, seek or read failure)
+        // the spike stays where it was, with its stored window and time.
+        bool recut = false;
+        if (cumShift[static_cast<size_t>(csIdx)] != 0) {
+            const int64_t startSample = newTs[static_cast<size_t>(csIdx)]
+                                      - static_cast<int64_t>(peakSamp0);
+            if (startSample >= 0 && startSample + nSamp <= totalSamples) {
+                const std::int64_t rawOff = static_cast<std::int64_t>(startSample)
+                                   * static_cast<std::int64_t>(totalNbChan)
+                                   * static_cast<std::int64_t>(sizeof(short));
+                std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
+                if (neurosuite::core::fseek64(filF, rawOff, SEEK_SET) == 0
+                    && fread(rawFrame.data(), sizeof(short), rawFrame.size(), filF)
+                           == rawFrame.size()) {
+                    // Channel-major raw window of the group's channels.
+                    std::vector<int16_t> rawCM(static_cast<size_t>(nChan * nSamp));
+                    for (int s = 0; s < nSamp; ++s)
+                        for (int ci = 0; ci < nChan; ++ci)
+                            rawCM[static_cast<size_t>(ci * nSamp + s)] =
+                                rawFrame[static_cast<size_t>(s * totalNbChan + groupChannels[ci])];
+                    // Into w in the .spk's own space: the stderiv transform when
+                    // the .spk stores stderiv waveforms (Pipeline D), raw otherwise.
+                    if (spkIsTransformed) {
+                        std::vector<int16_t> seedBuf;
+                        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, rawOff, totalNbChan, groupChannels,
+                            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
+                        neurosuite::core::applyStderivTransform(stderivOrder, rawCM.data(), nChan, nSamp, w, stderivPartnerPtr,
+                            seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
+                    } else {
+                        std::copy(rawCM.begin(), rawCM.end(), w);
+                    }
+                    recut = true;
+                }
+            }
+            if (!recut) {
+                cumShift[static_cast<size_t>(csIdx)] = 0;
+                newTs[static_cast<size_t>(csIdx)] = resTs[static_cast<size_t>(csIdx)];
+                ++notRecut;
+            }
+        }
+        if (!recut) std::copy(stored, stored + spkElems, w);   // unmoved: the stored window
+
+        const int64_t ts = newTs[static_cast<size_t>(csIdx)]; // extTs: re-extraction window AND .res/.fet/in-memory timestamp (kept consistent)
 
         // Capture original in-memory values before any update (needed for reject)
         PendingSpkRecord rec;
@@ -2116,76 +2166,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                 clusteringData->featureValue(
                     static_cast<dataType>(dest + 1), col + 1));
 
-        // Re-extract waveform from .fil/.dat at the new timestamp.
+        // .spk rows are sample-major on disk.
         std::vector<int16_t> spkRow(static_cast<size_t>(spkElems));
-        if (filF && cumShift[static_cast<size_t>(csIdx)] != 0) {
-            const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
-            if (startSample >= 0 && startSample + nSamp <= totalSamples) {
-                const std::int64_t rawOff = static_cast<std::int64_t>(startSample)
-                                   * static_cast<std::int64_t>(totalNbChan)
-                                   * static_cast<std::int64_t>(sizeof(short));
-                if (neurosuite::core::fseek64(filF, rawOff, SEEK_SET) == 0) {
-                    std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
-                    if (fread(rawFrame.data(), sizeof(short),
-                              rawFrame.size(), filF) == rawFrame.size()) {
-                        // Build channel-major raw waveform for w[]
-                        std::vector<int16_t> rawCM(static_cast<size_t>(nChan * nSamp));
-                        for (int s = 0; s < nSamp; ++s)
-                            for (int ci = 0; ci < nChan; ++ci)
-                                rawCM[static_cast<size_t>(ci * nSamp + s)] =
-                                    rawFrame[static_cast<size_t>(
-                                        s * totalNbChan + groupChannels[ci])];
-                        // .spk write path: transform only when the .spk file
-                        // actually stores stderiv waveforms (Pipeline D).  The
-                        // wavBuf `w` parallel update must match the .spk format,
-                        // so xcorr against the on-disk template stays consistent.
-                        if (spkIsTransformed) {
-                            // stderiv into w (channel-major), then mirror into
-                            // spkRow (sample-major, what .spkD stores) so wavBuf
-                            // stays in stderiv space for xcorr and the two agree.
-                            std::vector<int16_t> seedBuf;
-                            const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, rawOff, totalNbChan, groupChannels,
-                                stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
-                            neurosuite::core::applyStderivTransform(stderivOrder, rawCM.data(), nChan, nSamp, w, stderivPartnerPtr,
-                                seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
-                            for (int s = 0; s < nSamp; ++s)
-                                for (int ci = 0; ci < nChan; ++ci)
-                                    spkRow[static_cast<size_t>(s * nChan + ci)] =
-                                        w[static_cast<size_t>(ci * nSamp + s)];
-                        } else {
-                            // Raw pipeline: sample-major for .spk, channel-major for w
-                            for (int s = 0; s < nSamp; ++s)
-                                for (int ci = 0; ci < nChan; ++ci) {
-                                    spkRow[static_cast<size_t>(s * nChan + ci)] =
-                                        rawCM[static_cast<size_t>(ci * nSamp + s)];
-                                    w[static_cast<size_t>(ci * nSamp + s)] =
-                                        rawCM[static_cast<size_t>(ci * nSamp + s)];
-                                }
-                        }
-                    } else {
-                        for (int s = 0; s < nSamp; ++s)
-                            for (int ch = 0; ch < nChan; ++ch)
-                                spkRow[static_cast<size_t>(s * nChan + ch)] =
-                                    w[static_cast<size_t>(ch * nSamp + s)];
-                    }
-                } else {
-                    for (int s = 0; s < nSamp; ++s)
-                        for (int ch = 0; ch < nChan; ++ch)
-                            spkRow[static_cast<size_t>(s * nChan + ch)] =
-                                w[static_cast<size_t>(ch * nSamp + s)];
-                }
-            } else {
-                for (int s = 0; s < nSamp; ++s)
-                    for (int ch = 0; ch < nChan; ++ch)
-                        spkRow[static_cast<size_t>(s * nChan + ch)] =
-                            w[static_cast<size_t>(ch * nSamp + s)];
-            }
-        } else {
-            for (int s = 0; s < nSamp; ++s)
-                for (int ch = 0; ch < nChan; ++ch)
-                    spkRow[static_cast<size_t>(s * nChan + ch)] =
-                        w[static_cast<size_t>(ch * nSamp + s)];
-        }
+        for (int s = 0; s < nSamp; ++s)
+            for (int ch = 0; ch < nChan; ++ch)
+                spkRow[static_cast<size_t>(s * nChan + ch)] =
+                    w[static_cast<size_t>(ch * nSamp + s)];
 
         rec.fetRow = makeFetRow(csIdx, w, ts);
 
@@ -2239,7 +2225,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     fclose(resW);
     fclose(fetW);
     SpkMemoryCache::instance().markWritten(pendingSpkPath);   // rows rewritten in place
-    if (filF) fclose(filF);
+    fclose(filF);
+    if (notRecut > 0) {
+        nShifted = 0;
+        for (int64_t i = 0; i < N; ++i)
+            if (cumShift[static_cast<size_t>(i)] != 0) ++nShifted;
+        log << "WARNING: " << notRecut << " spike(s) could not be re-cut from " << filPath
+            << " at their new time (window outside the file or a read error);\n"
+            << "  they were left unmoved.\n";
+        emitFlush();
+    }
     _rtWwriteMs = _rtmr.elapsed();
 
     // spkFileName already points to pendingSpkPath (set on open and kept

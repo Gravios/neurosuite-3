@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [Klusters realign: moved spikes get a fresh window from the .fil, never the rolled copy](#2026-10-21--klusters-realign-moved-spikes-get-a-fresh-window-from-the-fil-never-the-rolled-copy) |
 | 2026-10-21 | [ndm_extractspikes: noise statistics for the clusterers' whitener (`.nst`)](#2026-10-21--ndm_extractspikes-noise-statistics-for-the-clusterers-whitener-nst) |
 | 2026-10-21 | [process_medianfilter: CPU builds no longer corrupt recordings larger than one chunk](#2026-10-21--process_medianfilter-cpu-builds-no-longer-corrupt-recordings-larger-than-one-chunk) |
 | 2026-10-21 | [macOS: Metal paths for the high-pass filters and channel grouping](#2026-10-21--macos-metal-paths-for-the-high-pass-filters-and-channel-grouping) |
@@ -96,6 +97,65 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — Klusters realign: moved spikes get a fresh window from the .fil, never the rolled copy
+
+<details>
+<summary>Details</summary>
+
+- **The fault.**  Realign finds each spike's shift on a circularly rolled
+  working copy of its window.  Before writing, it should cut a fresh window
+  out of the `.fil` at the new time.  It looked for the `.fil` by cutting two
+  suffixes off the `.spk` path.  That works only for an untagged, non-pending
+  `S.spk.N`.  With the `.pending` copy, which always exists after open, or any
+  method-tagged name, no file was found.  Realign then logged a warning and
+  wrote the rolled copy.
+- **The damage.**  The `.res` moved by the shift *s* but the stored window
+  carried |*s*| samples from the other end of the old window.  The `.fet`
+  was projected from that rolled window.  Repeated passes accumulated the
+  error.  Found on sirotaA-jg-000005-20120312 group 7: 66.7% of the
+  `.spk.stderiv_C5.7` windows were rolled.  Sibling `.spk` spaces re-cut by
+  the follow were correct.
+- **Now:**
+  - The raw file is resolved once with `rawRecordingPath()` (the `.fil`, else
+    the `.dat`, as re-extract and the follow use it).  The stderiv seed
+    detection, the PCA refine and the write all use it.
+  - With no raw file, realign stops before computing anything, changes
+    nothing and says so.
+  - A moved spike gets a fresh cut at its new time.  A spike whose window
+    cannot be cut (outside the file, a read error) stays where it was, with
+    its stored window, and is reported.  Unmoved spikes are written from the
+    stored rows.  The rolled copy is never written.
+  - The raw-source check compares the stored row, not the shifted working
+    copy.
+- **Behaviour changes:**
+  - `--pca-refine` now runs; it never did, because it could not find the
+    raw file.
+  - The raw-source check now runs, and it refuses `.spk` files that are
+    already rolled.  Repair them first.
+- **Repair of existing files:**
+  - **Affected:** every `.spk` a Klusters realign wrote as the open
+    clustering's own waveforms, and the `.fet` of every space projected
+    from it.
+  - **Correct:** the `.res`, and the sibling spaces.
+  - **Steps:**
+    1. Back up the affected files.
+    2. In Preferences → Refinement, turn on "Re-extract spike waveforms from
+       .fil on save" and Save.  This rebuilds the `.spk` from the `.fil` at
+       the current `.res`.
+    3. Re-project the `.fet` PCA columns with each space's own `.pca`.
+- **Checked:** with a harness linked against the Klusters objects, on a
+  fixture session (4 channels, method-tagged names, the `.pending` copies,
+  290 of 426 spikes offset by 1 to 3 samples):
+  - after realign, every written `.spk` row equals a fresh cut at its `.res`;
+    every `.fet` row equals its projection; every time is back at the truth;
+  - the same holds with `--pca-refine`, `--recenter-rms` and a wider shift;
+  - a spike whose new window would leave the file stays unmoved;
+  - without the `.fil`, realign returns false and the pending files are
+    byte-identical;
+  - the old code, on the same fixture, leaves 290 rolled rows.
+
+</details>
 
 ## 2026-10-21 — ndm_extractspikes: noise statistics for the clusterers' whitener (`.nst`)
 
