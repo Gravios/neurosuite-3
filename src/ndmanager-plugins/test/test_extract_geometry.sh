@@ -45,6 +45,8 @@ chmod +x "$TMP/bin/"*
 cd "$TMP/s"
 export ARGLOG="$TMP/args.log"
 fails=0
+# In-place sed differs between GNU and BSD (macOS) sed; edit through a copy.
+sed_yaml() { sed "$1" s.yaml > s.yaml.new && mv s.yaml.new s.yaml; }
 check() { if eval "$1"; then echo "  ok:   $2"; else echo "  FAIL: $2"; fails=$((fails + 1)); fi; }
 
 # Groups 1 and 3 share a geometry; group 2 differs in both nSamples and peak.
@@ -123,7 +125,7 @@ check '! ls s.spk.* >/dev/null 2>&1' "detection leaves no .spk"
 
 echo "one geometry: one run, as before:"
 session_yaml ndm_extractspikes standard
-sed -i 's/nSamples: 42/nSamples: 32/; s/peakSampleIndex: 16/peakSampleIndex: 11/' s.yaml
+sed_yaml 's/nSamples: 42/nSamples: 32/; s/peakSampleIndex: 16/peakSampleIndex: 11/'
 for g in 1 2 3; do head -c 80 /dev/zero > s.res.standard.$g; done
 run ndm_extractspikes; st=$?
 check '[ $st -eq 0 ] && [ $(wc -l < "$ARGLOG") -eq 1 ]' "a single engine run"

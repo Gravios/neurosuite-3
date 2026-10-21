@@ -40,6 +40,8 @@ chmod +x "$TMP/bin/"*
 cd "$TMP/s"
 export ARGLOG="$TMP/args.log"
 fails=0
+# In-place sed differs between GNU and BSD (macOS) sed; edit through a copy.
+sed_yaml() { sed "$1" s.yaml > s.yaml.new && mv s.yaml.new s.yaml; }
 check() { if eval "$1"; then echo "  ok:   $2"; else echo "  FAIL: $2"; fails=$((fails + 1)); fi; }
 
 PAIRS1='"0-1+2,1-0+2,2-1+3,3-2+1"'
@@ -104,9 +106,9 @@ refuse "C4 token, order-5 pattern" "      nSamples: 32
       sdiffPairs: $PAIRS2" stderiv_C4 "is an order-5 pattern, the method says 4"
 refuse "feature-space token" "" stderiv_C5_D34 "names a feature space"
 refuse "unknown token" "" fiber "unknown method"
-session_yaml; sed -i 's/channels: \[4, 5, 6, 7\]/channels: [4, 5, 6, 9]/' s.yaml; rm -f "$ARGLOG"; xs --method standard --check; st=$?
+session_yaml; sed_yaml 's/channels: \[4, 5, 6, 7\]/channels: [4, 5, 6, 9]/'; rm -f "$ARGLOG"; xs --method standard --check; st=$?
 check '[ $st -ne 0 ] && grep -q "channel 9 is beyond nChannels (8)" out.log' "a channel beyond nChannels"
-session_yaml; sed -i 's/channels: \[4, 5, 6, 7\]/channels: [4]/; s/sdiffPairs: "0-1+3,1-0+2,2-3+1,3-2+0"//' s.yaml
+session_yaml; sed_yaml 's/channels: \[4, 5, 6, 7\]/channels: [4]/; s/sdiffPairs: "0-1+3,1-0+2,2-3+1,3-2+0"//'
 rm -f "$ARGLOG"; xs --method stderiv_S3 --check; st=$?
 check '[ $st -ne 0 ] && grep -q "group 2 has one channel" out.log' "one-channel group under stderiv_S3"
 xs --method standard --check; st=$?

@@ -1506,8 +1506,8 @@ ndm_sdiff_max_index()
 {
 	local nums
 	case "$(ndm_sdiff_pattern_order "$1")" in
-		6) nums=$(echo "$1" | grep -o '[cC][0-9]\+' | tr -d 'cC') ;;
-		*) nums=$(echo "$1" | grep -o '[0-9]\+') ;;
+		6) nums=$(echo "$1" | grep -oE '[cC][0-9]+' | tr -d 'cC') ;;
+		*) nums=$(echo "$1" | grep -oE '[0-9]+') ;;
 	esac
 	echo "$nums" | awk 'BEGIN { m = -1 } NF { if ($1 + 0 > m) m = $1 + 0 } END { print m }'
 }
@@ -1555,7 +1555,7 @@ ndm_extract_preflight()
 	for g in $(seq 1 "$nG"); do
 		chans=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/channels/channel")
 		xml_read_failed "$chans" && continue                  # empty group: skipped by the run
-		nChG=$(echo $chans | wc -w)
+		nChG=$(echo $chans | wc -w | tr -d ' ')   # BSD wc pads with blanks
 		if ! xml_read_failed "$nCh"; then
 			for c in $chans; do
 				case "$c" in *[!0-9]*) _pf_err "group $g: channel '$c' is not a channel number"; continue ;; esac
