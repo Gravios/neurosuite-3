@@ -23,7 +23,7 @@
 
 #include <klustersshared/parameteryamlreader.h>
 
-class ClusterUserInformation;
+struct ClusterUserInformation;   // a struct: MSVC mangles class and struct differently
 
 /**
  * @brief Reads klusters-relevant fields from a YAML parameter file.

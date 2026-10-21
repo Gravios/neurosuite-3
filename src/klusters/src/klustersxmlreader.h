@@ -26,7 +26,7 @@
 #include <QMap>
 #include <QDomNode>
 
-class ClusterUserInformation;
+struct ClusterUserInformation;   // a struct: MSVC mangles class and struct differently
 
 /**
   * Class reading the parameter xml file.
