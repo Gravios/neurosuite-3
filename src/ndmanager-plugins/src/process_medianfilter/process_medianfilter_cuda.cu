@@ -34,11 +34,12 @@
     The sorted sliding window per thread: windowLength shorts per thread,
     layout: sharedMem[(threadIdx.y * blockDim.x + threadIdx.x) * wLen].
 
-    Preallocation
-    -------------
-    The output file is preallocated to the exact input size using
-    posix_fallocate before the streaming loop.  This reserves contiguous disk
-    extents upfront, eliminating per-chunk metadata updates and fragmentation.
+    Host side
+    ---------
+    process_medianfilter.cpp reads the file in chunks, each with w frames of
+    context on either side (zero outside the recording), for the CPU and the
+    GPU alike; cudaMedianFilterChunk() filters one such chunk.  The output
+    therefore equals the CPU path's (test/test_medianfilter.py checks it).
 
     Hardware target
     ---------------
@@ -57,21 +58,21 @@
  ***************************************************************************/
 
 #include <cuda_runtime.h>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
-#ifdef __linux__
-#  include <fcntl.h>
-#endif
 
-#define CUDA_CHECK(call)                                                        \
+// On a CUDA error: report it and return false, so the caller continues on
+// the CPU.
+#define CUDA_TRY(call)                                                          \
     do {                                                                        \
         cudaError_t _e = (call);                                               \
         if (_e != cudaSuccess) {                                               \
-            fprintf(stderr, "CUDA error at %s:%d: %s\n",                       \
+            fprintf(stderr, "process_medianfilter: CUDA error at %s:%d: %s\n", \
                     __FILE__, __LINE__, cudaGetErrorString(_e));               \
-            exit(EXIT_FAILURE);                                                 \
+            return false;                                                       \
         }                                                                       \
     } while (0)
 
@@ -145,10 +146,11 @@ __global__ void medianFilterKernel(
           short* __restrict__ filteredData,
     int  nSamplesPerChannel,
     int  nChannels,
-    int  windowHalfLength)
+    int  windowHalfLength,
+    int  tileBase)          // first tile of this launch (grids are <= 65535 in y)
 {
     const int ch   = blockIdx.x * blockDim.x + threadIdx.x;
-    const int tile = blockIdx.y * blockDim.y + threadIdx.y;
+    const int tile = tileBase + blockIdx.y * blockDim.y + threadIdx.y;
     if (ch >= nChannels) return;
 
     const int wLen      = 2 * windowHalfLength + 1;
@@ -209,190 +211,80 @@ static bool selectBlockConfig(int nChannels, int windowHalfLength,
 }
 
 // ---------------------------------------------------------------------------
-// Host-side state
+// Device buffers, grown as needed and kept for the life of the program.
 // ---------------------------------------------------------------------------
-struct CudaMedianFilter {
-    int          nChannels;
-    int          windowHalfLength;
-    int          bx, by;
-    size_t       smemPerBlock;
-    size_t       bufBytes;      // padded input buffer size
-    size_t       chunkBytes;    // unpadded output buffer size
-
-    short*       h_ping;  short* d_ping_in;  short* d_ping_out;
-    short*       h_pong;  short* d_pong_in;  short* d_pong_out;
-    cudaStream_t stream[2];
-
-    void init(int nCh, int wHL, int nSampPerChunk, const cudaDeviceProp& prop) {
-        nChannels        = nCh;
-        windowHalfLength = wHL;
-        if (!selectBlockConfig(nCh, wHL, bx, by, smemPerBlock, prop)) {
-            fprintf(stderr,
-                "process_medianfilter: window half-length %d requires %zu bytes "
-                "shared memory per block, but device limit is %zu bytes.\n"
-                "Reduce windowHalfLength or use --cpu.\n",
-                wHL, smemPerBlock, prop.sharedMemPerBlock);
-            exit(EXIT_FAILURE);
-        }
-        const size_t padBytes = (size_t)nCh * wHL * sizeof(short);
-        chunkBytes = (size_t)nSampPerChunk * sizeof(short);
-        bufBytes   = chunkBytes + 2 * padBytes;
-
-        CUDA_CHECK(cudaMallocHost(&h_ping, bufBytes));
-        CUDA_CHECK(cudaMallocHost(&h_pong, bufBytes));
-        CUDA_CHECK(cudaMalloc(&d_ping_in,  bufBytes));
-        CUDA_CHECK(cudaMalloc(&d_ping_out, chunkBytes));
-        CUDA_CHECK(cudaMalloc(&d_pong_in,  bufBytes));
-        CUDA_CHECK(cudaMalloc(&d_pong_out, chunkBytes));
-        CUDA_CHECK(cudaStreamCreate(&stream[0]));
-        CUDA_CHECK(cudaStreamCreate(&stream[1]));
-    }
-
-    void destroy() {
-        cudaFreeHost(h_ping); cudaFreeHost(h_pong);
-        cudaFree(d_ping_in);  cudaFree(d_ping_out);
-        cudaFree(d_pong_in);  cudaFree(d_pong_out);
-        cudaStreamDestroy(stream[0]);
-        cudaStreamDestroy(stream[1]);
-    }
-
-    void launchKernel(const short* d_in, short* d_out,
-                      int nSampThisChunk, cudaStream_t s) const {
-        const int padSamp          = nChannels * windowHalfLength;
-        // Tile over per-channel samples, not total interleaved samples.
-        const int nSampPerCh       = nSampThisChunk / nChannels;
-        const int nTiles           = (nSampPerCh + TILE_SAMPLES - 1) / TILE_SAMPLES;
-        dim3 block(bx, by);
-        dim3 grid((nChannels + bx - 1) / bx,
-                  (nTiles    + by - 1) / by);
-        medianFilterKernel<<<grid, block, smemPerBlock, s>>>(
-            d_in + padSamp, d_out, nSampPerCh, nChannels, windowHalfLength);
-    }
+namespace {
+struct DeviceBuffers {
+    short* in = nullptr;
+    short* out = nullptr;
+    size_t inBytes = 0;
+    size_t outBytes = 0;
+    bool   reported = false;
 };
+DeviceBuffers buffers;
 
-// ---------------------------------------------------------------------------
-// Public entry point called from main
-// ---------------------------------------------------------------------------
-extern "C" void runCudaMedianFilter(const char* inputPath,
-                                     const char* outputPath,
-                                     int   nChannels,
-                                     int   windowHalfLength,
-                                     long int chunkSizeBytes,
-                                     bool  verbose)
+bool ensure(short*& ptr, size_t& have, size_t need)
 {
-    FILE* fin = fopen(inputPath, "rb");
-    if (!fin) { perror(inputPath); exit(EXIT_FAILURE); }
+    if (need <= have) return true;
+    cudaFree(ptr);
+    ptr = nullptr;
+    have = 0;
+    CUDA_TRY(cudaMalloc(&ptr, need));
+    have = need;
+    return true;
+}
+} // namespace
 
-    fseeko(fin, 0, SEEK_END);
-    const long long fileSize = ftello(fin);
-    fseeko(fin, 0, SEEK_SET);
+// ---------------------------------------------------------------------------
+// Public entry point (process_medianfilter.cpp): filters nFrames frames.
+// `data` points at frame 0 of an interleaved host buffer that also holds
+// windowHalfLength frames of context before and after; `filtered` receives
+// nFrames frames.  Returns false (message on stderr) if the GPU cannot.
+// ---------------------------------------------------------------------------
+extern "C" bool cudaMedianFilterChunk(const short* data, short* filtered, long long nFrames,
+                                      int nChannels, int windowHalfLength, bool verbose)
+{
+    if (nFrames <= 0) return true;
+    if (nFrames > INT_MAX) return false;
 
-    // Open output and preallocate to the exact input size.
-    FILE* fout = fopen(outputPath, "wb");
-    if (!fout) { perror(outputPath); fclose(fin); exit(EXIT_FAILURE); }
-#ifdef __linux__
-    {
-        int fd = fileno(fout);
-        if (fd >= 0) (void)posix_fallocate(fd, 0, (off_t)fileSize);
-    }
-#endif
-
-    const int sampleSize = (int)sizeof(short);
-    const int padSamples = nChannels * windowHalfLength;
-    const long int padBytes = (long int)padSamples * sampleSize;
-
-    int nSamplesPerChunk = (int)(chunkSizeBytes / sampleSize);
-    nSamplesPerChunk = (nSamplesPerChunk / nChannels) * nChannels;
-    if (nSamplesPerChunk < nChannels) nSamplesPerChunk = nChannels;
-    const long int chunkBytes = (long int)nSamplesPerChunk * sampleSize;
-
-    int dev; cudaGetDevice(&dev);
-    cudaDeviceProp prop; cudaGetDeviceProperties(&prop, dev);
-
-    if (verbose) {
-        int bx, by; size_t smem;
-        selectBlockConfig(nChannels, windowHalfLength, bx, by, smem, prop);
-        const int nSampPerCh = nSamplesPerChunk / nChannels;
-        const int nTiles = (nSampPerCh + TILE_SAMPLES - 1) / TILE_SAMPLES;
-        const int nThreads = ((nChannels + bx-1)/bx * bx) * ((nTiles + by-1)/by * by);
-        printf("\n[CUDA medianfilter]\n");
-        printf("  File:             %s  (%.2f GB)\n", inputPath, fileSize / 1e9);
-        printf("  Channels:         %d\n", nChannels);
-        printf("  Window half:      %d\n", windowHalfLength);
-        printf("  Chunk:            %.1f MB  (%d samples/ch)\n",
-               chunkBytes / 1e6, nSamplesPerChunk / nChannels);
-        printf("  GPU:              %s  (%d SMs, %.0f MB VRAM)\n",
-               prop.name, prop.multiProcessorCount, prop.totalGlobalMem / 1e6);
-        printf("  Block:            %dx%d  smem: %.1f KB\n",
-               bx, by, smem / 1024.0);
-        printf("  Tiles/chunk:      %d  (TILE=%d samples)\n", nTiles, TILE_SAMPLES);
-        printf("  Threads/chunk:    ~%d  (~%.0f warps/SM)\n",
-               nThreads, (double)nThreads / 32.0 / prop.multiProcessorCount);
+    int dev;
+    CUDA_TRY(cudaGetDevice(&dev));
+    cudaDeviceProp prop;
+    CUDA_TRY(cudaGetDeviceProperties(&prop, dev));
+    int bx, by;
+    size_t smem;
+    if (!selectBlockConfig(nChannels, windowHalfLength, bx, by, smem, prop)) {
+        fprintf(stderr,
+                "process_medianfilter: window half-length %d needs %zu bytes of shared "
+                "memory per block, the device has %zu\n",
+                windowHalfLength, smem, prop.sharedMemPerBlock);
+        return false;
     }
 
-    CudaMedianFilter mf;
-    mf.init(nChannels, windowHalfLength, nSamplesPerChunk, prop);
+    const size_t ctx = (size_t)windowHalfLength * nChannels;          // context samples
+    const size_t inBytes  = ((size_t)nFrames * nChannels + 2 * ctx) * sizeof(short);
+    const size_t outBytes = (size_t)nFrames * nChannels * sizeof(short);
+    if (!ensure(buffers.in, buffers.inBytes, inBytes)) return false;
+    if (!ensure(buffers.out, buffers.outBytes, outBytes)) return false;
 
-    short** h_bufs = new short*[2]{ mf.h_ping, mf.h_pong };
-    short** d_in   = new short*[2]{ mf.d_ping_in,  mf.d_pong_in  };
-    short** d_out  = new short*[2]{ mf.d_ping_out, mf.d_pong_out };
-
-    long long sizeLeft     = fileSize;
-    long int  prevChunkBytes = 0;
-    int       pong         = 0;
-    bool      first        = true;
-
-    while (sizeLeft > 0) {
-        const int cur = pong;
-        const int prv = 1 - pong;
-
-        const long int readBytes = (sizeLeft < chunkBytes) ? (long int)sizeLeft : chunkBytes;
-        const int nSampThisChunk = (int)(readBytes / sampleSize);
-        short* hbuf = h_bufs[cur];
-
-        if (first) {
-            memset(hbuf, 0, padBytes);
-            size_t got = fread(hbuf + padSamples, sampleSize,
-                               nSampThisChunk + padSamples, fin);
-            (void)got;
-        } else {
-            memcpy(hbuf,
-                   h_bufs[prv] + prevChunkBytes / sampleSize,
-                   2 * padBytes);
-            size_t got = fread(hbuf + 2 * padSamples, sampleSize, nSampThisChunk, fin);
-            (void)got;
-        }
-
-        if (!first) {
-            CUDA_CHECK(cudaStreamSynchronize(mf.stream[prv]));
-            size_t got = fwrite(h_bufs[prv] + padSamples, sampleSize,
-                                prevChunkBytes / sampleSize, fout);
-            (void)got;
-        }
-
-        CUDA_CHECK(cudaMemcpyAsync(d_in[cur], hbuf,
-                                   readBytes + 2 * padBytes,
-                                   cudaMemcpyHostToDevice, mf.stream[cur]));
-        mf.launchKernel(d_in[cur], d_out[cur], nSampThisChunk, mf.stream[cur]);
-        CUDA_CHECK(cudaMemcpyAsync(h_bufs[cur] + padSamples, d_out[cur],
-                                   readBytes,
-                                   cudaMemcpyDeviceToHost, mf.stream[cur]));
-
-        prevChunkBytes = readBytes;
-        sizeLeft      -= readBytes;
-        first          = false;
-        pong           = 1 - pong;
+    if (verbose && !buffers.reported) {
+        printf("[CUDA medianfilter] %s: block %dx%d, %.1f KB shared, %d samples per tile\n",
+               prop.name, bx, by, smem / 1024.0, TILE_SAMPLES);
+        buffers.reported = true;
     }
 
-    // Flush last chunk
-    const int last = 1 - pong;
-    CUDA_CHECK(cudaStreamSynchronize(mf.stream[last]));
-    fwrite(h_bufs[last] + padSamples, sampleSize,
-           prevChunkBytes / sampleSize, fout);
-
-    mf.destroy();
-    delete[] h_bufs; delete[] d_in; delete[] d_out;
-    fclose(fin); fclose(fout);
-
-    if (verbose) printf("  Done.\n");
+    CUDA_TRY(cudaMemcpy(buffers.in, data - ctx, inBytes, cudaMemcpyHostToDevice));
+    const int nPerCh = (int)nFrames;
+    const int nTiles = (nPerCh + TILE_SAMPLES - 1) / TILE_SAMPLES;
+    const int maxTilesPerLaunch = 65535 * by;
+    dim3 block(bx, by);
+    for (int tileBase = 0; tileBase < nTiles; tileBase += maxTilesPerLaunch) {
+        const int tiles = std::min(maxTilesPerLaunch, nTiles - tileBase);
+        dim3 grid((nChannels + bx - 1) / bx, (tiles + by - 1) / by);
+        medianFilterKernel<<<grid, block, smem>>>(buffers.in + ctx, buffers.out, nPerCh,
+                                                  nChannels, windowHalfLength, tileBase);
+        CUDA_TRY(cudaGetLastError());
+    }
+    CUDA_TRY(cudaMemcpy(filtered, buffers.out, outBytes, cudaMemcpyDeviceToHost));
+    return true;
 }

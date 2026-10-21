@@ -97,16 +97,26 @@ static void filterCPU(int windowHalfLength, const short* data, short* filtered,
 }
 
 // ---------------------------------------------------------------------------
-// CUDA path (compiled in separately as process_medianfilter_cuda.cu)
+// GPU path: filters one chunk laid out as for filterCPU (frame 0 at `data`,
+// w frames of context on either side) with the same definition; returns
+// false when the GPU cannot, and the chunk is then filtered on the CPU.
 // ---------------------------------------------------------------------------
 #ifdef USE_CUDA
-extern "C" void runCudaMedianFilter(const char* inputPath,
-                                     const char* outputPath,
-                                     int   nChannels,
-                                     int   windowHalfLength,
-                                     long int chunkSizeBytes,
-                                     bool  verbose);
+// process_medianfilter_cuda.cu
+extern "C" bool cudaMedianFilterChunk(const short* data, short* filtered, long long nFrames,
+                                      int nChannels, int windowHalfLength, bool verbose);
 #endif
+
+static bool gpuFilterChunk([[maybe_unused]] const short* data, [[maybe_unused]] short* filtered,
+                           [[maybe_unused]] long long nFrames, [[maybe_unused]] int nChannels,
+                           [[maybe_unused]] int windowHalfLength)
+{
+#if defined(USE_CUDA)
+    return cudaMedianFilterChunk(data, filtered, nFrames, nChannels, windowHalfLength, verbose);
+#else
+    return false;
+#endif
+}
 
 // ---------------------------------------------------------------------------
 // CLI
@@ -125,7 +135,7 @@ static void help(char* name)
          << " -w nSamples    window half length\n"
          << " -b buffer      chunk size in bytes (default 512MB)\n"
          << " -t nThreads    CPU OpenMP threads (default: all cores)\n"
-#ifdef USE_CUDA
+#if defined(USE_CUDA)
          << " -c             force CPU path\n"
 #endif
          << " -v             verbose mode\n";
@@ -172,20 +182,17 @@ int main(int argc, char *argv[])
     const char* inputPath  = argv[argc - 2];
     const char* outputPath = argv[argc - 1];
 
-#ifdef USE_CUDA
-    if (!forceCPU) {
-        if (verbose) cout << "Using CUDA GPU path\n";
-        runCudaMedianFilter(inputPath, outputPath, nChannels,
-                            windowHalfLength, chunkSize, verbose);
-        return 0;
-    }
-#endif
-
+#if defined(USE_CUDA)
+    bool useGpu = !forceCPU;
+    if (verbose) cout << (useGpu ? "Using CUDA GPU path\n" : "Using CPU path (-c)\n");
+#else
+    bool useGpu = false;
     if (verbose) cout << "Using CPU"
 #ifdef _OPENMP
         << " (OpenMP, " << omp_get_max_threads() << " threads)"
 #endif
         << " path\n";
+#endif
 
     FILE* inputFile  = fopen(inputPath,  "rb");
     if (!inputFile)  { cerr << "error: cannot open '"  << inputPath  << "'\n"; exit(1); }
@@ -244,8 +251,16 @@ int main(int argc, char *argv[])
             cerr << "error: cannot read '" << inputPath << "'\n";
             exit(1);
         }
-        filterCPU(windowHalfLength, input.data() + w * nChannels, output.data(), nf,
-                  nChannels, prog, f0 * frameBytes, nf * frameBytes);
+        const short* frame0 = input.data() + w * nChannels;
+        if (useGpu && !gpuFilterChunk(frame0, output.data(), nf, nChannels, windowHalfLength)) {
+            cerr << "process_medianfilter: GPU path failed; continuing on the CPU\n";
+            useGpu = false;
+        }
+        if (useGpu)
+            prog.setPosition((f0 + nf) * frameBytes);
+        else
+            filterCPU(windowHalfLength, frame0, output.data(), nf,
+                      nChannels, prog, f0 * frameBytes, nf * frameBytes);
         fwrite(output.data(), sizeof(short), static_cast<std::size_t>(nf * nChannels), outputFile);
     }
     if (tailBytes > 0) {
