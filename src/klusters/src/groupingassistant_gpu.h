@@ -2,7 +2,7 @@
  * groupingassistant_gpu.h
  *
  * Common C interface implemented by each GPU backend
- * (CUDA, HIP, SYCL) and by the CPU fallback stub.
+ * (CUDA, HIP, SYCL, Metal) and by the CPU fallback stub.
  *
  * All arrays are flat, row-major, 0-based doubles on the HOST.
  *
@@ -29,6 +29,7 @@ extern "C" {
 int cuda_device_available();
 int hip_device_available();
 int sycl_device_available();
+int metal_device_available();
 
 /**
  * Full probability computation on the specified backend.
@@ -54,9 +55,18 @@ int cuda_compute_probabilities(
  *   errOut  [nbClusters^2] : errOut[i*nbClusters + j] = mean over cluster-i's
  *                            spikes of the posterior under cluster j (0 if either
  *                            cluster is ignored).
- * Only CUDA implements this; other backends return non-zero (host fallback).
+ * CUDA implements it in FP32 and FP64, Metal (groupingassistant_metal.cpp) in
+ * FP32 only (lowPrecision != 0); other backends, and Metal for FP64, return
+ * non-zero (host fallback).
  */
 int cuda_compute_error_matrix(
+    const double* features, const double* choleskyAll, const double* means,
+    const double* logTerms, const int* ignoreFlags,
+    const int* featRow, const int* first, const int* nb,
+    double* errOut,
+    int nbSpikes, int nbClusters, int nbDim, int cluster1Col, int lowPrecision);
+
+int metal_compute_error_matrix(
     const double* features, const double* choleskyAll, const double* means,
     const double* logTerms, const int* ignoreFlags,
     const int* featRow, const int* first, const int* nb,

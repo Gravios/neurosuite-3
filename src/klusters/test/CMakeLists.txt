@@ -159,3 +159,18 @@ if(Qt6_FOUND)
     target_link_libraries(klusters_test_actionicons PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_actionicons COMMAND klusters_test_actionicons)
 endif()
+
+# The Grouping Assistant's Metal FP32 error matrix against an FP64 reference
+# (macOS with USE_METAL; SKIPPED without a Metal device).
+if(TARGET Neurosuite::metal)
+    add_executable(klusters_test_groupingassistant_metal
+        groupingassistant_metal_test.cpp "${_klu_src}/groupingassistant_metal.cpp")
+    ns_metal_embed(klusters_test_groupingassistant_metal groupingassistant_kernels
+                   "${_klu_src}/groupingassistant.metal")
+    target_compile_definitions(klusters_test_groupingassistant_metal PRIVATE USE_METAL)
+    target_include_directories(klusters_test_groupingassistant_metal PRIVATE "${_klu_src}")
+    target_link_libraries(klusters_test_groupingassistant_metal PRIVATE Neurosuite::metal)
+    add_test(NAME klusters_test_groupingassistant_metal COMMAND klusters_test_groupingassistant_metal)
+    set_tests_properties(klusters_test_groupingassistant_metal PROPERTIES
+        SKIP_REGULAR_EXPRESSION "SKIPPED")
+endif()

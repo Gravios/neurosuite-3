@@ -161,11 +161,12 @@ add_executable(klusters WIN32 ${klusters_SRCS})
 # time: the dispatchers use the CPU.
 # ---------------------------------------------------------------------------
 if(TARGET Neurosuite::metal)
-    target_sources(klusters PRIVATE ${_xcorr_dir}/realign_xcorr_metal.cpp)
+    target_sources(klusters PRIVATE ${_xcorr_dir}/realign_xcorr_metal.cpp groupingassistant_metal.cpp)
     ns_metal_embed(klusters realign_xcorr_kernels ${_xcorr_dir}/realign_xcorr.metal)
+    ns_metal_embed(klusters groupingassistant_kernels groupingassistant.metal)
     target_compile_definitions(klusters PRIVATE USE_METAL)
     target_link_libraries(klusters PRIVATE Neurosuite::metal)
-    message(STATUS "klusters: Metal backend (realign cross-correlation)")
+    message(STATUS "klusters: Metal backend (realign cross-correlation, FP32 error matrix)")
 endif()
 
 # ---------------------------------------------------------------------------

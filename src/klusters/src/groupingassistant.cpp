@@ -49,6 +49,8 @@
 // GpuDispatch is defined in groupingassistant_gpu_dispatch.cpp
 namespace GpuDispatch {
     bool hasGpu();
+    bool canComputeProbabilities();
+    bool computesErrorMatrix(bool lowPrecision);
     int  computeProbabilities(
         const double*, const double*, const double*, const double*,
         double*, const int*, int, int, int, int);
@@ -727,12 +729,17 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 qEnvironmentVariableIsSet("NS3_ERRORMATRIX_LOWPRECISION")
                     ? (qEnvironmentVariableIntValue("NS3_ERRORMATRIX_LOWPRECISION") != 0)
                     : configuration().getErrorMatrixLowPrecision();
-            int rcAgg = GpuDispatch::computeErrorMatrix(
-                h_features.data(), h_chol.data(), h_means.data(), h_logTerms.data(),
-                h_ignore.data(), h_featRow.data(), h_first.data(), h_nb.data(),
-                errGpu.data(),
-                static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col,
-                lowPrecision ? 1 : 0);
+            // Only CUDA (FP32, FP64) and Metal (FP32) aggregate on the device;
+            // for the others the full-posterior path below is the normal route.
+            const bool gpuAggregates = GpuDispatch::computesErrorMatrix(lowPrecision);
+            int rcAgg = gpuAggregates
+                ? GpuDispatch::computeErrorMatrix(
+                      h_features.data(), h_chol.data(), h_means.data(), h_logTerms.data(),
+                      h_ignore.data(), h_featRow.data(), h_first.data(), h_nb.data(),
+                      errGpu.data(),
+                      static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col,
+                      lowPrecision ? 1 : 0)
+                : -1;
             const qint64 aGpu = pTiming ? at.restart() : 0;
 
             if (rcAgg == 0) {
@@ -763,17 +770,23 @@ Array<double>* GroupingAssistant::computeProbabilities(
                 *errorMatrixOut = errorMatrix;
                 return nullptr;
             }
-            fprintf(stderr, "[klusters] GPU error-matrix aggregation failed - "
-                            "falling back to full posteriors + host aggregation.\n");
+            if (gpuAggregates)
+                fprintf(stderr, "[klusters] GPU error-matrix aggregation failed - "
+                                "falling back to full posteriors + host aggregation.\n");
         }
 
         // Full-posteriors GPU path (also used when errorMatrixOut is null).
         probabilities = new Array<double>(nbSpikes, nbClusters);
         if (pTiming) { t_alloc = pt.restart(); t_feat = pt.restart(); }
-        int rc = GpuDispatch::computeProbabilities(
-            h_features.data(), h_chol.data(), h_means.data(),
-            h_logTerms.data(), probabilities->data(), h_ignore.data(),
-            static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col);
+        // (Metal computes the error matrix only: the posteriors then go to
+        // the CPU without a "GPU failed" message.)
+        const bool gpuPosteriors = GpuDispatch::canComputeProbabilities();
+        int rc = gpuPosteriors
+            ? GpuDispatch::computeProbabilities(
+                  h_features.data(), h_chol.data(), h_means.data(),
+                  h_logTerms.data(), probabilities->data(), h_ignore.data(),
+                  static_cast<int>(nbSpikes), nbClusters, nbDimensions, cluster1Col)
+            : -1;
         if (pTiming) t_gpu = pt.restart();
 
         if (rc == 0) {
@@ -808,8 +821,9 @@ Array<double>* GroupingAssistant::computeProbabilities(
             }
             return probabilities;
         }
-        // rc != 0: GPU failed, fall through to CPU path.
-        fprintf(stderr, "[klusters] GPU computation failed — falling back to OpenMP CPU.\n");
+        // rc != 0: GPU failed (or has no posterior kernel), fall through to CPU path.
+        if (gpuPosteriors)
+            fprintf(stderr, "[klusters] GPU computation failed — falling back to OpenMP CPU.\n");
         probabilities->fillWithZeros();
     }
 

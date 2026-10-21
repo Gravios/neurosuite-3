@@ -1,11 +1,12 @@
 /***************************************************************************
  * groupingassistant_gpu_dispatch.cpp
  *
- * Runtime dispatcher: probes CUDA → HIP → SYCL → CPU-OpenMP in order and
- * calls the first backend that reports a usable device.
+ * Runtime dispatcher: probes CUDA → HIP → SYCL → Metal → CPU-OpenMP in order
+ * and calls the first backend that reports a usable device.  Metal computes
+ * only the FP32 error matrix; full posteriors and FP64 run on the CPU there.
  *
  * Which backends are compiled in is controlled by preprocessor defines set
- * by CMake: USE_CUDA, USE_HIP, USE_SYCL. Any combination is valid; if none
+ * by CMake: USE_CUDA, USE_HIP, USE_SYCL, USE_METAL. Any combination is valid; if none
  * are defined all GPU paths degrade to stubs that return "not available".
  ***************************************************************************/
 
@@ -46,13 +47,22 @@ extern "C" {
 }
 #endif
 
+#ifndef USE_METAL
+extern "C" {
+    int metal_device_available() { return 0; }
+    int metal_compute_error_matrix(const double*, const double*, const double*,
+        const double*, const int*, const int*, const int*, const int*,
+        double*, int, int, int, int, int) { return -1; }
+}
+#endif
+
 // ---------------------------------------------------------------------------
 // Public dispatcher — called from groupingassistant.cpp
 // ---------------------------------------------------------------------------
 
 namespace GpuDispatch {
 
-enum class Backend { None, CUDA, HIP, SYCL };
+enum class Backend { None, CUDA, HIP, SYCL, Metal };
 
 /** Detect the best available backend once and cache the result. */
 static Backend detectBackend()
@@ -73,6 +83,12 @@ static Backend detectBackend()
     if (sycl_device_available()) {
         fprintf(stdout, "[klusters] GPU backend: SYCL (Intel oneAPI)\n");
         return Backend::SYCL;
+    }
+#endif
+#ifdef USE_METAL
+    if (metal_device_available()) {
+        fprintf(stdout, "[klusters] GPU backend: Metal (Apple GPU; FP32 error matrix)\n");
+        return Backend::Metal;
     }
 #endif
     fprintf(stdout, "[klusters] GPU backend: none — using OpenMP CPU\n");
@@ -140,9 +156,29 @@ int computeErrorMatrix(
                                          ignoreFlags, featRow, first, nb, errOut,
                                          nbSpikes, nbClusters, nbDim, cluster1Col,
                                          lowPrecision);
+    if (activeBackend() == Backend::Metal)
+        return metal_compute_error_matrix(features, choleskyAll, means, logTerms,
+                                          ignoreFlags, featRow, first, nb, errOut,
+                                          nbSpikes, nbClusters, nbDim, cluster1Col,
+                                          lowPrecision);
     return -1;  // host aggregation fallback
 }
 
 bool hasGpu() { return activeBackend() != Backend::None; }
+
+// The fused error matrix on the GPU: CUDA in FP32 and FP64, Metal in FP32.
+bool computesErrorMatrix(bool lowPrecision)
+{
+    const Backend b = activeBackend();
+    return b == Backend::CUDA || (b == Backend::Metal && lowPrecision);
+}
+
+// The full nbSpikes x nbClusters posterior matrix on the GPU: every back end
+// but Metal (whose FP32-only kernels serve the error matrix alone).
+bool canComputeProbabilities()
+{
+    const Backend b = activeBackend();
+    return b == Backend::CUDA || b == Backend::HIP || b == Backend::SYCL;
+}
 
 } // namespace GpuDispatch
