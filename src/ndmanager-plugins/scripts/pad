@@ -63,13 +63,13 @@ fi
 # Pad numbers
 for filename in $*
 do
-	n=$(echo $filename|sed 's/[^0-9]*\([0-9]\+\).*/\1/')
+	n=$(echo $filename|sed 's/[^0-9]*\([0-9][0-9]*\).*/\1/')
 	length=${#n}
 	pad_length=$(($digits-$length))
 	pad=""
 	for ((i=1;i<=$pad_length;i++));do pad="0$pad";done
 	n="$pad$n"
-	new_filename=$(echo $filename|sed 's/\([^0-9]*\)[0-9]\+\([^0-9]*.*\)/\1'$n'\2/')
+	new_filename=$(echo $filename|sed 's/\([^0-9]*\)[0-9][0-9]*\([^0-9]*.*\)/\1'$n'\2/')
 	if $simulate
 	then
 		[ $filename != $new_filename ] && echo "$filename -> $new_filename"

@@ -581,10 +581,10 @@ do
 			echo_warning "directory name '$directory' does not seem to contain a date"
 		else
 			if [ "$param_ext" = "xml" ]; then
-				sed -i 's/<date>.*<\/date>/<date>'$d'<\/date>/' "$template_file"
+				ndm_sed_inplace "$template_file" 's/<date>.*<\/date>/<date>'$d'<\/date>/'
 			else
 				# YAML: replace "  date: <value>" under generalInfo
-				sed -i 's/^\(  date: \).*/\1'$d'/' "$template_file"
+				ndm_sed_inplace "$template_file" 's/^\(  date: \).*/\1'$d'/'
 			fi
 		fi
 		dir_file="$directory.$param_ext"

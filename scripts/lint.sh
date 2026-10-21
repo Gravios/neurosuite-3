@@ -67,6 +67,31 @@ for f in "${shells[@]}"; do
 done
 [ $bad -eq 0 ] && echo "ok" || fail=1
 
+section "no GNU-only tool options in the installed scripts (macOS has the BSD tools)"
+# The scripts under src/ are installed and run on macOS too (the developer
+# tools in scripts/ are not checked).  Each pattern is GNU-only, or read
+# differently by the BSD tool; the portable forms are in ndm_functions
+# ("Portable stand-ins").
+gnuisms=(
+    'sed -i( |$)'          # BSD -i takes the next word as the suffix: ndm_sed_inplace / sed -i.bak
+    'sed -r'               # -E on both
+    'grep -[a-zA-Z]*P'     # no -P in BSD grep: sed -nE 's/.../\1/p'
+    'stat -c'              # ndm_file_size, or wc -c <
+    'mktemp -p'            # mktemp ./name.XXXXXX
+    'readlink -f'          # no -f on older macOS
+    '(^|[^_])nproc'        # ndm_ncpus, or getconf _NPROCESSORS_ONLN
+)
+bad=0
+for f in "${shells[@]}"; do
+    [[ "$f" == src/* ]] || continue
+    for re in "${gnuisms[@]}"; do
+        # code only: drop comment lines and the stand-ins' own fallbacks
+        hits=$(grep -nE -- "$re" "$f" | grep -vE '^[0-9]+:[[:space:]]*#' | grep -v 'ndm-lint: allow')
+        [ -n "$hits" ] && { printf 'FAIL %s: %s\n' "$f" "$hits"; bad=1; }
+    done
+done
+[ $bad -eq 0 ] && echo "ok" || fail=1
+
 if [ ${#zshs[@]} -gt 0 ]; then
     section "zsh -n (${#zshs[@]} scripts)"
     if command -v zsh >/dev/null 2>&1; then

@@ -137,7 +137,7 @@ get_info(){
 	# 5) start with one or more chars, then '.', then three chars, then one or more chars (for 'evt' etc.)
 	case5='/^.+\.[^.]{3}\.([^.-]*)+(-shifted)?$/'
 
-	extension=$(basename $filename | sed -r -e "$case1 s//\1/;$case2 s//\1/;$case3 s//\1/;$case4 s//\1/;$case5 s//\1/")
+	extension=$(basename $filename | sed -E -e "$case1 s//\1/;$case2 s//\1/;$case3 s//\1/;$case4 s//\1/;$case5 s//\1/")
 
 	# Compute duration in ms
 	case $extension in

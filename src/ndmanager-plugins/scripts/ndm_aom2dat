@@ -72,14 +72,14 @@ check_command_status process_aomconvert
 
 nChannels_yaml=$(yaml_read "$session" "//acquisitionSystem/nChannels")
 
-dat_bytes=$(stat -c%s "$session.dat" 2>/dev/null || echo 0)
+dat_bytes=$(ndm_file_size "$session.dat")
 
 if [ "$dat_bytes" -gt 0 ] && check_optional_variable "$nChannels_yaml" && [ "$nChannels_yaml" -gt 0 ]; then
     # dat is int16 (2 bytes/sample), sample-major.
     # nSamples × nChannels × 2 = dat_bytes  →  nChannels must divide evenly.
     # Use the count from process_aomconvert --dry-run which already parsed the .mat.
     mat_meta=$(process_aomconvert --dry-run "$matFile" "$session" 2>/dev/null)
-    nChannels_mat=$(echo "$mat_meta" | grep -oP '(?<=Channels\s{10}: )\d+')
+    nChannels_mat=$(echo "$mat_meta" | sed -nE 's/.*Channels[[:space:]]{10}: ([0-9]+).*/\1/p')
 
     if check_optional_variable "$nChannels_mat" && [ "$nChannels_mat" -ne "$nChannels_yaml" ]; then
         echo_info "nChannels mismatch: YAML=$nChannels_yaml, .dat=$nChannels_mat — updating YAML"
@@ -88,7 +88,7 @@ if [ "$dat_bytes" -gt 0 ] && check_optional_variable "$nChannels_yaml" && [ "$nC
 elif [ "$dat_bytes" -gt 0 ] && [ -z "$nChannels_yaml" ]; then
     # No channel count in YAML yet — get it from the .mat metadata
     mat_meta=$(process_aomconvert --dry-run "$matFile" "$session" 2>/dev/null)
-    nChannels_mat=$(echo "$mat_meta" | grep -oP '(?<=Channels\s{10}: )\d+')
+    nChannels_mat=$(echo "$mat_meta" | sed -nE 's/.*Channels[[:space:]]{10}: ([0-9]+).*/\1/p')
     if check_optional_variable "$nChannels_mat"; then
         echo_info "Writing nChannels=$nChannels_mat from .mat metadata"
         yaml_write "$session" "acquisitionSystem/nChannels" "$nChannels_mat"
@@ -102,7 +102,7 @@ sr_yaml=$(yaml_read "$session" "//acquisitionSystem/samplingRate")
 if [ -z "$sr_yaml" ] || [ "$sr_yaml" = "null" ] || [ "$sr_yaml" = "0" ]; then
     # samplingRate not yet set — read from .mat
     mat_meta=${mat_meta:-$(process_aomconvert --dry-run "$matFile" "$session" 2>/dev/null)}
-    sr_mat=$(echo "$mat_meta" | grep -oP '(?<=Sampling rate\s{5}: )\d+')
+    sr_mat=$(echo "$mat_meta" | sed -nE 's/.*Sampling rate[[:space:]]{5}: ([0-9]+).*/\1/p')
     if check_optional_variable "$sr_mat" && [ "$sr_mat" -gt 0 ]; then
         echo_info "Writing samplingRate=$sr_mat Hz from .mat metadata"
         yaml_write "$session" "acquisitionSystem/samplingRate" "$sr_mat"

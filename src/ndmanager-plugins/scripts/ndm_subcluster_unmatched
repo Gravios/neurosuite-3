@@ -507,7 +507,7 @@ PYEOF
     local nThreads
     nThreads=$(read_kk_param -b ndm_subcluster_unmatched $group nThreads 0)
     if [ "$nThreads" -le 0 ] 2>/dev/null; then
-        nThreads=$(nproc 2>/dev/null || echo 1)
+        nThreads=$(ndm_ncpus)
     fi
     export OMP_NUM_THREADS=$nThreads
     export OMP_WAIT_POLICY=passive

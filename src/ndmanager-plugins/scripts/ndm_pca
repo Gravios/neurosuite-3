@@ -384,7 +384,7 @@ then
 	threadsPerGroup=$(yaml_read $session "//program/n[.='ndm_pca']/../parameters/parameter/n[.='threadsPerGroup']/../value")
 	if [ -z "$threadsPerGroup" ]
 	then
-		nCores=$(nproc 2>/dev/null || echo 1)
+		nCores=$(ndm_ncpus)
 		threadsPerGroup=$(( nCores / nGroups ))
 		[ $threadsPerGroup -lt 1 ] && threadsPerGroup=1
 	fi

@@ -77,4 +77,4 @@ do
 	command='/'$s'/N;/'$s'/N;/'$s'/s/#....../#'${color[$i]}'/g;'$command
 done
 
-[ ! -z "$command" ] && sed -i -e $command $file
+[ ! -z "$command" ] && ndm_sed_inplace "$file" -e "$command"

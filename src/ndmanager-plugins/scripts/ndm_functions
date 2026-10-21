@@ -82,13 +82,37 @@ BOLD_BLACK="\e[1m"
 PLAIN="\e[0m"
 
 #////////////////////////////////////////////////////////////////////////////
+#//  Portable stand-ins for GNU-only tool options (macOS has the BSD tools)
+#////////////////////////////////////////////////////////////////////////////
+
+# Edit FILE in place: ndm_sed_inplace FILE SED-ARGS...  (GNU sed -i takes no
+# suffix, BSD sed -i requires one; -i.bak is read the same by both.)
+ndm_sed_inplace()
+{
+	local file=$1; shift
+	sed -i.ndmbak "$@" "$file" && rm -f "$file.ndmbak"
+}
+
+# Number of online CPUs (nproc is GNU coreutils; getconf is on both).
+ndm_ncpus()
+{
+	getconf _NPROCESSORS_ONLN 2>/dev/null || nproc 2>/dev/null || echo 1   # ndm-lint: allow
+}
+
+# Size of FILE in bytes, 0 if missing (stat -c is GNU, stat -f BSD).
+ndm_file_size()
+{
+	[ -f "$1" ] && wc -c < "$1" | tr -d ' ' || echo 0
+}
+
+#////////////////////////////////////////////////////////////////////////////
 #//  Messages (erros, warnings, headers)
 #////////////////////////////////////////////////////////////////////////////
 
 # Print error message
 echo_error()
 {
-	indent=$(echo "$1"|sed -r 's/^([ ]*).*/\1/')
+	indent=$(echo "$1"|sed -E 's/^([ ]*).*/\1/')
 	message=$(echo "$1"|sed 's/^ *//g')
 
 	echo -en "$RED" >&2
@@ -99,7 +123,7 @@ echo_error()
 # Print warning message
 echo_warning()
 {
-	indent=$(echo "$1"|sed -r 's/^([ ]*).*/\1/')
+	indent=$(echo "$1"|sed -E 's/^([ ]*).*/\1/')
 	message=$(echo "$1"|sed 's/^ *//g')
 
 	echo -en "$BLUE" >&2
@@ -121,7 +145,7 @@ echo_info()
 # 			break
 # 		fi
 # 	done
-# 	indent=$(echo "$1"|sed -r 's/^([ ]*).*/\1/')
+# 	indent=$(echo "$1"|sed -E 's/^([ ]*).*/\1/')
 # 	message=$(echo "$1"|sed 's/^ *//g')
 #
 	echo $*
@@ -1229,13 +1253,13 @@ dirname_part()
 	# Start with the 'easy' ones
 	date=$(filename_date $dirname)
 	[ -z "$date" ] && return
-	prefix=$(echo $dirname|sed -r '/(.*)-'$date'.*/!d;s//\1/')
+	prefix=$(echo $dirname|sed -E '/(.*)-'$date'.*/!d;s//\1/')
 
 	# Deal with the 'hard' end of the filename
 	description=${dirname#$prefix-$date}
 	if [ -z "$suffix" ] && ! $no_suffix
 	then
-		suffix=$(echo $description|sed -r '/.*-(.*)/!d;s//\1/')
+		suffix=$(echo $description|sed -E '/.*-(.*)/!d;s//\1/')
 	fi
 	description=${description%$suffix}
 	description=${description%-}
@@ -1295,26 +1319,26 @@ filename_part()
 	# Start with the 'easy' ones
 	date=$(filename_date $filename)
 	[ -z "$date" ] && return
-	prefix=$(echo $filename|sed -r '/(.*)-'$date'.*/!d;s//\1/')
-	nn=$(echo $filename|sed -r '/'$prefix'-'$date'-([0-9]{2})-.*/!d;s//\1/')
-	extension=$(echo $filename|sed -r '/.*[.](.*)/!d;s//\1/')
+	prefix=$(echo $filename|sed -E '/(.*)-'$date'.*/!d;s//\1/')
+	nn=$(echo $filename|sed -E '/'$prefix'-'$date'-([0-9]{2})-.*/!d;s//\1/')
+	extension=$(echo $filename|sed -E '/.*[.](.*)/!d;s//\1/')
 	[ ! -z "$extension" ] && p_extension=.$extension
 
 	# Special case: evt files end in .ccc.evt where 'c' is any character
 	if [ "$extension" == "evt" ]
 	then
-		evt=$(echo $filename|sed -r '/.*[.](.{3})[.]'$extension'/!d;s//\1/')
+		evt=$(echo $filename|sed -E '/.*[.](.{3})[.]'$extension'/!d;s//\1/')
 		[ ! -z "$evt" ] && p_evt=.$evt
 	fi
 
 	# Deal with the 'hard' end of the filename
-	end=$(echo $filename|sed -r '/'$prefix'-'$date'-'$nn'-(.*)'$p_evt$p_extension'/!d;s//\1/')
-	NNN=$(echo $end|sed -r '/.*-([0-9]+).*/!d;s//\1/')
+	end=$(echo $filename|sed -E '/'$prefix'-'$date'-'$nn'-(.*)'$p_evt$p_extension'/!d;s//\1/')
+	NNN=$(echo $end|sed -E '/.*-([0-9]+).*/!d;s//\1/')
 	description=${end%-$NNN}
 	description=${description%$p_evt}
 	if [ -z "$suffix" ] && ! $no_suffix
 	then
-		suffix=$(echo $description|sed -r '/.*-(.*)/!d;s//\1/')
+		suffix=$(echo $description|sed -E '/.*-(.*)/!d;s//\1/')
 	fi
 	description=${description%-$suffix}
 
@@ -1345,9 +1369,9 @@ filename_date()
 	local filename=$1
 
 	# Case 1: date is specified as YYYYMMDD in the file name
-	d=$(echo $filename | sed -r '/.*([0-9]{8}).*/!d;s//\1/')
+	d=$(echo $filename | sed -E '/.*([0-9]{8}).*/!d;s//\1/')
 	# Case 2: date is specified as YYYY-MM-DD in the file name
-	[ -z "$d" ] && d=$(echo $filename | sed -r '/.*([0-9]{4}-[0-9]{2}-[0-9]{2}).*/!d; s//\1/')
+	[ -z "$d" ] && d=$(echo $filename | sed -E '/.*([0-9]{4}-[0-9]{2}-[0-9]{2}).*/!d; s//\1/')
 
 	echo $d
 }
@@ -1361,9 +1385,9 @@ format_date()
 	local d
 
 	# Case 1: date is specified as YYYYMMDD in the file name
-	d=$(echo $1 | sed -r '/.*([0-9]{4})([0-9]{2})([0-9]{2}).*/!d;s//\1-\2-\3/')
+	d=$(echo $1 | sed -E '/.*([0-9]{4})([0-9]{2})([0-9]{2}).*/!d;s//\1-\2-\3/')
 	# Case 2: date is specified as YYYY-MM-DD in the file name
-	[ -z "$d" ] && d=$(echo $1 | sed -r '/.*([0-9]{4}-[0-9]{2}-[0-9]{2}).*/!d; s//\1/')
+	[ -z "$d" ] && d=$(echo $1 | sed -E '/.*([0-9]{4}-[0-9]{2}-[0-9]{2}).*/!d; s//\1/')
 
 	echo $d
 }
@@ -1465,7 +1489,7 @@ list_sessions()
 	for (( i=0;i<$n;i++ ))
 	do
 		suffix=$(get_suffix $i ${suffixes[*]})
-		file_list="$file_list $(ls ../$directory-$suffix|cut -d/ -f 3|sed -r 's/(.*)-'$suffix'.*/\1/g')"
+		file_list="$file_list $(ls ../$directory-$suffix|cut -d/ -f 3|sed -E 's/(.*)-'$suffix'.*/\1/g')"
 	done
 
 	# List all sessions

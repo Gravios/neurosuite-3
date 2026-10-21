@@ -25,18 +25,20 @@ session=${1%.xml}
 
 # Transform arcane codes into human-readable event messages
 [ -z "$(ls $session*evt 2> /dev/null)" ] && exit $NO_ERROR
+tab=$'\t'   # BSD sed reads \t in a replacement as 't'
 for eventfile in $session*evt
 do
-	sed -i \
-		-e 's/[[:space:]]0$/\tTurn left/' \
-		-e 's/[[:space:]]1$/\tTurn right/' \
-		-e 's/[[:space:]]100$/\tTrial start/' \
-		-e 's/[[:space:]]-56$/\tTrial end/' \
-		-e 's/[[:space:]]6$/\tVisual cue/' \
-		-e 's/[[:space:]]10$/\tReward left/' \
-		-e 's/[[:space:]]11$/\tReward right/' \
-		-e 's/[[:space:]]73$/\tEnd of session/' \
+	sed -i.ndmbak \
+		-e 's/[[:space:]]0$/'"$tab"'Turn left/' \
+		-e 's/[[:space:]]1$/'"$tab"'Turn right/' \
+		-e 's/[[:space:]]100$/'"$tab"'Trial start/' \
+		-e 's/[[:space:]]-56$/'"$tab"'Trial end/' \
+		-e 's/[[:space:]]6$/'"$tab"'Visual cue/' \
+		-e 's/[[:space:]]10$/'"$tab"'Reward left/' \
+		-e 's/[[:space:]]11$/'"$tab"'Reward right/' \
+		-e 's/[[:space:]]73$/'"$tab"'End of session/' \
 		$eventfile
+	rm -f $eventfile.ndmbak
 done
 
 # Rename event files

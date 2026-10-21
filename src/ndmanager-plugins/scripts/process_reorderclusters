@@ -37,7 +37,7 @@ then
 fi
 
 # Create backup name for clu file
-renamed=$(mktemp -p . $cluFile.XXXXXX)
+renamed=$(mktemp "./$cluFile.XXXXXX")
 if [ $? -ne 0 ]
 then
 	echo "error: cannot create backup name for clu file"
@@ -45,7 +45,7 @@ then
 fi
 
 # Create temporary name for renumbered clu file
-renumbered=$(mktemp -p . $cluFile.XXXXXX)
+renumbered=$(mktemp "./$cluFile.XXXXXX")
 if [ $? -ne 0 ]
 then
 	echo "error: cannot create temporary name for renumbered clu file"
@@ -64,7 +64,7 @@ then
 fi
 
 # Check ID list (it should range from 2 to N)
-sorted=($(echo ${clusterIDs[*]}|sed 's/ /\n/g'|sort -n))
+sorted=($(echo ${clusterIDs[*]}|tr ' ' '\n'|sort -n))
 for ((i=0;i<$nClusters-2;i++))
 do
 	if [ $(($i+2)) -ne "${sorted[$i]}" ]

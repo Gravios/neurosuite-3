@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [macOS: the `ndm_*` steps work with the BSD tools](#2026-10-21--macos-the-ndm_-steps-work-with-the-bsd-tools) |
 | 2026-10-21 | [macOS: the `ndm_*` steps run with Homebrew's bash](#2026-10-21--macos-the-ndm_-steps-run-with-homebrews-bash) |
 | 2026-10-21 | [New icons for neurosuite-3, Klusters, NeuroScope and NDManager](#2026-10-21--new-icons-for-neurosuite-3-klusters-neuroscope-and-ndmanager) |
 | 2026-10-21 | [macOS: checking the Metal backend (kernel lint, on-device compile test, `NS_DISABLE_METAL`, `metal_validate.sh`)](#2026-10-21--macos-checking-the-metal-backend-kernel-lint-on-device-compile-test-ns_disable_metal-metal_validatesh) |
@@ -108,6 +109,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — macOS: the `ndm_*` steps work with the BSD tools
+
+<details>
+<summary>Details</summary>
+
+Several steps used options only GNU tools have. On macOS's BSD tools they
+failed or, worse, did something else without saying so.
+
+- `ndm_start` (writing the session date), `ndm_recolorchannels`,
+  `process_renameevents_SPWR` / `_TMaze`: `sed -i` without a suffix, which
+  BSD sed reads as "the next word is the backup suffix". The event renamers
+  also wrote a `t` where a tab belonged, and `_SPWR` needed Perl's `rename`.
+- `ndm_aom2dat`: `stat -c` and `grep -P` made it read the channel count and
+  sampling rate as missing.
+- `ndm_klustakwik`, `ndm_pca`, `ndm_subcluster_unmatched`: `nproc` is not on
+  macOS, so they ran on one thread.
+- `process_reorderclusters` (`mktemp -p`, `\n` in a sed replacement), `pad`
+  (`\+`), and the helpers' `sed -r`.
+
+`ndm_functions` gains `ndm_sed_inplace`, `ndm_ncpus` and `ndm_file_size`;
+`scripts/lint.sh` refuses these options in the scripts under `src/`.
+
+</details>
 
 ## 2026-10-21 — macOS: the `ndm_*` steps run with Homebrew's bash
 
