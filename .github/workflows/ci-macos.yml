@@ -95,7 +95,7 @@ jobs:
       # exposes no Metal device; the build itself proves the host code and
       # the metal-cpp fetch.
       - name: Test the Metal backend (context, plugins, Klusters, KiloKlustaKwik)
-        run: ctest --test-dir build --output-on-failure -V -R '^(core_test_metal|ndm_test_(medianthreshold_metal|medianfilter|butterworth|spikegrouper_metal)|klustersshared_xcorr_metal_test|klusters_test_groupingassistant_metal|kk_test_metal_cem)$'
+        run: ctest --test-dir build --output-on-failure -V -R '^(core_test_metal|ndm_test_(medianthreshold_metal|medianfilter|butterworth|spikegrouper_metal)|klustersshared_xcorr_metal_test|klusters_test_groupingassistant_metal|kk_test_metal_cem|metal_kernels_compile)$'
 
       - name: Time the pow3 kernels at a realistic size (informational)
         continue-on-error: true

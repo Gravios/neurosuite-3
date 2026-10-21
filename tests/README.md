@@ -131,6 +131,19 @@ When a convention in [STANDARDIZATION.md](../doc/dev/STANDARDIZATION.md) can be
 checked by reading files, add the check here, so the convention is enforced
 rather than only documented.
 
+## Metal kernels (macOS)
+
+`metal_kernels_compile` is built only on macOS with the Metal backend
+(`Neurosuite::metal`). It embeds every `*.metal` under `src/`, compiles each
+one as the programs do at run time (fast math off), and builds a pipeline
+for every kernel function. It fails on any kernel Apple's compiler refuses,
+not only on the kernels of the programs the numerical tests exercise. It
+prints SKIPPED without a Metal device. A new `.metal` file is picked up at
+the next configure.
+
+On Linux, `scripts/lint.sh` checks the kernel signature rules that only
+Apple's compiler enforces (`scripts/msl_lint.py`).
+
 ## Adding a test
 
 | Where | How |
