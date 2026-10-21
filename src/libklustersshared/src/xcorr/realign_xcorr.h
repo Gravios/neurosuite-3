@@ -6,6 +6,7 @@
  *   realign_xcorr_cuda.cu     (NVIDIA CUDA)
  *   realign_xcorr_hip.hip     (AMD ROCm/HIP)
  *   realign_xcorr_sycl.cpp    (Intel oneAPI SYCL)
+ *   realign_xcorr_metal.cpp   (Apple GPU, Metal; bit-identical to OpenMP)
  *   realign_xcorr_omp.cpp     (OpenMP CPU fallback, always compiled)
  *
  * Algorithm
@@ -54,6 +55,7 @@ extern "C" {
 int xcorr_cuda_available();
 int xcorr_hip_available();
 int xcorr_sycl_available();
+int xcorr_metal_available();
 
 /* ── per-backend compute entry points ───────────────────────────────── */
 
@@ -95,6 +97,14 @@ int xcorr_sycl_compute(
     int*   shifts_out,
     float* scores_out);
 
+int xcorr_metal_compute(
+    const int16_t* waveforms,
+    const int16_t* tmpl,
+    int nSpikes, int nChannels, int nSamples,
+    int maxShift, float minScore,
+    int*   shifts_out,
+    float* scores_out);
+
 int xcorr_omp_compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
@@ -114,7 +124,7 @@ namespace XcorrDispatch {
 
 /**
  * Run the cross-correlation alignment kernel on the best available backend
- * (CUDA → HIP → SYCL → OpenMP).  Same parameters as the per-backend
+ * (CUDA → HIP → SYCL → Metal → OpenMP).  Same parameters as the per-backend
  * xcorr_*_compute() functions above.
  */
 int compute(

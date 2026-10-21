@@ -156,6 +156,19 @@ qt_wrap_ui(klusters_SRCS ${klusters_UI})
 add_executable(klusters WIN32 ${klusters_SRCS})
 
 # ---------------------------------------------------------------------------
+# Apple GPU (Metal) backend — macOS with USE_METAL (doc/design/metal-backend.md).
+# Kernel sources are embedded and compiled at run time; no Metal device at run
+# time: the dispatchers use the CPU.
+# ---------------------------------------------------------------------------
+if(TARGET Neurosuite::metal)
+    target_sources(klusters PRIVATE ${_xcorr_dir}/realign_xcorr_metal.cpp)
+    ns_metal_embed(klusters realign_xcorr_kernels ${_xcorr_dir}/realign_xcorr.metal)
+    target_compile_definitions(klusters PRIVATE USE_METAL)
+    target_link_libraries(klusters PRIVATE Neurosuite::metal)
+    message(STATUS "klusters: Metal backend (realign cross-correlation)")
+endif()
+
+# ---------------------------------------------------------------------------
 # OpenMP
 # ---------------------------------------------------------------------------
 if(OpenMP_CXX_FOUND)

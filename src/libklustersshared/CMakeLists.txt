@@ -150,6 +150,25 @@ if(NS_BUILD_TESTS)
     target_link_libraries(klustersshared_xcorr_dispatch_test PRIVATE Threads::Threads)
     add_test(NAME klustersshared_xcorr_dispatch_test COMMAND klustersshared_xcorr_dispatch_test)
 
+    # The Metal realignment back end against the OpenMP one, bit for bit
+    # (macOS with USE_METAL; SKIPPED without a Metal device).
+    if(TARGET Neurosuite::metal)
+        add_executable(klustersshared_xcorr_metal_test
+            test/xcorr_metal_test.cpp
+            src/xcorr/realign_xcorr_metal.cpp
+            src/xcorr/realign_xcorr_dispatch.cpp
+            src/xcorr/realign_xcorr_omp.cpp)
+        ns_metal_embed(klustersshared_xcorr_metal_test realign_xcorr_kernels
+                       src/xcorr/realign_xcorr.metal)
+        target_compile_definitions(klustersshared_xcorr_metal_test PRIVATE USE_METAL)
+        target_include_directories(klustersshared_xcorr_metal_test
+            PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/xcorr")
+        target_link_libraries(klustersshared_xcorr_metal_test PRIVATE Neurosuite::metal)
+        add_test(NAME klustersshared_xcorr_metal_test COMMAND klustersshared_xcorr_metal_test)
+        set_tests_properties(klustersshared_xcorr_metal_test PROPERTIES
+            SKIP_REGULAR_EXPRESSION "SKIPPED")
+    endif()
+
     # Realignment kernel edge cases (no Qt): undefined (zero-energy) xcorr,
     # tie-breaking, zero-energy spikes in the per-spike centroid aligner.
     add_executable(klustersshared_realign_kernels_test

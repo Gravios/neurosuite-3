@@ -2,11 +2,11 @@
  * realign_xcorr_dispatch.cpp
  *
  * Runtime dispatcher for the normalised cross-correlation spike-alignment
- * kernel.  Probes CUDA → HIP → SYCL → OpenMP in order and routes each
- * call to the first backend that reports a usable device.
+ * kernel.  Probes CUDA → HIP → SYCL → Metal → OpenMP in order and routes
+ * each call to the first backend that reports a usable device.
  *
  * Enabled backends are selected at compile time by CMake preprocessor
- * defines: USE_CUDA, USE_HIP, USE_SYCL.  Any combination is valid.
+ * defines: USE_CUDA, USE_HIP, USE_SYCL, USE_METAL.  Any combination is valid.
  * The OpenMP CPU path is always compiled and is the final fallback.
  *
  * Public API
@@ -63,13 +63,22 @@ extern "C" {
 }
 #endif
 
+#ifndef USE_METAL
+extern "C" {
+    int xcorr_metal_available() { return 0; }
+    int xcorr_metal_compute(const int16_t*, const int16_t*,
+                            int, int, int, int, float,
+                            int*, float*) { return -1; }
+}
+#endif
+
 // ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
 
 namespace XcorrDispatch {
 
-enum class Backend { OMP, CUDA, HIP, SYCL };
+enum class Backend { OMP, CUDA, HIP, SYCL, Metal };
 
 static Backend detectBackend()
 {
@@ -93,6 +102,12 @@ static Backend detectBackend()
     if (std::getenv("KLUSTERS_USE_SYCL") && xcorr_sycl_available()) {
         fprintf(stdout, "[realign] xcorr backend: SYCL (Intel oneAPI)\n");
         return Backend::SYCL;
+    }
+#endif
+#ifdef USE_METAL
+    if (xcorr_metal_available()) {
+        fprintf(stdout, "[realign] xcorr backend: Metal (Apple GPU)\n");
+        return Backend::Metal;
     }
 #endif
     fprintf(stdout, "[realign] xcorr backend: OpenMP CPU\n");
@@ -136,6 +151,7 @@ const char* backendName()
     case Backend::CUDA: return "CUDA";
     case Backend::HIP:  return "HIP (AMD ROCm)";
     case Backend::SYCL: return "SYCL (Intel oneAPI)";
+    case Backend::Metal: return "Metal (Apple GPU)";
     default:            return "OpenMP CPU";
     }
 }
@@ -177,6 +193,13 @@ int compute(
                                 maxShift, minScore, shifts_out, scores_out);
         if (rc == 0) return 0;
         demote(Backend::SYCL, "SYCL", rc);
+        break;
+    case Backend::Metal:
+        // No block-size limit: every lag is its own thread.
+        rc = xcorr_metal_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
+                                 maxShift, minScore, shifts_out, scores_out);
+        if (rc == 0) return 0;
+        demote(Backend::Metal, "Metal", rc);
         break;
     default:
         break;
