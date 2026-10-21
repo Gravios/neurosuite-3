@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [CI: a macOS build](#2026-10-21--ci-a-macos-build) |
 | 2026-10-21 | [Klusters: the curation log is `<base>.cur.<method>.<group>`](#2026-10-21--klusters-the-curation-log-is-basecurmethodgroup) |
 | 2026-10-19 | [Pipeline: the KiloKlustaKwik calls match KiloKlustaKwik](#2026-10-19--pipeline-the-kiloklustakwik-calls-match-kiloklustakwik) |
 | 2026-10-19 | [NDManager: Add offers the parameters a plugin reads](#2026-10-19--ndmanager-add-offers-the-parameters-a-plugin-reads) |
@@ -89,6 +90,21 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — CI: a macOS build
+
+<details>
+<summary>Details</summary>
+
+- New `macos` job in `ci.yml`: macOS 15 on Apple silicon, Apple clang,
+  Homebrew Qt 6, yaml-cpp, GSL, libomp, libsamplerate, FFmpeg, HDF5 and
+  bash, as `doc/INSTALL.md` installs them.  GPU backends off,
+  `NS_NATIVE_ARCH=OFF`, every target built (`-k 0` lists all errors).
+- Non-blocking for now: the job is `continue-on-error` until it has passed
+  once, and its test step is informational (the `ndm_*` scripts use
+  `#!/bin/bash`, macOS's bash 3.2).
+
+</details>
 
 ## 2026-10-21 — Klusters: the curation log is `<base>.cur.<method>.<group>`
 
