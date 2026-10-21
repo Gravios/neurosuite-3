@@ -474,8 +474,31 @@ if(_SYCL_ACTIVE)
     message(STATUS "  SYCL compiler      : ${_ICPX}")
 endif()
 
+# =============================================================================
+# Metal build  (Apple GPU, macOS on Apple silicon)
+#
+# Needs the Neurosuite::metal target (libneurosuite-core, macOS with USE_METAL;
+# cmake/MetalBackend.cmake), so it is built in the monorepo only, not by a
+# standalone kiloklustakwik configure.  Kernel sources are embedded and
+# compiled at run time; on a machine without a Metal device the binary runs
+# everything on the CPU.  Design: doc/design/metal-backend.md (Phase 4).
+# =============================================================================
+set(_METAL_ACTIVE FALSE)
+if(TARGET Neurosuite::metal AND NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE AND NOT _SYCL_ACTIVE)
+    set(_METAL_ACTIVE TRUE)
+    include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/MetalBackend.cmake")   # ns_metal_embed
+    add_executable(KiloKlustaKwik ${_cpu_srcs}
+        ${_xcorr_dir}/realign_xcorr_metal.cpp
+        ${_headers})
+    ns_metal_embed(KiloKlustaKwik realign_xcorr_kernels ${_xcorr_dir}/realign_xcorr.metal)
+    target_compile_definitions(KiloKlustaKwik PRIVATE USE_METAL)
+    kk_exp_configure_exe(KiloKlustaKwik LINK_LIBS Neurosuite::metal)
+    install(TARGETS KiloKlustaKwik DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    message(STATUS "KiloKlustaKwik: Metal backend (realign cross-correlation)")
+endif()
+
 # CPU-only: also install KiloKlustaKwik_cpu as the canonical KiloKlustaKwik
-if(NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE AND NOT _SYCL_ACTIVE)
+if(NOT _CUDA_ACTIVE AND NOT _HIP_ACTIVE AND NOT _SYCL_ACTIVE AND NOT _METAL_ACTIVE)
     install(PROGRAMS "$<TARGET_FILE:KiloKlustaKwik_cpu>"
         DESTINATION "${CMAKE_INSTALL_BINDIR}"
         RENAME KiloKlustaKwik)
