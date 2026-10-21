@@ -48,6 +48,7 @@ Group 5 of session `rat01`:
 | `rat01.fetD.5` | `rat01.fet.stderiv.5` |
 | `rat01.pcaD.5` | `rat01.pca.stderiv.5` |
 | `rat01.clu.5` | `rat01.clu.standard.5` |
+| `rat01.curation_log.5.stderiv` | `rat01.cur.stderiv.5` |
 | `rat01.spkD.5` | `rat01.spk.stderiv.5` |
 
 ## Artifact classes
@@ -190,6 +191,7 @@ explicit path:
 |---|---|---|
 | [`.clp`](clp.md) | `<base>.clp.<method>.<group>[.<suffix>]` | Klusters derives it from the opened `.clu` name by swapping the type token. |
 | [`.cli`](cli.md) | `<base>.cli.<method>.<group>[.<suffix>]` | Same rule as `.clp`. |
+| `.cur` | `<base>.cur.<method>.<group>[.<suffix>]` | Klusters' curation log (JSON lines), named for the opened `.clu` by swapping the type token, like `.clp`, so it keeps the `.clu`'s stage; see [curation logging](../../klusters/README.md#curation-logging). Formerly `<base>.curation_log.<group>.<method>`. |
 | [`.pxres`, `.pxclu`, `.pxspk`](pxspikes.md) | `<base>.<type>.<group>` | Deliberately outside the tables so they never stand in for pipeline files. |
 | [`.px<stream>`](pxstream.md), `.emgclean`, `.<ext>.slice.<tag>` | session-wide by convention | Raw signal files read through `inputExtension`; see [`.dat`](dat.md). |
 | [`.evt`](evt.md) | `<base>.<id>.evt` or `<base>.evt.<id>` | NeuroScope convention. |

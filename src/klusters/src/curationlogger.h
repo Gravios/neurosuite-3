@@ -7,9 +7,12 @@
  *  pandas/scikit-learn for empirical decision-tree training.
  *
  *  Log format: one JSON object per line, UTF-8.
- *  File location: <sessionDir>/<baseName>.curation_log.<electrodeGroup>.<stage>
- *  where <stage> is the .clu variant (e.g. "stderiv"). The untagged default
- *  stage ("standard") is not logged.
+ *  File location: <sessionDir>/<baseName>.cur.<method>.<electrodeGroup>[.<stage>],
+ *  named for the .clu it records: its method (e.g. "stderiv") and its stage,
+ *  the suffix after the group (rat.clu.stderiv.5.final -> rat.cur.stderiv.5.final).
+ *  Sessions sorted under "standard" are not logged.  Before 2026-10-21 the
+ *  log was <baseName>.curation_log.<electrodeGroup>.<method> (no stage);
+ *  opening an unstaged .clu renames such a log to the new name.
  *
  *  Lifecycle (deferred-flush model):
  *    1. KlustersDoc::openDocument()   → CurationLogger::open()
@@ -206,8 +209,9 @@ public:
 
     /** Open a new log file for the given session.
      *  @param logPath         Full path for the log output file
-     *                         (<base>.curation_log.<group>.<method>).
-     *  @param baseName Base name shown in every line's "file" field.
+     *                         (<base>.cur.<method>.<group>[.<stage>]).
+     *  @param baseName Base name shown in every line's "file" field
+     *                  (the opened .clu's file name).
      *  @param groupId  Electrode group ID string (e.g. "1").
      *  @param samplingRateHz  Sampling frequency in Hz.
      *  @param nChannels       Channels in this electrode group.

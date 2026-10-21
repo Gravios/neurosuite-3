@@ -647,20 +647,40 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         // (snapshotClusters -> computeAllCentroids) is taken.  This is the
         // low-overhead path for performance testing; undo/redo are unaffected
         // (rollback is driven by clusteringData->undo, not the logger).
-        // The curation log is named for the clustering stage (the .clu variant,
-        // e.g. "stderiv"): the stage is the file's trailing suffix
-        // (<base>.curation_log.<group>.<method>), so each stage keeps its own
-        // log instead of overwriting one file. The untagged default stage
-        // ("standard") is treated as "no stage" and gets no log.
+        // The curation log is named for the .clu it records: the same base,
+        // method, group and stage, with the type token "cur"
+        // (rat.clu.stderiv.5 -> rat.cur.stderiv.5, rat.clu.stderiv.5.final ->
+        // rat.cur.stderiv.5.final), so each method and stage keeps its own log
+        // instead of overwriting one file.  Sessions sorted under "standard"
+        // get no log (unchanged from the old naming, where that method was the
+        // untagged default).
         const bool stagedClustering = (sessionMethod != QLatin1String("standard"));
         if (configuration().getCurationLogging() && stagedClustering) {
-            const QString logPath = urlFileInfo.absolutePath() + QDir::separator()
-                                    + baseName + ".curation_log." + electrodeGroupID
-                                    + "." + sessionMethod;
+            const QString dir = urlFileInfo.absolutePath() + QDir::separator();
+            const neurosuite::custody::Anchor cluAnchor =
+                neurosuite::custody::parseAnchor(cluFileName.toStdString());
+            const QString stage = cluAnchor.ok ? QString::fromStdString(cluAnchor.suffix)
+                                               : QString();
+            const QString logPath = dir + QString::fromStdString(neurosuite::custody::stagePath(
+                baseName.toStdString(), "cur", sessionMethod.toStdString(),
+                electrodeGroupID.toInt(), stage.toStdString()));
+            // A log written under the old name, <base>.curation_log.<group>.<method>,
+            // is renamed so this session appends to it instead of starting a
+            // second file.  The old name had no stage, so only a log for an
+            // unstaged .clu is adopted; left as it is when both names exist.
+            const QString legacyPath = dir + baseName + ".curation_log." + electrodeGroupID
+                                       + "." + sessionMethod;
+            if (stage.isEmpty() && !QFile::exists(logPath) && QFile::exists(legacyPath)) {
+                if (QFile::rename(legacyPath, logPath))
+                    qInfo() << "[curation log] renamed" << legacyPath << "->" << logPath;
+                else
+                    qWarning() << "[curation log] could not rename" << legacyPath
+                               << "to" << logPath << "- starting a new log";
+            }
             curationLogger = std::make_unique<CurationLogger>();
             curationLogger->open(
                 logPath,
-                baseName + ".clu." + sessionMethod + "." + electrodeGroupID,
+                cluFileName,
                 electrodeGroupID,
                 clusteringData->getSamplingRate(),
                 clusteringData->nbOfchannels(),

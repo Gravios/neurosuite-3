@@ -52,7 +52,7 @@ so all edits go back to the same files.
 | `session.<type>.<method>.N.pending` | Transactional working copies (res/spk/fet/clu) — all realign/nudge edits go here first; on save each is copied beside its original and renamed over it |
 | `session.<type>.<method>.N.saving` | Short-lived: a new version written by a save before it is installed. A leftover one with no `.commit` journal is the remains of a save that failed before installing anything and can be deleted |
 | `.session.clu.<method>.N.commit`, `<file>.rollback` | Short-lived: the save's journal and the previous versions it moves aside while installing. A journal left by a crash is completed automatically on the next open |
-| `session.curation_log.<group>.<method>` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
+| `session.cur.<method>.<group>[.<stage>]` | **Append-only** JSON-line audit trail of every editing operation in this group's curation history. Schema in [Curation logging](#curation-logging). |
 | `session.cli.<method>.N` | Cluster information (structure, type, quality, notes) of the clustering, saved with it — [format](../ndmanager-plugins/formats/cli.md) |
 | `.session.clu.<method>.N.autosave`, `.session.clc.<method>.N.autosave` | Crash-recovery copies of the unit (and atom) ids, written while there are unsaved changes; removed by a save or a normal close |
 
@@ -832,7 +832,15 @@ runs on the open clustering. See
 ## Curation logging
 
 Every editing operation in Klusters writes a JSON-line record to
-`session.curation_log.<group>.<method>` alongside the `.clu.N` file. The log
+`session.cur.<method>.<group>[.<stage>]`, named for the `.clu` it records:
+the same method, group and stage, the stage being whatever follows the group
+in the `.clu` name (`session.clu.stderiv.5.final` is logged to
+`session.cur.stderiv.5.final`; see [file
+naming](../ndmanager-plugins/formats/naming.md)). A session sorted under
+`standard` gets no log. Logs written before 2026-10-21 are named
+`session.curation_log.<group>.<method>`, without a stage; opening an unstaged
+`.clu` renames such a log to the new name, and the session goes on appending
+to it. The log
 is the audit trail for both crash forensics and the empirical-prior
 training pipeline (`kk_build_prior.py` in ndmanager-plugins; see
 [that workflow](../workflows/empirical-priors.md)).
