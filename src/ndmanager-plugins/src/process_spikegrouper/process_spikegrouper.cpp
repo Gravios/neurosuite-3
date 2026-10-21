@@ -36,6 +36,9 @@
     ------------------
     Steps 2-4 are the computationally intensive parts.  When compiled with
     USE_CUDA the GPU kernel (process_spikegrouper_cuda.cu) handles them.
+    With USE_METAL (macOS) the Apple GPU computes the noise medians and the
+    coincidence counts (process_spikegrouper_metal.cpp) and the CPU the rest,
+    with results identical to the CPU path's.
     Without CUDA, OpenMP parallelises the per-channel threshold+detection
     loop and the O(N²) coincidence matrix construction.
 
@@ -74,6 +77,9 @@
 #ifdef _OPENMP
 #include <omp.h>
 #endif
+#ifdef USE_METAL
+#include "process_spikegrouper_metal.h"
+#endif
 
 using namespace std;
 
@@ -108,8 +114,8 @@ static void usage(const char* name)
          << "  --nsamples       S       nSamples for new groups (default 52)\n"
          << "  --peak-sample    P       peakSampleIndex for new groups (default 26)\n"
          << "  --nfeatures      F       nFeatures for new groups (default 3)\n"
-#ifdef USE_CUDA
-         << "  --cpu                    force CPU path even when CUDA is available\n"
+#if defined(USE_CUDA) || defined(USE_METAL)
+         << "  --cpu                    force CPU path even when a GPU is available\n"
 #endif
          << "  -v                       verbose output\n"
          << "  -h                       show this help\n";
@@ -224,9 +230,12 @@ static vector<long int> detectEvents(const short* data, long int nSamplesPerCh,
 // Uses sorted event lists + binary search: O(E_i * log E_j) per pair.
 // OpenMP parallelises the outer i-loop.
 
+// counts, when given (the Metal path), holds the coincident-event counts
+// for every (i, j) already, computed on the GPU with the same rule.
 static vector<double> buildCoincidenceMatrix(
     const vector<vector<long int>>& events,
-    int n, int coincidenceSamples)
+    int n, int coincidenceSamples,
+    const vector<long>* counts = nullptr)
 {
     vector<double> C(n * n, 0.0);
 
@@ -241,6 +250,10 @@ static vector<double> buildCoincidenceMatrix(
             const auto& ej = events[j];
             if (ej.empty()) continue;
             long int coincident = 0;
+            if (counts) {
+                C[i*n+j] = (double)(*counts)[(size_t)i * n + j] / (double)(ei.size() + 1);
+                continue;
+            }
             for (long int t : ei) {
                 long int lo = t - coincidenceSamples;
                 long int hi = t + coincidenceSamples;
@@ -841,6 +854,13 @@ int main(int argc, char* argv[])
     }
 #endif
 
+#ifdef USE_METAL
+    // Apple GPU: noise medians and coincidence counts (detection stays on the
+    // CPU); the results equal the CPU path's.  No device: the CPU path.
+    const bool useMetal = !args.forceCPU;
+    if (args.verbose) printf(useMetal ? "  Metal GPU path (CPU if no device)\n" : "  CPU path (--cpu)\n");
+#endif
+
     // ----- Process each anatomical group ----------------------------------
     vector<ChannelGroup> outputGroups;
 
@@ -915,14 +935,21 @@ int main(int argc, char* argv[])
         {
             // CPU path: per-channel sigma_n, event detection, coincidence matrix
             vector<vector<long int>> events(nv);
+            vector<int> gpuMedians;                 // median(|x|) per channel, from the GPU
+#ifdef USE_METAL
+            if (useMetal)
+                metalAbsMedians(filData.data(), nSamplesPerCh, args.nChannels,
+                                validChs.data(), nv, gpuMedians, args.verbose);
+#endif
 
 #ifdef _OPENMP
             #pragma omp parallel for schedule(dynamic)
 #endif
             for (int i = 0; i < nv; ++i) {
                 int ch = validChs[i];
-                sigmas[i] = medianSigma(filData.data(), nSamplesPerCh,
-                                         ch, args.nChannels);
+                sigmas[i] = gpuMedians.empty()
+                    ? medianSigma(filData.data(), nSamplesPerCh, ch, args.nChannels)
+                    : gpuMedians[i] / 0.6745;
                 double thr = args.thresholdFactor * sigmas[i];
                 events[i] = detectEvents(filData.data(), nSamplesPerCh,
                                           ch, args.nChannels, thr, refractSamp);
@@ -931,7 +958,13 @@ int main(int argc, char* argv[])
                            ch, sigmas[i], thr, events[i].size());
             }
 
-            coinc = buildCoincidenceMatrix(events, nv, coincSamp);
+            vector<long> gpuCounts;
+#ifdef USE_METAL
+            if (useMetal && !metalCoincidenceCounts(events, coincSamp, gpuCounts))
+                gpuCounts.clear();
+#endif
+            coinc = buildCoincidenceMatrix(events, nv, coincSamp,
+                                           gpuCounts.empty() ? nullptr : &gpuCounts);
         }
 
         vector<long int> dummy;

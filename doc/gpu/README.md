@@ -9,7 +9,7 @@ Several neurosuite-3 components optionally use GPU acceleration:
 | `process_butterworth` | CUDA · Metal (macOS, single precision) | Butterworth filtering |
 | `process_medianfilter` | CUDA · Metal (macOS) | Median-subtraction high-pass filter |
 | `process_medianthreshold` | CUDA · Metal (macOS) | Per-channel noise threshold estimation |
-| `process_spikegrouper` | CUDA / OpenMP | Coincidence matrix construction |
+| `process_spikegrouper` | CUDA / OpenMP · Metal (macOS: noise medians + coincidence counts) | Coincidence matrix construction |
 | `process_decomposecollisions` | CUDA | Collision decomposition fit (opt-in with `--gpu true`) |
 | `process_extractemg` | CUDA / HIP / SYCL | EMG extraction (SYCL not on Windows) |
 | `libneurosuite-core` spectral (NeuroScope spectrogram) | CUDA (cuFFT) | FFTs |
