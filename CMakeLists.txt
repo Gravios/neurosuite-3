@@ -81,6 +81,9 @@ option(USE_SYCL "Enable Intel oneAPI SYCL GPU backends" ON)
 # macOS only: Apple's Accelerate framework (part of the OS) for the spectral
 # FFT (vDSP) and process_extractemg's BLAS kernel.  Ignored elsewhere.
 option(NS_USE_ACCELERATE "Use Apple's Accelerate framework (vDSP, BLAS) on macOS" ON)
+# macOS only: the Apple GPU (Metal) backend, cmake/MetalBackend.cmake and
+# doc/design/metal-backend.md.  Fetches metal-cpp unless NS_METAL_CPP_DIR is set.
+option(USE_METAL "Enable the Apple Metal GPU backend (macOS, Apple silicon)" ON)
 
 if(USE_CUDA)
     # Locate nvcc (PATH then conventional toolkit dirs) so the CUDA language is

@@ -24,6 +24,9 @@ add_library(neurosuite-core SHARED ${_core_srcs})
 # The multitaper spectral library: a static target of its own (optional FFTW,
 # CUDA, OpenMP), see neurosuite/spectral/CMakeLists.txt.
 add_subdirectory(neurosuite/spectral)
+# The Apple GPU (Metal) context: a static target of its own (metal-cpp and the
+# Metal framework), macOS with USE_METAL only, see neurosuite/gpu/CMakeLists.txt.
+add_subdirectory(neurosuite/gpu)
 add_library(Neurosuite::core ALIAS neurosuite-core)
 
 # Emit the export side of the visibility macro while building the lib.

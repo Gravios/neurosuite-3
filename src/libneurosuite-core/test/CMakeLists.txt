@@ -199,6 +199,17 @@ add_executable(core_test_spectral spectral_selftest.cpp)
 target_link_libraries(core_test_spectral PRIVATE Neurosuite::spectral)
 add_test(NAME core_test_spectral COMMAND core_test_spectral)
 
+# The Apple GPU (Metal) context, Neurosuite::metal (macOS with USE_METAL only):
+# run-time kernel compilation, the pipeline cache, shared buffers, dispatch,
+# threadgroup memory, atomics and compile errors.  SKIPPED without a device.
+if(TARGET Neurosuite::metal)
+    add_executable(core_test_metal metal_selftest.cpp)
+    target_link_libraries(core_test_metal PRIVATE Neurosuite::metal)
+    ns_metal_embed(core_test_metal metal_selftest_kernels metal_selftest.metal)
+    add_test(NAME core_test_metal COMMAND core_test_metal)
+    set_tests_properties(core_test_metal PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED")
+endif()
+
 # tsne_embed.hpp and oblique_embed.hpp (Klusters' feature-view presentations)
 # on clouds with known structure.  OpenMP when found, as Klusters builds them.
 add_executable(core_test_embed embed_test.cpp)
