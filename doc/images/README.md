@@ -32,6 +32,8 @@ from them, with a transparent background outside the tile:
 - `app-<name>.ico` (16, 24, 32, 48, 64 and 256 px, the same renderings) and
   `<name>.rc`: the Windows executable's icon in Explorer, the Start menu and
   shortcuts;
+- `doc/images/banner.png` (2560 × 800, shown at half size): the top of the
+  README;
 - `doc/images/social-preview.png` (1280 × 640): GitHub's link preview, uploaded
   by hand under the repository's Settings → General → Social preview.
 
