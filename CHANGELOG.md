@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [ndm_detectspikes / ndm_extractspikes: each spike group cut with its own window](#2026-10-21--ndm_detectspikes--ndm_extractspikes-each-spike-group-cut-with-its-own-window) |
 | 2026-10-21 | [macOS: KiloKlustaKwik on the Apple GPU (CEM steps)](#2026-10-21--macos-kiloklustakwik-on-the-apple-gpu-cem-steps) |
 | 2026-10-21 | [KiloKlustaKwik GPU builds: the spatial phase of CEMTwoPhase computes the right distances](#2026-10-21--kiloklustakwik-gpu-builds-the-spatial-phase-of-cemtwophase-computes-the-right-distances) |
 | 2026-10-21 | [macOS: Klusters on the Apple GPU (realignment, error matrix)](#2026-10-21--macos-klusters-on-the-apple-gpu-realignment-error-matrix) |
@@ -100,6 +101,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — ndm_detectspikes / ndm_extractspikes: each spike group cut with its own window
+
+<details>
+<summary>Details</summary>
+
+The engines take one `-w`/`-p` (waveform length, peak index) for every group
+they are given, and the driver passed the first group's values for all of
+them, with only a warning. A group whose `nSamples` or `peakSampleIndex`
+differed from group 1's got `.spk` windows of the wrong length or offset from
+its `.res` by the difference in peak index. Klusters and every other reader
+use the group's own values, so such a group looked shifted throughout: its
+realign check (2026-10-21) reports the rows as "stale by s", with s that
+difference, on every spike.
+
+The driver now runs the engine once per distinct geometry, with that batch's
+channels and `sdiffPairs`, and renames each output to its group. Sessions
+whose groups all share one geometry run exactly as before (one engine call).
+
+Affected files: `.spk` (and `.nst`) of groups whose geometry differs from the
+first group's, written by `ndm_extractspikes`. Detection ran those groups with
+group 1's window too; their `.res` is kept as it is. Re-extract them
+with `ndm_extractspikes --force`, then re-project their `.fet`.
+
+</details>
 
 ## 2026-10-21 — macOS: KiloKlustaKwik on the Apple GPU (CEM steps)
 

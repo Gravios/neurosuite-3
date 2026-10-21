@@ -1633,31 +1633,44 @@ ndm_process_spikes()
 		exit $NO_ERROR
 	fi
 
-	# Per-group waveform geometry (uniform -w/-p) + optional custom diff pattern.
-	electrodeList= ; sdiffPairsList= ; samplesInWaveform= ; peakSample=
+	# Per-group waveform geometry + optional custom diff pattern.  The engines
+	# take one -w/-p for every group they are given, so groups are run in
+	# batches of equal (nSamples, peakSampleIndex): each group is cut with its
+	# own window, as Klusters and every reader of the .spk expect.  (Running all
+	# groups with the first group's geometry wrote windows offset from their
+	# .res wherever a later group's peakSampleIndex differed.)
+	electrodeList= ; sdiffPairsList=
+	local -A grpChans=() grpPairs=() grpGeom=()
+	local -a geomKeys=()
 	for electrodeGroup in $electrodeGroups; do
 		electrodes=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/channels/channel")
 		check_mandatory_variable $electrodes "missing electrode list for group $electrodeGroup"
 		electrodes=$(echo $electrodes | sed 's/ /,/g')
 		electrodeList="$electrodeList:$electrodes"
+		grpChans[$electrodeGroup]=$electrodes
 		_pairs=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/sdiffPairs")
 		_pairs=${_pairs//[[:space:]]/}   # blanks are insignificant in every form
 		sdiffPairsList="$sdiffPairsList:$_pairs"
+		grpPairs[$electrodeGroup]=$_pairs
 		_ns=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/nSamples")
 		_ps=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
 		check_mandatory_variable $_ns "missing number of samples in waveform for electrode group $electrodeGroup"
 		check_mandatory_variable $_ps "missing peak sample for electrode group $electrodeGroup"
-		if [ -z "$samplesInWaveform" ]; then
-			samplesInWaveform=$_ns
-			peakSample=$_ps
-		elif [ "$_ns" != "$samplesInWaveform" ] || [ "$_ps" != "$peakSample" ]; then
-			echo_warning "Group $electrodeGroup has nSamples=$_ns peakSampleIndex=$_ps"
-			echo_warning "  which differs from first group ($samplesInWaveform/$peakSample)."
-			echo_warning "  $binary uses uniform params; using first group values."
-		fi
+		grpGeom[$electrodeGroup]="$_ns:$_ps"
+		case " ${geomKeys[*]} " in *" $_ns:$_ps "*) : ;; *) geomKeys+=("$_ns:$_ps") ;; esac
 	done
 	n=$((${#electrodeList}-1)); electrodeList=${electrodeList:1:$n}
 	sdiffPairsList=${sdiffPairsList#:}
+	if [ ${#geomKeys[@]} -gt 1 ]; then
+		echo_info "Spike groups differ in waveform geometry: $binary runs once per geometry"
+		for _key in "${geomKeys[@]}"; do
+			_gs=
+			for electrodeGroup in $electrodeGroups; do
+				[ "${grpGeom[$electrodeGroup]}" = "$_key" ] && _gs="$_gs $electrodeGroup"
+			done
+			echo_info "  nSamples ${_key%%:*}, peakSampleIndex ${_key#*:}: group(s)$_gs"
+		done
+	fi
 	# An array, quoted where it is used: an expression pattern holds '*' and
 	# parentheses, which an unquoted expansion would glob or split.
 	sdiffPairsArg=()
@@ -1842,22 +1855,8 @@ ndm_process_spikes()
 		echo_info " Custom difference patterns : not applied (method $method)"
 	fi
 
-	# Temporary symlink so partial-run outputs cannot clobber good files.
-	# Clear any leftover first: the link is only removed on the success path, so a
-	# run that died leaves it behind and the next ln fails.  That failure was not
-	# checked, so a stale link from a run with a DIFFERENT inputExtension would
-	# silently feed the engine the wrong file.
-	tmp=$session-$mode-tmp
-	rm -f "$tmp.fil"
-	if ! ln -s "$session.$inputExtension" "$tmp.fil"; then
-		echo_error "cannot create the temporary input link $tmp.fil"
-		exit $GENERAL_ERROR
-	fi
-	export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
-
-	# ── extract: require an existing shared .res (never detect) ──────────────
-	# ndm_resolve_any locates a group's shared .res (this method first, then any
-	# other method, then untagged).  Copied into the temp slot and left untouched.
+	# Extract-mode filters and noise statistics: read and checked once, before
+	# any engine runs.
 	if [ "$mode" = extract ]; then
 		# Post-extraction filter (process_spikefilter.py): flatRunMax N drops spikes
 		# whose freshly extracted waveform -- in its own transform domain -- has more
@@ -1919,108 +1918,148 @@ ndm_process_spikes()
 			fi
 			echo_info " Noise statistics (.nst)    : $noiseWindows windows, reject beyond $noiseRejectZ robust SD${noiseGuard:+, guard $noiseGuard samples}"
 		fi
-		declare -a sharedRes=()
-		declare -i i=0
+		# ndm_resolve_any locates a group's shared .res (this method first, then
+		# any other method, then untagged); it is copied into the temp slot and
+		# left untouched.  Every group is checked before any engine runs.
+		local -A sharedRes=()
 		for group in $electrodeGroups; do
 			r=$(ndm_resolve_any "$session" res "$group" "$method")
 			if [ -z "$r" ] || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then
-				rm -f $tmp.fil
 				echo_error "no valid shared .res for group $group — run ndm_detectspikes first"
 				exit $INPUTS_MISSING
 			fi
-			i=$i+1
-			cp "$r" $tmp.res.$i
-			sharedRes[$i]="$r"
+			sharedRes[$group]="$r"
 		done
 		echo_info " Re-extracting waveforms at existing spike times (-R)"
 	fi
+	export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
-	# ── Dispatch to the engine.  standard computes the threshold externally
-	# (process_medianthreshold -> -t); sdiff/stderiv compute it internally from
-	# the noise window (-f/-B/-Z) and take the derivative order -d.  In extract
-	# mode only geometry (+ transform) is passed and -R selects re-extraction.
-	case "$methodFamily" in
-		standard)
-			if [ "$mode" = detect ]; then
-				echo_info " Threshold factor           : $thresholdFactor"
-				echo_info " 1. Computing thresholds (process_medianthreshold)"
-				baseline=$(tail -c +$(($startInBytes+1)) "$session.$inputExtension" | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $electrodeList)
-				check_command_status process_medianthreshold
-				baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
-				echo_info "    threshold $baseline"
-				echo_info " 2. Detecting + extracting spike waveforms"
-				process_extractspikes \
-					-n $nChannels -c $electrodeList \
-					-w $samplesInWaveform -p $peakSample \
-					-t $baseline -l $peakSearchLength -r $refractoryPeriod \
-					$tmp
-			else
-				process_extractspikes \
-					-n $nChannels -c $electrodeList \
-					-w $samplesInWaveform -p $peakSample \
-					"${noiseArgs[@]}" \
-					-R $tmp
-			fi
-			;;
-		sdiff|stderiv)
-			if [ "$mode" = detect ]; then
-				echo_info " Threshold factor           : $thresholdFactor"
-				[ -n "$thresholdNoise" ] && echo_info " Threshold noise base       : $thresholdNoise"
-				[ -n "$recenterArg" ] && echo_info " Re-centring                : ${recenterMode:-stderiv} ${recenterHalfWidth:+(+-$recenterHalfWidth samples)}"
-				[ -n "$hybridArg" ] && echo_info " Detection arms             : stderiv + raw (hybrid)"
-				[ -n "$cleanupArg" ] && echo_info " Clean-up                   : ${flatRunMax:+flat runs > $flatRunMax samples rejected; }duplicates within ${dedupSamples} samples dropped"
-				echo_info " Detecting + extracting spike waveforms"
-				$binary \
-					-n $nChannels -c $electrodeList \
-					-w $samplesInWaveform -p $peakSample \
-					-r $refractoryPeriod -l $peakSearchLength \
-					-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
-					$thresholdNoiseArg $recenterArg $hybridArg $cleanupArg \
-					$sdiffOrderArg "${sdiffPairsArg[@]}" \
-					$tmp
-			else
-				$binary \
-					-n $nChannels -c $electrodeList \
-					-w $samplesInWaveform -p $peakSample \
-					$sdiffOrderArg "${sdiffPairsArg[@]}" \
-					"${noiseArgs[@]}" \
-					-R $tmp
-			fi
-			;;
-	esac
-	check_command_status $binary
+	# ── One engine run per waveform geometry ─────────────────────────────────
+	local batch=0 geomKey bGroups bList bPairs
+	for geomKey in "${geomKeys[@]}"; do
+		batch=$((batch + 1))
+		samplesInWaveform=${geomKey%%:*}
+		peakSample=${geomKey#*:}
+		bGroups= ; bList= ; bPairs=
+		for group in $electrodeGroups; do
+			[ "${grpGeom[$group]}" = "$geomKey" ] || continue
+			bGroups="$bGroups $group"
+			bList="$bList:${grpChans[$group]}"
+			bPairs="$bPairs:${grpPairs[$group]}"
+		done
+		bList=${bList#:}
+		bPairs=${bPairs#:}
+		local -a bPairsArg=()
+		[ ${#sdiffPairsArg[@]} -gt 0 ] && bPairsArg=(-P "$bPairs")
 
-	# ── Write back temp (untagged) outputs to final method-tagged names ──────
-	rm -f "$tmp.fil"
-	declare -i i=0
-	for group in $electrodeGroups; do
-		i=$i+1
-		if [ "$mode" = detect ]; then
-			# Detection writes the session's shared spike times; discard the .spk
-			# it also produced (no detect-only engine mode) so detection
-			# contributes only the .res.
-			mv $tmp.res.$i "$(ndm_method_path "$session" res "$group" "$method")"
-			rm -f $tmp.spk.$i
-		else
-			# Reused the shared .res unchanged; produce only the waveform file.
-			rm -f $tmp.res.$i
-			spkOut="$(ndm_method_path "$session" spk "$group" "$method")"
-			mv $tmp.spk.$i "$spkOut"
-			[ ${#noiseArgs[@]} -gt 0 ] && mv $tmp.nst.$i "$(ndm_method_path "$session" nst "$group" "$method")"
-			if [ "$xFilter" = 1 ]; then
-				groupCh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel")
-				nGroupCh=$(echo $groupCh | wc -w)
-				# The raw source is checked as well: a dead channel is mixed with its
-				# live neighbours by a spatial derivative, so it is not flat in the
-				# transformed .spk.
-				python3 "$SPIKEFILTER" --base "$session" --group "$group" \
-					--spk "$spkOut" --res "${sharedRes[$i]}" \
-					--nsamples "$samplesInWaveform" --nchannels "$nGroupCh" \
-					--source "$session.$inputExtension" --total-channels "$nChannels" \
-					--channels "$(echo $groupCh | tr ' ' ',')" --peak "$peakSample" \
-					--flat-run "$xFlatRunMax" --dedup "$xDedupSamples"
-				check_command_status process_spikefilter.py
-			fi
+		# Temporary symlink so partial-run outputs cannot clobber good files.
+		# Clear any leftover first: the link is only removed on the success path, so a
+		# run that died leaves it behind and the next ln fails.  That failure was not
+		# checked, so a stale link from a run with a DIFFERENT inputExtension would
+		# silently feed the engine the wrong file.
+		tmp=$session-$mode-tmp
+		[ $batch -gt 1 ] && tmp=$session-$mode-tmp$batch
+		rm -f "$tmp.fil"
+		if ! ln -s "$session.$inputExtension" "$tmp.fil"; then
+			echo_error "cannot create the temporary input link $tmp.fil"
+			exit $GENERAL_ERROR
 		fi
+		if [ "$mode" = extract ]; then
+			declare -i i=0
+			for group in $bGroups; do
+				i=$i+1
+				cp "${sharedRes[$group]}" $tmp.res.$i
+			done
+		fi
+		[ ${#geomKeys[@]} -gt 1 ] && echo_info " Groups$bGroups (nSamples $samplesInWaveform, peakSampleIndex $peakSample)"
+
+		# Dispatch to the engine.  standard computes the threshold externally
+		# (process_medianthreshold -> -t); sdiff/stderiv compute it internally from
+		# the noise window (-f/-B/-Z) and take the derivative order -d.  In extract
+		# mode only geometry (+ transform) is passed and -R selects re-extraction.
+		case "$methodFamily" in
+			standard)
+				if [ "$mode" = detect ]; then
+					echo_info " Threshold factor           : $thresholdFactor"
+					echo_info " 1. Computing thresholds (process_medianthreshold)"
+					baseline=$(tail -c +$(($startInBytes+1)) "$session.$inputExtension" | head -c $durationInBytes | process_medianthreshold -s $durationInBytes -n $nChannels -c $bList)
+					check_command_status process_medianthreshold
+					baseline=$(unset LANG && echo $baseline | awk 'BEGIN{RS=":";FS=","};{for (i=1;i<=NF;i++){printf "%f,",$i*'$thresholdFactor'};printf ":"}' | sed 's/,:/:/g;s/:$//')
+					echo_info "    threshold $baseline"
+					echo_info " 2. Detecting + extracting spike waveforms"
+					process_extractspikes \
+						-n $nChannels -c $bList \
+						-w $samplesInWaveform -p $peakSample \
+						-t $baseline -l $peakSearchLength -r $refractoryPeriod \
+						$tmp
+				else
+					process_extractspikes \
+						-n $nChannels -c $bList \
+						-w $samplesInWaveform -p $peakSample \
+						"${noiseArgs[@]}" \
+						-R $tmp
+				fi
+				;;
+			sdiff|stderiv)
+				if [ "$mode" = detect ]; then
+					echo_info " Threshold factor           : $thresholdFactor"
+					[ -n "$thresholdNoise" ] && echo_info " Threshold noise base       : $thresholdNoise"
+					[ -n "$recenterArg" ] && echo_info " Re-centring                : ${recenterMode:-stderiv} ${recenterHalfWidth:+(+-$recenterHalfWidth samples)}"
+					[ -n "$hybridArg" ] && echo_info " Detection arms             : stderiv + raw (hybrid)"
+					[ -n "$cleanupArg" ] && echo_info " Clean-up                   : ${flatRunMax:+flat runs > $flatRunMax samples rejected; }duplicates within ${dedupSamples} samples dropped"
+					echo_info " Detecting + extracting spike waveforms"
+					$binary \
+						-n $nChannels -c $bList \
+						-w $samplesInWaveform -p $peakSample \
+						-r $refractoryPeriod -l $peakSearchLength \
+						-f $thresholdFactor -B $startInBytes -Z $durationInBytes \
+						$thresholdNoiseArg $recenterArg $hybridArg $cleanupArg \
+						$sdiffOrderArg "${bPairsArg[@]}" \
+						$tmp
+				else
+					$binary \
+						-n $nChannels -c $bList \
+						-w $samplesInWaveform -p $peakSample \
+						$sdiffOrderArg "${bPairsArg[@]}" \
+						"${noiseArgs[@]}" \
+						-R $tmp
+				fi
+				;;
+		esac
+		check_command_status $binary
+
+		# ── Write back temp (untagged) outputs to final method-tagged names ──
+		rm -f "$tmp.fil"
+		declare -i i=0
+		for group in $bGroups; do
+			i=$i+1
+			if [ "$mode" = detect ]; then
+				# Detection writes the session's shared spike times; discard the .spk
+				# it also produced (no detect-only engine mode) so detection
+				# contributes only the .res.
+				mv $tmp.res.$i "$(ndm_method_path "$session" res "$group" "$method")"
+				rm -f $tmp.spk.$i
+			else
+				# Reused the shared .res unchanged; produce only the waveform file.
+				rm -f $tmp.res.$i
+				spkOut="$(ndm_method_path "$session" spk "$group" "$method")"
+				mv $tmp.spk.$i "$spkOut"
+				[ ${#noiseArgs[@]} -gt 0 ] && mv $tmp.nst.$i "$(ndm_method_path "$session" nst "$group" "$method")"
+				if [ "$xFilter" = 1 ]; then
+					groupCh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel")
+					nGroupCh=$(echo $groupCh | wc -w)
+					# The raw source is checked as well: a dead channel is mixed with its
+					# live neighbours by a spatial derivative, so it is not flat in the
+					# transformed .spk.
+					python3 "$SPIKEFILTER" --base "$session" --group "$group" \
+						--spk "$spkOut" --res "${sharedRes[$group]}" \
+						--nsamples "$samplesInWaveform" --nchannels "$nGroupCh" \
+						--source "$session.$inputExtension" --total-channels "$nChannels" \
+						--channels "$(echo $groupCh | tr ' ' ',')" --peak "$peakSample" \
+						--flat-run "$xFlatRunMax" --dedup "$xDedupSamples"
+					check_command_status process_spikefilter.py
+				fi
+			fi
+		done
 	done
 }

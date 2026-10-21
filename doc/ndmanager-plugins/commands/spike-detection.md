@@ -306,8 +306,14 @@ and `.clu`.  A time whose window does not lie inside the `.fil` (within
 zeros and a warning; before 2026-10-17 such a time was skipped, which shifted
 every later waveform against its spike.
 
-All groups are extracted with the `nSamples`/`peakSampleIndex` of the first
-group processed; a group with different values gets a warning.
+Each group is cut with its own `nSamples` and `peakSampleIndex`. The engines
+take one geometry per run, so when groups differ the step runs the engine
+once per geometry and says so; `ndm_detectspikes` does the same. Before
+2026-10-21 every group was cut with the first group's values (with a
+warning), so a group whose `peakSampleIndex` differed got windows offset from
+its `.res` by the difference, and readers that use the group's own value
+(Klusters, its realign check) saw every row shifted. Re-extract such groups
+(`--force`).
 
 ### Parameters
 
