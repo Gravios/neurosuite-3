@@ -13,7 +13,7 @@ re-project spikes later.
 ### Synopsis
 
 ```bash
-ndm_pca [session.yaml] [electrodeGroup] [--method M] [--methodOrder N] [-- process_pca flags]
+ndm_pca [session.yaml] [electrodeGroup] [--method M] [--methodOrder N] [--force] [-- process_pca flags]
 ```
 
 **Input:** `session.spk.<method>.N`, `session.res.<method>.N` (shared spike times, any method tag)
@@ -61,9 +61,21 @@ and (exit 11) when its `.spk` or `.res` is missing. With all groups, skipped
 groups do not fail the run; any other failure is reported per group and
 returned.
 
+**`--force`.** The group is refit and its outputs are overwritten instead of
+skipped: the `.fet` and its `.pca`, and with a `_D` token both the ordinary and
+the lag pair. Use it when the `.fet` is stale, for example after the `.spk` was
+re-extracted (`ndm_extractspikes --force` or `--allMethods`). The new basis
+follows the current settings, so the feature axes can change; a clustering
+keeps its assignments, but the cluster shapes in the views change with the
+axes. To re-project onto the stored basis instead, so the features stay in
+the space the clustering was done in, use
+[`ndm_refeaturize`](#ndm_refeaturize--re-project-onto-the-saved-basis-fet)
+(not available for `_D` tokens).
+
 **Extra flags.** Options after the positional arguments, or after `--`, go to
 `process_pca` unchanged. `--method` and `--methodOrder` are handled by
-`ndm_pca` and override the YAML.
+`ndm_pca` and override the YAML; `--force` is handled by `ndm_pca` too and is
+not passed on.
 
 ```bash
 ndm_pca session.yaml                          # all groups, in parallel
@@ -162,7 +174,7 @@ identical to fiber-kit's `fiber_pca.lag_project`. `before`/`after` must leave
 file under a `_D` name. To view the lag `.fet` in Klusters set the group's
 `nFeatures` to `dims`.
 
-Existing outputs are never overwritten; only the missing ones are written:
+Without `--force`, existing outputs are never overwritten; only the missing ones are written:
 
 - both `.fet` files exist: the group is skipped;
 - only the lag `.fet` exists: the ordinary pair is written;

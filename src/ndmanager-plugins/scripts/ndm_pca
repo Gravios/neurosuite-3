@@ -43,8 +43,11 @@
 #  excludeClusters / threadsPerGroup.
 #
 #  CLI: ndm_pca [parameter-file] [electrodeGroup] [--method M] [--methodOrder N]
-#               [-- process_pca flags ...]
-#       CLI --method/--methodOrder override YAML.
+#               [--force] [-- process_pca flags ...]
+#       CLI --method/--methodOrder override YAML.  --force refits and overwrites
+#       a group's existing outputs (with a _D token, the ordinary and the lag
+#       pair) instead of skipping it -- e.g. after its .spk was re-extracted.
+#       To keep the stored basis and only re-project, use ndm_refeaturize.
 #
 #////////////////////////////////////////////////////////////////////////////
 
@@ -58,11 +61,12 @@ program=$(basename $0)
 #   ndm_pca session 8 --varimax
 #   ndm_pca session 8 --varimax --varimax-max-iter 50
 #   ndm_pca session 8 -- --varimax        # explicit separator
-# --method / --methodOrder are intercepted here (not forwarded to process_pca).
+# --method / --methodOrder / --force are intercepted here (not forwarded to process_pca).
 positionals=()
 extra_args=()
 methodOverride=
 methodOrderOverride=
+force=
 collect_positional=true
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -70,6 +74,7 @@ while [ $# -gt 0 ]; do
 		--method=*)       methodOverride="${1#*=}";      shift ;;
 		--methodOrder)    methodOrderOverride="$2";      shift 2 ;;
 		--methodOrder=*)  methodOrderOverride="${1#*=}"; shift ;;
+		--force)          force=1;                       shift ;;
 		--)
 			collect_positional=false
 			shift
@@ -90,7 +95,7 @@ while [ $# -gt 0 ]; do
 	esac
 done
 if [ ${#positionals[@]} -gt 2 ]; then
-	echo_error "usage: $program [parameter-file] [electrodeGroup] [--method M] [--methodOrder N] [-- process_pca flags ...]"
+	echo_error "usage: $program [parameter-file] [electrodeGroup] [--method M] [--methodOrder N] [--force] [-- process_pca flags ...]"
 	exit $GENERAL_ERROR
 fi
 ndm_resolve_session "${positionals[@]}"
@@ -199,7 +204,13 @@ once()
 	# a scratch directory, so a lag space can be added to a session that already has
 	# its ordinary features.
 	local baseOut=$fetout scratch=
-	if [ -z "$lagfet" ]; then
+	if [ -n "$force" ]; then
+		# Refit and overwrite whatever exists (both pairs for a _D token): the
+		# outputs are written to .tmp names first and moved over the old ones.
+		local _old=
+		for _f in "$fetout" "$lagfet"; do [ -n "$_f" ] && [ -f "$_f" ] && _old="$_old $(basename "$_f")"; done
+		[ -n "$_old" ] && echo_info "Group $electrodeGroup: --force: refitting and overwriting$_old (and the matching .pca)"
+	elif [ -z "$lagfet" ]; then
 		outputs_exist "$fetout" && exit $OUTPUTS_EXIST
 	elif [ -f "$lagfet" ]; then
 		if [ -f "$fetout" ]; then

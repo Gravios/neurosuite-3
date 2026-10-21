@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [ndm_pca: `--force` refits and overwrites stale features](#2026-10-21--ndm_pca---force-refits-and-overwrites-stale-features) |
 | 2026-10-21 | [ndm_extractspikes: a session-file check per method, and `--allMethods`](#2026-10-21--ndm_extractspikes-a-session-file-check-per-method-and---allmethods) |
 | 2026-10-21 | [ndm_detectspikes / ndm_extractspikes: each spike group cut with its own window](#2026-10-21--ndm_detectspikes--ndm_extractspikes-each-spike-group-cut-with-its-own-window) |
 | 2026-10-21 | [macOS: KiloKlustaKwik on the Apple GPU (CEM steps)](#2026-10-21--macos-kiloklustakwik-on-the-apple-gpu-cem-steps) |
@@ -102,6 +103,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — ndm_pca: `--force` refits and overwrites stale features
+
+<details>
+<summary>Details</summary>
+
+`ndm_pca` skipped every group whose `.fet` existed, so features projected from
+waveforms that have since been re-extracted could only be replaced by deleting
+the files by hand. With `--force` the group is refit, and its `.fet` and `.pca`
+are overwritten: for a `_D<lag><dims>` token, both the ordinary and the lag
+pair. `--force` is not passed on to `process_pca`.
+
+The refit basis follows the current settings, so the feature axes can move;
+a clustering keeps its assignments. To keep the stored basis and only
+re-project, use `ndm_refeaturize`, which does not handle `_D` tokens.
+
+</details>
 
 ## 2026-10-21 — ndm_extractspikes: a session-file check per method, and `--allMethods`
 
