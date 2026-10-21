@@ -32,8 +32,9 @@ kernel void mahalLogPost(device const float* features  [[buffer(0)]],   // [feat
                          threadgroup float*  sh        [[threadgroup(0)]],
                          uint2 gid  [[thread_position_in_grid]],
                          uint  lid  [[thread_index_in_threadgroup]],
-                         uint  size [[threads_per_threadgroup]])
+                         uint2 tgSize [[threads_per_threadgroup]])   // uint2, as gid must be
 {
+    const uint size = tgSize.x * tgSize.y;
     const uint j = gid.y;
     const uint dim = p.nbDim;
     const bool ig = ignore[j] != 0;

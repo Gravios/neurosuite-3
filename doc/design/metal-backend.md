@@ -169,6 +169,14 @@ provides:
 | `<<<grid, block, shmem>>>` | `dispatchThreadgroups(grid, block)` |
 | max 1024 threads per block | max 1024 per threadgroup; query `maxTotalThreadsPerThreadgroup` per pipeline |
 
+One rule with no CUDA counterpart, which only Apple's compiler enforces (the
+shim and `clang -fsyntax-only` do not): the position and size attributes of a
+kernel (`thread_position_in_grid`, `threadgroup_position_in_grid`,
+`thread_position_in_threadgroup`, `threads_per_threadgroup`, ...) must all be
+scalars or all vectors of the same width. `thread_index_in_threadgroup` is
+always a scalar and is exempt. A 2-D kernel takes `uint2 tgSize
+[[threads_per_threadgroup]]`, not `uint size`.
+
 The **HIP** files are the closest starting point for sites 1, 2, 4, 5 and 12: they
 are already a mechanical translation away from CUDA intrinsics.
 

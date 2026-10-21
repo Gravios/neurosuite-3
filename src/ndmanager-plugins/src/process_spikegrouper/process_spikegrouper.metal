@@ -31,8 +31,9 @@ kernel void coincidenceCounts(device const long* events  [[buffer(0)]],
                               threadgroup atomic_uint* total [[threadgroup(0)]],
                               uint2 tg   [[threadgroup_position_in_grid]],
                               uint  lid  [[thread_index_in_threadgroup]],
-                              uint  size [[threads_per_threadgroup]])
+                              uint2 tgSize [[threads_per_threadgroup]])   // uint2, as tg must be
 {
+    const uint size = tgSize.x * tgSize.y;
     const uint i = tg.x, j = tg.y;
     const uint bi = offsets[i], ni = offsets[i + 1] - bi;
     const uint bj = offsets[j], nj = offsets[j + 1] - bj;
