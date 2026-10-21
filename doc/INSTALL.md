@@ -188,8 +188,10 @@ OpenMP was not found, add
 `-DCMAKE_PREFIX_PATH="$(brew --prefix libomp)"` for the multithreaded build.
 
 There is no CUDA, HIP or SYCL on a Mac. A Metal (Apple GPU) backend is being
-added (`doc/design/metal-backend.md`); so far it covers the noise thresholds
-(`process_medianthreshold`). The configure step downloads Apple's metal-cpp
+added (`doc/design/metal-backend.md`); so far it covers the Butterworth and
+median high-pass filters, the noise thresholds and the channel grouping
+(`process_butterworth`, `process_medianfilter`, `process_medianthreshold`,
+`process_spikegrouper`). The configure step downloads Apple's metal-cpp
 headers from GitHub; for an offline build, point `-DNS_METAL_CPP_DIR=` at a
 copy, or turn it off with `-DUSE_METAL=OFF`. Apple's Accelerate
 framework, part of macOS, is used instead where it applies: NeuroScope's

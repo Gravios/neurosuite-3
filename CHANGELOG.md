@@ -9,6 +9,8 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-21 | [process_medianfilter: CPU builds no longer corrupt recordings larger than one chunk](#2026-10-21--process_medianfilter-cpu-builds-no-longer-corrupt-recordings-larger-than-one-chunk) |
+| 2026-10-21 | [macOS: Metal paths for the high-pass filters and channel grouping](#2026-10-21--macos-metal-paths-for-the-high-pass-filters-and-channel-grouping) |
 | 2026-10-21 | [macOS: a Metal (Apple GPU) backend, first for the noise thresholds](#2026-10-21--macos-a-metal-apple-gpu-backend-first-for-the-noise-thresholds) |
 | 2026-10-21 | [macOS: Apple Accelerate for the spectrogram FFT and the EMG kernel](#2026-10-21--macos-apple-accelerate-for-the-spectrogram-fft-and-the-emg-kernel) |
 | 2026-10-21 | [CI: one workflow per operating system, with a status badge each](#2026-10-21--ci-one-workflow-per-operating-system-with-a-status-badge-each) |
@@ -93,6 +95,53 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-21 — process_medianfilter: CPU builds no longer corrupt recordings larger than one chunk
+
+<details>
+<summary>Details</summary>
+
+- **Who is affected:** builds without CUDA (macOS, Windows, CPU-only Linux)
+  that ran the median high-pass on recordings larger than one chunk (`-b`,
+  default 128 MiB) since 2026-02-20 (commit `8856170c`).  That is
+  `ndm_hipass` with `filter: median`, `ndm_redetectspikes` and
+  `ndm_bandpass`.  From the first chunk boundary on, every chunk began with
+  `w` frames of uninitialised memory and was shifted by `w` frames.  Those
+  `.fil` files should be regenerated.  The default Butterworth filter is not
+  affected.
+- **Also fixed:** the CPU window was one frame off-centre, and the last frames
+  read past the buffer.  The CUDA path had its own loop, which could use
+  already-filtered samples as context at a chunk boundary and read garbage
+  after the end of the file.  It now filters the CPU path's chunks.
+- **Definition:** `out[t] = x[t] - median(x[t-w .. t+w])`, with zero outside
+  the recording, stated in the source.  `test_medianfilter.py` checks it
+  against numpy for one chunk, chunks of 37 frames, chunks of one frame and
+  chunks smaller than a frame, and checks the GPU output against the CPU
+  output byte for byte.
+
+</details>
+
+## 2026-10-21 — macOS: Metal paths for the high-pass filters and channel grouping
+
+<details>
+<summary>Details</summary>
+
+Phase 2 of the Apple GPU plan (`doc/design/metal-backend.md` §11).
+
+- **`process_medianfilter`:** byte-identical to the CPU.
+- **`process_butterworth`:** single precision (`-p double` runs on the CPU),
+  within 1 LSB of the CPU's single precision.  New `test_butterworth.py`:
+  - CPU double equals scipy's `sosfiltfilt`;
+  - the output does not depend on chunking;
+  - single precision is within 1 LSB of double;
+  - the GPU output is within 1 LSB of the CPU's.
+- **`process_spikegrouper`:** noise medians and coincidence counts on the
+  GPU, giving the same channel groups as the CPU.
+- **`process_decomposecollisions`:** not ported.  Its CUDA GEMMs compute
+  little that is used (§11), so there is nothing to accelerate.
+- The macOS CI runs all four plugin tests.
+
+</details>
 
 ## 2026-10-21 — macOS: a Metal (Apple GPU) backend, first for the noise thresholds
 

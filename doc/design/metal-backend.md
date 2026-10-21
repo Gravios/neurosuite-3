@@ -1,8 +1,9 @@
 # Apple GPU (Metal) backend — integration plan
 
 *Written 2026-10-21 against `0d1c903`. Status: decisions taken (§8); Phases 0
-(Accelerate) and 1 (Metal infrastructure, `process_medianthreshold`)
-implemented, awaiting a run on a Mac (§9, §10); Phases 2–5 not started.*
+(Accelerate), 1 (Metal infrastructure, `process_medianthreshold`) and 2 (the
+other plugins) implemented and run by the macOS CI (§9–§11); Phases 3–5 not
+started.*
 
 ## 1. Goal and scope
 
@@ -350,3 +351,42 @@ to end on the simplest kernel, with an exact-match test.
   headers, with stand-ins for the few macOS system headers, and the embed
   helper round-trip. The MSL kernels themselves have not been compiled. The
   run-time compile reports any error and the program falls back to the CPU.
+
+## 11. Phase 2 as implemented (2026-10-21)
+
+Each port is tested against its CPU path by a test the macOS CI runs (its
+runner exposes a Metal device).
+
+- **`process_medianfilter`** (`ndm_test_medianfilter`): checking the CPU
+  path against an independent reference found it corrupted every recording
+  larger than one chunk (since 2026-02-20), with a window one frame
+  off-centre. The CPU path was fixed first. The CUDA path moved onto the same
+  chunking: its own loop could use filtered samples as context, had garbage
+  after the end of file, and could hit the grid limit. The Metal kernel then
+  filters the same chunks: one thread per (channel, 512-frame tile), with the
+  sorted window in threadgroup memory. Output is byte-identical to the CPU.
+- **`process_butterworth`** (`ndm_test_butterworth`, a new test of the plugin
+  itself: CPU double equals scipy `sosfiltfilt`, and output is independent of
+  chunking):
+  - the Metal kernel is `bwFilterBlock<float>` in MSL, single precision only;
+    `-p double` runs on the CPU;
+  - it is within 1 LSB of the CPU's single precision.
+- **`process_spikegrouper`** (`ndm_test_spikegrouper_metal`):
+  - noise medians (exact histogram) and coincidence counts (lower_bound per
+    event) run on the GPU, detection stays on the CPU;
+  - integer results, so the groups equal the CPU's.
+- **`process_decomposecollisions`: not ported.** Its CUDA path's GPU work is
+  two GEMMs:
+  - in the screening GEMM, only one column per row is used: one dot product
+    per spike, which the CPU path also computes, in O(L);
+  - the fitting GEMM's result is never read.
+
+  The decomposition itself is CPU code in both paths, so a Metal port would
+  accelerate nothing. The CUDA path could drop both GEMMs (a separate
+  clean-up).
+
+Checked without a Mac:
+- every host file with clang `-fsyntax-only` against the pinned metal-cpp
+  headers;
+- every kernel compiled as C++ through a shim (`mslemu`) and run thread by
+  thread against the CPU rule, with zero mismatches.
