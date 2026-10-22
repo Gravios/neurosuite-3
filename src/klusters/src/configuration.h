@@ -450,6 +450,12 @@ public:
     int getSelectionLineWidthDefault() const{return selectionLineWidthDefault;}
 
     bool getUseWhiteColorDuringPrinting() const { return useWhiteColorDuringPrinting; }
+    bool getUseWhiteColorDuringPrintingDefault() const { return useWhiteColorDuringPrintingDefault; }
+
+    /**Defaults of the template matrix settings (Preferences ▸ Views ▸ Matrices).*/
+    double getTemplateThresholdMinDefault() const { return templateThresholdMinDefault; }
+    double getTemplateThresholdMaxDefault() const { return templateThresholdMaxDefault; }
+    int    getTemplateXcorrMetricDefault() const  { return templateXcorrMetricDefault; }
 
     void setUseWhiteColorDuringPrinting(bool b) { useWhiteColorDuringPrinting = b; }
 
@@ -696,6 +702,10 @@ private:
     static const QString realignArgsDefault;
     static const int  markerSizeDefault;
     static const int  selectionLineWidthDefault;
+    static const bool useWhiteColorDuringPrintingDefault;
+    static const double templateThresholdMinDefault;
+    static const double templateThresholdMaxDefault;
+    static const int  templateXcorrMetricDefault;
 
     Configuration();
     Configuration(const Configuration&);

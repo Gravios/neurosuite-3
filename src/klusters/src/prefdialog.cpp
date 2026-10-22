@@ -570,10 +570,13 @@ void PrefDialog::slotDefault()
     prefDisplay->setMarkerSize(configuration().getMarkerSizeDefault());
     prefDisplay->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
     prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
-    prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
+    prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrintingDefault());
     prefMatrices->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpenDefault());
     prefDisplay->setAutoShowTemplateLibraryOnOpen(configuration().getAutoShowTemplateLibraryOnOpenDefault());
     prefDisplay->setTemplatesMode(configuration().getTemplatesModeDefault());
+    prefMatrices->setTemplateThresholdMin(configuration().getTemplateThresholdMinDefault());
+    prefMatrices->setTemplateThresholdMax(configuration().getTemplateThresholdMaxDefault());
+    prefMatrices->setTemplateXcorrMetric(configuration().getTemplateXcorrMetricDefault());
 
     // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
     prefMerging->setAlgorithm(configuration().getAutoMergeAlgorithmDefault());

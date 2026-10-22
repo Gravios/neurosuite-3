@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-22 | [Klusters: Preferences ▸ Default resets every setting](#2026-10-22--klusters-preferences--default-resets-every-setting) |
 | 2026-10-22 | [Klusters: Preferences regrouped into General, Views and Curation](#2026-10-22--klusters-preferences-regrouped-into-general-views-and-curation) |
 | 2026-10-21 | [macOS: the `ndm_*` steps work with the BSD tools](#2026-10-21--macos-the-ndm_-steps-work-with-the-bsd-tools) |
 | 2026-10-21 | [macOS: the `ndm_*` steps run with Homebrew's bash](#2026-10-21--macos-the-ndm_-steps-run-with-homebrews-bash) |
@@ -110,6 +111,18 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-22 — Klusters: Preferences ▸ Default resets every setting
+
+<details>
+<summary>Details</summary>
+
+**Default** in Klusters' Preferences left three template-matrix settings as
+they were (the metric and the match slider's two thresholds) and reset
+*Use white background when printing* to the current value rather than to
+its default (on). It now resets all four, like every other setting.
+
+</details>
 
 ## 2026-10-22 — Klusters: Preferences regrouped into General, Views and Curation
 

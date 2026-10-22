@@ -55,6 +55,10 @@ const QString Configuration::realignExecutableDefault = QLatin1String("");
 const QString Configuration::realignArgsDefault = QLatin1String("--threshold 0.70 --iterations 2");
 const int  Configuration::markerSizeDefault = 2;
 const int  Configuration::selectionLineWidthDefault = 1;
+const bool Configuration::useWhiteColorDuringPrintingDefault = true;
+const double Configuration::templateThresholdMinDefault = 0.5;
+const double Configuration::templateThresholdMaxDefault = 1.0;
+const int  Configuration::templateXcorrMetricDefault = 0;   // cosine
 
 Configuration::Configuration():nbChannels(0) {
     read(); // read the settings or set them to the default values
@@ -145,14 +149,14 @@ void Configuration::read() {
     autoMergePreviewBeforeApply  = settings.value("autoMergePreviewBeforeApply",  true).toBool();
     markerSize = settings.value("markerSize", markerSizeDefault).toInt();
     selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
-    templateThresholdMin = settings.value("templateThresholdMin", 0.5).toDouble();
-    templateThresholdMax = settings.value("templateThresholdMax", 1.0).toDouble();
+    templateThresholdMin = settings.value("templateThresholdMin", templateThresholdMinDefault).toDouble();
+    templateThresholdMax = settings.value("templateThresholdMax", templateThresholdMaxDefault).toDouble();
     if (settings.contains("templateXcorrMetric"))
-        templateXcorrMetric = settings.value("templateXcorrMetric", 0).toInt();
+        templateXcorrMetric = settings.value("templateXcorrMetric", templateXcorrMetricDefault).toInt();
     else  // migrate the pre-3.x boolean key (Pearson on/off)
         templateXcorrMetric = settings.value("templateXcorrPearson", false).toBool() ? 1 : 0;
     templateXcorrMetric = qBound(0, templateXcorrMetric, 4);
-    useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting",true).toBool();
+    useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting", useWhiteColorDuringPrintingDefault).toBool();
     autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
     includeTimeInAutoSelect = settings.value("includeTimeInAutoSelect", includeTimeInAutoSelectDefault).toBool();
     autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
