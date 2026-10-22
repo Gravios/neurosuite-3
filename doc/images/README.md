@@ -38,6 +38,13 @@ from them, with a transparent background outside the tile:
   README; `banner-narrow.png` (1600 × 680: icon, name, a short line) replaces
   it in windows narrower than 600 px, where the wide one's small text cannot
   be read;
+- `doc/<program>/banner.png` (2560 × 640) and `banner-narrow.png` (1600 × 600)
+  for NDManager, ndmanager-plugins, KiloKlustaKwik, Klusters and NeuroScope:
+  the top of each program's documentation page, the narrow one below 600 px.
+  The same panel as the README banner with the program's icon, a
+  "neurosuite-3" line, its name and a tagline.  They sit beside the page, not
+  in `doc/images`, because the documentation site includes `doc/<program>`
+  but not `doc/images`.  Reduced to a 256-colour palette (about 100 KB each);
 - `doc/images/social-preview.png` (1280 × 640): GitHub's link preview, uploaded
   by hand under the repository's Settings → General → Social preview.
 

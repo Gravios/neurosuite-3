@@ -1,4 +1,7 @@
-# kiloklustakwik — Automatic Spike Sorter
+<h1><picture>
+  <source media="(max-width: 600px)" srcset="banner-narrow.png">
+  <img src="banner.png" width="100%" alt="kiloklustakwik — Automatic Spike Sorter">
+</picture></h1>
 
 KiloKlustaKwik performs automatic spike sorting via Classification EM (CEM).
 It reads the method-tagged feature file `<base>.fet.<Method>.<elec>` produced

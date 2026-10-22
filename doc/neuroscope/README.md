@@ -1,4 +1,7 @@
-# neuroscope — Signal Visualiser
+<h1><picture>
+  <source media="(max-width: 600px)" srcset="banner-narrow.png">
+  <img src="banner.png" width="100%" alt="neuroscope — Signal Visualiser">
+</picture></h1>
 
 NeuroScope is a Qt6 viewer for multi-channel electrophysiology data. It displays one wideband, LFP or high-pass filtered file as scrollable traces and overlays spike times and waveforms, cluster assignments, event markers and animal position. Acquisition settings, groups and display defaults come from the `.yaml` parameter file (read with `NeuroscopeYamlReader`, written with `ParameterYamlModifier` from `libklustersshared`); the viewer's own state is kept in the `.nrs` session file (`SessionYamlReader` / `SessionYamlWriter`).
 

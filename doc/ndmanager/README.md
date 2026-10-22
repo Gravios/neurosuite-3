@@ -1,4 +1,7 @@
-# ndmanager — Session Manager
+<h1><picture>
+  <source media="(max-width: 600px)" srcset="banner-narrow.png">
+  <img src="banner.png" width="100%" alt="ndmanager — Session Manager">
+</picture></h1>
 
 ndmanager is a Qt6 GUI for managing electrophysiology recording sessions. It opens a `.yaml`
 session parameter file and shows its acquisition and processing parameters as pages in a

@@ -1,4 +1,7 @@
-# klusters — Spike Sorting GUI
+<h1><picture>
+  <source media="(max-width: 600px)" srcset="banner-narrow.png">
+  <img src="banner.png" width="100%" alt="klusters — Spike Sorting GUI">
+</picture></h1>
 
 Klusters is an interactive manual spike-sorting application. It loads feature vectors, cluster assignments, spike waveforms, and session parameters for one electrode group at a time, and lets the researcher inspect, split, merge, and reassign clusters across multiple synchronized views. All editing operations are fully undoable, and a background autosave thread writes crash-recovery copies on a configurable schedule.
 

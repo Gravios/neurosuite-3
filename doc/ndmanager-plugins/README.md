@@ -1,4 +1,7 @@
-# ndmanager-plugins — preprocessing and post-sorting pipeline
+<h1><picture>
+  <source media="(max-width: 600px)" srcset="banner-narrow.png">
+  <img src="banner.png" width="100%" alt="ndmanager-plugins — preprocessing and post-sorting pipeline">
+</picture></h1>
 
 ndmanager-plugins are the command-line steps that take a raw recording to
 sorted spikes and beyond: format conversion, filtering, spike detection and
