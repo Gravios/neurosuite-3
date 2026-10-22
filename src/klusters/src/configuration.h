@@ -182,7 +182,7 @@ public:
 
     void setTemplateThresholdMin(double v) {templateThresholdMin = qBound(0.0, v, 1.0);}
     void setTemplateThresholdMax(double v) {templateThresholdMax = qBound(0.0, v, 1.0);}
-    void setTemplateXcorrMetric(int v)     {templateXcorrMetric = qBound(0, v, 5);}
+    void setTemplateXcorrMetric(int v)     {templateXcorrMetric = qBound(0, v, templateXcorrMetricMax);}
 
     /** The user's input-binding overrides (input-remapping plan §4/§5): a thin
      *  diff from the shipped defaults, keyed by command id -> the Chord's exact
@@ -656,7 +656,8 @@ private:
     int selectionLineWidth;
     double templateThresholdMin;
     double templateThresholdMax;
-    int templateXcorrMetric = 0;   // 0=cosine 1=pearson 2=raw 3=disatten 4=fastAP
+    int templateXcorrMetric = 0;   // 0=cosine 1=pearson 2=raw 3=disatten 4=fastAP 5=profile
+    static constexpr int templateXcorrMetricMax = 5;   // the last metric; setter and read() clamp to it
     QMap<QString,QString> inputBindingOverrides;   // command id -> Chord::toString() (input-remapping plan §5)
     QMap<QString,QString> inputProfiles;           // layout name -> serialized keymap text (input-remapping "Keymap profiles")
     QString radialMenuLayout;                      // radial menu layout JSON (radiallayout.h); empty = default

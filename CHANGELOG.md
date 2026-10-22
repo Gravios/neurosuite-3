@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-22 | [Klusters: the Profile template metric survives a restart](#2026-10-22--klusters-the-profile-template-metric-survives-a-restart) |
 | 2026-10-22 | [Klusters: Preferences ▸ Default resets every setting](#2026-10-22--klusters-preferences--default-resets-every-setting) |
 | 2026-10-22 | [Klusters: Preferences regrouped into General, Views and Curation](#2026-10-22--klusters-preferences-regrouped-into-general-views-and-curation) |
 | 2026-10-21 | [macOS: the `ndm_*` steps work with the BSD tools](#2026-10-21--macos-the-ndm_-steps-work-with-the-bsd-tools) |
@@ -111,6 +112,17 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-22 — Klusters: the Profile template metric survives a restart
+
+<details>
+<summary>Details</summary>
+
+Choosing **Profile (inter-channel)** as the template matrix metric lasted
+only until Klusters was restarted: on loading the settings it became
+**Fast-AP window**. The stored choice is now read back as stored.
+
+</details>
 
 ## 2026-10-22 — Klusters: Preferences ▸ Default resets every setting
 
