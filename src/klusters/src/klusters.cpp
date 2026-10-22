@@ -1454,7 +1454,8 @@ void KlustersApp::createMenus()
         });
 
     // Extend the post-merge auto-renumber / auto-update-matrices automation
-    // (Preferences > Refinement) to the other cluster-editing operations.
+    // (Preferences > Curation > Cluster order, Views > Matrices) to the other
+    // cluster-editing operations.
     // These hooks are deferred + coalesced (scheduleAutoPostClusterEdit) so they
     // run once, after the triggering mutation completes, never re-entrantly.
     //   set-changing (delete / split / new-cluster / recluster) → renumber + matrix
@@ -3539,7 +3540,7 @@ void KlustersApp::initDisplay(){
     }
 
     // Open a Template Library display on document open (on by default; toggle
-    // in Preferences > Displays).  Deferred to the next event-loop iteration
+    // in Preferences > Views > Display).  Deferred to the next event-loop iteration
     // like the matrices above, so the initial Clusters/Overview loads settle
     // before the template view queries the .wti/.wtf.
     if (configuration().getTemplatesMode()

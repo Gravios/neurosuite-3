@@ -22,3 +22,8 @@ void PrefSession::updateCrashRecoveryTimeInterval(int state)
 {
     crashRecoveryComboBox->setEnabled(state == Qt::Checked);
 }
+
+void   PrefSession::setCurationLogging(bool b) { curationLoggingCheckBox->setChecked(b); }
+bool   PrefSession::getCurationLogging() const { return curationLoggingCheckBox->isChecked(); }
+void   PrefSession::setReextractSpikesOnSave(bool b) { reextractSpikesOnSaveCheckBox->setChecked(b); }
+bool   PrefSession::getReextractSpikesOnSave() const { return reextractSpikesOnSaveCheckBox->isChecked(); }

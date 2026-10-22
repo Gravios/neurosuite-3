@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-22 | [Klusters: Preferences regrouped into General, Views and Curation](#2026-10-22--klusters-preferences-regrouped-into-general-views-and-curation) |
 | 2026-10-21 | [macOS: the `ndm_*` steps work with the BSD tools](#2026-10-21--macos-the-ndm_-steps-work-with-the-bsd-tools) |
 | 2026-10-21 | [macOS: the `ndm_*` steps run with Homebrew's bash](#2026-10-21--macos-the-ndm_-steps-run-with-homebrews-bash) |
 | 2026-10-21 | [New icons for neurosuite-3, Klusters, NeuroScope and NDManager](#2026-10-21--new-icons-for-neurosuite-3-klusters-neuroscope-and-ndmanager) |
@@ -109,6 +110,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-22 — Klusters: Preferences regrouped into General, Views and Curation
+
+<details>
+<summary>Details</summary>
+
+The Preferences dialog is now a tree of three groups, and each setting sits
+with the others of its kind. Stored preferences carry over unchanged.
+
+| Group | Pages |
+|---|---|
+| General | Appearance, Session (now also re-extract on save and the curation log), Input, Radial menu |
+| Views | Display, Cluster view, Waveform view, **Matrices** (new: when the matrices are computed, error-matrix compute, template matrix metric and slider, drift-slider limit, from Display and Refinement) |
+| Curation | **Realignment** (was Refinement), **Splitting** (DipSplit and KNN, from Refinement), **Merging** (recommended merges and Auto-Merge), **Cluster order** (was Sorting; now also renumbering after edits), Reclustering |
+
+The Klusters manual has a new Preferences section with this table, and its
+references point to the new pages.
+
+</details>
 
 ## 2026-10-21 — macOS: the `ndm_*` steps work with the BSD tools
 

@@ -21,13 +21,14 @@
 #include <QWidget>
 #include <qpagedialog.h>
 
-// Forward decls — General split into 5 grouped tabs (patch 0067).
 class PrefDisplay;
 class PrefSession;
 class PrefReclustering;
-class PrefRefinement;
-class PrefSorting;
-class PrefAutoMerge;
+class PrefRealignment;
+class PrefSplitting;
+class PrefMerging;
+class PrefClusterOrder;
+class PrefMatrices;
 class PrefWaveformView;
 class PrefClusterView;
 class PrefInput;
@@ -64,13 +65,17 @@ class PrefDialog : public QPageDialog {
     void settingsChanged();
 
   private:
-    // Five tabs that replace the old single PrefGeneral.
-    PrefDisplay*      prefDisplay;
+    // General
     PrefSession*      prefSession;
+    // Views
+    PrefDisplay*      prefDisplay;
+    PrefMatrices*     prefMatrices;
+    // Curation
+    PrefRealignment*  prefRealignment;
+    PrefSplitting*    prefSplitting;
+    PrefMerging*      prefMerging;
+    PrefClusterOrder* prefClusterOrder;
     PrefReclustering* prefReclustering;
-    PrefRefinement*   prefRefinement;
-    PrefSorting*      prefSorting;
-    PrefAutoMerge*    prefAutoMerge;
 
     PrefWaveformView* prefWaveformView;
     PrefClusterView*  prefclusterView;

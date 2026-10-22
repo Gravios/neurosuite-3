@@ -191,6 +191,50 @@
        </layout>
       </widget>
    </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_saving">
+     <property name="title">
+      <string>Saving</string>
+     </property>
+     <layout class="QVBoxLayout" name="groupBox_savingLayout">
+      <item>
+       <widget class="QCheckBox" name="reextractSpikesOnSaveCheckBox">
+        <property name="text">
+         <string>Re-extract spike waveforms from .fil on save</string>
+        </property>
+        <property name="toolTip">
+         <string>When saving, re-extract every spike waveform for the current group from the .fil at its current .res timestamp and rewrite the .spk, so the .spk stays consistent with the timestamps (e.g. after nudging / realigning). Applies the same spatial transform the feature space was built with, including a per-group custom difference pattern. Off by default; when on this rewrites the .spk on every save and costs one .fil pass over the group.</string>
+        </property>
+        <property name="checked">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_curationLog">
+     <property name="title">
+      <string>Curation log</string>
+     </property>
+     <layout class="QVBoxLayout" name="groupBox_curationLogLayout">
+      <item>
+       <widget class="QCheckBox" name="curationLoggingCheckBox">
+        <property name="text">
+         <string>Enable curation logging</string>
+        </property>
+        <property name="toolTip">
+         <string>Record per-action curation snapshots to the .curation_log file. Each realign/nudge/group/split takes a full-dataset audit snapshot (computeAllCentroids); disabling this skips that work, removing its overhead during performance testing. The on-disk curation audit trail is not written while disabled. Undo/redo are unaffected. Default: on.</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
    <item><spacer name="vSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
   </layout>
  </widget>

@@ -26,29 +26,16 @@ public:
     void setUseWhiteColorDuringPrinting(bool b);
     bool useWhiteColorDuringPrinting() const;
 
-    void setAutoShowMatricesOnOpen(bool checked);
-    bool getAutoShowMatricesOnOpen() const;
-
     void setAutoShowTemplateLibraryOnOpen(bool checked);
     bool getAutoShowTemplateLibraryOnOpen() const;
 
     void setTemplatesMode(bool checked);
     bool getTemplatesMode() const;
 
-    void   setTemplateThresholdMin(double v);
-    double getTemplateThresholdMin() const;
-    void   setTemplateThresholdMax(double v);
-    double getTemplateThresholdMax() const;
-
-    void setTemplateXcorrMetric(int i);
-    int  getTemplateXcorrMetric() const;
-
-    void setDriftSliderMaxClusters(int n);
-    int  getDriftSliderMaxClusters() const;
-
 private:
-    // Grey the template-specific controls (library auto-show, matrix tuning,
-    // drift slider) when Templates mode is off.
+    // Grey the Template Library auto-show when Templates mode is off (the
+    // template matrix and drift controls on the Matrices page follow the same
+    // switch, through PrefDialog).
     void setTemplateControlsEnabled(bool on);
 };
 

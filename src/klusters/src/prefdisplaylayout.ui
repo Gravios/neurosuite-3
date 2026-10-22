@@ -47,7 +47,7 @@
            </size>
           </property>
           <property name="text">
-           <string />
+           <string/>
           </property>
          </widget>
         </item>
@@ -197,17 +197,6 @@
        </widget>
       </item>
       <item row="3" column="0">
-       
-       <widget class="QCheckBox" name="autoShowMatricesOnOpenCheckBox">
-        <property name="text">
-         <string>Auto-show matrix displays on open</string>
-        </property>
-        <property name="toolTip">
-         <string>When checked, opening a document automatically creates a Grouping Assistant Display with the Error, Template, Residual and Drift Matrix docks tabified into one frame (press E to step through them), then triggers an Update Error Matrix to populate them.  Saves the user from manually doing this on every document open.  Combines with the global window-geometry restore (already saved on close) to give a consistent layout across sessions.</string>
-        </property>
-       </widget>
-      </item>
-      <item row="4" column="0">
        <widget class="QCheckBox" name="templatesModeCheckBox">
         <property name="text">
          <string>Templates mode</string>
@@ -217,7 +206,7 @@
         </property>
        </widget>
       </item>
-      <item row="5" column="0">
+      <item row="4" column="0">
        <widget class="QCheckBox" name="autoShowTemplateLibraryOnOpenCheckBox">
         <property name="text">
          <string>Open a Template Library display on open</string>
@@ -227,218 +216,8 @@
         </property>
        </widget>
       </item>
-      <item row="6" column="0">
-       <layout class="QHBoxLayout" name="templateXcorrMetricLayout">
-        <item>
-         <widget class="QLabel" name="templateXcorrMetricLabel">
-          <property name="text">
-           <string>Template matrix &amp;metric:</string>
-          </property>
-          <property name="buddy">
-           <cstring>templateXcorrMetricComboBox</cstring>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="templateXcorrMetricComboBox">
-          <property name="toolTip">
-           <string>Similarity metric for the Template Matrix cells.  Cosine: peak normalised cross-correlation between cluster mean waveforms.  Pearson: removes each waveform's overlap-window mean first (shape correlation, insensitive to a shared DC offset).  Raw: non-normalised cross-correlation, amplitude-weighted, globally scaled so the strongest pair reads 1.0.  Profile: inter-channel structure (amplitude profile, polarity profile, per-channel-normalised shape), amplitude-blind. The per-spike pair xcorr and auto-merge always use cosine/Pearson (never raw), since their thresholds need a bounded [0,1] score.</string>
-          </property>
-          <item>
-           <property name="text">
-            <string>Cosine similarity</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>Pearson correlation</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>Raw (non-normalised)</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>Disattenuated (energy-corrected)</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>Fast-AP window (energy-corrected)</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>Profile (inter-channel)</string>
-           </property>
-          </item>
-         </widget>
-        </item>
-        <item>
-         <spacer name="templateXcorrMetricSpacer">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>40</width>
-            <height>20</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-       </layout>
-      </item>
-     </layout>
+      </layout>
     </widget>
-   </item>
-   <item>
-<widget class="QGroupBox" name="groupBoxTemplateMatrix">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="maximumSize">
-        <size>
-         <width>32767</width>
-         <height>80</height>
-        </size>
-       </property>
-       <property name="title">
-        <string>Template Match Slider</string>
-       </property>
-       <layout class="QGridLayout" name="gridLayoutTM">
-        <item row="0" column="0">
-         <layout class="QHBoxLayout">
-          <item>
-           <widget class="QLabel" name="tmMinLabel">
-            <property name="text">
-             <string>Min threshold</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QDoubleSpinBox" name="templateThresholdMinSpinBox">
-            <property name="toolTip">
-             <string>Lower bound of the template match threshold slider (0.0–1.0)</string>
-            </property>
-            <property name="minimum">
-             <double>0.000000000000000</double>
-            </property>
-            <property name="maximum">
-             <double>1.000000000000000</double>
-            </property>
-            <property name="singleStep">
-             <double>0.050000000000000</double>
-            </property>
-            <property name="decimals">
-             <number>2</number>
-            </property>
-            <property name="value">
-             <double>0.750000000000000</double>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <spacer name="spacer_tm_mid">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="sizeType">
-             <enum>QSizePolicy::Expanding</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size><width>20</width><height>20</height></size>
-            </property>
-           </spacer>
-          </item>
-          <item>
-           <widget class="QLabel" name="tmMaxLabel">
-            <property name="text">
-             <string>Max threshold</string>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QDoubleSpinBox" name="templateThresholdMaxSpinBox">
-            <property name="toolTip">
-             <string>Upper bound of the template match threshold slider (0.0–1.0)</string>
-            </property>
-            <property name="minimum">
-             <double>0.000000000000000</double>
-            </property>
-            <property name="maximum">
-             <double>1.000000000000000</double>
-            </property>
-            <property name="singleStep">
-             <double>0.050000000000000</double>
-            </property>
-            <property name="decimals">
-             <number>2</number>
-            </property>
-            <property name="value">
-             <double>1.000000000000000</double>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <spacer name="spacer_tm_end">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="sizeType">
-             <enum>QSizePolicy::Expanding</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size><width>40</width><height>20</height></size>
-            </property>
-           </spacer>
-          </item>
-         </layout>
-        </item>
-       </layout>
-      </widget>
-   </item>
-   <item>
-      <widget class="QGroupBox" name="groupBoxDriftMatrix">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
-       </property>
-       <property name="title">
-        <string>Drift Matrix</string>
-       </property>
-       <layout class="QHBoxLayout" name="driftMatrixRow">
-        <item>
-         <widget class="QLabel" name="driftSliderMaxClustersLabel">
-          <property name="text">
-           <string>Disable drift slider above</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QSpinBox" name="driftSliderMaxClustersSpinBox">
-          <property name="minimum"><number>0</number></property>
-          <property name="maximum"><number>1000000</number></property>
-          <property name="singleStep"><number>100</number></property>
-          <property name="suffix"><string> clusters</string></property>
-          <property name="toolTip"><string>Each drift-slider step recomputes the correlation of every cluster pair, so the control stops being interactive well before the matrix stops being readable. Drift linking is also only meaningful once the sort has been consolidated. Above this count the slider is disabled and re-enables itself as you merge down. 0 disables it always. Default: 1000.</string></property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="driftSliderMaxClustersSpacer">
-          <property name="orientation"><enum>Qt::Horizontal</enum></property>
-          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
-         </spacer>
-        </item>
-       </layout>
-      </widget>
    </item>
    <item><spacer name="vSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
   </layout>

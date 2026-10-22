@@ -18,6 +18,12 @@ public:
     int  crashRecoveryIntervalIndex() const;
     int  getNbUndo() const;
 
+    // Saving and the curation log.
+    void   setCurationLogging(bool b);
+    bool   getCurationLogging()   const;
+    void   setReextractSpikesOnSave(bool b);
+    bool   getReextractSpikesOnSave() const;
+
 private slots:
     void updateCrashRecoveryTimeInterval(int state);
 };

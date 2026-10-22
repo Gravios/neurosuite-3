@@ -463,7 +463,7 @@ void DriftMatrixView::refreshSliderEnabled()
             tr("The drift slider is disabled above %1 clusters (this group has %2).\n"
                "Each step recomputes every cluster pair, and drift linking is only\n"
                "meaningful once the sort has been consolidated. Merge down, or raise\n"
-               "the limit in Preferences > Display > Drift Matrix, and it re-enables\n"
+               "the limit in Preferences > Views > Matrices, and it re-enables\n"
                "itself.")
                 .arg(cap).arg(nCl));
     }

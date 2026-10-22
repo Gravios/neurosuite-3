@@ -196,7 +196,7 @@ private:
      * caching the Array alone would leave the slider recomputing a
      * differently-masked matrix.*/
     /**Cluster count above which the drift slider is disabled, read fresh from
-     * Preferences > Display > Drift Matrix on each check so a change applies
+     * Preferences > Views > Matrices on each check so a change applies
      * without reopening the session.  0 means always disabled.
      *
      * A slider step is a full O(clusters^2) pass, so the control degrades from

@@ -16,7 +16,7 @@ the curation log via `reorderClustersByPermutation`).
 ## Reorder by Similarity (`Shift+S`)
 
 Orders the non-special clusters so that similar ones are adjacent. Two
-preferences (Preferences → **Sorting**) control it.
+preferences (Preferences → Curation → **Cluster order**) control it.
 
 ### Algorithm — `reorderMethod`
 

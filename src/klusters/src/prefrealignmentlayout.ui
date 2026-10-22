@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PrefRealignmentLayout</class>
+ <widget class="QWidget" name="PrefRealignmentLayout">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>520</width><height>420</height></rect></property>
+  <property name="windowTitle"><string>Realignment</string></property>
+  <layout class="QVBoxLayout" name="topLayout">
+   <item>
+<widget class="QGroupBox" name="groupBox_realign">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+       <property name="title">
+        <string>Realignment (built-in cross-correlation)</string>
+       </property>
+       <layout class="QGridLayout" name="gridLayout_realign">
+        <item row="0" column="0">
+         <widget class="QLabel" name="realignBuiltInLabel">
+          <property name="text">
+           <string>Waveform realignment uses built-in cross-correlation. No external program required.</string>
+          </property>
+          <property name="wordWrap">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <layout class="QHBoxLayout">
+          <item>
+           <widget class="QLabel" name="realignThresholdLabel">
+            <property name="text">
+             <string>Threshold</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QDoubleSpinBox" name="realignThresholdSpinBox">
+            <property name="toolTip">
+             <string>Minimum xcorr score for a spike to be realigned (0.0–1.0)</string>
+            </property>
+            <property name="minimum">
+             <double>0.000000000000000</double>
+            </property>
+            <property name="maximum">
+             <double>1.000000000000000</double>
+            </property>
+            <property name="singleStep">
+             <double>0.050000000000000</double>
+            </property>
+            <property name="decimals">
+             <number>2</number>
+            </property>
+            <property name="value">
+             <double>0.700000000000000</double>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_1">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="realignIterationsLabel">
+            <property name="text">
+             <string>Iterations</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="realignIterationsSpinBox">
+            <property name="toolTip">
+             <string>Number of realignment passes (1–20)</string>
+            </property>
+            <property name="minimum">
+             <number>1</number>
+            </property>
+            <property name="maximum">
+             <number>20</number>
+            </property>
+            <property name="value">
+             <number>2</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="realignMaxShiftLabel">
+            <property name="text">
+             <string>Max shift (samples, 0=auto)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="realignMaxShiftSpinBox">
+            <property name="toolTip">
+             <string>Maximum lag in samples. 0 = automatic (peak/2).</string>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>100</number>
+            </property>
+            <property name="value">
+             <number>0</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_3">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item row="2" column="0">
+         <layout class="QHBoxLayout">
+          <item>
+           <widget class="QLabel" name="realignModeLabel">
+            <property name="text">
+             <string>Post-alignment:</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QRadioButton" name="realignModeOffRadio">
+            <property name="text">
+             <string>Off</string>
+            </property>
+            <property name="toolTip">
+             <string>Plain cross-correlation alignment with no post-pass (default).</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QRadioButton" name="realignModePcaRadio">
+            <property name="text">
+             <string>PCA projection refine</string>
+            </property>
+            <property name="toolTip">
+             <string>Per-spike refine maximising PCA-projection energy (--pca-refine).</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QRadioButton" name="realignModeRmsRadio">
+            <property name="text">
+             <string>RMS circular recenter</string>
+            </property>
+            <property name="toolTip">
+             <string>Recenter the whole cluster on its circular RMS-energy centroid (--recenter-rms).</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QRadioButton" name="realignModeCentroidRadio">
+            <property name="text">
+             <string>Per-spike centroid</string>
+            </property>
+            <property name="toolTip">
+             <string>Reference-free per-spike de-jitter: shift each spike so its own circular energy centroid lands on the population's circular-mean centroid; needs no template (--align-centroid).</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_mode">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item row="3" column="0">
+         <widget class="QCheckBox" name="autoRealignAfterMergeCheckBox">
+          <property name="text">
+           <string>Auto-align spikes after each merge</string>
+          </property>
+          <property name="toolTip">
+           <string>After a Group Clusters (merge) operation, automatically run spike realignment on the resulting merged cluster using the current realignment settings above — no dialog. Skipped while a realignment job is already running. Applies to interactive merges only, not the batch Auto-Merge. Default: off.</string>
+          </property>
+          <property name="checked">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item row="4" column="0">
+         <widget class="QCheckBox" name="realignVerboseCheckBox">
+          <property name="text">
+           <string>Verbose alignment logging</string>
+          </property>
+          <property name="toolTip">
+           <string>Stream the per-spike realignment detail to stderr during a realign / Align All run. When off, only errors and warnings are surfaced (quieter, and avoids the per-line work of forwarding the detail). The dedicated Realign output tab has been removed, so this detail now goes to the terminal. Default: off.</string>
+          </property>
+          <property name="checked">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+          <item row="5" column="0">
+           <widget class="QCheckBox" name="syncFeatureSpaceOnSwitchCheckBox">
+            <property name="text">
+             <string>Sync a feature space to the current spike times when switching to it</string>
+            </property>
+            <property name="toolTip">
+             <string>When you pick another method in the Space box, first re-extract that space's .spk from the .fil at the session's current spike times and re-project its .fet through its own .pca basis, so realign / nudge done in the .clu's space carry over. The results are working copies, saved with Save and discarded if you close without saving. Off by default; when on, each switch costs one .fil pass over the group. Actions → Sync Feature Spaces does the same for every space on demand.</string>
+            </property>
+            <property name="checked">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="0">
+           <widget class="QCheckBox" name="realignFromAnySpaceCheckBox">
+            <property name="text">
+             <string>Realign and nudge from any feature space; keep every space aligned</string>
+            </property>
+            <property name="toolTip">
+             <string>Realign, Align All and nudge work while another method's space is shown: they run in the .clu's own space and return to the shown one.  After each of them every other space follows the moved spikes: each moved spike is re-extracted from the .fil into every other waveform file (in that space's own domain) and re-projected into every space's features, so all spaces stay at the same spike times.  The results are working copies, saved with Save.  On by default; when on, every realign or nudge also reads the .fil for the moved spikes and rewrites them in each space.  When off, realign and nudge are only available in the .clu's own space and the other spaces keep their old spike times until synced.</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+       </layout>
+      </widget>
+   </item>
+   <item><spacer name="vSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
+  </layout>
+ </widget>
+
+ <resources/>
+ <connections/>
+</ui>

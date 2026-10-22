@@ -8,7 +8,7 @@
       * build per-cluster mean OR median template from spike waveforms
       * pairwise normalised xcorr with bounded sample shift
       * union-find on pairs scoring at or above the threshold → groups
-    Settings come from configuration() (see prefautomerge — patch 0068).
+    Settings come from configuration() (Preferences ▸ Curation ▸ Merging, PrefMerging).
     The applied step uses doc->groupClusters() so the merge integrates
     with klusters' existing undo/redo.
  ***************************************************************************/

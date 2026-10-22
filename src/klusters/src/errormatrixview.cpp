@@ -37,7 +37,7 @@
 #include "configuration.h"
 
 
-// Incremental error-matrix reuse is a user preference (Preferences > Refinement).
+// Incremental error-matrix reuse is a user preference (Preferences > Views > Matrices).
 // The NS3_ERRORMATRIX_INCREMENTAL environment variable, when set, overrides the
 // preference (used by the diagnostic workflow).  Read live so toggling the
 // preference takes effect without a restart.
@@ -1743,4 +1743,3 @@ void ErrorMatrixView::print(QPainter& printPainter,int width,int height, bool wh
         repaint();                  // restore on-screen appearance
     }
 }
-

@@ -5,7 +5,7 @@
 
 Klusters is an interactive manual spike-sorting application. It loads feature vectors, cluster assignments, spike waveforms, and session parameters for one electrode group at a time, and lets the researcher inspect, split, merge, and reassign clusters across multiple synchronized views. All editing operations are fully undoable, and a background autosave thread writes crash-recovery copies on a configurable schedule.
 
-**Contents:** [Launching](#launching) · [Files read and written](#files-read-and-written) · [Interface layout](#interface-layout) · [Keyboard and mouse](#keyboard-and-mouse) · [Cluster palette](#cluster-palette) · [Hierarchical clustering (fibers and atoms)](#hierarchical-clustering-fibers-and-atoms) · [Views](#views) · [Cluster editing operations](#cluster-editing-operations) · [More curation tools](#more-curation-tools) · [Curation logging](#curation-logging) · [Saving](#saving) · [Update modes](#update-modes) · [Automatic reclustering (KiloKlustaKwik)](#automatic-reclustering-kiloklustakwik) · [Spike realignment](#spike-realignment) · [Timestamp nudge](#timestamp-nudge) · [Autosave and crash recovery](#autosave-and-crash-recovery) · [Parameters toolbar reference](#parameters-toolbar-reference) · [Printing](#printing) · [GPU acceleration](#gpu-acceleration) · [Installation](#installation)
+**Contents:** [Launching](#launching) · [Files read and written](#files-read-and-written) · [Interface layout](#interface-layout) · [Keyboard and mouse](#keyboard-and-mouse) · [Cluster palette](#cluster-palette) · [Hierarchical clustering (fibers and atoms)](#hierarchical-clustering-fibers-and-atoms) · [Views](#views) · [Cluster editing operations](#cluster-editing-operations) · [More curation tools](#more-curation-tools) · [Curation logging](#curation-logging) · [Saving](#saving) · [Update modes](#update-modes) · [Automatic reclustering (KiloKlustaKwik)](#automatic-reclustering-kiloklustakwik) · [Spike realignment](#spike-realignment) · [Timestamp nudge](#timestamp-nudge) · [Autosave and crash recovery](#autosave-and-crash-recovery) · [Preferences](#preferences) · [Parameters toolbar reference](#parameters-toolbar-reference) · [Printing](#printing) · [GPU acceleration](#gpu-acceleration) · [Installation](#installation)
 
 ---
 
@@ -95,7 +95,7 @@ space; pick the `(.clu)` entry to go back.
 - **Save** always writes the `.clu` under the method it was opened with,
   whichever space is shown.
 - **Realign**, **Align All**, **nudge** and the automatic post-edit realign
-  work from any space (Preferences → Refinement → *Realign and nudge from any
+  work from any space (Preferences → Curation → Realignment → *Realign and nudge from any
   feature space; keep every space aligned*, on by default). They run in the
   `.clu`'s own space — Klusters swaps to it and back — and every other space
   then follows the spikes that moved: each moved spike is re-extracted from
@@ -148,7 +148,7 @@ to date: it re-extracts each waveform file the `.clu` space does not use from
 the `.fil` at the current spike times (once, however many spaces read it) and
 re-projects every other space's `.fet` through its own `.pca` basis (lag `_D`
 spaces included). To do this automatically, turn on **Preferences →
-Refinement → Sync a feature space to the current spike times when switching to
+Curation → Realignment → Sync a feature space to the current spike times when switching to
 it**; each switch then costs one `.fil` pass over the group. Synced files are
 working copies: **Save** writes them, closing without saving discards them,
 and undoing a realignment drops them (re-sync afterwards). A space that cannot
@@ -201,7 +201,7 @@ scroll, the toolbar's Features (x,y) boxes follow, and clicking these wedges
 never closes the menu. They are greyed in a display without a cluster view.
 The **N** wedge does the same for the toolbar's **N feat** box, the number of
 features auto-selected for reclustering (1 to 25, stopping at the ends); it is
-live while **Auto-select features** is on (Preferences ▸ Reclustering), in any
+live while **Auto-select features** is on (Preferences ▸ Curation ▸ Reclustering), in any
 view, and greyed otherwise.
 Each wedge is the menu-bar action itself, so a greyed wedge is an action that is
 unavailable right now, a dot marks a checked tool, and the status bar shows the
@@ -584,15 +584,15 @@ If the tests reject the cluster (too small, already unimodal, no valley,
 BIC worse, …) nothing changes and the status bar gives the reason. Every
 decision is recorded in the curation log (see below).
 
-Preferences live under **Settings → Preferences → Refinement** (DipSplit
-group):
+Preferences live under **Settings → Preferences → Curation → Splitting**
+(DipSplit group):
 
 | Preference | Default | Effect |
 |---|---|---|
 | `DipSplit min size` | 50 | Minimum cluster size to consider |
 | `DipSplit bloat factor` | 0 | χ²(d, 0.9) bloat gate; `0` skips it |
 | `DipSplit valley depth` | 0.20 | KDE valley depth threshold (0–1) |
-| `Autoscale margin` | 5% | Whitespace around per-cluster autoscale (`A` key) — set in **Preferences → Display** |
+| `Autoscale margin` | 5% | Whitespace around per-cluster autoscale (`A` key) — set in **Preferences → Views → Display** |
 
 DipSplit is intentionally conservative — it errs toward not splitting.
 The manual lasso split (`Ctrl+2`) remains the primary tool for ambiguous cases.
@@ -623,7 +623,7 @@ Pipeline:
 7. Apply each accepted group via the existing `groupClusters` machinery
    — integrates with klusters' undo/redo automatically.
 
-#### Settings (Preferences → Auto-Merge tab)
+#### Settings (Preferences → Curation → Merging)
 
 All defaults match KKE flag defaults:
 
@@ -757,7 +757,7 @@ whole watershed in one step.
 `F` (with a Cluster Display active) shows the selected clusters' spikes as a
 t-SNE embedding instead of the feature scatter; `F` again returns. While it
 shows, `Up` / `Down` raise or lower the perplexity and recompute. The
-embedding settings are in **Preferences → Cluster view**. Lassos work in the
+embedding settings are in **Preferences → Views → Cluster view**. Lassos work in the
 embedding as in the scatter.
 
 ### Multi-Lasso
@@ -782,7 +782,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 - `Shift+H` shows a point-density heatmap over the scatter, the oblique view
   or the t-SNE embedding.
 - `Shift+E` toggles the lineage overlay (edit mode), in which a left click
-  marks lineage nodes. It needs Templates mode (**Preferences → Display**).
+  marks lineage nodes. It needs Templates mode (**Preferences → Views → Display**).
 
 ### Matrices
 
@@ -1049,7 +1049,7 @@ The **Actions → Recluster** submenu also holds:
 | Strip by Template… | `Shift+J` | Uses one selected cluster as a waveform template and pulls matching spikes out of the other selected clusters (current channel selection) |
 | DipSplit Selected Cluster | `Shift+D` | See [DipSplit](#dipsplit--automatic-bimodal-split) |
 
-KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Reclustering**. The program is
+KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Curation → Reclustering**. The program is
 `KiloKlustaKwik_cpu` (KiloKlustaKwik's CPU build, installed by every build;
 set `KiloKlustaKwik` for a GPU build) by default, with the arguments
 `%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features`.
@@ -1072,7 +1072,7 @@ When **Auto-select features** is enabled in the Preferences (and the **N feat** 
 
 When no clusters are selected or auto-select is disabled, klusters falls back to passing all PCA feature dimensions **with** the timestamp (the historical manual default). The **time** checkbox affects only the auto-select path, not this fallback.
 
-**Channel-level variance selection** (Preferences → Reclustering) is a variant that ranks whole *channels* by aggregate feature variance and keeps every PCA column of the top **N feat** channels, so a high-variance channel's components are never split across the kept/dropped boundary.
+**Channel-level variance selection** (Preferences → Curation → Reclustering) is a variant that ranks whole *channels* by aggregate feature variance and keeps every PCA column of the top **N feat** channels, so a high-variance channel's components are never split across the kept/dropped boundary.
 
 ---
 
@@ -1080,7 +1080,7 @@ When no clusters are selected or auto-select is disabled, klusters falls back to
 
 **Actions → Realign Spikes…** (`Shift+L`) realigns the first selected
 cluster (ID above 1) of the active display at once, with the settings in
-**Settings → Preferences → Refinement**; there is no dialog. **Actions →
+**Settings → Preferences → Curation → Realignment**; there is no dialog. **Actions →
 Align All Clusters** (`Shift+P`) runs the same alignment, with the same
 settings (including the Parameters toolbar's top-channels box and the
 post-alignment mode), over every cluster except 0 and 1. Before 2026-10-21 it
@@ -1143,8 +1143,8 @@ Overview Display with the realigned cluster selected, and the change is
 written by the next **Save**. To discard it, use **Undo**, or close without
 saving.
 
-Realignment parameters are set in **Settings → Preferences → Refinement →
-Realignment (built-in xcorr)**: *Threshold* (minimum score), *Iterations*,
+Realignment parameters are set in **Settings → Preferences → Curation →
+Realignment**: *Threshold* (minimum score), *Iterations*,
 *Max shift* (0 = automatic) and an optional post-alignment pass (PCA
 projection refine, RMS circular recenter, per-spike centroid). The same page
 can realign a cluster automatically after each merge.
@@ -1180,7 +1180,7 @@ immediately step to the next cluster with the arrow keys.
 ## Autosave and crash recovery
 
 While the clustering has unsaved changes, Klusters writes a rescue copy of it
-every few minutes (**Settings → Preferences → Session**): `.<clu file>.autosave`
+every few minutes (**Settings → Preferences → General → Session**): `.<clu file>.autosave`
 next to the `.clu` and, in a hierarchical session, `.<clc file>.autosave` next
 to the `.clc`. Both come from one snapshot, taken on the GUI thread, so the
 two always belong together; no rescue copy is written while a save runs. A
@@ -1216,6 +1216,27 @@ finish before closing…", and afterwards asks to save only if the clustering
 still differs from the files (an edit that was undone does not count).
 
 ---
+
+## Preferences
+
+**Settings → Preferences** (`P`) opens a tree of three groups; each setting is
+described by its tooltip.
+
+| Group | Page | What it sets |
+|---|---|---|
+| General | Appearance | Light, dark or system theme, shared by all NeuroSuite programs |
+| | Session | Autosave interval, undo steps, re-extracting waveforms on save, the curation log |
+| | Input | Keyboard and mouse bindings, keymap layouts |
+| | Radial menu | The right-click wheel |
+| Views | Display | Background, marker size, selection lines, autoscale margin, printing, Templates mode |
+| | Cluster view | Time lines, t-SNE, template projection scope, density heatmap |
+| | Waveform view | Default gain, channel positions |
+| | Matrices | Showing and updating the matrix displays, error-matrix compute, template matrix metric and slider, drift-slider limit |
+| Curation | Realignment | Threshold, iterations, maximum shift, post-alignment, realigning after a merge and from any feature space |
+| | Splitting | DipSplit and the KNN voting split |
+| | Merging | The recommended-merges panel and Auto-Merge |
+| | Cluster order | Reorder by similarity, renumbering after cluster edits |
+| | Reclustering | KiloKlustaKwik executable and arguments, feature selection |
 
 ## Parameters toolbar reference
 
