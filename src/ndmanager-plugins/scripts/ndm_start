@@ -33,6 +33,7 @@
 # /////////////////////////////////////////////////////////////////////////////////////////////////
 
 program=`basename $0`
+NDM_OWN_HELP=1   # its help text is below
 . ndm_functions
 
 # Set program help message
@@ -48,7 +49,7 @@ Description:
 "
 
 # Help requested?
-[ -n "$1" ] && [ "$1" = "-h" ] && echo "$help_message" && exit $NO_ERROR
+case "${1:-}" in -h|--help) echo "$help_message"; exit $NO_ERROR ;; esac
 
 # Parameter file
 if [ $# -eq 0 ]

@@ -15,6 +15,7 @@
 #////////////////////////////////////////////////////////////////////////////
 
 # Source helper functions
+NDM_OWN_HELP=1   # parses -h/--help itself
 source ndm_functions
 
 # Parse parameters

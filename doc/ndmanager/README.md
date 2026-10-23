@@ -164,7 +164,8 @@ ndmanager understands is skipped. A plugin is then run with `--ndm-describe`, an
 description it prints is added as a page unless a plugin of that name is already listed. The
 status bar reports how many were added; a plugin that declares file-format versions this build
 does not match is still added, with the details on the console. The `ndm_*` steps shipped with
-neurosuite-3 do not answer `--ndm-version`, so Discover does not list them.
+neurosuite-3 decline `--ndm-version` (they exit with an error and run nothing), so Discover
+does not list them; NDManager describes them from its own files.
 
 ### Editing a plugin's parameters
 

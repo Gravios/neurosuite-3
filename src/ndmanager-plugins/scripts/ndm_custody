@@ -11,6 +11,14 @@
 #             Shared         (res, spk)                   — method->standard->untagged
 #             SessionWide    (fil/dat/xml/yaml/par/...)   — <base>.<type>
 
+# Run directly instead of sourced: say what it is, run nothing.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+	case "${1:-}" in
+		-h|--help) sed -n 's/^# \{0,1\}//p' "$0" | sed -n '1,/^Source this file/p'; exit 0 ;;
+	esac
+	echo "ndm_custody is a library sourced by ndm_functions, not a step; -h describes it." >&2
+	exit 1
+fi
 NDM_DEFAULT_METHOD=standard
 _NDM_PERGROUP=" res spk clu clc fet pca col model klg nst "
 _NDM_SESSIONWIDE=" fil dat xml yaml nrs par eeg lfp "

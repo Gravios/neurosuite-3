@@ -8,6 +8,11 @@
 #//   keep running.  Prefer separate ndm_detectspikes / ndm_extractspikes steps
 #//   with `method: sdiff`.
 #////////////////////////////////////////////////////////////////////////////
+# -h/--help: this notice; the plugin handshake: decline (see ndm_functions).
+for a in "$@"; do
+	case "$a" in -h|--help) grep '^#//' "$0" | sed 's|^#//[[:space:]]\{0,3\}||' | grep -v '^/*$'; exit 0 ;; esac
+done
+case "${1:-}" in --ndm-version|--ndm-describe) exit 1 ;; esac
 # Legacy sessions keep their parameters under the old program node; export
 # alt_program so read_script_parameter falls back to it.
 export alt_program=ndm_extractspikes_sdiff

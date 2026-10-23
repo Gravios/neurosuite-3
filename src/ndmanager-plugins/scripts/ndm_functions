@@ -26,6 +26,95 @@ if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
 	exit 2
 fi
 
+# -h / --help, and NDManager's plugin handshake, before a step reads its
+# arguments.  Every ndm_* step sources this file first, so a step that does not
+# know these flags would otherwise take them for a session name, or ignore them
+# and run on the current folder's session.
+#
+#   -h, --help                    print the step's description (its header
+#                                 comment) and usage, and exit 0
+#   --ndm-version, --ndm-describe the external-plugin handshake (NDManager's
+#                                 plugin discovery); the built-in steps are
+#                                 described by NDManager's own files, so they
+#                                 decline (exit 1) and run nothing
+#
+# A step with a help text of its own sets NDM_OWN_HELP=1 before sourcing this
+# file and handles -h / --help itself.
+
+# The leading comment block of a script, without its frame, copyright and
+# licence lines.
+ndm_script_header()
+{
+	# collect the block, then dedent it, indent it by two, drop blank lines at
+	# its ends and squeeze runs of them
+	awk 'NR == 1 && /^#!/ { next }
+	     !started && /^[[:space:]]*$/ { next }
+	     /^[[:space:]]*#/ {
+	         started = 1
+	         line = $0
+	         sub(/^[[:space:]]*#(\/\/)?/, "", line)
+	         if (line ~ /^[[:space:]]*[\/=#-]+[[:space:]]*$/) next
+	         if (line ~ /[Cc]opyright|email|free software|GNU General|Free Software Foundation|later version|redistribute it|WITHOUT ANY WARRANTY|MERCHANTABILITY/) next
+	         n++; l[n] = line
+	         if (line ~ /[^[:space:]]/) {
+	             match(line, /^[[:space:]]*/)
+	             if (min == "" || RLENGTH < min) min = RLENGTH
+	         }
+	         next
+	     }
+	     started { exit }
+	     END {
+	         first = 0; last = 0
+	         for (k = 1; k <= n; k++) if (l[k] ~ /[^[:space:]]/) { if (!first) first = k; last = k }
+	         blank = 0
+	         for (k = first; k <= last && first; k++) {
+	             if (l[k] !~ /[^[:space:]]/) { if (!blank) print ""; blank = 1; continue }
+	             blank = 0
+	             print "  " substr(l[k], min + 1)
+	         }
+	     }' "$1"
+}
+
+ndm_print_help()
+{
+	local script=$0 name=${0##*/}
+	echo "$name"
+	echo
+	ndm_script_header "$script"
+	# The usage lines the step prints on a wrong command line, unless the
+	# header already shows one.
+	if ! ndm_script_header "$script" | grep -qi "usage"; then
+		local usage
+		usage=$(grep -o 'usage: [^"]*' "$script" | sed -E -e "s/\\\$\{?program\}?/$name/g" -e 's/^usage: /  /' | sort -u)
+		if [ -n "$usage" ]; then
+			echo
+			echo "Usage:"
+			echo "$usage"
+		fi
+	fi
+	cat <<HELP
+
+The session is SESSION.yaml (or .xml) given on the command line, or else the one
+named after the current folder.  The step's parameters are read from its entry
+under programs: in that file.  Reference:
+https://gravios.github.io/neurosuite-3/ndmanager-plugins/commands/
+HELP
+}
+
+if [ "${NDM_OWN_HELP:-0}" != 1 ]; then
+	for ndmArg in "$@"; do
+		case "$ndmArg" in
+			-h|--help) ndm_print_help; exit 0 ;;
+		esac
+	done
+	unset ndmArg
+fi
+case "${1:-}" in
+	--ndm-version|--ndm-describe)
+		echo "${0##*/}: a built-in neurosuite-3 step, not an external ndm plugin" >&2
+		exit 1 ;;
+esac
+
 # Guidelines for NDManager plugins (ndm_ scripts):
 #
 # Given that these scripts are designed to run in batches, each individual

@@ -5,6 +5,10 @@ inputs and outputs, what the step does, and its parameters
 ([how parameters work](../parameters.md)). The order the steps run in is on
 the [pipeline overview](../pipeline.md).
 
+Every command answers `-h` or `--help` with its description and usage, and runs
+nothing; without a parameter file, a step otherwise runs on the session named
+after the current folder.
+
 ## Running a pipeline
 
 | Command | Purpose |

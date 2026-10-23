@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-23 | [ndm_* commands: -h / --help everywhere, and no step runs on a flag it does not know](#2026-10-23--ndm_-commands--h----help-everywhere-and-no-step-runs-on-a-flag-it-does-not-know) |
 | 2026-10-22 | [Klusters: the Profile template metric survives a restart](#2026-10-22--klusters-the-profile-template-metric-survives-a-restart) |
 | 2026-10-22 | [Klusters: Preferences ▸ Default resets every setting](#2026-10-22--klusters-preferences--default-resets-every-setting) |
 | 2026-10-22 | [Klusters: Preferences regrouped into General, Views and Curation](#2026-10-22--klusters-preferences-regrouped-into-general-views-and-curation) |
@@ -112,6 +113,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-23 — ndm_* commands: -h / --help everywhere, and no step runs on a flag it does not know
+
+<details>
+<summary>Details</summary>
+
+Of the 52 `ndm_*` commands only two answered `-h` and `--help`. Most took the
+flag for nothing at all and ran the step on the session named after the
+current folder, so `ndm_hipass -h` inside a session folder started filtering
+it. NDManager's **Discover Plugins** had the same effect: it runs every
+`ndm_*` on the PATH with `--ndm-version`, and the built-in steps ran.
+
+- Every command now prints its description and usage for `-h` / `--help` and
+  exits without running anything.
+- The built-in steps decline `--ndm-version` / `--ndm-describe` (exit 1,
+  nothing run), so plugin discovery skips them safely.
+- `ndm_start --help` works (only `-h` did); `ndm_custody`, a library, says so
+  when run.
+- A new test runs every command with both flags inside a session folder and
+  checks that nothing in it changes.
+
+</details>
 
 ## 2026-10-22 — Klusters: the Profile template metric survives a restart
 
