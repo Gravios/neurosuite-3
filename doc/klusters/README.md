@@ -1246,7 +1246,7 @@ described by its tooltip.
 | Curation | Realignment | Threshold, iterations, maximum shift, post-alignment, realigning after a merge and from any feature space |
 | | Splitting | DipSplit and the KNN voting split |
 | | Merging | The recommended-merges panel and Auto-Merge |
-| | Cluster order | Reorder by similarity, renumbering after cluster edits |
+| | Cluster order | Reorder by similarity, median or mean waveforms for the waveform sorts, renumbering after cluster edits |
 | | Reclustering | KiloKlustaKwik executable and arguments, feature selection |
 
 ## Parameters toolbar reference

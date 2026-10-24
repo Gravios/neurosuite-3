@@ -94,6 +94,9 @@ public:
     /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter, 3=per-spike centroid).*/
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 3) ? 0 : m;}
     void setReorderMethod(int m)          {reorderMethod = (m < 0 || m > 2) ? 0 : m;}
+    /**Waveform sorts: summarise each cluster by its mean waveform instead of
+     * its median.*/
+    void setWaveformSortMean(bool b)      {waveformSortMean = b;}
     /**Merge recommendations: cap on the listed pairs.  Clamped to 1..200 -- the
      * panel ranks every pair before capping, so an unbounded value would only
      * lengthen a list nobody reads to the end of.*/
@@ -269,6 +272,7 @@ public:
     /**Returns the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     int    getRealignMode()       const {return realignMode;}
     int    getReorderMethod()     const {return reorderMethod;}
+    bool   getWaveformSortMean()  const {return waveformSortMean;}
     int    getMergeRecommendMaxShift()     const {return mergeRecommendMaxShift;}
     int    getMergeRecommendMax()          const {return mergeRecommendMax;}
     bool   getShowMergeRecommendPanel()    const {return showMergeRecommendPanel;}
@@ -382,6 +386,7 @@ public:
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     int    getReorderMethodDefault()     const {return 0;}  // 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
+    bool   getWaveformSortMeanDefault()  const {return false;}  // median
     // Merge-recommendation defaults.  These are starting guesses, not measured
     // values: 0.05 is low enough to keep any pair the error matrix does not
     // actively disbelieve, and 0.90 asks both matrices to rank a pair in their
@@ -584,6 +589,7 @@ private:
     int     realignMaxShift;
     int     realignMode;
     int     reorderMethod;   // reorder-by-similarity: 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
+    bool    waveformSortMean;   // waveform sorts: mean waveform (true) or median (false)
     int     mergeRecommendMax;                // merge recommendations: max pairs listed
     /**Whether the Recommended-merges dock is shown in hierarchical sessions.
      * Its ranking sweep is O(clusters^2); at high cluster counts a curator who is

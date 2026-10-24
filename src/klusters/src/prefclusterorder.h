@@ -4,7 +4,7 @@
 #include "prefclusterorderlayout.h"
 
 // Preferences ▸ Curation ▸ Cluster order: Reorder Clusters by Similarity
-// (Shift+S) and renumbering after cluster edits.
+// (Shift+S), the waveform sorts, and renumbering after cluster edits.
 class PrefClusterOrder : public PrefClusterOrderLayout
 {
     Q_OBJECT
@@ -16,6 +16,8 @@ public:
     int  getReorderMethod()      const;
     void setReorderDisplayOnly(bool b);
     bool getReorderDisplayOnly() const;
+    void setWaveformSortMean(bool b);
+    bool getWaveformSortMean()   const;
 
     void   setAutoRenumberAfterMerge(bool b);
     bool   getAutoRenumberAfterMerge() const;

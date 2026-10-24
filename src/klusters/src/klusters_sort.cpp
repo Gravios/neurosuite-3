@@ -1347,7 +1347,8 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // their per-sample MEDIAN waveforms, so waveform-similar clusters get adjacent
 // ids.  Unlike the matrix reorders this reads no error/template matrix -- it
 // pulls each cluster's spikes straight from the .spk file and takes a robust
-// per-sample median (resistant to the odd artefact spike, which a mean is not).
+// per-sample median (resistant to the odd artefact spike, which a mean is not),
+// or the mean when Preferences > Curation > Cluster order asks for it.
 //
 // Cost: the read + median is O(total_spikes * nPts) -- the dominant, disk-bound
 // term, parallelised over clusters with per-thread FILE handles (mirrors the
@@ -1357,16 +1358,18 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // per-sample median.  All under a wait cursor.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
-// computeMedianWaveformDistances  --  shared by the two median-waveform sorts
+// computeWaveformDistances  --  shared by the two waveform sorts
 //
 // clustersOut <- non-special clusters (id >= 2); distOut <- their N x N Euclidean
 // distance matrix over per-sample MEDIAN waveforms (read from the .spk file,
-// robust to the odd artefact spike that a mean would follow).  Returns false,
+// robust to the odd artefact spike that a mean would follow), or over MEAN
+// waveforms when Preferences > Curation > Cluster order says so.  Returns false,
 // after a status message, if there is nothing to sort or the .spk data is
-// unavailable.  Callers wrap the call in a wait cursor.  Cost: the read/median is
+// unavailable.  Callers wrap the call in a wait cursor.  Cost: the read is
 // O(total_spikes * nPts) (disk-bound, parallelised over clusters with per-worker
-// FILE handles, mirroring the residual thread); the distance matrix O(N^2 * nPts);
-// each worker holds one cluster's spikes at a time for the per-sample median.
+// FILE handles, mirroring the residual thread); the distance matrix O(N^2 * nPts).
+// For the median each worker holds one cluster's spikes at a time and sorts each
+// sample; the mean is a running sum with nothing held.
 // ---------------------------------------------------------------------------
 //////////////////////////////////////////////////////////////////////////////
 // clustersToSort / applySortedOrder
@@ -1468,7 +1471,7 @@ void KlustersApp::applySortedOrder(const QList<int>& order, const QString& sortN
 // beginSortProgress / updateSortProgress / endSortProgress
 //
 // One status-bar progress bar, shared by every long operation that wants one.
-// Extracted from computeMedianWaveformDistances, which was the only caller and
+// Extracted from computeWaveformDistances, which was the only caller and
 // therefore the only place that knew how to build the thing.
 //
 // processEvents() with ExcludeUserInputEvents is the load-bearing detail: the
@@ -1514,7 +1517,7 @@ void KlustersApp::endSortProgress()
     sortProgressBar->hide();
 }
 
-bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
+bool KlustersApp::computeWaveformDistances(QList<int>& clustersOut,
                                                  std::vector<float>& distOut)
 {
     if (!activeView()) return false;
@@ -1565,8 +1568,9 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
                 static_cast<int>(posTable(1, s + 1)) - 1);
     }
 
-    // Per-cluster median waveform (channel-major, length nPts).  Parallel over
-    // clusters, each worker with its own FILE handle.
+    // Per-cluster median (or mean) waveform (channel-major, length nPts).
+    // Parallel over clusters, each worker with its own FILE handle.
+    const bool useMean = configuration().getWaveformSortMean();
     std::vector<std::vector<float>> medWav(
         static_cast<size_t>(N), std::vector<float>(static_cast<size_t>(nPts), 0.0f));
     const std::shared_ptr<const Data::ClusteringSnapshot> snap = d.currentSnapshot();
@@ -1591,6 +1595,26 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
         const auto& fidx = allFileIdx[static_cast<size_t>(k)];
         const long  nSpk = static_cast<long>(fidx.size());
         if (nSpk == 0) continue;
+
+        if (useMean) {
+            // Running per-sample sum; nothing held but one spike.
+            std::vector<double>  sum(static_cast<size_t>(nPts), 0.0);
+            std::vector<int16_t> raw;
+            std::vector<float>   sp;
+            long valid = 0;
+            for (long s = 0; s < nSpk; ++s) {
+                if (!tmReadSpikeFloat(spkSrc, fidx[static_cast<size_t>(s)], nChan, nSamp, raw, sp))
+                    continue;
+                for (int p = 0; p < nPts; ++p)
+                    sum[static_cast<size_t>(p)] += sp[static_cast<size_t>(p)];
+                ++valid;
+            }
+            if (valid == 0) continue;
+            for (int p = 0; p < nPts; ++p)
+                medWav[static_cast<size_t>(k)][static_cast<size_t>(p)] =
+                    static_cast<float>(sum[static_cast<size_t>(p)] / static_cast<double>(valid));
+            continue;
+        }
 
         // Pack valid spikes contiguously as [valid][nPts]; then median each column.
         std::vector<float>   buf(static_cast<size_t>(nSpk) * nPts);
@@ -1618,7 +1642,7 @@ bool KlustersApp::computeMedianWaveformDistances(QList<int>& clustersOut,
         updateSortProgress((90 * cend) / N);          // median read -> [0,90]
     }
 
-    // N x N Euclidean distance matrix over the median waveforms (parallel rows).
+    // N x N Euclidean distance matrix over the cluster waveforms (parallel rows).
     std::vector<float> dist(static_cast<size_t>(N) * N, 0.0f);
     #pragma omp parallel for schedule(dynamic, 8)
     for (int a = 0; a < N; ++a) {
@@ -1659,7 +1683,7 @@ void KlustersApp::slotSortByWaveformNN()
     // These two already set a wait cursor by hand and popped it at each exit.  Same
     // cursor, now scoped, so a new early return cannot forget to pop it.
     SortBusyCursor busy;
-    if (!computeMedianWaveformDistances(clusters, dist)) return;
+    if (!computeWaveformDistances(clusters, dist)) return;
     const int N = clusters.size();
 
     // Greedy nearest-neighbour chain: start at the first cluster, then repeatedly
@@ -1688,9 +1712,14 @@ void KlustersApp::slotSortByWaveformNN()
         for (int k = 0; k < N; ++k)
             if (!visited[static_cast<size_t>(k)]) ordered.append(clusters[k]);
 
-    const int nRenamed = doc->reorderClustersByPermutation(ordered, QStringLiteral("waveform nearest-neighbour"));
+    const bool useMean = configuration().getWaveformSortMean();
+    const int nRenamed = doc->reorderClustersByPermutation(ordered,
+        useMean ? QStringLiteral("waveform nearest-neighbour (mean)")
+                : QStringLiteral("waveform nearest-neighbour (median)"));
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (waveform NN): reorder rejected (cluster set changed?)."));
+    else if (useMean)
+        slotStatusMsg(tr("Reordered %1 clusters by nearest-neighbour mean-waveform chain.").arg(nRenamed));
     else
         slotStatusMsg(tr("Reordered %1 clusters by nearest-neighbour median-waveform chain.").arg(nRenamed));
 }
@@ -1716,7 +1745,7 @@ void KlustersApp::slotSortByWaveformSpectral()
     // These two already set a wait cursor by hand and popped it at each exit.  Same
     // cursor, now scoped, so a new early return cannot forget to pop it.
     SortBusyCursor busy;
-    if (!computeMedianWaveformDistances(clusters, dist)) return;
+    if (!computeWaveformDistances(clusters, dist)) return;
     const int N = clusters.size();
 
     // Distance -> similarity (dmax - d, diagonal 0), then Fiedler seriation.
@@ -1738,9 +1767,14 @@ void KlustersApp::slotSortByWaveformSpectral()
     else                                   // Fiedler failed -> leave order unchanged
         ordered = clusters;
 
-    const int nRenamed = doc->reorderClustersByPermutation(ordered, QStringLiteral("waveform spectral"));
+    const bool useMean = configuration().getWaveformSortMean();
+    const int nRenamed = doc->reorderClustersByPermutation(ordered,
+        useMean ? QStringLiteral("waveform spectral (mean)")
+                : QStringLiteral("waveform spectral (median)"));
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (waveform spectral): reorder rejected (cluster set changed?)."));
+    else if (useMean)
+        slotStatusMsg(tr("Reordered %1 clusters by spectral (Fiedler) mean-waveform seriation.").arg(nRenamed));
     else
         slotStatusMsg(tr("Reordered %1 clusters by spectral (Fiedler) median-waveform seriation.").arg(nRenamed));
 }

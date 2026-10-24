@@ -65,6 +65,48 @@
     </widget>
    </item>
    <item>
+    <widget class="QGroupBox" name="groupBox_waveformSorts">
+     <property name="title">
+      <string>Waveform sorts</string>
+     </property>
+     <layout class="QVBoxLayout" name="waveformSortsGroupLayout">
+      <item>
+       <layout class="QHBoxLayout" name="waveformSortStatisticRow">
+        <item>
+         <widget class="QLabel" name="waveformSortStatisticLabel">
+          <property name="text">
+           <string>Compare clusters by their:</string>
+          </property>
+          <property name="buddy">
+           <cstring>waveformSortStatisticComboBox</cstring>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QComboBox" name="waveformSortStatisticComboBox">
+          <property name="toolTip">
+           <string>The waveform that stands for each cluster in Sort by Nearest-Neighbour Waveform and Sort by Waveform (Global / Spectral). Median: the per-sample median of the cluster's spikes; robust to the odd artefact spike, but it holds a cluster's spikes in memory and sorts each sample. Mean: the per-sample mean; one pass with nothing held, so lighter on large clusters, but an artefact spike pulls it. Default: Median.</string>
+          </property>
+          <item>
+           <property name="text"><string>Median waveform</string></property>
+          </item>
+          <item>
+           <property name="text"><string>Mean waveform</string></property>
+          </item>
+         </widget>
+        </item>
+        <item>
+         <spacer name="waveformSortStatisticSpacer">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QGroupBox" name="groupBox_numbering">
      <property name="title">
       <string>Numbering</string>

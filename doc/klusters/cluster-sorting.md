@@ -63,6 +63,12 @@ in a way a mean is not) — and differ only in how they order it. Both are
 matrix-free (no error/template matrix required) and run under a wait
 cursor.
 
+**Preferences → Curation → Cluster order → Waveform sorts** can switch
+both to the per-sample **mean** waveform. The median holds each
+cluster's spikes in memory and sorts every sample; the mean is a single
+running sum, so it is lighter on very large clusters. An artefact spike
+pulls the mean, so the median stays the default.
+
 - **Nearest-Neighbour Waveform** walks a greedy chain: start at one
   cluster, then repeatedly step to the nearest not-yet-placed cluster by
   Euclidean waveform distance. This is **local** — each step is locally

@@ -197,6 +197,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     connect(prefRealignment->realignVerboseCheckBox,     &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefSession->reextractSpikesOnSaveCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
     connect(prefClusterOrder->reorderMethodComboBox,         &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
+    connect(prefClusterOrder->waveformSortStatisticComboBox, &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
     connect(prefMerging->mergeRecommendMaxSpinBox,          &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefMerging->mergeRecommendErrorFloorSpinBox,   &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefMerging->mergeRecommendQualityFloorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -316,6 +317,7 @@ void PrefDialog::updateDialog()
     prefRealignment->setRealignMaxShift(configuration().getRealignMaxShift());
     prefRealignment->setRealignMode(configuration().getRealignMode());
     prefClusterOrder->setReorderMethod(configuration().getReorderMethod());
+    prefClusterOrder->setWaveformSortMean(configuration().getWaveformSortMean());
     prefMerging->setMergeRecommendMax(configuration().getMergeRecommendMax());
     prefMerging->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloor());
     prefMerging->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloor());
@@ -422,6 +424,7 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignMaxShift(prefRealignment->getRealignMaxShift());
     configuration().setRealignMode(prefRealignment->getRealignMode());
     configuration().setReorderMethod(prefClusterOrder->getReorderMethod());
+    configuration().setWaveformSortMean(prefClusterOrder->getWaveformSortMean());
     configuration().setMergeRecommendMax(prefMerging->getMergeRecommendMax());
     configuration().setMergeRecommendErrorFloor(prefMerging->getMergeRecommendErrorFloor());
     configuration().setMergeRecommendQualityFloor(prefMerging->getMergeRecommendQualityFloor());
@@ -542,6 +545,7 @@ void PrefDialog::slotDefault()
     prefRealignment->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
     prefRealignment->setRealignMode(configuration().getRealignModeDefault());
     prefClusterOrder->setReorderMethod(configuration().getReorderMethodDefault());
+    prefClusterOrder->setWaveformSortMean(configuration().getWaveformSortMeanDefault());
     prefMerging->setMergeRecommendMax(configuration().getMergeRecommendMaxDefault());
     prefMerging->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloorDefault());
     prefMerging->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloorDefault());

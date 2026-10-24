@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-24 | [Klusters: the waveform sorts can use mean waveforms](#2026-10-24--klusters-the-waveform-sorts-can-use-mean-waveforms) |
 | 2026-10-24 | [Klusters: a cluster sort logs one Sort All Clusters entry](#2026-10-24--klusters-a-cluster-sort-logs-one-sort-all-clusters-entry) |
 | 2026-10-23 | [ndm_* commands: -h / --help everywhere, and no step runs on a flag it does not know](#2026-10-23--ndm_-commands--h----help-everywhere-and-no-step-runs-on-a-flag-it-does-not-know) |
 | 2026-10-22 | [Klusters: the Profile template metric survives a restart](#2026-10-22--klusters-the-profile-template-metric-survives-a-restart) |
@@ -114,6 +115,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-24 — Klusters: the waveform sorts can use mean waveforms
+
+<details>
+<summary>Details</summary>
+
+**Preferences → Curation → Cluster order → Waveform sorts** chooses which
+waveform stands for each cluster in Sort by Nearest-Neighbour Waveform
+and Sort by Waveform (Global / Spectral):
+
+- **Median waveform** (the default) is robust to the odd artefact spike.
+  It holds each cluster's spikes in memory and sorts every sample.
+- **Mean waveform** is a single running sum with nothing held, so it is
+  lighter on very large clusters.
+
+The setting is `waveformSortMean`, and **Default** resets it to median.
+The status message and the curation log's `SORT_ALL` record name the
+waveform used. `computeMedianWaveformDistances` is now
+`computeWaveformDistances`.
+
+On the synthetic group from the previous entry (80 clusters, 200 000
+spikes), the NN sort took 0.70 s of CPU with the median and 0.13 s with
+the mean. Both gave the same order, as expected for data without
+artefact spikes.
+
+Files: `src/klusters/src/configuration.{h,cpp}`,
+`prefclusterorder{.h,.cpp,layout.ui}`, `prefdialog.cpp`,
+`klusters_sort.cpp`, `klusters.{h,cpp}`,
+`doc/klusters/cluster-sorting.md`, `doc/klusters/README.md`.
+
+</details>
 
 ## 2026-10-24 — Klusters: a cluster sort logs one Sort All Clusters entry
 

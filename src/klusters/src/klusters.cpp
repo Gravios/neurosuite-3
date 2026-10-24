@@ -676,7 +676,8 @@ void KlustersApp::createMenus()
         tr("Renumber clusters along a nearest-neighbour chain over their per-sample\n"
            "MEDIAN waveforms (Euclidean distance): each cluster is placed next to\n"
            "its most waveform-similar unused neighbour.  Reads the .spk file; needs\n"
-           "no matrix.  Clusters 0/1 preserved at the start.  Undoable with Ctrl+Z."));
+           "no matrix.  Preferences > Curation > Cluster order can use the mean\n"
+           "waveforms instead.  Clusters 0/1 preserved at the start.  Undoable with Ctrl+Z."));
     connect(mSortByWaveformNN,&QAction::triggered,
             this,&KlustersApp::slotSortByWaveformNN);
 
@@ -689,8 +690,9 @@ void KlustersApp::createMenus()
         tr("Renumber clusters by spectral (Fiedler) seriation of their per-sample\n"
            "MEDIAN waveforms: orders clusters so the whole layout respects the\n"
            "GLOBAL waveform structure, not just each cluster's nearest neighbour.\n"
-           "Reads the .spk file; needs no matrix.  Clusters 0/1 preserved at the\n"
-           "start.  Undoable with Ctrl+Z."));
+           "Reads the .spk file; needs no matrix.  Preferences > Curation > Cluster\n"
+           "order can use the mean waveforms instead.  Clusters 0/1 preserved at\n"
+           "the start.  Undoable with Ctrl+Z."));
     connect(mSortByWaveformSpectral,&QAction::triggered,
             this,&KlustersApp::slotSortByWaveformSpectral);
 

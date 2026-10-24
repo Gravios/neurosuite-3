@@ -411,7 +411,8 @@ private Q_SLOTS:
     /** Renumber clusters by a nearest-neighbour chain over their MEDIAN
      *  waveforms: compute each cluster's per-sample median waveform, then walk a
      *  greedy nearest-neighbour path (Euclidean distance) so waveform-adjacent
-     *  clusters get adjacent IDs.  Needs no matrix (reads the .spk file directly).
+     *  clusters get adjacent IDs.  The mean waveform instead, when the
+     *  waveformSortMean preference is on.  Needs no matrix (reads the .spk file).
      *  Clusters 0/1 preserved at the front; undoable. */
     void slotSortByWaveformNN();
     /** Like slotSortByWaveformNN but orders clusters by the Fiedler vector of the
@@ -589,13 +590,14 @@ private Q_SLOTS:
     /** Reorder-by-similarity method 2: order non-special clusters by the first
      *  principal component of their fet-space centroids (no matrix needed). */
     void reorderClustersByFeatureSpace();
-    /** Shared by the two median-waveform sorts: fills @p clustersOut with the
+    /** Shared by the two waveform sorts: fills @p clustersOut with the
      *  non-special clusters (id >= 2) and @p distOut with their N x N Euclidean
-     *  distance matrix over per-sample MEDIAN waveforms (read from the .spk file).
+     *  distance matrix over per-sample MEDIAN waveforms, or MEAN waveforms when
+     *  the waveformSortMean preference is on (read from the .spk file).
      *  Returns false (after a status message) if there is nothing to sort or the
      *  .spk data is unavailable.  Callers set the wait cursor. */
-    bool computeMedianWaveformDistances(QList<int>& clustersOut,
-                                        std::vector<float>& distOut);
+    bool computeWaveformDistances(QList<int>& clustersOut,
+                                  std::vector<float>& distOut);
 
     /** Track which matrix view the user most recently interacted with.
      *  Connected from ErrorMatrixView::viewInteracted /
@@ -1759,7 +1761,7 @@ private:
     QProgressBar* realignProgressBar;
 
     /** Status-bar progress bar for the waveform cluster sorts (the median-read
-     *  and distance phases inside computeMedianWaveformDistances).  Created on
+     *  and distance phases inside computeWaveformDistances).  Created on
      *  first use as a permanent widget so it survives tab changes, and hidden
      *  when the sort finishes; mirrors realignProgressBar's lifecycle. */
     QProgressBar* sortProgressBar;

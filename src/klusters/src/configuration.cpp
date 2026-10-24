@@ -88,6 +88,7 @@ void Configuration::read() {
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
     realignMode       = settings.value("realignMode",        0).toInt();
     reorderMethod     = settings.value("reorderMethod",      0).toInt();
+    waveformSortMean  = settings.value("waveformSortMean",   false).toBool();
     // Through the setters, not straight to the members like the knobs above: a
     // hand-edited settings file could otherwise put a negative max here, and the
     // panel casts it to size_t -- which underflows to "no cap" and lists every
@@ -250,6 +251,7 @@ void Configuration::write() const {
     settings.setValue("realignMaxShift",   realignMaxShift);
     settings.setValue("realignMode",       realignMode);
     settings.setValue("reorderMethod",     reorderMethod);
+    settings.setValue("waveformSortMean",  waveformSortMean);
     settings.setValue("mergeRecommendMax",          mergeRecommendMax);
     settings.setValue("showMergeRecommendPanel",    showMergeRecommendPanel);
     settings.setValue("driftSliderMaxClusters",     driftSliderMaxClusters);
