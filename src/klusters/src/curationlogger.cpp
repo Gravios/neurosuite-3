@@ -307,30 +307,7 @@ void CurationLogger::flushEntry(const PendingEntry& e)
 
         for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
             out << ",\"" << jsonEscape(it.key()) << "\":";
-            const QVariant& v = it.value();
-            switch (v.typeId()) {
-                case QMetaType::Int:
-                case QMetaType::UInt:
-                case QMetaType::LongLong:
-                case QMetaType::ULongLong:
-                    out << v.toLongLong();
-                    break;
-                case QMetaType::Double:
-                case QMetaType::Float: {
-                    const double d = v.toDouble();
-                    if (std::isfinite(d))
-                        out << QString::number(d, 'g', 15);
-                    else
-                        out << "null";
-                    break;
-                }
-                case QMetaType::Bool:
-                    out << (v.toBool() ? "true" : "false");
-                    break;
-                default:
-                    out << "\"" << jsonEscape(v.toString()) << "\"";
-                    break;
-            }
+            writeJsonValue(it.value());
         }
         out << "}\n";
     }
@@ -428,6 +405,45 @@ void CurationLogger::writeLine(const QString& phase,
           << "}\n";
 }
 
+void CurationLogger::writeJsonValue(const QVariant& v)
+{
+    switch (v.typeId()) {
+        case QMetaType::Int:
+        case QMetaType::UInt:
+        case QMetaType::LongLong:
+        case QMetaType::ULongLong:
+            out << v.toLongLong();
+            break;
+        case QMetaType::Double:
+        case QMetaType::Float: {
+            const double d = v.toDouble();
+            if (std::isfinite(d))
+                out << QString::number(d, 'g', 15);
+            else
+                out << "null";
+            break;
+        }
+        case QMetaType::Bool:
+            out << (v.toBool() ? "true" : "false");
+            break;
+        case QMetaType::QVariantMap: {
+            const QVariantMap m = v.toMap();
+            out << "{";
+            for (auto it = m.constBegin(); it != m.constEnd(); ++it) {
+                if (it != m.constBegin()) out << ",";
+                out << "\"" << jsonEscape(it.key()) << "\":";
+                writeJsonValue(it.value());
+            }
+            out << "}";
+            break;
+        }
+        default:
+            out << "\"" << jsonEscape(v.toString()) << "\"";
+            break;
+    }
+}
+
+// ---------------------------------------------------------------------------
 QString CurationLogger::jsonEscape(const QString& s) const
 {
     QString escaped;
@@ -462,6 +478,7 @@ QString CurationLogger::actionName(ActionType t)
     case ActionType::REDO:                   return QStringLiteral("REDO");
     case ActionType::RENUMBER_PARTIAL:       return QStringLiteral("RENUMBER_PARTIAL");
     case ActionType::WATERSHED:              return QStringLiteral("WATERSHED");
+    case ActionType::SORT_ALL:               return QStringLiteral("SORT_ALL");
     }
     return QStringLiteral("UNKNOWN");
 }

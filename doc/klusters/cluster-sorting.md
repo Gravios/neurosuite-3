@@ -10,8 +10,9 @@
 
 All of these preserve clusters `0` (artefact) and `1` (noise) at the
 front. Except where noted, they **renumber** clusters (a single undoable
-step that rewrites the `.clu` IDs and updates every view, the palette, and
-the curation log via `reorderClustersByPermutation`).
+step that rewrites the `.clu` IDs and updates every view and the palette,
+via `reorderClustersByPermutation`). The curation log gets one **Sort All
+Clusters** (`SORT_ALL`) entry with the old → new id map.
 
 ## Reorder by Similarity (`Shift+S`)
 

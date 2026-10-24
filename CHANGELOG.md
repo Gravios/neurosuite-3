@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-24 | [Klusters: a cluster sort logs one Sort All Clusters entry](#2026-10-24--klusters-a-cluster-sort-logs-one-sort-all-clusters-entry) |
 | 2026-10-23 | [ndm_* commands: -h / --help everywhere, and no step runs on a flag it does not know](#2026-10-23--ndm_-commands--h----help-everywhere-and-no-step-runs-on-a-flag-it-does-not-know) |
 | 2026-10-22 | [Klusters: the Profile template metric survives a restart](#2026-10-22--klusters-the-profile-template-metric-survives-a-restart) |
 | 2026-10-22 | [Klusters: Preferences ▸ Default resets every setting](#2026-10-22--klusters-preferences--default-resets-every-setting) |
@@ -113,6 +114,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-24 — Klusters: a cluster sort logs one Sort All Clusters entry
+
+<details>
+<summary>Details</summary>
+
+Every renumbering sort (**Actions → Sort Clusters** and `Shift+S`) took
+most of its time writing the curation log. It logged the sort as a
+`RENUMBER_PARTIAL` of every renamed cluster, with a full set of cluster
+metrics before and after. Each set takes two passes over all the
+group's spikes, including the L-ratio pass, one cluster at a time on
+the GUI thread. A sort moves no spikes, so those metrics never changed.
+
+A sort now writes one `SORT_ALL` (**Sort All Clusters**) record: the
+sort's name, the cluster counts and the old → new id map
+(`"old_to_new":{"12":3,...}`). The record is undo-paired like any other
+action, so Ctrl+Z marks it `bad`. Detail values in the log can now be
+JSON objects.
+
+On a synthetic group of 80 clusters and 200 000 spikes, Sort by
+Nearest-Neighbour Waveform with the curation log on went from 7.6 s of
+CPU to 0.65 s. The time saved grows with the number of clusters and spikes.
+
+The `T` key (renumber selected to end) still writes `RENUMBER_PARTIAL`
+with snapshots; it renames only the selected clusters.
+
+Files: `src/klusters/src/curationlogger.{h,cpp}`,
+`klustersdoc_renumber.cpp`, `klustersdoc.h`, `klusters_sort.cpp`,
+`doc/klusters/README.md`, `doc/klusters/cluster-sorting.md`.
+
+</details>
 
 ## 2026-10-23 — ndm_* commands: -h / --help everywhere, and no step runs on a flag it does not know
 

@@ -1976,17 +1976,18 @@ public Q_SLOTS:
      *  appear in that sequence starting at ID 2 (preserving 0/1 at the
      *  front).  Internally builds the partial/full old→new maps,
      *  snapshots the undo stack (renumber-specific stack so undo can
-     *  classify the action), records a RENUMBER_PARTIAL curation-log
-     *  entry, and delegates the actual rename to applyClusterRename.
+     *  classify the action), records a SORT_ALL curation-log entry (the
+     *  old → new id map, with `sortName` naming the sort), and delegates
+     *  the actual rename to applyClusterRename.
      *
-     *  Used by KlustersApp::slotReorderClustersBySimilarity (Shift+S).
+     *  Used by Shift+S and every renumbering sort in the Sort Clusters menu.
      *  Returns the number of clusters whose ID actually changed (0
      *  means already-in-order; nothing happens, no undo entry pushed).
      *
      *  Rejects `newOrder` entries that are 0/1 or don't currently exist
      *  in the cluster table (returns -1, status bar message left to the
      *  caller). */
-    int reorderClustersByPermutation(const QList<int>& newOrder);
+    int reorderClustersByPermutation(const QList<int>& newOrder, const QString& sortName);
 
     /** Run a 2D density watershed on the *selected* clusters in the
      *  palette using the active scatter view's X/Y feature dimensions,

@@ -800,11 +800,9 @@ void KlustersApp::slotSortByResidualGated()
 // IDs in the leaf order get renamed to (2, 3, 4, ...) in order, so
 // neighbouring IDs after the rename are the most-similar pairs.
 //
-// Apply via the established applyClusterRename pipeline:
-//   logBefore(RENUMBER_PARTIAL) → prepareUndo → applyClusterRename → logAfter
-// — identical to the T-key (renumberClustersToEnd) flow, so the undo
-// stack, curation log, palette refresh, and dock-side renumber signals
-// all work without further wiring.
+// Apply via reorderClustersByPermutation (SORT_ALL log entry → prepareUndo →
+// applyClusterRename), so the undo stack, curation log, palette refresh, and
+// dock-side renumber signals all work without further wiring.
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // reorderSpectralFiedlerOrder -- spectral seriation of the cluster similarity
@@ -1157,7 +1155,7 @@ void KlustersApp::slotReorderClustersBySimilarity()
         return;
     }
 
-    const int nRenamed = doc->reorderClustersByPermutation(targetOrder);
+    const int nRenamed = doc->reorderClustersByPermutation(targetOrder, QStringLiteral("similarity"));
     if (nRenamed < 0) {
         // Drop the cursor before the box: this dialog is the curator's to read,
         // and a wait cursor over it claims the application is still working.
@@ -1335,7 +1333,7 @@ void KlustersApp::reorderClustersByFeatureSpace()
         return;
     }
 
-    const int nRenamed = doc->reorderClustersByPermutation(clusters);
+    const int nRenamed = doc->reorderClustersByPermutation(clusters, QStringLiteral("feature-space PC1"));
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (feature-space): reorder rejected (cluster set changed?)."));
     else
@@ -1457,7 +1455,7 @@ void KlustersApp::applySortedOrder(const QList<int>& order, const QString& sortN
         applyScopedDisplayOrder(order, sortName, detail);
         return;
     }
-    const int nRenamed = doc->reorderClustersByPermutation(order);
+    const int nRenamed = doc->reorderClustersByPermutation(order, sortName);
     if (nRenamed < 0)
         slotStatusMsg(tr("Sort by %1: reorder rejected (cluster set changed?).")
                           .arg(sortName));
@@ -1690,7 +1688,7 @@ void KlustersApp::slotSortByWaveformNN()
         for (int k = 0; k < N; ++k)
             if (!visited[static_cast<size_t>(k)]) ordered.append(clusters[k]);
 
-    const int nRenamed = doc->reorderClustersByPermutation(ordered);
+    const int nRenamed = doc->reorderClustersByPermutation(ordered, QStringLiteral("waveform nearest-neighbour"));
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (waveform NN): reorder rejected (cluster set changed?)."));
     else
@@ -1740,7 +1738,7 @@ void KlustersApp::slotSortByWaveformSpectral()
     else                                   // Fiedler failed -> leave order unchanged
         ordered = clusters;
 
-    const int nRenamed = doc->reorderClustersByPermutation(ordered);
+    const int nRenamed = doc->reorderClustersByPermutation(ordered, QStringLiteral("waveform spectral"));
     if (nRenamed < 0)
         slotStatusMsg(tr("Reorder (waveform spectral): reorder rejected (cluster set changed?)."));
     else

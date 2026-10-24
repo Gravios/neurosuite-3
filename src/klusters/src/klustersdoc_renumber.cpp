@@ -530,19 +530,19 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
 // ---------------------------------------------------------------------------
 // KlustersDoc::reorderClustersByPermutation
 //
-// Drives the rename pipeline (logBefore + prepareUndo + applyClusterRename +
-// logAfter) from an externally-supplied cluster order.  Used by the Shift+S
-// "Reorder Clusters by Similarity" action — the slot computes the order via
-// agglomerative clustering on the active similarity matrix and hands it
-// here, so all the undo/log/palette/view bookkeeping stays inside the doc
-// layer where it belongs (mirrors the renumberClustersToEnd pattern).
+// Drives the rename pipeline (SORT_ALL log entry + prepareUndo +
+// applyClusterRename) from an externally-supplied cluster order.  Used by
+// every renumbering sort (Shift+S and the Sort Clusters menu): the slot
+// computes the order and hands it here, so all the undo/log/palette/view
+// bookkeeping stays inside the doc layer where it belongs.
 //
 // New IDs start at 2; clusters 0 (artefact) and 1 (noise) are untouched and
 // stay at the front of the palette.  Any newOrder entry referencing 0, 1,
 // or a missing cluster makes the whole call a no-op (returns -1) so we never
 // half-apply a rename.
 // ---------------------------------------------------------------------------
-int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
+int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder,
+                                              const QString& sortName)
 {
     if (newOrder.isEmpty()) return 0;
     if (!app()->activeView()) return -1;
@@ -590,7 +590,6 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
         fullNewToOld.insert(iid, iid);
     }
     int nextNewId = 2;
-    QList<int> renamedClusters;
     for (int oldId : newOrder) {
         const int newId = nextNewId++;
         if (oldId == newId) continue;          // already in target slot
@@ -598,7 +597,6 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
         fullOldToNew.insert(oldId, newId);
         fullNewToOld.remove(oldId);
         fullNewToOld.insert(newId, oldId);
-        renamedClusters.append(oldId);
     }
 
     if (partialOldToNew.isEmpty()) return 0;   // already in order
@@ -615,9 +613,6 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
         targets.insert(it.value());
     }
 
-    // Curation log + undo snapshot use the same pattern as
-    // renumberClustersToEnd, so undo/redo behaviour and log replay
-    // both treat this as a partial-renumber action.
     // Quiesce worker threads before mutating the shared cluster layout, mirroring
     // the group/delete/undo/realign paths: the id-remap rebuilds spikesByCluster
     // and swaps clusterInfoMap, which a concurrent correlogram/matrix reader would
@@ -625,15 +620,28 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder)
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
 
-    logBefore(CurationLogger::ActionType::RENUMBER_PARTIAL, renamedClusters);
+    // The curation log gets one SORT_ALL entry holding the old -> new id map
+    // of every sorted cluster.  No cluster snapshots: a sort moves no spikes,
+    // so each cluster's metrics are the same before and after, and computing
+    // them (two full passes over the group's spikes per cluster, before and
+    // after) took most of a sort's time.  The entry is undo-paired with the
+    // prepareUndo below, like any other logged action.
+    if (curationLogger && curationLogger->isOpen()) {
+        QVariantMap oldToNew;
+        for (int i = 0; i < newOrder.size(); ++i)
+            oldToNew.insert(QString::number(newOrder.at(i)), i + 2);
+        lastLoggedActionIdx =
+            curationLogger->beginAction(CurationLogger::ActionType::SORT_ALL,
+                                        QList<ClusterSnapshot>());
+        curationLogger->recordActionDetails({
+            { QStringLiteral("sort"),       sortName },
+            { QStringLiteral("n_clusters"), static_cast<int>(newOrder.size()) },
+            { QStringLiteral("n_renamed"),  static_cast<int>(partialOldToNew.size()) },
+            { QStringLiteral("old_to_new"), oldToNew },
+        });
+    }
     prepareUndo(fullOldToNew, fullNewToOld);
     applyClusterRename(partialOldToNew, &fullOldToNew);
-
-    QList<int> newIds;
-    newIds.reserve(renamedClusters.size());
-    for (int oldId : renamedClusters)
-        newIds.append(partialOldToNew.value(oldId, oldId));
-    logAfter(newIds);
 
     return partialOldToNew.size();
 }

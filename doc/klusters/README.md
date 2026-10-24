@@ -929,6 +929,7 @@ Consequences worth knowing:
 | `DELETE_REGION_ARTEFACT` | Lasso → cluster 0 (`Ctrl+3` tool) | 1+ | — | No |
 | `MOVE_SPIKES` | Manual subset reassignment | 1 | 1 | No |
 | `RENUMBER_PARTIAL` | Renumber selected to end (`T`) | renamed | renamed | No |
+| `SORT_ALL` | Any renumbering sort: **Actions → Sort Clusters**, `Shift+S` | — | — | Yes (the id map) |
 | `UNDO`, `REDO` | Reverts/replays a previous action | — | — | No |
 
 ### `ACTION_DETAIL` records
@@ -980,6 +981,16 @@ distinguishes "watershed found 12 peaks but `min_basin_size` collapsed
 When the input has too few spikes (< 50) or the watershed finds only
 one basin, the action is silently skipped — no records are written
 for the no-op case.
+
+**Sort All Clusters** (`SORT_ALL`) is one record per sort: which sort
+ran, and the new id of every sorted cluster, keyed by its old id. A sort
+moves no spikes, so it writes no `before` / `after` cluster records.
+
+```json
+{"event":"ACTION_DETAIL","action":"SORT_ALL","action_idx":12,"status":"good",
+ "sort":"waveform nearest-neighbour","n_clusters":80,"n_renamed":77,
+ "old_to_new":{"2":2,"3":12,"4":55,"5":22,"6":5, ...}}
+```
 
 ### Logs are append-only
 

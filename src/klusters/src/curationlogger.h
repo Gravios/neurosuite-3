@@ -198,6 +198,8 @@ public:
         REDO            = 12, ///< Curator re-applied an undone action
         RENUMBER_PARTIAL = 13, ///< T-key palette rename to tail; pure ID rename, no spike movement
         WATERSHED       = 14, ///< 2D density-watershed split: M source → N basin clusters + residual
+        SORT_ALL        = 15, ///< A cluster sort renumbered the clusters; one ACTION_DETAIL with the
+                              ///< old → new id map, no cluster snapshots (no spike moves)
     };
 
     CurationLogger();
@@ -268,7 +270,8 @@ public:
      *  begun entry.  Used by automated curation tools (DipSplit, Realign,
      *  …) to log the parameters they were called with and the metrics
      *  that drove their accept/reject decision.  Each value is JSON-
-     *  serialised according to its QVariant type.  Multiple calls per
+     *  serialised according to its QVariant type; a QVariantMap becomes a
+     *  JSON object of its (scalar) values.  Multiple calls per
      *  action are allowed; each contributes one ACTION_DETAIL line at
      *  flush time. */
     void recordActionDetails(const QMap<QString, QVariant>& details);
@@ -360,6 +363,9 @@ private:
                    const QString& status);
 
     QString jsonEscape(const QString& s) const;
+    /** Write one ACTION_DETAIL value as JSON (number, bool, string, or an
+     *  object for a QVariantMap of such values). */
+    void writeJsonValue(const QVariant& v);
 
     QFile       file;
     QTextStream out;
