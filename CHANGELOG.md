@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-25 | [Klusters: new clusters are numbered below the reserved chunk clusters](#2026-10-25--klusters-new-clusters-are-numbered-below-the-reserved-chunk-clusters) |
 | 2026-10-24 | [Klusters: the waveform sorts can use mean waveforms](#2026-10-24--klusters-the-waveform-sorts-can-use-mean-waveforms) |
 | 2026-10-24 | [Klusters: a cluster sort logs one Sort All Clusters entry](#2026-10-24--klusters-a-cluster-sort-logs-one-sort-all-clusters-entry) |
 | 2026-10-23 | [ndm_* commands: -h / --help everywhere, and no step runs on a flag it does not know](#2026-10-23--ndm_-commands--h----help-everywhere-and-no-step-runs-on-a-flag-it-does-not-know) |
@@ -115,6 +116,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-25 — Klusters: new clusters are numbered below the reserved chunk clusters
+
+<details>
+<summary>Details</summary>
+
+fiber-kit's chunk runs (`FK_CHUNKS`, fiber-kit 0.56.0) sort only some
+chunks of a recording and put every spike of the other chunks in a
+**reserved cluster**, one per chunk: ids 16 777 116 – 16 777 215
+(2^24 − 100 … 2^24 − 1), the top 100 ids a `float` holds exactly.
+
+- `types.h` defines `kReservedClusterLo`, `kReservedClusterHi` and
+  `isReservedClusterId()`.  fiber-kit's `test_shared_contract` checks that
+  they match `fiber_chunks.py`.
+- `Data::highestClusterId()` skips reserved ids.  With reserved clusters
+  loaded it returns the highest ordinary id, so `nextFreeClusterId()`, and
+  every split, group, renumber and recluster that uses it, numbers new
+  clusters below the block instead of past 2^24.
+- Group and split no longer pass the new cluster id through a `float`
+  (`klustersdoc_edit.cpp`).  The id is a `dataType`, and the colour hue
+  uses integer `%`.
+
+Without reserved clusters nothing changes: the last row of
+`spikesByCluster` is still the answer.
+
+Files: `src/libklustersshared/src/klustersshared/types.h`,
+`src/klusters/src/data.h`, `src/klusters/src/klustersdoc_edit.cpp`.
+
+</details>
 
 ## 2026-10-24 — Klusters: the waveform sorts can use mean waveforms
 

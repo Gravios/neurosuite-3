@@ -758,10 +758,21 @@ public:
      *
      *  Six call sites used to compute this themselves with the
      *  `(*spikesByCluster)(2, nbSpikes)` idiom; this consolidation
-     *  guarantees a uniform definition. */
+     *  guarantees a uniform definition.
+     *
+     *  Reserved ids (isReservedClusterId: the chunks a fiber-kit chunk run
+     *  left out) are skipped, so new clusters are never numbered into or
+     *  past the reserved block; with reserved clusters present the answer
+     *  is the highest non-reserved key of clusterInfoMap. */
     dataType highestClusterId() const {
         if (nbSpikes == 0) return 0;
-        return (*spikesByCluster)(2, nbSpikes);
+        const dataType top = (*spikesByCluster)(2, nbSpikes);
+        if (!isReservedClusterId(top)) return top;
+        for (auto it = clusterInfoMap->constEnd(); it != clusterInfoMap->constBegin();) {
+            --it;
+            if (!isReservedClusterId(it.key())) return it.key();
+        }
+        return 0;
     }
 
     /** Returns the next cluster ID that's guaranteed not to collide with

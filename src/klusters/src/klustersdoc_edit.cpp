@@ -106,7 +106,8 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     // PARENT-layer edit: group() merges parent clusters; the atom layer follows
     // through the hierarchy refresh below, it is not the thing being merged.
     idsBelongTo(parentData(), clustersToGroup, "groupClusters");
-    float newClusterId = parentData().groupClusters(clustersToGroup);
+    // dataType, not float: a float is exact only to 2^24 (the reserved ids sit at its top).
+    const dataType newClusterId = parentData().groupClusters(clustersToGroup);
     int newClusterIdint = static_cast<int>(newClusterId);
 
     //Prepare the undo
@@ -114,7 +115,7 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
 
     //Add the cluster in clusterColors.
     QColor color;
-    color.setHsv(static_cast<int>(fmod(newClusterId*7,36))*10,200,255);
+    color.setHsv(static_cast<int>((newClusterId*7)%36)*10,200,255);
     clusterColorList->append(newClusterIdint,color);
 
     //Remove the clusters which were grouped
@@ -1194,7 +1195,7 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
     // groupClusters; epoch-snapshot step 6b).
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
-    float newClusterId = targetData.createNewCluster(selection,clustersOfOrigin,fromClusters,emptyClusters);
+    const dataType newClusterId = targetData.createNewCluster(selection,clustersOfOrigin,fromClusters,emptyClusters);
 
     //Check if a new cluster has been created
     if(newClusterId == 0){
