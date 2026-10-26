@@ -514,6 +514,15 @@ public:
     void setReclusterMedianWaveformResidual(bool b)
         { reclusterMedianWaveformResidual = b; }
 
+    // A recluster opens no "Recluster output" tab unless it fails (then the
+    // tab opens with the reclustering program's output).
+    bool getSuppressReclusterOutputTab() const
+        { return suppressReclusterOutputTab; }
+    bool getSuppressReclusterOutputTabDefault() const
+        { return suppressReclusterOutputTabDefault; }
+    void setSuppressReclusterOutputTab(bool b)
+        { suppressReclusterOutputTab = b; }
+
     // patch79 — auto-show the error & template matrices when a document
     // is opened.  Saves the user from manually triggering a new Grouping
     // Assistant Display + Error Matrix dock + Template Matrix dock +
@@ -683,6 +692,8 @@ private:
     static const bool reclusterChannelVarianceDefault;
     bool reclusterMedianWaveformResidual;
     static const bool reclusterMedianWaveformResidualDefault;
+    bool suppressReclusterOutputTab;
+    static const bool suppressReclusterOutputTabDefault;
 
     // patch79 — auto-show error & template matrices on document open
     bool autoShowMatricesOnOpen;

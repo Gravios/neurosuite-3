@@ -1101,7 +1101,13 @@ Klusters can launch KiloKlustaKwik on the current electrode group:
 
 1. Select the clusters to recluster (or select all).
 2. **Actions → Recluster → Recluster** (`Shift+R`).
-3. KiloKlustaKwik runs as a subprocess; its stdout streams into the embedded process widget.
+3. KiloKlustaKwik runs as a subprocess. By default no tab opens for it: the
+   status bar says when it starts and how many clusters it made. If the
+   recluster fails, a **Recluster output** tab opens with KiloKlustaKwik's
+   output. Uncheck **Suppress the Recluster output tab** in **Settings →
+   Preferences → Curation → Reclustering** to open that tab with every
+   recluster. With the tab suppressed, closing the last display stops a
+   running recluster, as **File → Close** does.
 4. When KiloKlustaKwik finishes, klusters reads the new clusters back and all views update.
 
 The selected clusters' features go to a temporary
@@ -1311,7 +1317,7 @@ described by its tooltip.
 | | Splitting | DipSplit and the KNN voting split |
 | | Merging | The recommended-merges panel and Auto-Merge |
 | | Cluster order | Reorder by similarity, median or mean waveforms for the waveform sorts, renumbering after cluster edits |
-| | Reclustering | KiloKlustaKwik executable and arguments, feature selection |
+| | Reclustering | KiloKlustaKwik executable and arguments, feature selection, the Recluster output tab |
 
 ## Parameters toolbar reference
 

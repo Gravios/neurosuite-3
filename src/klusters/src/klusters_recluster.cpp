@@ -738,10 +738,17 @@ void KlustersApp::slotRecluster(){
         //the active display changes.
         connect(tabsParent, &QTabWidget::currentChanged, this, &KlustersApp::slotTabChange);
 
-        tabsParent->addTab(processWidget,tr("Recluster output"));
+        if(configuration().getSuppressReclusterOutputTab()){
+            // Held back: no tab unless the recluster fails
+            // (showHeldReclusterOutput); the status bar reports instead.
+            processWidget->hide();
+            heldReclusterOutput = processWidget;
+        } else {
+            tabsParent->addTab(processWidget,tr("Recluster output"));
 
-        //Keep track of the number of displays
-        displayCount++;
+            //Keep track of the number of displays
+            displayCount++;
+        }
 
     }
 
@@ -757,21 +764,39 @@ void KlustersApp::slotRecluster(){
     status = processWidget->startJob(doc->documentDirectory(), reclusteringExecutable, argList);
 
     if(!status){
+        showHeldReclusterOutput();     // its log holds the command and the error
         QMessageBox::critical (this,tr("Error !"),tr("The reclustering program could not be started.\n"
                                                      "One possible reason is that the automatic reclustering program could not be found."));
         processFinished = true;
         processKilled = false;
         slotStateChanged("noReclusterState");
         updateUndoRedoDisplay();
+    } else if(heldReclusterOutput){
+        statusBar()->showMessage(tr("Reclustering %1…")
+                                 .arg(clusterLabels(clustersToRecluster).join(QStringLiteral(", "))));
     }
+}
+
+void KlustersApp::showHeldReclusterOutput(){
+    if(heldReclusterOutput.isNull()) return;
+    statusBar()->clearMessage();       // "Reclustering …"
+    tabsParent->addTab(heldReclusterOutput,tr("Recluster output"));
+    heldReclusterOutput = nullptr;
+
+    //Keep track of the number of displays
+    displayCount++;
 }
 
 void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     //Check if the process has exited "voluntarily" and if so if it was successful
     if(!(status == QProcess::NormalExit) || (status == QProcess::NormalExit && exitCode)){
-        if(status == QProcess::NormalExit || (status != QProcess::NormalExit  && !processKilled))
-            QMessageBox::critical (this,tr("Error !"),tr("The reclustering program did not finished normaly.\n"
-                                                         "Check the output log for more information."));
+        if(status == QProcess::NormalExit || (status != QProcess::NormalExit  && !processKilled)){
+            showHeldReclusterOutput();
+            QMessageBox::critical (this,tr("Error !"),tr("The reclustering program did not finish normally.\n"
+                                                         "Check the Recluster output tab for more information."));
+        } else if(heldReclusterOutput){
+            statusBar()->clearMessage();   // stopped by a close: drop "Reclustering …"
+        }
 
         if(!QFile::remove(reclusteringFetFileName))
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program."));
@@ -809,6 +834,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     switch(returnStatus){
     case KlustersDoc::DOWNLOAD_ERROR:
         QApplication::restoreOverrideCursor();
+        showHeldReclusterOutput();
         QMessageBox::critical(this,tr("Error !"),tr("Could not download the temporary file containing the new clusters."));
         processFinished = true;
         processOutputsFinished = true;
@@ -817,6 +843,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         return;
     case KlustersDoc::OPEN_ERROR:
         QApplication::restoreOverrideCursor();
+        showHeldReclusterOutput();
         QMessageBox::critical (this,tr("Error !"),tr("Could not open the temporary file containing the new clusters."));
         processFinished = true;
         processOutputsFinished = true;
@@ -825,6 +852,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         return;
     case KlustersDoc::INCORRECT_CONTENT:
         QApplication::restoreOverrideCursor();
+        showHeldReclusterOutput();
         QMessageBox::critical (this,tr("Error !"),tr("The temporary file containing the new clusters contains incorrect data."));
         processFinished = true;
         processOutputsFinished = true;
@@ -905,6 +933,14 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // view refresh for the settled selection (the new atoms if any, else the parent).
     if (childPanel && childPanel->isVisible())
         slotChildSelectionChanged({});
+    if(heldReclusterOutput){
+        const QString reclustered = clusterLabels(clustersToRecluster).join(QStringLiteral(", "));
+        const qsizetype made = clustersFromReclustering.size();
+        statusBar()->showMessage(made == 1
+                                 ? tr("Reclustering of %1 done: 1 new cluster.").arg(reclustered)
+                                 : tr("Reclustering of %1 done: %2 new clusters.").arg(reclustered).arg(made),
+                                 10000);
+    }
     QApplication::restoreOverrideCursor();
 }
 

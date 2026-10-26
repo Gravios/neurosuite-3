@@ -17,6 +17,7 @@ void PrefReclustering::setAutoSelectNFeatures(int n)                { autoSelect
 void PrefReclustering::setReclusterMeanSubtractedSubdim(bool c)     { reclusterMeanSubtractedSubdimCheckBox->setChecked(c); }
 void PrefReclustering::setReclusterChannelVariance(bool c)         { reclusterChannelVarianceCheckBox->setChecked(c); }
 void PrefReclustering::setReclusterMedianWaveformResidual(bool c)  { reclusterMedianWaveformResidualCheckBox->setChecked(c); }
+void PrefReclustering::setSuppressReclusterOutputTab(bool c)       { suppressReclusterOutputTabCheckBox->setChecked(c); }
 
 QString PrefReclustering::getReclusteringExecutable() const    { return reclusteringExecutableLineEdit->text(); }
 QString PrefReclustering::getReclusteringArguments() const     { return reclusteringArgsLineEdit->text(); }
@@ -25,6 +26,7 @@ int     PrefReclustering::getAutoSelectNFeatures() const       { return autoSele
 bool    PrefReclustering::getReclusterMeanSubtractedSubdim() const { return reclusterMeanSubtractedSubdimCheckBox->isChecked(); }
 bool    PrefReclustering::getReclusterChannelVariance() const     { return reclusterChannelVarianceCheckBox->isChecked(); }
 bool    PrefReclustering::getReclusterMedianWaveformResidual() const { return reclusterMedianWaveformResidualCheckBox->isChecked(); }
+bool    PrefReclustering::getSuppressReclusterOutputTab() const   { return suppressReclusterOutputTabCheckBox->isChecked(); }
 
 void PrefReclustering::updateReclusteringExecutable()
 {

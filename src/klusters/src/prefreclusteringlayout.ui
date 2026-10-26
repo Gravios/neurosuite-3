@@ -226,6 +226,36 @@
             </item>
            </layout>
           </item>
+          <item>
+           <layout class="QHBoxLayout">
+            <item>
+             <widget class="QCheckBox" name="suppressReclusterOutputTabCheckBox">
+              <property name="text">
+               <string>Suppress the Recluster output tab</string>
+              </property>
+              <property name="toolTip">
+               <string>When checked (the default), a recluster opens no "Recluster output" tab: the status bar says when it starts and how many clusters it made. If the recluster fails, the tab opens with the reclustering program's output. Uncheck to open the tab with every recluster.</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="spacer_outputtab">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeType">
+               <enum>QSizePolicy::Expanding</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+           </layout>
+          </item>
          </layout>
         </item>
        </layout>

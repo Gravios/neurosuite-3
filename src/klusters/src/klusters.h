@@ -1655,6 +1655,15 @@ private:
     /**Widget launching external process and displaying its output.*/
     ProcessWidget* processWidget;
 
+    /** A recluster's output while its tab is held back (Preferences ▸
+     *  Reclustering ▸ Suppress the Recluster output tab); null once the tab
+     *  opens.  A QPointer, so deleting processWidget anywhere clears it. */
+    QPointer<ProcessWidget> heldReclusterOutput;
+
+    /** A recluster failed: opens its held-back output tab, so the program's log
+     *  can be read.  Does nothing when the tab was not held back. */
+    void showHeldReclusterOutput();
+
     /**True if the external process has exited, false otherwise.*/
     bool processFinished;
 

@@ -4122,6 +4122,10 @@ void KlustersApp::slotFileClose(){
                         processKilled = true;
                     }
                     if(processFinished && processOutputsFinished){
+                        // An output that is no tab (held back, or its tab was
+                        // closed) is not reached by the tab loop below.
+                        if(tabsParent->indexOf(processWidget) == -1)
+                            delete processWidget;
                         processWidget = nullptr;
                     } else{
                         QTimer::singleShot(2000, this, &KlustersApp::slotFileClose);
@@ -4368,6 +4372,18 @@ void KlustersApp::slotDisplayClose()
             clusterPanel->hide();
             //try to close the document
             if(doc->canCloseDocument(this,"displayClose")){
+                // A recluster whose output tab is held back is no display, so
+                // this is the last one while it runs: stop it, and close once it
+                // has ended, as File > Close does.
+                if(heldReclusterOutput && !(processFinished && processOutputsFinished)){
+                    if(heldReclusterOutput->isRunning()){
+                        heldReclusterOutput->killJob();
+                        processKilled = true;
+                    }
+                    QApplication::restoreOverrideCursor();
+                    QTimer::singleShot(2000, this, &KlustersApp::slotDisplayClose);
+                    return;
+                }
                 doc->closeDocument();
                 //Delete the view
                 if(qobject_cast<KlustersView*>(tabsParent->currentWidget())){

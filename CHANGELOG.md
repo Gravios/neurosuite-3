@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: a recluster opens its output tab only if it fails](#2026-10-26--klusters-a-recluster-opens-its-output-tab-only-if-it-fails) |
 | 2026-10-26 | [Klusters: View ▸ Show Child Cluster Palette and Show Template Palette](#2026-10-26--klusters-view--show-child-cluster-palette-and-show-template-palette) |
 | 2026-10-26 | [Klusters: View ▸ Show Reserved Chunk Clusters hides them from the palette and the displays](#2026-10-26--klusters-view--show-reserved-chunk-clusters-hides-them-from-the-palette-and-the-displays) |
 | 2026-10-26 | [Klusters: reserved chunk clusters are shown as R0 … R99](#2026-10-26--klusters-reserved-chunk-clusters-are-shown-as-r0--r99) |
@@ -124,6 +125,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: a recluster opens its output tab only if it fails
+
+<details>
+<summary>Details</summary>
+
+Every recluster opened a **Recluster output** tab with KiloKlustaKwik's
+output, and the tab stayed among the displays until the next recluster.  A new
+preference, **Suppress the Recluster output tab** (**Settings ▸ Preferences ▸
+Curation ▸ Reclustering**), checked by default, holds the tab back.
+
+- The status bar says when a recluster starts (`Reclustering 5…`) and what it
+  made (`Reclustering of 5 done: 3 new clusters.`).
+- If the recluster fails (the program exits with an error or cannot be
+  started, or its result cannot be read), the tab opens with the program's
+  output, and the error message points at it.
+- With the tab held back, the document's last display can be closed while a
+  recluster runs: Klusters stops the program and closes the document once it
+  has ended, as **File ▸ Close** does.  File ▸ Close now deletes a recluster
+  output that is not a tab (held back, or its tab closed while it ran) instead
+  of leaving it.
+- Unchecked, a recluster opens the tab as before.
+
+Files: `src/klusters/src/configuration.{h,cpp}`, `prefreclustering.{h,cpp}`,
+`prefreclusteringlayout.ui`, `prefdialog.cpp`, `klusters.{h,cpp}`,
+`klusters_recluster.cpp`, `doc/klusters/README.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: View ▸ Show Child Cluster Palette and Show Template Palette
 

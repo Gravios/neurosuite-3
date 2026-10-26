@@ -17,6 +17,7 @@ public:
     void setReclusterMeanSubtractedSubdim(bool checked);
     void setReclusterChannelVariance(bool checked);
     void setReclusterMedianWaveformResidual(bool checked);
+    void setSuppressReclusterOutputTab(bool checked);
 
     QString getReclusteringExecutable() const;
     QString getReclusteringArguments() const;
@@ -25,6 +26,7 @@ public:
     bool    getReclusterMeanSubtractedSubdim() const;
     bool    getReclusterChannelVariance() const;
     bool    getReclusterMedianWaveformResidual() const;
+    bool    getSuppressReclusterOutputTab() const;
 
 private slots:
     void updateReclusteringExecutable();

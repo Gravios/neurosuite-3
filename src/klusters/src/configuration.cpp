@@ -34,6 +34,8 @@ const int  Configuration::autoSelectNFeaturesDefault = 7;
 const bool Configuration::reclusterMeanSubtractedSubdimDefault = false;
 const bool Configuration::reclusterChannelVarianceDefault = false;
 const bool Configuration::reclusterMedianWaveformResidualDefault = false;
+// Suppressed by default: a recluster opens no output tab unless it fails.
+const bool Configuration::suppressReclusterOutputTabDefault = true;
 // patch79 — opt-in: off by default
 const bool Configuration::autoShowMatricesOnOpenDefault = false;
 // Template Library display: open by default (on)
@@ -171,6 +173,9 @@ void Configuration::read() {
     reclusterMedianWaveformResidual = settings.value(
         "reclusterMedianWaveformResidual",
         reclusterMedianWaveformResidualDefault).toBool();
+    suppressReclusterOutputTab = settings.value(
+        "suppressReclusterOutputTab",
+        suppressReclusterOutputTabDefault).toBool();
     // patch79 — auto-show error & template matrices on document open
     autoShowMatricesOnOpen = settings.value(
         "autoShowMatricesOnOpen",
@@ -321,6 +326,8 @@ void Configuration::write() const {
                       reclusterChannelVariance);
     settings.setValue("reclusterMedianWaveformResidual",
                       reclusterMedianWaveformResidual);
+    settings.setValue("suppressReclusterOutputTab",
+                      suppressReclusterOutputTab);
     // patch79
     settings.setValue("autoShowMatricesOnOpen",
                       autoShowMatricesOnOpen);
