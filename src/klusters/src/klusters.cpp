@@ -1093,6 +1093,16 @@ void KlustersApp::createMenus()
         "Nothing is deleted; both results are ordinary atoms of the same parent."));
     connect(mMergeOrphanChildren, &QAction::triggered, this, &KlustersApp::slotMergeOrphanChildren);
 
+    mMergeOrphanParents = hierarchyMenu->addAction(tr("Merge Orphan Paren&ts (by template)…"));
+    mMergeOrphanParents->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
+    mMergeOrphanParents->setToolTip(tr(
+        "Gather the tiny parents (below a spike count) by the larger parent whose\n"
+        "template (mean waveform) each matches best: those matching the same parent\n"
+        "are merged into one new parent beside it, those matching none into another.\n"
+        "The larger parents are not changed.  Works on the selected parents, or on\n"
+        "all of them when fewer than two are selected; shows the plan first."));
+    connect(mMergeOrphanParents, &QAction::triggered, this, &KlustersApp::slotMergeOrphanParents);
+
     mRepairNesting = hierarchyMenu->addAction(tr("Re&repairNesting (re-cut atoms onto parents)"));
     // Shift+N, not bare F.  QAction shortcuts here use Qt's default
     // WindowShortcut context -- they fire whenever the main window is active,
@@ -1122,6 +1132,7 @@ void KlustersApp::createMenus()
     mDropChildNoise->setEnabled(false);
     mRepairNesting->setEnabled(false);
     mMergeOrphanChildren->setEnabled(false);
+    mMergeOrphanParents->setEnabled(false);
     mCompactIds->setEnabled(false);
     mMergeChildren->setEnabled(false);
     mMergeAllChildren->setEnabled(false);
@@ -2544,6 +2555,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("hierarchy.dropChildNoise"),     QStringLiteral("Hierarchy"), mDropChildNoise);
     registerActionCommand(QStringLiteral("hierarchy.compactIds"),         QStringLiteral("Hierarchy"), mCompactIds);
     registerActionCommand(QStringLiteral("hierarchy.mergeOrphanChildren"),QStringLiteral("Hierarchy"), mMergeOrphanChildren);
+    registerActionCommand(QStringLiteral("hierarchy.mergeOrphanParents"), QStringLiteral("Hierarchy"), mMergeOrphanParents);
     registerActionCommand(QStringLiteral("hierarchy.repairNesting"),      QStringLiteral("Hierarchy"), mRepairNesting);
     registerActionCommand(QStringLiteral("hierarchy.promoteToHierarchical"), QStringLiteral("Hierarchy"), mPromoteToHierarchy);
     registerActionCommand(QStringLiteral("hierarchy.mergeChildren"),      QStringLiteral("Hierarchy"), mMergeChildren);
@@ -5662,6 +5674,122 @@ void KlustersApp::slotMergeOrphanChildren(){
                "(cluster %3, threshold %4 spikes, r ≥ %5).")
                 .arg(matched).arg(stray).arg(clusterLabel(parent)).arg(minSpikes)
                 .arg(minCorr, 0, 'f', 2), 8000);
+}
+
+void KlustersApp::slotMergeOrphanParents(){
+    if(!doc || !activeView())
+        return;
+
+    // The parents selected in the main palette, or all of them when fewer than
+    // two are: one selected parent is where the palette rests, not a scope.
+    QList<int> candidates;
+    if(clusterPalette){
+        const QList<int> selected = clusterPalette->selectedClusters();
+        if(selected.size() >= 2) candidates = selected;
+    }
+    const QString where = candidates.isEmpty()
+        ? tr("among all parents")
+        : tr("among the %1 selected parents").arg(candidates.size());
+
+    bool ok = false;
+    const int minSpikes = QInputDialog::getInt(
+        this, tr("Merge Orphan Parents"),
+        tr("Treat a parent as an orphan below this spike count:"),
+        25, 2, 1000000, 1, &ok);
+    if(!ok) return;
+    const double minCorr = QInputDialog::getDouble(
+        this, tr("Merge Orphan Parents"),
+        tr("Minimum waveform correlation with a larger parent's template to count as a match:"),
+        0.90, -1.0, 1.0, 2, &ok);
+    if(!ok) return;
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    int nOrphans = 0, nTemplates = 0;
+    const QList<KlustersDoc::OrphanParentGroup> plan =
+        doc->planOrphanParents(candidates, minSpikes, minCorr, &nOrphans, &nTemplates);
+    QApplication::restoreOverrideCursor();
+
+    if(nOrphans == 0){
+        statusBar()->showMessage(
+            tr("Merge orphan parents: no parent has fewer than %1 spikes %2.").arg(minSpikes).arg(where), 6000);
+        return;
+    }
+    if(nTemplates == 0){
+        statusBar()->showMessage(
+            tr("Merge orphan parents: no parent has %1 spikes or more to take a template from.").arg(minSpikes), 6000);
+        return;
+    }
+
+    // The plan, group by group, for the confirmation's details.
+    int besideMerges = 0, besideOrphans = 0, unmatchedOrphans = 0, compared = 0;
+    bool unmatchedMerge = false;
+    QStringList details;
+    for(const KlustersDoc::OrphanParentGroup& g : plan){
+        QStringList members;
+        for(const KlustersDoc::OrphanMatch& m : g.members){
+            if(g.templateParent >= 0)
+                members << tr("%1 (r %2)").arg(clusterLabel(m.orphan)).arg(m.r, 0, 'f', 2);
+            else if(m.best >= 0)
+                members << tr("%1 (best %2, r %3)").arg(clusterLabel(m.orphan))
+                               .arg(clusterLabel(m.best)).arg(m.r, 0, 'f', 2);
+            else
+                members << tr("%1 (no comparable template)").arg(clusterLabel(m.orphan));
+        }
+        compared += g.members.size();
+        const bool merges = g.members.size() >= 2;
+        if(g.templateParent >= 0){
+            details << tr("Beside %1: %2").arg(clusterLabel(g.templateParent), members.join(QStringLiteral(", ")))
+                       + (merges ? QString() : tr(" — one parent, left as it is"));
+            if(merges){ ++besideMerges; besideOrphans += g.members.size(); }
+        } else {
+            details << tr("Matching none: %1").arg(members.join(QStringLiteral(", ")))
+                       + (merges ? QString() : tr(" — one parent, left as it is"));
+            unmatchedMerge = merges;
+            unmatchedOrphans = g.members.size();
+        }
+    }
+    if(compared < nOrphans)
+        details << tr("Left out (no waveform): %1 parent(s)").arg(nOrphans - compared);
+    const int newParents = besideMerges + (unmatchedMerge ? 1 : 0);
+    if(newParents == 0){
+        statusBar()->showMessage(
+            tr("Merge orphan parents: nothing to merge — of the %1 parent(s) below %2 spikes %3, "
+               "no two match the same template, and at most one matches none.")
+                .arg(nOrphans).arg(minSpikes).arg(where), 8000);
+        return;
+    }
+
+    QStringList what;
+    if(besideMerges > 0)
+        what << tr("%1 parent(s) into %2 new parent(s), one beside each larger parent whose "
+                   "template they match (r ≥ %3)")
+                    .arg(besideOrphans).arg(besideMerges).arg(minCorr, 0, 'f', 2);
+    if(unmatchedMerge)
+        what << tr("the %1 matching no template into one new parent").arg(unmatchedOrphans);
+    QString text = tr("%1 parent(s) %2 have fewer than %3 spikes.\n\nMerge %4?\n\n"
+                      "The larger parents are not changed.  The details list every group.")
+                       .arg(nOrphans).arg(where).arg(minSpikes)
+                       .arg(what.join(tr(", and ")));
+    if(newParents > nbUndo)
+        text += tr("\n\nEach new parent is one undo step, and only the last %1 can be "
+                   "undone (Preferences ▸ General ▸ Session).").arg(nbUndo);
+    QMessageBox box(QMessageBox::Question, tr("Merge Orphan Parents"), text,
+                    QMessageBox::Yes | QMessageBox::No, this);
+    box.setDefaultButton(QMessageBox::Yes);
+    box.setDetailedText(details.join(QLatin1Char('\n')));
+    if(box.exec() != QMessageBox::Yes)
+        return;
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    const QList<int> made = doc->mergeOrphanParents(plan, *activeView());
+    QApplication::restoreOverrideCursor();
+
+    statusBar()->showMessage(
+        tr("Merge orphan parents: %1 new parent(s) from %2 tiny parent(s): %3 beside a "
+           "template, %4 matching none (threshold %5 spikes, r ≥ %6).")
+            .arg(made.size()).arg(besideOrphans + (unmatchedMerge ? unmatchedOrphans : 0))
+            .arg(besideMerges).arg(unmatchedMerge ? 1 : 0)
+            .arg(minSpikes).arg(minCorr, 0, 'f', 2), 10000);
 }
 
 void KlustersApp::slotPartitionClusterByTime(){

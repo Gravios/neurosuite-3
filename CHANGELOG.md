@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: Hierarchy ▸ Merge Orphan Parents gathers the tiny parents by template](#2026-10-26--klusters-hierarchy--merge-orphan-parents-gathers-the-tiny-parents-by-template) |
 | 2026-10-26 | [Klusters: a recluster or drift job no longer adds a tab-change connection](#2026-10-26--klusters-a-recluster-or-drift-job-no-longer-adds-a-tab-change-connection) |
 | 2026-10-26 | [Klusters: a recluster that ends early removes its temporary files](#2026-10-26--klusters-a-recluster-that-ends-early-removes-its-temporary-files) |
 | 2026-10-26 | [Klusters: the drift actions do not start while another job runs](#2026-10-26--klusters-the-drift-actions-do-not-start-while-another-job-runs) |
@@ -130,6 +131,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: Hierarchy ▸ Merge Orphan Parents gathers the tiny parents by template
+
+<details>
+<summary>Details</summary>
+
+The parent-layer counterpart of *Merge Orphan Children*, for the tiny parents
+that splitting, reclustering and promotions leave in the main palette
+(`Ctrl+Shift+B`).
+
+- It asks for a spike count and a correlation (defaults 25 and 0.90). A parent
+  below the spike count is an orphan; every parent at or above it is a
+  template, its mean waveform.
+- Each orphan is matched to the template its own mean waveform correlates with
+  best (Pearson). Orphans matching the same template are merged into one new
+  parent beside it, and the orphans matching none into one more. A group of
+  one is left as it is.
+- The template parents are not changed: folding a new parent into its template
+  is left to the curator. The orphans' atoms stay apart under the new parent.
+- A box shows the plan first (**Show Details…** lists every group with its
+  correlations) and says when the plan needs more undo steps than the undo
+  depth allows.
+- It works on the selected parents, or on all parents when fewer than two are
+  selected. The noise and artefact clusters and the reserved chunk clusters
+  take no part.
+
+Files: `src/klusters/src/klustersdoc.h`, `klustersdoc_hierarchy.cpp`
+(`planOrphanParents`, `mergeOrphanParents`), `klusters.{h,cpp}`,
+`klusters_hierarchy.cpp`, `klusters_state.cpp`,
+`doc/klusters/hierarchical-clustering.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: a recluster or drift job no longer adds a tab-change connection
 

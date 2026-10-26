@@ -1392,6 +1392,109 @@ int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
     return consumed;
 }
 
+// ---------------------------------------------------------------------------
+// KlustersDoc::planOrphanParents / mergeOrphanParents
+//
+// The parent-layer counterpart of mergeOrphanChildren.  A parent has no parent
+// to judge its tiny siblings against, so each tiny parent is matched to the
+// templates of the larger parents instead, and the ones matching the same
+// template are merged into one new parent BESIDE it: the larger parent is not
+// touched, so a wrong match costs nothing but an undo, and folding the new
+// parent into its template is the curator's call.  Planned and applied in two
+// steps so the app can show the plan before anything changes.
+// ---------------------------------------------------------------------------
+QList<KlustersDoc::OrphanParentGroup> KlustersDoc::planOrphanParents(
+        const QList<int>& candidates, int minSpikes, double minCorrelation,
+        int* orphansOut, int* templatesOut)
+{
+    if (orphansOut)   *orphansOut   = 0;
+    if (templatesOut) *templatesOut = 0;
+    QList<OrphanParentGroup> plan;
+    if (!clusteringData || minSpikes < 1)
+        return plan;
+
+    // Not the artefact and noise clusters, and not a reserved chunk cluster: a
+    // chunk's unsorted spikes are no unit to match against, and never merged.
+    const auto inPlay = [](int c) { return c > 1 && !isReservedClusterId(c); };
+    const dataType threshold = static_cast<dataType>(minSpikes);
+
+    // The same incremental template cache mergeOrphanChildren reads, on the
+    // parent layer: one sequential .spk pass the first time, nothing after.
+    clusteringData->buildMissingClusterTemplates();
+
+    // Templates come from every larger parent, whatever the selection: a tiny
+    // parent picked from the palette is still matched against the session.
+    QMap<int, std::vector<double>> templates;           // ascending id
+    std::vector<double> sd;
+    const QList<dataType> ids = clusteringData->clusterIds();
+    for (dataType id : ids) {
+        const int c = static_cast<int>(id);
+        if (!inPlay(c) || clusteringData->nbSpikesInCluster(c) < threshold) continue;
+        std::vector<double> mean;
+        if (clusteringData->clusterTemplateFor(c, mean, sd) && !mean.empty())
+            templates.insert(c, std::move(mean));
+    }
+
+    QList<int> pool = candidates;
+    if (pool.isEmpty())
+        for (dataType id : ids) pool.append(static_cast<int>(id));
+    std::sort(pool.begin(), pool.end());
+    pool.erase(std::unique(pool.begin(), pool.end()), pool.end());
+
+    QMap<int, OrphanParentGroup> matched;                // keyed by template, ascending
+    OrphanParentGroup unmatched;
+    int orphans = 0;
+    for (int c : pool) {
+        if (!inPlay(c)) continue;
+        const dataType n = clusteringData->nbSpikesInCluster(c);
+        if (n < 1 || n >= threshold) continue;
+        ++orphans;
+        std::vector<double> mean;
+        if (!clusteringData->clusterTemplateFor(c, mean, sd) || mean.empty())
+            continue;                                    // no waveform, no opinion
+        OrphanMatch m;
+        m.orphan = c;
+        for (auto it = templates.constBegin(); it != templates.constEnd(); ++it) {
+            if (it.value().size() != mean.size()) continue;
+            const double r = waveformCorrelation(mean, it.value());
+            if (r > m.r) { m.r = r; m.best = it.key(); }  // a tie keeps the lower id
+        }
+        if (m.best >= 0 && m.r >= minCorrelation) {
+            OrphanParentGroup& g = matched[m.best];
+            g.templateParent = m.best;
+            g.members.append(m);
+        } else {
+            unmatched.members.append(m);
+        }
+    }
+
+    if (orphansOut)   *orphansOut   = orphans;
+    if (templatesOut) *templatesOut = static_cast<int>(templates.size());
+    for (const OrphanParentGroup& g : matched)
+        plan.append(g);
+    if (!unmatched.members.isEmpty())
+        plan.append(unmatched);
+    return plan;
+}
+
+QList<int> KlustersDoc::mergeOrphanParents(const QList<OrphanParentGroup>& plan,
+                                           KlustersView& activeView)
+{
+    QList<int> made;
+    for (const OrphanParentGroup& g : plan) {
+        // A group of one is already its own parent: merging it would only give
+        // it a new id.
+        if (g.members.size() < 2) continue;
+        QList<int> orphans;
+        for (const OrphanMatch& m : g.members) orphans.append(m.orphan);
+        const int kept = mergeParents(orphans, activeView);
+        if (kept > 0) made.append(kept);
+    }
+    // mergeParents parks each merge's own parent; land on all of them instead.
+    if (!made.isEmpty()) setPendingParentSelection(made);
+    return made;
+}
+
 int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeView){
     if (!childData || children.size() < 2) return -1;
     // Same-parent guard: merging atoms from different parents would create a

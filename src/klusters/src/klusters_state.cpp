@@ -551,6 +551,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         if (mDropChildNoise) mDropChildNoise->setEnabled(false);
         if (mRepairNesting)     mRepairNesting->setEnabled(false);
         if (mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(false);
+        if (mMergeOrphanParents)  mMergeOrphanParents->setEnabled(false);
         if (mCompactIds)          mCompactIds->setEnabled(false);
         if (mPromoteToHierarchy)  mPromoteToHierarchy->setEnabled(false);
         if (mMergeChildren)  mMergeChildren->setEnabled(false);

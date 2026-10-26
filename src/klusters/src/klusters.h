@@ -667,6 +667,12 @@ private Q_SLOTS:
   * parent's orphan children into a matching and a non-matching child.*/
     void slotMergeOrphanChildren();
 
+    /**Asks for a size threshold and a shape cutoff, shows the plan, then merges
+  * the tiny parents matching the same larger parent's template into one new
+  * parent beside it, and those matching none into one more.  Works on the
+  * selected parents, or on all of them when fewer than two are selected.*/
+    void slotMergeOrphanParents();
+
     /**Compacts both layers' cluster ids into the low integers without gaps.*/
     void slotCompactClusterIds();
 
@@ -1315,6 +1321,7 @@ private:
     QAction* mPromoteToHierarchy = nullptr;    // Hierarchy: flat .clu -> .clu/.clc/.clp triple
     bool     mPromoteAfterSave = false;        // a promotion is waiting for the save it started
     QAction* mMergeOrphanChildren = nullptr;   // Hierarchy: gather a parent's tiny children
+    QAction* mMergeOrphanParents = nullptr;    // Hierarchy: gather the tiny parents by template
     QAction* mCompactIds = nullptr;            // Hierarchy: compact both layers' ids
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
     QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every parent to one self atom
