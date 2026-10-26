@@ -111,7 +111,7 @@ bool ProcessWidget::startJob(const QString &dir, const QString &program, const Q
     bool childProcStarted = childproc->waitForStarted();
     if(!childProcStarted){
         insertStderrLine(childproc->errorString());
-        childFinished((childproc->exitStatus() == QProcess::NormalExit), childproc->exitStatus());
+        addItem(new ProcessListBoxItem(tr("*** Could not start ***"), ProcessListBoxItem::Error));
         emit processNotStarted();
     }
     return childProcStarted;
@@ -220,7 +220,9 @@ void ProcessWidget::hideWidget(){
 
 
 void ProcessWidget::slotOutputTreatmentOver(){
-    childFinished((childproc->exitStatus() == QProcess::NormalExit), childproc->exitStatus());
+    // The exit code, not the exit status: the status of a program that exits
+    // with an error is still NormalExit (0), which read "Exited normally".
+    childFinished(childproc->exitStatus() == QProcess::NormalExit, childproc->exitCode());
     emit processOutputsFinished();
 }
 

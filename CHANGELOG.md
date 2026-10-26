@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: an output tab's last line gives the program's exit code](#2026-10-26--klusters-an-output-tabs-last-line-gives-the-programs-exit-code) |
 | 2026-10-26 | [Klusters: a recluster opens its output tab only if it fails](#2026-10-26--klusters-a-recluster-opens-its-output-tab-only-if-it-fails) |
 | 2026-10-26 | [Klusters: View ▸ Show Child Cluster Palette and Show Template Palette](#2026-10-26--klusters-view--show-child-cluster-palette-and-show-template-palette) |
 | 2026-10-26 | [Klusters: View ▸ Show Reserved Chunk Clusters hides them from the palette and the displays](#2026-10-26--klusters-view--show-reserved-chunk-clusters-hides-them-from-the-palette-and-the-displays) |
@@ -125,6 +126,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: an output tab's last line gives the program's exit code
+
+<details>
+<summary>Details</summary>
+
+The output tabs (Recluster output, the plugin and drift outputs) end with a
+line saying how the program ended.  It was given the exit status where the exit
+code belonged, so a program that exited with an error, and one that could not
+be started, both ended with `*** Exited normally ***`.
+
+- A program that exits with an error now ends with
+  `*** Exited with status: N ***` (`ProcessWidget::slotOutputTreatmentOver`).
+- A program that cannot be started ends with `*** Could not start ***`, after
+  Qt's reason.
+
+Files: `src/klusters/src/processwidget.cpp`.
+
+</details>
 
 ## 2026-10-26 — Klusters: a recluster opens its output tab only if it fails
 
