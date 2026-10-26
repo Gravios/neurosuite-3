@@ -739,8 +739,10 @@ void KlustersApp::slotRecluster(){
         connect(processWidget,&ProcessWidget::processOutputsFinished, this, &KlustersApp::slotOutputTreatmentOver);
         connect(processWidget,&ProcessWidget::processNotStarted, this, &KlustersApp::slotOutputTreatmentOver);
         //Connect the change tab signal to slotTabChange(QWidget* widget) to trigger updates when
-        //the active display changes.
-        connect(tabsParent, &QTabWidget::currentChanged, this, &KlustersApp::slotTabChange);
+        //the active display changes.  Unique: createDisplay connects it too, and a plain
+        //connect here added one more call of slotTabChange per tab change with every recluster.
+        connect(tabsParent, &QTabWidget::currentChanged, this, &KlustersApp::slotTabChange,
+                Qt::UniqueConnection);
 
         if(configuration().getSuppressReclusterOutputTab()){
             // Held back: no tab unless the recluster fails

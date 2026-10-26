@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: a recluster or drift job no longer adds a tab-change connection](#2026-10-26--klusters-a-recluster-or-drift-job-no-longer-adds-a-tab-change-connection) |
 | 2026-10-26 | [Klusters: a recluster that ends early removes its temporary files](#2026-10-26--klusters-a-recluster-that-ends-early-removes-its-temporary-files) |
 | 2026-10-26 | [Klusters: the drift actions do not start while another job runs](#2026-10-26--klusters-the-drift-actions-do-not-start-while-another-job-runs) |
 | 2026-10-26 | [Klusters: the end of a drift job no longer locks Klusters](#2026-10-26--klusters-the-end-of-a-drift-job-no-longer-locks-klusters) |
@@ -129,6 +130,20 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: a recluster or drift job no longer adds a tab-change connection
+
+<details>
+<summary>Details</summary>
+
+Each recluster and each drift job connected the display tabs' change signal to
+`KlustersApp::slotTabChange` once more, so after N of them every tab change ran
+`slotTabChange` N + 1 times (until a new display reset the connections).  The
+connection is now made only when it is missing (`Qt::UniqueConnection`).
+
+Files: `src/klusters/src/klusters_recluster.cpp`, `klusters_dipdrift.cpp`.
+
+</details>
 
 ## 2026-10-26 — Klusters: a recluster that ends early removes its temporary files
 

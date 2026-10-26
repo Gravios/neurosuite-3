@@ -439,7 +439,7 @@ void KlustersApp::slotGenerateProbeDrift()
     connect(processWidget, &ProcessWidget::finished,
             this, &KlustersApp::slotDriftJobExited);
     connect(tabsParent, &QTabWidget::currentChanged,
-            this, &KlustersApp::slotTabChange);
+            this, &KlustersApp::slotTabChange, Qt::UniqueConnection);   // see slotRecluster
     tabsParent->addTab(processWidget, tr("Drift estimation"));
     displayCount++;
 
@@ -557,7 +557,7 @@ void KlustersApp::slotApplyDriftSiblings()
     connect(processWidget, &ProcessWidget::finished,
             this, &KlustersApp::slotDriftJobExited);
     connect(tabsParent, &QTabWidget::currentChanged,
-            this, &KlustersApp::slotTabChange);
+            this, &KlustersApp::slotTabChange, Qt::UniqueConnection);   // see slotRecluster
     tabsParent->addTab(processWidget, tr("Apply drift"));
     displayCount++;
 
