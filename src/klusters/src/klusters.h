@@ -1063,6 +1063,10 @@ private:
      *  generation, post-edit realign): true (and a status message unless
      *  @p silent) when another space is loaded. */
     bool refuseInBorrowedSpace(const QString& what, bool silent = false);
+    /** Entry guard for the drift actions, which take over processWidget: true,
+     *  with a message titled @p title, while a recluster, a drift job or a
+     *  plugin runs. */
+    bool refuseWhileJobRuns(const QString& title);
 
     /** Shared implementation of slotMoveClustersToNoise / ToArtefact.
      *  Both slots delete the selected clusters into a reserved ID

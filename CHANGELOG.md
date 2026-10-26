@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: the drift actions do not start while another job runs](#2026-10-26--klusters-the-drift-actions-do-not-start-while-another-job-runs) |
 | 2026-10-26 | [Klusters: the end of a drift job no longer locks Klusters](#2026-10-26--klusters-the-end-of-a-drift-job-no-longer-locks-klusters) |
 | 2026-10-26 | [Klusters: an output tab's last line gives the program's exit code](#2026-10-26--klusters-an-output-tabs-last-line-gives-the-programs-exit-code) |
 | 2026-10-26 | [Klusters: a recluster opens its output tab only if it fails](#2026-10-26--klusters-a-recluster-opens-its-output-tab-only-if-it-fails) |
@@ -127,6 +128,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: the drift actions do not start while another job runs
+
+<details>
+<summary>Details</summary>
+
+Generate Probe Drift and Apply Drift + Recluster Siblings take over the
+recluster's output widget by deleting it, and did so even while a recluster or
+another drift job ran: that program was killed halfway ("QProcess: Destroyed
+while process ... is still running"), the recluster reported a failure and its
+result was lost.  Like a plugin, they now refuse to start while a recluster, a
+drift job or a plugin runs (`KlustersApp::refuseWhileJobRuns`).
+
+Files: `src/klusters/src/klusters.h`, `klusters_dipdrift.cpp`,
+`doc/klusters/README.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: the end of a drift job no longer locks Klusters
 

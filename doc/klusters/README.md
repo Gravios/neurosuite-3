@@ -873,6 +873,8 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 - **Actions → Apply Drift + Recluster Siblings…** (`Shift+F`) computes
   drift-adaptive chunk boundaries from `SESSION.drift` and can re-run
   KlustaKwik on the other groups of the same probe.
+- Neither starts while a recluster, another drift job or a plugin is
+  running.
 - **Displays → New Drift Matrix Display** shows which cluster pairs are one
   unit split by drift.
 

@@ -396,6 +396,7 @@ void KlustersApp::dipDismissPostCommitHud()
 void KlustersApp::slotGenerateProbeDrift()
 {
     if (doc->url().isEmpty()) return;
+    if (refuseWhileJobRuns(tr("Generate Probe Drift"))) return;
 
     const QString dir      = doc->documentDirectory();
     const QString session  = doc->documentBaseName();
@@ -476,6 +477,7 @@ void KlustersApp::slotGenerateProbeDrift()
 void KlustersApp::slotApplyDriftSiblings()
 {
     if (doc->url().isEmpty()) return;
+    if (refuseWhileJobRuns(tr("Apply Drift + Recluster Siblings"))) return;
 
     const QString dir     = doc->documentDirectory();
     const QString session = doc->documentBaseName();
@@ -576,6 +578,25 @@ void KlustersApp::slotApplyDriftSiblings()
         processFinished        = true;
         processOutputsFinished = true;
     }
+}
+
+// ---------------------------------------------------------------------------
+// refuseWhileJobRuns
+//
+// A drift job replaces processWidget, deleting the one before it.  Deleted
+// under a running recluster or drift job, it killed that program halfway (Qt:
+// "QProcess: Destroyed while process ... is still running"): the recluster
+// reported a failure and its result was lost.  So, like a plugin
+// (launchPlugin), a drift job does not start while another job runs.
+// ---------------------------------------------------------------------------
+bool KlustersApp::refuseWhileJobRuns(const QString& title)
+{
+    const bool processJobRuns = processWidget && !(processFinished && processOutputsFinished);
+    if (!processJobRuns && !mPluginRunning)
+        return false;
+    QMessageBox::information(this, title,
+        tr("A job is already running. Wait for it to finish before starting another."));
+    return true;
 }
 
 // ---------------------------------------------------------------------------
