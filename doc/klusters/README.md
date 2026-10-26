@@ -553,7 +553,8 @@ cluster**: id 16 777 116 + chunk, in the block 2^24 − 100 … 2^24 − 1
 ([reserved ids](../ndmanager-plugins/formats/clu.md#reserved-ids)). Klusters
 protects these clusters. When an operation on the clusters you selected leaves
 one out, the status bar says so. Operations over all clusters (Purge Small
-Clusters, the feature-outlier strip) leave them out without a note.
+Clusters, the feature-outlier strip, the sorts) leave them out without a
+note.
 
 - **Nothing is added to one.** An edit that would put a spike into a reserved
   chunk cluster is refused, and the clustering stays as it was. Decollide
@@ -572,6 +573,10 @@ Clusters, the feature-outlier strip) leave them out without a note.
   parent merges, promotions, dissolves and drops. An atom of a reserved chunk
   cluster stays in it; atoms inside one can still be merged or re-cut among
   themselves.
+- **Renumbering and sorting keep their ids:** Renumber, Renumber to End,
+  Renumber and Save, the automatic renumber, Compact Cluster IDs and every
+  sort. A reserved chunk cluster keeps its id and takes no place in the
+  order.
 
 ### DipSplit — automatic bimodal split
 

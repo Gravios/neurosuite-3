@@ -907,11 +907,16 @@ void KlustersDoc::collapseToSelfChildren(){
     }
 
     // Fresh atom ids start above every id either layer currently uses, so they
-    // cannot collide with a surviving atom or with another parent's target.
+    // cannot collide with a surviving atom or with another parent's target --
+    // except the reserved chunk ids, which sit at the top of the float-exact range:
+    // counting them would number fresh atoms past 2^24.  Below the block, a fresh
+    // id meets a reserved one only after 16 million atoms.
     int nextFreeAtom = 1;
     for (int r = 1; r < n; ++r){
-        nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(childByRow[r]));
-        nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(cluByRow[r]));
+        if (!isReservedClusterId(childByRow[r]))
+            nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(childByRow[r]));
+        if (!isReservedClusterId(cluByRow[r]))
+            nextFreeAtom = qMax(nextFreeAtom, static_cast<int>(cluByRow[r]));
     }
 
     // (source atom, parent) -> the atom that pair's loose rows collapse into.

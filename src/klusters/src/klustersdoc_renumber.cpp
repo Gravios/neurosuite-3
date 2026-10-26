@@ -61,6 +61,7 @@
 // application specific includes
 #include "processwidget.h"
 #include "klusters.h"
+#include "reservedclusters.h"
 #include "klustersdoc.h"
 #include "configuration.h"
 #include "klustersview.h"
@@ -390,6 +391,8 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
 // ---------------------------------------------------------------------------
 void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
 {
+    // A reserved chunk cluster keeps its id.
+    leaveOutReserved(clustersToRenumber, tr("Renumber to end"));
     if (clustersToRenumber.isEmpty()) return;
     if (!app()->activeView()) return;
 
@@ -541,9 +544,13 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
 // or a missing cluster makes the whole call a no-op (returns -1) so we never
 // half-apply a rename.
 // ---------------------------------------------------------------------------
-int KlustersDoc::reorderClustersByPermutation(const QList<int>& newOrder,
+int KlustersDoc::reorderClustersByPermutation(const QList<int>& requestedOrder,
                                               const QString& sortName)
 {
+    // A reserved chunk cluster keeps its id and takes no place in the order.  It is
+    // left out of the permutation, so a sort that listed one still orders the rest:
+    // a cluster the permutation does not list keeps its id (see below).
+    const QList<int> newOrder = reservedclusters::withoutReserved(requestedOrder);
     if (newOrder.isEmpty()) return 0;
     if (!app()->activeView()) return -1;
 

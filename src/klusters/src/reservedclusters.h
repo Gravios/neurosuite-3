@@ -18,6 +18,8 @@
         works on (withoutReserved): group, auto-merge, delete clusters,
         the strips, purge, partition by time, the hierarchy's merges, the
         batch decollide.
+      - Renumbering and sorting keep a reserved id as it is and leave the
+        cluster out of the order.
 
     Qt-free, so klusters_test_reservedclusters tests it directly.
 

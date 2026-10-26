@@ -119,7 +119,7 @@ The corresponding document methods are `mergeParents`, `promoteChildren`,
 A fiber that is a reserved chunk cluster (a chunk a fiber-kit chunk run left
 unsorted) is left out of *Merge Selected Parents*, *Group*, *Dissolve*, and
 the promotions and drops of its atoms; its atoms can still be merged or re-cut
-among themselves. See
+among themselves. Compact Cluster IDs keeps its id. See
 [Reserved chunk clusters](README.md#reserved-chunk-clusters).
 
 > **Note.** Earlier builds carried a second child palette and a

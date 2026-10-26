@@ -28,6 +28,7 @@
 
 #include <QTimer>
 #include "clusterview.h"
+#include "reservedclusters.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include "clusterPalette.h"
@@ -697,6 +698,13 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
     if (globalMax > 0) sel.removeAll(globalMax);
     sel.removeAll(0);
     sel.removeAll(1);
+    // A reserved chunk cluster keeps its id; the doc names the ones left out.
+    const bool onlyReserved = !sel.isEmpty() && reservedclusters::withoutReserved(sel).isEmpty();
+    doc->leaveOutReserved(sel, tr("Renumber to end"));
+    if (onlyReserved) {
+        clusterPalette->setFocusToList();
+        return;
+    }
 
     if (sel.isEmpty()) {
         // The selection was non-empty before filtering but everything got

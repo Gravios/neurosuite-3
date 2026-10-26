@@ -584,7 +584,7 @@ void KlustersApp::slotSortClustersByErrorPval()
     QList<int> clusters;
     const auto ids = doc->parentData().clusterIds();   // parent renumber: parent layer, named outright
     for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
+        if (id >= 2 && !isReservedClusterId(id)) clusters.append(static_cast<int>(id));   // reserved: not sorted
     if (clusters.size() < 2) {
         slotStatusMsg(tr("Sort by Error p-value: fewer than 2 non-noise clusters; nothing to sort."));
         return;
@@ -1222,7 +1222,7 @@ void KlustersApp::reorderClustersByFeatureSpace()
     } else {
         const auto ids = d.clusterIds();
         for (const auto id : ids)
-            if (id >= 2) clusters.append(static_cast<int>(id));
+            if (id >= 2 && !isReservedClusterId(id)) clusters.append(static_cast<int>(id));   // reserved: not sorted
     }
     const int N = clusters.size();
     if (N < 2) {
@@ -1403,9 +1403,11 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
         for (int id : scope)
             if (id >= 2 && !clusters.contains(id)) clusters.append(id);
     } else {
+        // 0/1 are noise/artefact; a reserved chunk cluster keeps its id and is not
+        // sorted (nor is its metric computed).
         const auto ids = doc->parentData().clusterIds();
         for (const auto id : ids)
-            if (id >= 2) clusters.append(static_cast<int>(id));   // 0/1 are noise/artefact
+            if (id >= 2 && !isReservedClusterId(id)) clusters.append(static_cast<int>(id));
     }
 
     if (clusters.size() < 2) {
@@ -1534,7 +1536,7 @@ bool KlustersApp::computeWaveformDistances(QList<int>& clustersOut,
     QList<int> clusters;
     const auto ids = d.clusterIds();
     for (const auto id : ids)
-        if (id >= 2) clusters.append(static_cast<int>(id));
+        if (id >= 2 && !isReservedClusterId(id)) clusters.append(static_cast<int>(id));   // reserved: not sorted
     const int N = clusters.size();
     if (N < 2) {
         slotStatusMsg(tr("Sort by waveform: fewer than 2 non-noise clusters; nothing to do."));

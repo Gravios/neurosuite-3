@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: renumbering and sorting keep the reserved chunk clusters' ids](#2026-10-26--klusters-renumbering-and-sorting-keep-the-reserved-chunk-clusters-ids) |
 | 2026-10-26 | [Klusters: a reserved chunk cluster gains no spikes, and only reclustering and feature-space selections take spikes out of it](#2026-10-26--klusters-a-reserved-chunk-cluster-gains-no-spikes-and-only-reclustering-and-feature-space-selections-take-spikes-out-of-it) |
 | 2026-10-26 | [Formats: the .clu header is the number of distinct ids](#2026-10-26--formats-the-clu-header-is-the-number-of-distinct-ids) |
 | 2026-10-25 | [Klusters: new clusters are numbered below the reserved chunk clusters](#2026-10-25--klusters-new-clusters-are-numbered-below-the-reserved-chunk-clusters) |
@@ -118,6 +119,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: renumbering and sorting keep the reserved chunk clusters' ids
+
+<details>
+<summary>Details</summary>
+
+Renumber (`R`), Renumber and Save, the automatic renumber after an edit and
+Compact Cluster IDs gave the reserved chunk clusters small ids like any other
+cluster, so a chunk run's clustering lost its record of which chunks were left
+out.  A reserved chunk cluster now keeps its id and takes no place in the
+numbering.
+
+- `Data::renumber` copies a reserved chunk cluster as it is.
+  `Data::renumberPartial` refuses a map that renames one or gives a cluster a
+  reserved id.
+- Renumber to End (`T`) and every sort leave reserved chunk clusters out:
+  `renumberClustersToEnd`, `reorderClustersByPermutation`, and the cluster
+  lists of the sorts, so no sort metric is computed for them.  `T` with only
+  reserved chunk clusters selected does nothing and runs no post-edit
+  automation.
+- Repair Nesting numbered fresh atoms above every id of both layers, reserved
+  ids included, so into the reserved block or past it.  It now numbers them
+  below the block.
+
+Files: `src/klusters/src/data.{h,cpp}`, `klustersdoc_renumber.cpp`,
+`klusters_sort.cpp`, `klusters_dipdrift.cpp`, `klustersdoc_hierarchy.cpp`,
+`reservedclusters.h`, `doc/klusters/README.md`,
+`doc/klusters/hierarchical-clustering.md`,
+`doc/ndmanager-plugins/formats/clu.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: a reserved chunk cluster gains no spikes, and only reclustering and feature-space selections take spikes out of it
 

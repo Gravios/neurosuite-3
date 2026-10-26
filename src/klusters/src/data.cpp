@@ -4680,13 +4680,14 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
     // still rebuilds spikesByCluster and pushes an undo snapshot.  Detect it and
     // return with clusterIdsOldNew / clusterIdsNewOld left EMPTY, so the sole caller
     // (KlustersDoc::renumberClusters) can in turn skip its own undo entry, view churn
-    // and -- the point of this -- the full palette rebuild.
+    // and -- the point of this -- the full palette rebuild.  Reserved clusters keep
+    // their ids (below), so they do not break the run.
     {
         int expected = 2;
         bool compact = true;
         for(auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it){
             const int id = static_cast<int>(it.key());
-            if(id == 0 || id == 1) continue;
+            if(id == 0 || id == 1 || (protectsReserved && isReservedClusterId(it.key()))) continue;
             if(id != expected){ compact = false; break; }
             ++expected;
         }
@@ -4734,6 +4735,21 @@ void Data::renumber(QMap<int,int>& clusterIdsOldNew,QMap<int,int>& clusterIdsNew
 
         //The clusters 0 and 1 have been processed separately before
         if(clusterId == 0 || clusterId == 1) continue;
+
+        //A reserved cluster (the chunks a fiber-kit chunk run left unsorted) keeps its
+        //id and takes no place in the numbering: copy it as it is.
+        if(protectsReserved && isReservedClusterId(clusterId)){
+            memcpy(&(*spikesByClusterTemp)(1,firstSpikePosition),
+                   &(*spikesByCluster)(1,firstSpikePosition),
+                   nbSpikesOfCluster * sizeof(dataType));
+            memcpy(&(*spikesByClusterTemp)(2,firstSpikePosition),
+                   &(*spikesByCluster)(2,firstSpikePosition),
+                   nbSpikesOfCluster * sizeof(dataType));
+            clusterInfoMapTemp->insert(clusterId,ClusterInfo(firstSpikePosition,nbSpikesOfCluster,iterator.value().annotation()));
+            clusterIdsOldNew.insert(static_cast<int>(clusterId),static_cast<int>(clusterId));
+            clusterIdsNewOld.insert(static_cast<int>(clusterId),static_cast<int>(clusterId));
+            continue;
+        }
 
         //Insert into spikesByClusterTemp and clusterInfoMapTemp with the new number
 
@@ -4798,10 +4814,16 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
 {
     if (oldToNew.isEmpty()) return;
 
-    // Sanity: no entry may remap 0 or 1.
+    // Sanity: no entry may remap 0 or 1, or a reserved cluster (it keeps its id), or
+    // give a cluster a reserved id (that would add spikes to a reserved cluster).
     for (auto it = oldToNew.constBegin(); it != oldToNew.constEnd(); ++it) {
         if (it.key() == 0 || it.key() == 1) return;        // would corrupt artefact/noise
         if (it.value() == 0 || it.value() == 1) return;
+        if (protectsReserved && (isReservedClusterId(it.key()) || isReservedClusterId(it.value()))) {
+            qWarning() << "Data::renumberPartial: REFUSING to rename" << it.key() << "to" << it.value()
+                       << "-- a reserved cluster keeps its id and no cluster takes one.";
+            return;
+        }
     }
 
     SortableTable*  spikesByClusterTemp = new SortableTable();

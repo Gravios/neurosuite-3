@@ -786,7 +786,8 @@ public:
 
     /** Whether this layer protects the reserved chunk clusters (default: yes).
      *  A protected layer refuses an edit that adds a spike to a reserved cluster
-     *  (prepareUndo); see reservedclusters.h.  The atom layer of a
+     *  (prepareUndo), and its renumbering keeps reserved ids (renumber,
+     *  renumberPartial); see reservedclusters.h.  The atom layer of a
      *  hierarchical session is not protected: its ids are atoms, an atom takes
      *  its parent's id when it is the parent's only one (a reserved id
      *  included), and the parent layer carries the protection. */
