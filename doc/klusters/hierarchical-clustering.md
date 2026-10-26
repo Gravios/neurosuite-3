@@ -116,6 +116,12 @@ The corresponding document methods are `mergeParents`, `promoteChildren`,
 `mergeOrphanChildren`, `flattenHierarchyToClu` and `repairNesting`;
 `childrenOf(fiber)` / `parentOfChild(atom)` query the maps.
 
+A fiber that is a reserved chunk cluster (a chunk a fiber-kit chunk run left
+unsorted) is left out of *Merge Selected Parents*, *Group*, *Dissolve*, and
+the promotions and drops of its atoms; its atoms can still be merged or re-cut
+among themselves. See
+[Reserved chunk clusters](README.md#reserved-chunk-clusters).
+
 > **Note.** Earlier builds carried a second child palette and a
 > `Ctrl+Left`/`Ctrl+Right` "custody transfer" that moved atoms between two
 > side-by-side fibers. The single-palette view retires that gesture; move

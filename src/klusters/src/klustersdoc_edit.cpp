@@ -87,6 +87,11 @@
 #include <neurosuite/core/custody.hpp>     // shared chain-of-custody policy
 
 int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeView){
+    // A reserved chunk cluster is never merged: a merge would take its spikes out
+    // through something other than reclustering or a feature-space selection.
+    if (leaveOutReserved(clustersToGroup, tr("Group")) > 0 && clustersToGroup.size() < 2)
+        return -1;
+
     //Call data to group the clusters
     logBefore(CurationLogger::ActionType::GROUP, clustersToGroup);
 
@@ -286,6 +291,11 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 {
     if (spkFileIndices.isEmpty()) return;
 
+    // A reserved chunk cluster gains no spikes, and loses them only through
+    // reclustering and the feature-space selections -- none of which comes here.
+    QList<int> ends{ fromCluster, toCluster };
+    if (leaveOutReserved(ends, tr("Move spikes")) > 0) return;
+
     logBefore(CurationLogger::ActionType::MOVE_SPIKES,
               QList<int>{ fromCluster, toCluster });
 
@@ -419,6 +429,12 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 
 
 void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId){
+    // A reserved chunk cluster is not deleted, nor, in the child scope, an atom of
+    // one: only reclustering and the feature-space selections take spikes out of it.
+    if (childScopeActive) leaveOutChildrenOfReserved(clustersToDelete, tr("Delete"));
+    else                  leaveOutReserved(clustersToDelete, tr("Delete"));
+    if (clustersToDelete.isEmpty()) return;
+
     // Log before the spikes move so we capture the source cluster characteristics.
     // Parent scope only: in child scope this reclassifies ATOMS (data() ==
     // childData below) whose undo lives on the atom timeline -- it never
@@ -1105,6 +1121,10 @@ int KlustersDoc::partitionClusterByTime(int clusterId, double blockSeconds)
     Data& d = data();                       // active layer: a parent or an atom
     const double fs = d.getSamplingRate();  // Hz
     if (blockSeconds <= 0.0 || fs <= 0.0)
+        return 0;
+    // A reserved chunk cluster is not cut (an atom is: it stays in its parent).
+    QList<int> asked{ clusterId };
+    if (d.protectsReservedClusters() && leaveOutReserved(asked, tr("Partition by time")) > 0)
         return 0;
 
     // Blocks are anchored at the session ORIGIN, not at the cluster's first

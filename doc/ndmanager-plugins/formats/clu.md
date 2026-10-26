@@ -42,7 +42,10 @@ Ids 16 777 116 – 16 777 215 (2^24 − 100 … 2^24 − 1) are reserved for fib
 chunk runs (`FK_CHUNKS`). Such a run sorts only some chunks of the recording and
 puts every spike of each other chunk in that chunk's reserved cluster. Klusters
 numbers new clusters below the block (`isReservedClusterId()` in
-`src/libklustersshared/src/klustersshared/types.h`).
+`src/libklustersshared/src/klustersshared/types.h`). It also protects reserved
+clusters. Nothing is added to one, and only reclustering and selections in the
+feature space take spikes out of one. See
+[Reserved chunk clusters](../../klusters/README.md#reserved-chunk-clusters).
 
 ## Naming
 

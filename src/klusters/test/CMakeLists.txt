@@ -63,6 +63,13 @@ target_include_directories(klusters_test_dirtyflag PRIVATE "${_klu_src}")
 target_link_libraries(klusters_test_dirtyflag PRIVATE Threads::Threads)
 add_test(NAME klusters_test_dirtyflag COMMAND klusters_test_dirtyflag)
 
+# Reserved clusters -- what an edit may do to the clusters a fiber-kit chunk
+# run reserved (header-only; types.h from libklustersshared).
+add_executable(klusters_test_reservedclusters reservedclusters_test.cpp)
+target_compile_features(klusters_test_reservedclusters PRIVATE cxx_std_20)
+target_include_directories(klusters_test_reservedclusters PRIVATE "${_klu_src}" "${_shared}")
+add_test(NAME klusters_test_reservedclusters COMMAND klusters_test_reservedclusters)
+
 # TemplateClassStore — the Qt-free EAP template-class model (phase 4).  Same
 # shape as the lineage-store test: compiles the store source and LINKS
 # Neurosuite::core (readEap/readTcl/writeEap/writeTcl + the templateclass engine

@@ -911,7 +911,9 @@ private:
      *  grow res/clu/spk (all methods) + .fet (in memory) via the shared engine,
      *  write the grown four files under a new stage tag, then reopen that stage.
      *  Manages its own wait cursor.  Requires a saved document. */
-    void decollideCommit(const std::vector<neurosuite::decollide::Decomp>& decomps);
+    /** @p fromLasso: the decompositions come from a lasso (a feature-space selection),
+     *  which may take spikes out of a reserved chunk cluster; the batch apply may not. */
+    void decollideCommit(const std::vector<neurosuite::decollide::Decomp>& decomps, bool fromLasso);
 
     /** Batch decollide: read the accepted records of a process_decomposecollisions
      *  sidecar (<base>.col.<method>.<group>) and apply them through decollideCommit.

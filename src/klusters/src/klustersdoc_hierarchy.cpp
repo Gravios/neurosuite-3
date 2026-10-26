@@ -258,6 +258,9 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
     // (v1 re-reads the feature/spike arrays; they could later be shared with the
     // parent to halve memory.)
     childData = new Data();
+    // The atom layer: its ids are atoms, not clusters (the parent layer protects
+    // the reserved chunk clusters, see Data::setProtectsReservedClusters).
+    childData->setProtectsReservedClusters(false);
     // Read the SAME .spk the parent currently reads: if a realign earlier this session
     // repointed clusteringData to the pending (realigned) .spk, the child must follow it,
     // otherwise children open showing the original (shifted) waveforms.  Same spike count,
@@ -1093,10 +1096,15 @@ void KlustersDoc::repairNesting(){
     }
 }
 
-int KlustersDoc::mergeParents(const QList<int>& parents, KlustersView& activeView){
+int KlustersDoc::mergeParents(const QList<int>& parentsIn, KlustersView& activeView){
+    // Left out before anything reads the list: a reserved chunk parent folded into
+    // the survivor below would have its children reparented without its spikes.
+    QList<int> parents = parentsIn;
+    leaveOutReserved(parents, tr("Merge parents"));
     if (parents.size() < 2) return -1;
     setActiveClustering(false);                   // edits always target the parent
     const int kept = groupClusters(parents, activeView);   // existing: mutate + undo + views
+    if (kept < 0) return -1;
 
     // Child-primary: every child of a folded parent is reparented onto the survivor.
     // No child is split or created -- a parent merge is a pure map operation, which
@@ -1126,8 +1134,15 @@ int KlustersDoc::mergeParents(const QList<int>& parents, KlustersView& activeVie
 // atom already covers exactly that parent, so promoting it would move every spike
 // to a new id for no change in structure.
 // ---------------------------------------------------------------------------
-int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activeView){
-    if (!childData || children.isEmpty()) return -1;
+int KlustersDoc::promoteChildren(const QList<int>& childrenIn, KlustersView& activeView){
+    if (!childData || childrenIn.isEmpty()) return -1;
+
+    // The atoms of a reserved chunk parent stay where they are: taking them out
+    // would take spikes out of that parent other than by reclustering or a
+    // feature-space selection.
+    QList<int> children = childrenIn;
+    leaveOutChildrenOfReserved(children, tr("Take atoms out of their parent"));
+    if (children.isEmpty()) return -1;
 
     if (children.size() == 1){
         const int only = children.first();
@@ -1174,6 +1189,8 @@ int KlustersDoc::promoteChildren(const QList<int>& children, KlustersView& activ
 
 bool KlustersDoc::dissolveParent(int parentId, KlustersView& activeView){
     if (!childData) return false;
+    QList<int> asked{ parentId };
+    if (leaveOutReserved(asked, tr("Dissolve parent")) > 0) return false;
     const QList<int> kids = parentToChildren.value(parentId);
     if (kids.size() < 2) return false;                // nothing to explode
     // Each child becomes its own parent: promoteChildren with a single-element
@@ -1190,6 +1207,8 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
     if (!childData || !childToParent.contains(childCluster)) return false;
     const int parentId = childToParent.value(childCluster);
     if (parentId == 1) return false;                    // already noise
+    QList<int> parentOfDropped{ parentId };
+    if (leaveOutReserved(parentOfDropped, tr("Drop child to noise")) > 0) return false;
     const QVector<int> spk = childData->clusterSpkIndices(childCluster);
     if (spk.isEmpty()) return false;
     // Siblings that will survive, captured before the move: the landing is one of

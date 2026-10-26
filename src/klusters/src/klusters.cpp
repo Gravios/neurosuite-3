@@ -5564,6 +5564,14 @@ void KlustersApp::slotPartitionClusterByTime(){
             tr("Partition by time: select a cluster (> 1) in the active display first."), 4000);
         return;
     }
+    // A reserved chunk cluster (a chunk a fiber-kit chunk run left unsorted) is not
+    // cut: only reclustering and the feature-space selections take spikes out of it.
+    if(!doc->isChildClusteringActive() && isReservedClusterId(clusterId)){
+        statusBar()->showMessage(
+            tr("Partition by time: cluster %1 is a reserved chunk cluster; only Recluster and "
+               "the feature-space selections take spikes out of it.").arg(clusterId), 6000);
+        return;
+    }
 
     const double fs = doc->data().getSamplingRate();
     if(fs <= 0.0){
@@ -5704,6 +5712,12 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     const int mergedClusterId = doc->groupClusters(selectedClusters,*view);
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Ready."));
+    // Nothing merged (the selection held fewer than two clusters once the reserved
+    // chunk clusters were left out; the doc says so): no post-merge automation.
+    if (mergedClusterId < 0) {
+        if (clusterPalette) clusterPalette->setFocusToList();
+        return;
+    }
     // Group is a keyboard-driven palette operation (G key from the palette
     // context); keep focus on the palette so the user can keep
     // arrow-navigating without having to Tab back.
@@ -6082,12 +6096,16 @@ void KlustersApp::slotPurgeSmallClusters()
     if (!ok) return;                                 // user cancelled
     purgeSmallClusterThreshold = n;
 
-    // Collect clusters below N, skipping the reserved artefact(0)/noise(1).
+    // Collect clusters below N, skipping the reserved artefact(0)/noise(1) and the
+    // reserved chunk clusters of a fiber-kit chunk run (in the child scope, their
+    // atoms), which only reclustering and feature-space selections take spikes out of.
     auto& d = doc->data();
+    const bool childScope = doc->isChildClusteringActive();
     QList<int> small;
     const auto ids = d.clusterIds();
     for (const auto id : ids) {
         if (id <= 1) continue;
+        if (isReservedClusterId(childScope ? doc->parentOfChild(static_cast<int>(id)) : id)) continue;
         if (d.nbOfSpikes(id) < n)
             small.append(static_cast<int>(id));
     }
@@ -6154,6 +6172,7 @@ void KlustersApp::slotStripFeatureOutliers()
     for (const auto idRaw : ids) {
         const int c = static_cast<int>(idRaw);
         if (c < 2) continue;                        // skip artefact(0) / noise(1)
+        if (isReservedClusterId(c)) continue;       // reserved chunk clusters are not stripped
 
         SortableTable pos;
         if (!d.spikePositions(c, pos)) continue;
@@ -6277,6 +6296,9 @@ void KlustersApp::slotStripWaveformOutliers()
     QList<int> selected = view->clusters();
     selected.removeAll(0);
     selected.removeAll(1);
+    // Nor are the reserved chunk clusters: only reclustering and the feature-space
+    // selections take spikes out of one.
+    doc->leaveOutReserved(selected, tr("Strip waveform outliers"));
     if (selected.isEmpty()) {
         slotStatusMsg(tr("Strip waveform outliers: select one or more clusters first."));
         return;
@@ -7683,8 +7705,11 @@ void KlustersApp::slotStripByTemplate()
                             ? doc->matrixScopeClusters()
                             : doc->childrenOf(QList<int>{ doc->parentOfChild(tpl) });
         } else {
+            // Every parent except the reserved chunk clusters: one of those donates
+            // only when it is selected (a strip by template is a recluster).
             const QList<dataType> all = doc->parentData().clusterIds();
-            for (dataType c : all) donorPool.append(static_cast<int>(c));
+            for (dataType c : all)
+                if (!isReservedClusterId(c)) donorPool.append(static_cast<int>(c));
         }
         donorPool.removeAll(tpl);
         donorPool.removeAll(0);
@@ -8767,6 +8792,11 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
     if (basis.size() != 2) { slotStatusMsg(tr("Decollide: need exactly two basis clusters.")); return; }
     const int A = basis[0], B = basis[1];
     if (A <= 1 || B <= 1) { slotStatusMsg(tr("Decollide: basis clusters must be real units (not noise/artefact).")); return; }
+    if (isReservedClusterId(A) || isReservedClusterId(B)) {
+        slotStatusMsg(tr("Decollide: a reserved chunk cluster is not a unit and gains no spikes; "
+                         "choose two other basis clusters."));
+        return;
+    }
     if (rows.isEmpty())   { slotStatusMsg(tr("Decollide: no spikes lassoed.")); return; }
 
     // The engine reads the files on DISK; unsaved edits would make the on-disk clu
@@ -8839,19 +8869,20 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
     QApplication::restoreOverrideCursor();   // decollideCommit manages its own cursor
     slotStatusMsg(tr("Decollide: %1 of %2 lassoed spike(s) resolved against clusters %3/%4…")
                       .arg(decomps.size()).arg(rows.size()).arg(A).arg(B));
-    decollideCommit(decomps);
+    decollideCommit(decomps, /*fromLasso=*/true);
 }
 
 // Shared tail of both decollide modes: grow res/clu/spk (all methods) + .fet (in
 // memory) from `decomps`, write the grown four under a new stage tag with
 // neurofileio, and reopen the stage.  Self-contained (resolves the loaded paths
 // from the document), so the lasso fit and the batch .col path share it.
-void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decomp>& decomps)
+void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decomp>& requested,
+                                  bool fromLasso)
 {
     if (refuseInBorrowedSpace(tr("Decollide"))) return;
     using namespace neurofileio;
     namespace dc = neurosuite::decollide;
-    if (decomps.empty() || !doc || doc->url().isEmpty()) return;
+    if (requested.empty() || !doc || doc->url().isEmpty()) return;
 
     const int nChan = doc->nbOfchannels();
     const int nSamp = doc->getNbSamplesBeforePeak() + doc->getNbSamplesAfterPeak() + 1;
@@ -8885,6 +8916,33 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
         QApplication::restoreOverrideCursor();
         QMessageBox::warning(this, tr("Decollide"),
             tr("Could not read consistent res/clu/spk/fet for this group.")); return;
+    }
+
+    // Reserved chunk clusters (the chunks a fiber-kit chunk run left unsorted): a
+    // resolved collision replaces its spike by one spike in each of its two units.
+    // Skip one that names a reserved cluster as a unit (it would gain spikes), and,
+    // in the batch apply, one whose spike sits in a reserved cluster: only
+    // reclustering and feature-space selections -- the lasso D is one -- take
+    // spikes out of a reserved cluster.
+    std::vector<dc::Decomp> decomps;
+    decomps.reserve(requested.size());
+    int skippedUnits = 0, skippedSpikes = 0;
+    for (const dc::Decomp& d : requested) {
+        if (isReservedClusterId(d.c1.unit) || isReservedClusterId(d.c2.unit)) { ++skippedUnits; continue; }
+        if (!fromLasso && d.spikeIndex >= 0 && static_cast<std::size_t>(d.spikeIndex) < cr.ids.size()
+                && isReservedClusterId(cr.ids[static_cast<std::size_t>(d.spikeIndex)])) {
+            ++skippedSpikes;
+            continue;
+        }
+        decomps.push_back(d);
+    }
+    const QString skippedNote = (skippedUnits + skippedSpikes == 0) ? QString()
+        : tr(" Skipped %1 collision(s) naming a reserved chunk cluster as a unit and %2 with "
+             "the spike in one.").arg(skippedUnits).arg(skippedSpikes);
+    if (decomps.empty()) {
+        QApplication::restoreOverrideCursor();
+        slotStatusMsg(tr("Decollide: nothing to apply.") + skippedNote);
+        return;
     }
 
     // Annotate-in-place: record these decompositions as .eap membership (+ .tcl
@@ -8980,11 +9038,12 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
     if (!mainDock) {
         openDocumentFile(outCluPath);
         statusBar()->showMessage(
-            tr("Decollided %1 collision(s) -> stage \"%2\".").arg(nResolved).arg(outTag), 8000);
+            tr("Decollided %1 collision(s) -> stage \"%2\".").arg(nResolved).arg(outTag)
+                + skippedNote, 8000);
     } else {
         statusBar()->showMessage(
             tr("Decollided %1 collision(s) -> stage \"%2\"; reopen it to view.")
-                .arg(nResolved).arg(outTag), 8000);
+                .arg(nResolved).arg(outTag) + skippedNote, 8000);
     }
 }
 
@@ -9015,5 +9074,5 @@ void KlustersApp::decollideApplyCol(const QString& colPath)
         decomps.push_back(d);
     }
     slotStatusMsg(tr("Decollide (batch): applying %1 accepted collision(s)…").arg(decomps.size()));
-    decollideCommit(decomps);
+    decollideCommit(decomps, /*fromLasso=*/false);
 }

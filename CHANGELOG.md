@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: a reserved chunk cluster gains no spikes, and only reclustering and feature-space selections take spikes out of it](#2026-10-26--klusters-a-reserved-chunk-cluster-gains-no-spikes-and-only-reclustering-and-feature-space-selections-take-spikes-out-of-it) |
 | 2026-10-26 | [Formats: the .clu header is the number of distinct ids](#2026-10-26--formats-the-clu-header-is-the-number-of-distinct-ids) |
 | 2026-10-25 | [Klusters: new clusters are numbered below the reserved chunk clusters](#2026-10-25--klusters-new-clusters-are-numbered-below-the-reserved-chunk-clusters) |
 | 2026-10-24 | [Klusters: the waveform sorts can use mean waveforms](#2026-10-24--klusters-the-waveform-sorts-can-use-mean-waveforms) |
@@ -117,6 +118,49 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: a reserved chunk cluster gains no spikes, and only reclustering and feature-space selections take spikes out of it
+
+<details>
+<summary>Details</summary>
+
+fiber-kit's chunk runs (`FK_CHUNKS`) put every spike of a chunk they did not
+sort into that chunk's **reserved chunk cluster**, ids 16 777 116 – 16 777 215.
+Klusters now protects these clusters.
+
+- **Nothing is added to one.**  `Data::prepareUndo`, the commit point of every
+  edit, refuses an edit that would put a spike into a reserved chunk cluster it
+  was not in.  It compares the row tables before and after, position by
+  position (`Data::reservedClusterGaining`,
+  `reservedclusters::firstReservedGain`); without reserved clusters it is two
+  map lookups.  The atom layer of a hierarchical session is not checked
+  (`Data::setProtectsReservedClusters`): an atom takes its parent's id, a
+  reserved one included, when it is the parent's only atom.  Decollide refuses
+  a reserved basis cluster and skips a collision that names one as a unit.
+- **Only reclustering and feature-space selections take spikes out of one.**
+  These are the Recluster menu, DipSplit, Watershed and the lasso tools
+  (Decollide `D` included).  Every other edit leaves reserved chunk clusters out
+  of the clusters it works on: Group, Delete cluster(s), Purge Small Clusters,
+  both outlier strips, Partition by Time, the template matrix's Apply, the
+  decollide plugin's batch apply, and the hierarchy's parent merges,
+  promotions, dissolves and drops.  When the user selected one, the status bar names it
+  (`KlustersDoc::leaveOutReserved`); Purge Small Clusters and the
+  feature-outlier strip, which run over all clusters, skip them without a
+  note.  Strip by Template's whole-scope donor pool leaves them out; a
+  selected one still donates.  A Group left with fewer than two clusters runs
+  no post-merge automation.
+- `klusters_test_reservedclusters` tests the list filters and
+  `firstReservedGain`.
+- The Klusters manual has a new section, "Reserved chunk clusters".
+
+Files: `src/klusters/src/reservedclusters.h` (new), `data.{h,cpp}`,
+`klustersdoc.{h,cpp}`, `klustersdoc_edit.cpp`, `klustersdoc_hierarchy.cpp`,
+`klusters.{h,cpp}`, `src/klusters/test/reservedclusters_test.cpp` (new),
+`src/klusters/test/CMakeLists.txt`, `doc/klusters/README.md`,
+`doc/klusters/hierarchical-clustering.md`,
+`doc/ndmanager-plugins/formats/clu.md`.
+
+</details>
 
 ## 2026-10-26 — Formats: the .clu header is the number of distinct ids
 

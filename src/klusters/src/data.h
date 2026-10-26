@@ -784,6 +784,15 @@ public:
         return highestClusterId() + 1;
     }
 
+    /** Whether this layer protects the reserved chunk clusters (default: yes).
+     *  A protected layer refuses an edit that adds a spike to a reserved cluster
+     *  (prepareUndo); see reservedclusters.h.  The atom layer of a
+     *  hierarchical session is not protected: its ids are atoms, an atom takes
+     *  its parent's id when it is the parent's only one (a reserved id
+     *  included), and the parent layer carries the protection. */
+    void setProtectsReservedClusters(bool on) { protectsReserved = on; }
+    bool protectsReservedClusters() const { return protectsReserved; }
+
     /** Per-feature-row cluster label: returns a vector of size nbSpikes+1 where
      *  result[r] is the cluster id of the spike at 1-based feature row r (index 0
      *  unused).  Read-only; used by the hierarchical view to re-derive the
@@ -1382,6 +1391,9 @@ public:
     QList<int>& getCurrentChannels(){return currentChannels;}
 
 private:
+
+    /** See setProtectsReservedClusters. */
+    bool protectsReserved = true;
 
     /** Native-width implementation of createMedianWaveformResidualFeatureFile.
      *  T is the acquisition sample type (int16 for two-byte recordings,
@@ -2032,6 +2044,13 @@ private:
   * @param clusterInfoMapTemp the newly created ClusterInfoMap map
   */
     void prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp, bool dimensionChanged = false);
+
+    /**Returns the reserved cluster (isReservedClusterId) the candidate tables
+     * would put a spike into that it was not in before, or -1 when there is
+     * none.  A reserved cluster may lose spikes but never gain them
+     * (reservedclusters.h); prepareUndo refuses an edit for which this is not -1.*/
+    dataType reservedClusterGaining(const SortableTable& spikesByClusterTemp,
+                                    const ClusterInfoMap& clusterInfoMapTemp) const;
 
     /**
   * Moves the clusters contained in @p clustersToDelete to a the cluster @p destinationId. The correponding spikes are assign to cluster @p destinationId

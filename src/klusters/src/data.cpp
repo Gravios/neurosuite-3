@@ -23,6 +23,7 @@
  ***************************************************************************/
 //Application include files
 #include "data.h"
+#include "reservedclusters.h"
 #include "spkmemory.h"
 #include <neurosuite/core/waveformiou.hpp>
 #include "binfile.h"
@@ -4298,6 +4299,34 @@ void Data::splitClusterTwoWays(int sourceCluster,
     newClusters.append(rightId);
 }
 
+dataType Data::reservedClusterGaining(const SortableTable& spikesByClusterTemp,
+                                      const ClusterInfoMap& clusterInfoMapTemp) const
+{
+    // Only an edit with a reserved cluster on one side or the other can give one a
+    // spike: a session without any (every session that is not a fiber-kit chunk run)
+    // costs two lookups.
+    const auto hasReserved = [](const ClusterInfoMap& m) {
+        const auto it = m.lowerBound(kReservedClusterLo);
+        return it != m.constEnd() && it.key() <= kReservedClusterHi;
+    };
+    if (!hasReserved(*clusterInfoMap) && !hasReserved(clusterInfoMapTemp)) return -1;
+
+    // The row tables decide, position by position, not the maps' spans: a committer
+    // can build a valid table with a wrong map (prepareUndo re-derives the map then).
+    const SortableTable& before = *spikesByCluster;
+    const std::size_t nOld = static_cast<std::size_t>(std::min<dataType>(before.nbOfColumns(), nbSpikes));
+    const std::size_t nNew =
+        static_cast<std::size_t>(std::min<dataType>(spikesByClusterTemp.nbOfColumns(), nbSpikes));
+    const dataType nbRows = std::max<dataType>(features.nbOfRows(), nbSpikes);   // 1-based .fet rows
+    std::vector<unsigned char> scratch;
+    return reservedclusters::firstReservedGain(
+        nOld, [&before](std::size_t i) { return before(1, static_cast<long>(i) + 1); },
+              [&before](std::size_t i) { return before(2, static_cast<long>(i) + 1); },
+        nNew, [&spikesByClusterTemp](std::size_t i) { return spikesByClusterTemp(1, static_cast<long>(i) + 1); },
+              [&spikesByClusterTemp](std::size_t i) { return spikesByClusterTemp(2, static_cast<long>(i) + 1); },
+        nbRows, scratch);
+}
+
 void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* clusterInfoMapTemp, bool dimensionChanged){
     // ── CHOKEPOINT ENFORCEMENT (Class A: feature-row / row-table integrity) ──
     // prepareUndo is the single point through which EVERY forward edit installs
@@ -4343,6 +4372,20 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
                    << "state kept.  A committer built a table that does not account"
                    << "for all" << nbSpikes << "spikes; this is the safety net that"
                    << "prevents corrupting and saving the sort.";
+        delete spikesByClusterTemp;
+        delete clusterInfoMapTemp;
+        return;
+    }
+
+    // Reserved clusters (the chunks a fiber-kit chunk run left unsorted) lose
+    // spikes, never gain them.  The operations keep them out of the clusters they
+    // work on; this is the net for one that does not.
+    const dataType gaining = protectsReserved
+        ? reservedClusterGaining(*spikesByClusterTemp, *clusterInfoMapTemp) : -1;
+    if (gaining >= 0) {
+        qWarning() << "Data::prepareUndo: REFUSING an edit that would move spikes into the"
+                   << "reserved cluster" << gaining << "-- reserved clusters may lose spikes,"
+                   << "never gain them.  Edit dropped, previous state kept.";
         delete spikesByClusterTemp;
         delete clusterInfoMapTemp;
         return;

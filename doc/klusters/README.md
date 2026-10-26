@@ -545,6 +545,34 @@ contamination, SNR, waveform, …) — live under **Actions → Sort Clusters**
 and are documented separately in
 **[Cluster sorting and reordering](cluster-sorting.md)**.
 
+### Reserved chunk clusters
+
+A fiber-kit chunk run (`FK_CHUNKS`) sorts only some chunks of a recording.
+Every spike of a chunk it did not sort goes to that chunk's **reserved chunk
+cluster**: id 16 777 116 + chunk, in the block 2^24 − 100 … 2^24 − 1
+([reserved ids](../ndmanager-plugins/formats/clu.md#reserved-ids)). Klusters
+protects these clusters. When an operation on the clusters you selected leaves
+one out, the status bar says so. Operations over all clusters (Purge Small
+Clusters, the feature-outlier strip) leave them out without a note.
+
+- **Nothing is added to one.** An edit that would put a spike into a reserved
+  chunk cluster is refused, and the clustering stays as it was. Decollide
+  refuses a reserved basis cluster and skips a collision that names one as a
+  unit.
+- **Only reclustering and feature-space selections take spikes out of one.**
+  These are the **Recluster** menu (the three Recluster entries, Split by KNN
+  Voting, Strip by Template), DipSplit, Watershed, and the lasso tools: New
+  Cluster, Split Clusters, Delete Artifact/Noisy Spikes, Multi-Lasso and
+  Decollide (`D`), in the scatter, t-SNE and oblique views. Their results get
+  new ids below the block, or go to 0 or 1. Strip by Template takes spikes from
+  a reserved chunk cluster only when it is selected.
+- **Every other edit leaves them out:** Group, Auto-Merge, Delete cluster(s),
+  Purge Small Clusters, both outlier strips, Partition by Time, the template
+  matrix's Apply, the decollide plugin's batch apply, and the hierarchy's
+  parent merges, promotions, dissolves and drops. An atom of a reserved chunk
+  cluster stays in it; atoms inside one can still be merged or re-cut among
+  themselves.
+
 ### DipSplit — automatic bimodal split
 
 DipSplit (`Shift+D`) tests the active cluster for bimodality and splits it

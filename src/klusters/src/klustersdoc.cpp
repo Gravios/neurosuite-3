@@ -51,6 +51,7 @@
 #include <QRegularExpression>
 #include <QTextStream>
 #include <QFileInfo>
+#include <QStatusBar>
 
 // application specific includes
 #include "processwidget.h"
@@ -62,6 +63,7 @@
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include "clusterPalette.h"
+#include "reservedclusters.h"
 #include "types.h"
 #include "parameteryamlmodifier.h"
 #include <neurosuite/core/dipsplit.hpp>
@@ -178,6 +180,48 @@ bool KlustersDoc::idsBelongTo(const Data& layer, const QList<int>& ids,
              qPrintable(shown.join(QStringLiteral(", "))),
              strangers.size() > shown.size() ? ", ..." : "");
     return false;
+}
+
+int KlustersDoc::leaveOutChildrenOfReserved(QList<int>& children, const QString& operation) const
+{
+    QList<int> kept, reservedParents;
+    for (int c : children) {
+        const int parentId = childToParent.value(c, -1);
+        if (!isReservedClusterId(parentId)) {
+            kept.append(c);
+        } else if (!reservedParents.contains(parentId)) {
+            reservedParents.append(parentId);
+        }
+    }
+    const int removed = static_cast<int>(children.size() - kept.size());
+    if (removed > 0) {
+        leaveOutReserved(reservedParents, operation);   // names the parents
+        children = kept;
+    }
+    return removed;
+}
+
+int KlustersDoc::leaveOutReserved(QList<int>& ids, const QString& operation) const
+{
+    const QList<int> reserved = reservedclusters::reservedOf(ids);
+    if (reserved.isEmpty()) return 0;
+    ids = reservedclusters::withoutReserved(ids);
+    QStringList shown;
+    for (int i = 0; i < reserved.size() && i < 4; ++i)
+        shown << QString::number(reserved.at(i));
+    if (reserved.size() > shown.size()) shown << QStringLiteral("…");
+    const QString note = tr("%1: left out %n reserved chunk cluster(s) (%2). Only Recluster and the "
+                            "feature-space selections take spikes out of one, and nothing adds any.",
+                            nullptr, static_cast<int>(reserved.size()))
+                             .arg(operation, shown.join(QStringLiteral(", ")));
+    qInfo().noquote() << note;
+    // Shown once the operation's slot has returned: the slots end on "Ready.",
+    // which would replace a note shown now.
+    if (KlustersApp* mainWindow = app())
+        QTimer::singleShot(0, mainWindow, [mainWindow, note] {
+            mainWindow->statusBar()->showMessage(note, 8000);
+        });
+    return static_cast<int>(reserved.size());
 }
 
 void KlustersDoc::addView(KlustersView *view)

@@ -324,6 +324,18 @@ public:
     bool idsBelongTo(const Data& layer, const QList<int>& ids,
                      const char* where) const;
 
+    /**Removes the reserved chunk clusters (isReservedClusterId: the chunks a
+     * fiber-kit chunk run left unsorted) from @p ids and, when there were any, says so in the
+     * status bar, naming @p operation.  Every edit other than reclustering and the
+     * selections in the feature space leaves reserved clusters out of the clusters
+     * it works on (reservedclusters.h).  Returns how many were removed.*/
+    int leaveOutReserved(QList<int>& ids, const QString& operation) const;
+
+    /**The child-layer form of leaveOutReserved: removes from @p children the atoms
+     * whose parent is a reserved chunk cluster, and names those parents in the
+     * status bar.  Returns how many atoms were removed.*/
+    int leaveOutChildrenOfReserved(QList<int>& children, const QString& operation) const;
+
     /**Manages the color change of a single cluster.
     * Called when the palette is in immediate-update mode (no need to press
     * the Update button to trigger the change).
