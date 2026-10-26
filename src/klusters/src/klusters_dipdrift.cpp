@@ -435,6 +435,8 @@ void KlustersApp::slotGenerateProbeDrift()
             this, &KlustersApp::slotOutputTreatmentOver);
     connect(processWidget, &ProcessWidget::processNotStarted,
             this, &KlustersApp::slotOutputTreatmentOver);
+    connect(processWidget, &ProcessWidget::finished,
+            this, &KlustersApp::slotDriftJobExited);
     connect(tabsParent, &QTabWidget::currentChanged,
             this, &KlustersApp::slotTabChange);
     tabsParent->addTab(processWidget, tr("Drift estimation"));
@@ -550,6 +552,8 @@ void KlustersApp::slotApplyDriftSiblings()
             this, &KlustersApp::slotOutputTreatmentOver);
     connect(processWidget, &ProcessWidget::processNotStarted,
             this, &KlustersApp::slotOutputTreatmentOver);
+    connect(processWidget, &ProcessWidget::finished,
+            this, &KlustersApp::slotDriftJobExited);
     connect(tabsParent, &QTabWidget::currentChanged,
             this, &KlustersApp::slotTabChange);
     tabsParent->addTab(processWidget, tr("Apply drift"));
@@ -572,6 +576,22 @@ void KlustersApp::slotApplyDriftSiblings()
         processFinished        = true;
         processOutputsFinished = true;
     }
+}
+
+// ---------------------------------------------------------------------------
+// slotDriftJobExited
+//
+// The drift program has ended.  slotProcessExited, which marks a recluster
+// finished, is not connected to a drift job; without this, processFinished
+// stayed false after a drift job: a recluster waited for it for good, so did
+// File > Close and quitting, and the tab change at the end of its output
+// (slotOutputTreatmentOver) locked the editing actions.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotDriftJobExited()
+{
+    processFinished = true;
+    processKilled   = false;
+    slotTabChange(tabsParent->currentIndex());
 }
 
 // ---------------------------------------------------------------------------

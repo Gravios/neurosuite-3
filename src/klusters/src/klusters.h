@@ -722,6 +722,11 @@ private Q_SLOTS:
    * has been killed, is finished.*/
     void slotOutputTreatmentOver();
 
+    /** A drift job (Generate Probe Drift, Apply Drift + Recluster Siblings) has
+     *  ended: marks it finished and restores the actions a running job locks.
+     *  Its output stays in its tab. */
+    void slotDriftJobExited();
+
     /**Launches a dialog to enable the user to change the tab label of the active display.*/
     void renameActiveDisplay();
 

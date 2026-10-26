@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: the end of a drift job no longer locks Klusters](#2026-10-26--klusters-the-end-of-a-drift-job-no-longer-locks-klusters) |
 | 2026-10-26 | [Klusters: an output tab's last line gives the program's exit code](#2026-10-26--klusters-an-output-tabs-last-line-gives-the-programs-exit-code) |
 | 2026-10-26 | [Klusters: a recluster opens its output tab only if it fails](#2026-10-26--klusters-a-recluster-opens-its-output-tab-only-if-it-fails) |
 | 2026-10-26 | [Klusters: View ▸ Show Child Cluster Palette and Show Template Palette](#2026-10-26--klusters-view--show-child-cluster-palette-and-show-template-palette) |
@@ -126,6 +127,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: the end of a drift job no longer locks Klusters
+
+<details>
+<summary>Details</summary>
+
+Generate Probe Drift and Apply Drift + Recluster Siblings run their program in
+an output tab, as a recluster does, but only a recluster's end marked the job
+finished.  After a drift job the editing actions stayed disabled (Undo, Redo,
+Split, Group, the Recluster entries, ...), a recluster waited for the job for
+good, and File ▸ Close and quitting waited for it too, so the document could
+not be closed.
+
+The end of a drift job is now handled (`KlustersApp::slotDriftJobExited`): the
+job is marked finished and the actions are restored.
+
+Files: `src/klusters/src/klusters.h`, `klusters_dipdrift.cpp`.
+
+</details>
 
 ## 2026-10-26 — Klusters: an output tab's last line gives the program's exit code
 
