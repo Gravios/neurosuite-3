@@ -189,6 +189,12 @@ checked and holds until Klusters closes.
 - **Show Reserved Chunk Clusters**: unchecked, the reserved chunk clusters
   leave the cluster palette and the displays
   ([Reserved chunk clusters](#reserved-chunk-clusters)).
+- **Show Child Cluster Palette** (hierarchical session): unchecked, the child
+  palette is hidden. The selection, the displays and the matrices then work on
+  the parent clusters, the Hierarchy menu's edits are disabled, and `V` waits
+  for the palette.
+- **Show Template Palette** (Templates mode): shows or hides the template
+  palette.
 
 ### Radial context menu (experimental)
 

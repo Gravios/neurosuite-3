@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: View ▸ Show Child Cluster Palette and Show Template Palette](#2026-10-26--klusters-view--show-child-cluster-palette-and-show-template-palette) |
 | 2026-10-26 | [Klusters: View ▸ Show Reserved Chunk Clusters hides them from the palette and the displays](#2026-10-26--klusters-view--show-reserved-chunk-clusters-hides-them-from-the-palette-and-the-displays) |
 | 2026-10-26 | [Klusters: reserved chunk clusters are shown as R0 … R99](#2026-10-26--klusters-reserved-chunk-clusters-are-shown-as-r0--r99) |
 | 2026-10-26 | [Klusters: Align All and the automatic realign skip reserved chunk clusters](#2026-10-26--klusters-align-all-and-the-automatic-realign-skip-reserved-chunk-clusters) |
@@ -123,6 +124,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: View ▸ Show Child Cluster Palette and Show Template Palette
+
+<details>
+<summary>Details</summary>
+
+The **View** menu gains two entries that show or hide the palettes under the
+cluster list.
+
+- **Show Child Cluster Palette** (hierarchical session).  Unchecked, the child
+  palette is hidden and, as in a flat session, the selection, the displays and
+  the matrices work on the parent clusters: the child-scoped matrices are
+  turned off, the displays return to the parents, the Hierarchy menu's edits
+  are disabled, and `V` says the child view needs the palette.  Checked again,
+  the palette lists the children of the selected parent, as if it had just
+  been picked.  A hierarchical session that opens while it is unchecked loads
+  its atom layer but keeps the palette hidden.
+- **Show Template Palette** (Templates mode) shows or hides the template
+  palette.
+- The Hierarchy menu's edits are enabled in one place,
+  `KlustersApp::updateHierarchyEditActions`, which the open path, the end of a
+  realign and the new entry share.
+- Both entries start checked, hold until Klusters closes, and are registered
+  commands (Preferences ▸ Input).
+
+Files: `src/klusters/src/klusters.{h,cpp}`, `klusters_hierarchy.cpp`,
+`klusters_state.cpp`, `doc/klusters/README.md`,
+`doc/klusters/hierarchical-clustering.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: View ▸ Show Reserved Chunk Clusters hides them from the palette and the displays
 

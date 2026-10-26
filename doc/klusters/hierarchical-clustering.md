@@ -33,7 +33,9 @@ Open the fiber file (`<base>.clu.N`) as usual. If the `.clc.N` and
 `.clp.N` siblings are both present, the session opens hierarchical and the
 child palette is shown; **Displays → Hierarchical Session (.clc + .clp)**
 is checked as an indicator (the mode is fixed when the file is opened, not
-toggled). A plain `.clu.N`, or one with a `.clc` but no `.clp`, opens as an
+toggled). **View → Show Child Cluster Palette** hides and shows the child
+palette within the session; hidden, the selection, the displays and the
+matrices work on the fibers, and the Hierarchy menu's edits are disabled. A plain `.clu.N`, or one with a `.clc` but no `.clp`, opens as an
 ordinary flat clustering. To make a flat clustering hierarchical, use
 [Promote to Hierarchical Session](#promoting-a-flat-clustering).
 

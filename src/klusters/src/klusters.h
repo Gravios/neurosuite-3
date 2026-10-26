@@ -280,6 +280,12 @@ private Q_SLOTS:
     /** View ▸ Show Reserved Chunk Clusters: lists them in the cluster palette, or
      *  hides them from it and from the displays (KlustersDoc::setReservedClustersShown).*/
     void slotShowReservedClusters(bool shown);
+    /** View ▸ Show Child Cluster Palette (hierarchical session): shows the child
+     *  palette, or hides it and returns the displays and matrices to the parents.*/
+    void slotShowChildPalette(bool shown);
+    /** View ▸ Show Template Palette: shows or hides the template palette while
+     *  Templates mode is on (updateTemplatePanelVisibility).*/
+    void slotShowTemplatePalette(bool shown);
     
     /** Creates a new cluster display for the document and adds the new display to the
      * list of displays the document maintains.
@@ -359,6 +365,9 @@ private Q_SLOTS:
     /** Rebuild the child palette with the children of @p parents (no-op unless
      *  hierarchical view is visible). */
     void repopulateChildPalette(const QList<int>& parents);
+    /** Enables the Hierarchy menu's edits in a hierarchical session with its atom
+     *  layer loaded while the child palette is shown, disables them otherwise. */
+    void updateHierarchyEditActions();
     /** Hierarchy edits driven from the palettes' current selection. */
     void slotMergeParents();
     void slotGroupChildrenIntoParent();   ///< pool the selection into ONE new parent
@@ -1286,6 +1295,8 @@ private:
     //time-chunk curation actions (see slotChunkModeToggled)
     QAction* mHierarchicalView = nullptr;   // View: toggle the child (.clc) palette
     QAction* mShowReservedClusters = nullptr;  // View: list the reserved chunk clusters
+    QAction* mShowChildPalette = nullptr;      // View: show the child cluster palette
+    QAction* mShowTemplatePalette = nullptr;   // View: show the template palette
     QAction* mMergeParents = nullptr;        // Hierarchy: merge selected parents
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)
     QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new parent

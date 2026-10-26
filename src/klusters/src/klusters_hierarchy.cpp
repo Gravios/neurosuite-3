@@ -132,15 +132,21 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
             mHierarchicalView->setChecked(false);
             return;
         }
-        childPanel->show();
-        // The recommend panel is opt-out: its ranking sweep compares every pair of
-        // clusters, so a curator who is not using it should not pay for it at all.
-        // (Preferences > Sorting > Recommended Merges.)
-        if(recommendPanel && configuration().getShowMergeRecommendPanel())
-            recommendPanel->show();
-        repopulateChildPalette(clusterPalette->selectedClusters());
+        // View ▸ Show Child Cluster Palette says whether the palette appears; the
+        // child layer is loaded either way, and the entry can show it later.
+        if(mShowChildPalette) mShowChildPalette->setEnabled(true);
+        if(!mShowChildPalette || mShowChildPalette->isChecked()){
+            childPanel->show();
+            // The recommend panel is opt-out: its ranking sweep compares every pair of
+            // clusters, so a curator who is not using it should not pay for it at all.
+            // (Preferences > Sorting > Recommended Merges.)
+            if(recommendPanel && configuration().getShowMergeRecommendPanel())
+                recommendPanel->show();
+            repopulateChildPalette(clusterPalette->selectedClusters());
+        }
         scheduleRefreshMergeRecommendations();
     } else {
+        if(mShowChildPalette) mShowChildPalette->setEnabled(false);
         childPanel->hide();
         if(recommendPanel) recommendPanel->hide();
         childPaletteA->reset();
@@ -150,7 +156,16 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
         if(activeView())
             doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
     }
-    const bool editable = on && doc->hasChildClustering();
+    updateHierarchyEditActions();
+}
+
+void KlustersApp::updateHierarchyEditActions(){
+    // The Hierarchy menu's edits need a hierarchical session with its atom layer
+    // loaded, and the child palette they act on shown (View ▸ Show Child Cluster
+    // Palette).  The open path checks mHierarchicalView before it gets here.
+    const bool editable = mHierarchicalView && mHierarchicalView->isChecked()
+                          && doc && doc->hasChildClustering()
+                          && (!mShowChildPalette || mShowChildPalette->isChecked());
     if(mMergeParents)    mMergeParents->setEnabled(editable);
     if(mPromoteChild)   mPromoteChild->setEnabled(editable);
     if(mGroupChildren)  mGroupChildren->setEnabled(editable);

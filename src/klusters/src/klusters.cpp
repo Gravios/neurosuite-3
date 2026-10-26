@@ -417,8 +417,8 @@ void KlustersApp::createMenus()
     mSelectAllExceptAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
     connect(mSelectAllExceptAction, &QAction::triggered, this, &KlustersApp::slotSelectAllWO01);
 
-    //View menu: what the left column lists.  Each entry starts checked and holds
-    //until Klusters closes.
+    //View menu: what the left column lists and shows.  Each entry starts checked
+    //and holds until Klusters closes.
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setToolTipsVisible(true);
     mShowReservedClusters = viewMenu->addAction(tr("Show &Reserved Chunk Clusters"));
@@ -428,6 +428,21 @@ void KlustersApp::createMenus()
                                          "chunk run left unsorted) in the cluster palette.  Unchecked, they\n"
                                          "leave the palette and the displays, and Select All skips them."));
     connect(mShowReservedClusters, &QAction::toggled, this, &KlustersApp::slotShowReservedClusters);
+    viewMenu->addSeparator();
+    mShowChildPalette = viewMenu->addAction(tr("Show &Child Cluster Palette"));
+    mShowChildPalette->setCheckable(true);
+    mShowChildPalette->setChecked(true);
+    mShowChildPalette->setEnabled(false);          // a hierarchical session enables it
+    mShowChildPalette->setToolTip(tr("Show the palette of the selected parent's child clusters (.clc).\n"
+                                     "Hidden, the selection, the displays and the matrices work on\n"
+                                     "the parent clusters."));
+    connect(mShowChildPalette, &QAction::toggled, this, &KlustersApp::slotShowChildPalette);
+    mShowTemplatePalette = viewMenu->addAction(tr("Show &Template Palette"));
+    mShowTemplatePalette->setCheckable(true);
+    mShowTemplatePalette->setChecked(true);
+    mShowTemplatePalette->setEnabled(configuration().getTemplatesMode());   // Templates mode on
+    mShowTemplatePalette->setToolTip(tr("Show the template-class palette (Templates mode)."));
+    connect(mShowTemplatePalette, &QAction::toggled, this, &KlustersApp::slotShowTemplatePalette);
 
 
     //Actions menu
@@ -2444,6 +2459,8 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("edit.selectAll"),        QStringLiteral("Edit"),    mSelectAllAction);
     registerActionCommand(QStringLiteral("edit.selectAllExcept"),  QStringLiteral("Edit"),    mSelectAllExceptAction);
     registerActionCommand(QStringLiteral("view.showReservedClusters"), QStringLiteral("View"), mShowReservedClusters);
+    registerActionCommand(QStringLiteral("view.showChildPalette"),     QStringLiteral("View"), mShowChildPalette);
+    registerActionCommand(QStringLiteral("view.showTemplatePalette"),  QStringLiteral("View"), mShowTemplatePalette);
     registerActionCommand(QStringLiteral("action.deleteArtifact"), QStringLiteral("Actions"), mDeleteArtifact);
     registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
     registerActionCommand(QStringLiteral("action.groupClusters"),  QStringLiteral("Actions"), mGroupeClusters);
@@ -2583,6 +2600,15 @@ void KlustersApp::registerInputBindings()
         c.defaultChord = input::Chord::key(Qt::Key_V);
         c.enabled  = [this](const input::Ctx&){ return doc && !focusIsInTextInput(); };
         c.invoke   = [this](const input::Ctx&){
+            // The child view picks children in the child palette: not while
+            // View ▸ Show Child Cluster Palette has hidden it.
+            if(!doc->matrixScopeEnabled() && doc->hasChildClustering()
+               && childPanel && !childPanel->isVisible()){
+                statusBar()->showMessage(
+                    tr("Matrices: the child view needs the child cluster palette "
+                       "(View ▸ Show Child Cluster Palette)."), 4000);
+                return;
+            }
             // V is the only way INTO child view; every automatic exit elsewhere clears
             // the flag, so this always re-arms deliberately.
             const bool on = !doc->matrixScopeEnabled();
@@ -3446,6 +3472,7 @@ void KlustersApp::initDisplay(){
     if(childPanel) childPanel->hide();
     if(recommendPanel) recommendPanel->hide();
     if(childPaletteA) childPaletteA->reset();
+    if(mShowChildPalette) mShowChildPalette->setEnabled(false);   // a hierarchical session enables it
     if(mHierarchicalView){
         const bool hier = doc->isHierarchicalSession();
         {
@@ -4607,6 +4634,44 @@ void KlustersApp::slotShowReservedClusters(bool shown){
             : tr("%n reserved chunk cluster(s) hidden; View ▸ Show Reserved Chunk Clusters lists them again.",
                  nullptr, count), 6000);
 }
+
+void KlustersApp::slotShowChildPalette(bool shown){
+    // Only a hierarchical session has a child palette (the action is disabled
+    // otherwise); opening one asks the action whether to show it.
+    if(!doc || !childPanel || !doc->hasChildClustering() || shown == childPanel->isVisible())
+        return;
+    if(shown){
+        childPanel->show();
+        if(recommendPanel && configuration().getShowMergeRecommendPanel())
+            recommendPanel->show();
+        // As if the user picked the selected parents now: one picked while the
+        // palette was hidden becomes the curated parent, and the palette lists
+        // its children.
+        slotUpdateShownClusters(clusterPalette->selectedClusters());
+    } else {
+        // Without the child palette there is no child selection: the displays and
+        // the matrices go back to the parent clusters, as in a flat session.
+        if(childPanel->isAncestorOf(QApplication::focusWidget()))
+            clusterPalette->setFocusToList();
+        childPanel->hide();
+        if(recommendPanel) recommendPanel->hide();
+        if(doc->matrixScopeEnabled())
+            doc->setMatrixScopeEnabled(false);
+        childPaletteA->reset();
+        parentSlotA = -1;
+        childPalette = childPaletteA;
+        doc->setActiveClustering(false);
+        if(activeView())
+            doc->shownClustersUpdate(clusterPalette->selectedClusters(), *activeView());
+    }
+    updateHierarchyEditActions();   // the Hierarchy edits act on the child palette
+    buildFocusZones();
+}
+
+void KlustersApp::slotShowTemplatePalette(bool){
+    updateTemplatePanelVisibility();
+}
+
 
 void KlustersApp::slotWindowNewClusterDisplay()
 {
@@ -8753,7 +8818,12 @@ void KlustersApp::reloadTemplatePalette()
 void KlustersApp::updateTemplatePanelVisibility()
 {
     if (!templatePanel) return;
-    const bool show = doc && !doc->url().isEmpty() && configuration().getTemplatesMode();
+    // Shown while Templates mode is on, unless View ▸ Show Template Palette is unchecked.
+    if (mShowTemplatePalette) mShowTemplatePalette->setEnabled(configuration().getTemplatesMode());
+    const bool show = doc && !doc->url().isEmpty() && configuration().getTemplatesMode()
+                      && (!mShowTemplatePalette || mShowTemplatePalette->isChecked());
+    if (!show && clusterPalette && templatePanel->isAncestorOf(QApplication::focusWidget()))
+        clusterPalette->setFocusToList();
     templatePanel->setVisible(show);
     buildFocusZones();
 }

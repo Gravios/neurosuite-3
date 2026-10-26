@@ -118,6 +118,7 @@ void KlustersApp::slotStateChanged(const QString& state)
 {
     if(state == QLatin1String("initState")) {
         viewClusterInfo->setEnabled(false);
+        if (mShowChildPalette) mShowChildPalette->setEnabled(false);   // no document
         if (mPromoteToHierarchy) mPromoteToHierarchy->setEnabled(false);   // no document
         mDeleteNoisySpikes->setEnabled(false);
         mOpenAction->setEnabled(true);
@@ -598,22 +599,10 @@ void KlustersApp::slotStateChanged(const QString& state)
         // Restore the hierarchy-menu entries locked by realignState -- to what the
         // session allows, not unconditionally.  The mutators act on the child
         // palette, so they need a hierarchical session with its atom layer loaded
-        // (the gate slotHierarchicalViewToggled applies); restoring them all to
-        // true enabled them in every flat session after its first realign.  A
-        // flat session's one entry is Promote.
-        const bool hierEditable = mHierarchicalView && mHierarchicalView->isChecked()
-                                  && doc && doc->hasChildClustering();
-        if (mMergeParents)    mMergeParents->setEnabled(hierEditable);
-        if (mPromoteChild)   mPromoteChild->setEnabled(hierEditable);
-        if (mGroupChildren)  mGroupChildren->setEnabled(hierEditable);
-        if (mDissolveParent)  mDissolveParent->setEnabled(hierEditable);
-        if (mDropChildNoise) mDropChildNoise->setEnabled(hierEditable);
-        if (mRepairNesting)     mRepairNesting->setEnabled(hierEditable);
-        if (mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(hierEditable);
-        if (mCompactIds)          mCompactIds->setEnabled(hierEditable);
-        if (mMergeChildren)  mMergeChildren->setEnabled(hierEditable);
-        if (mUndoChildEdit)  mUndoChildEdit->setEnabled(hierEditable && doc->childUndoCount() > 0);
-        if (mRedoChildEdit)  mRedoChildEdit->setEnabled(hierEditable && doc->childRedoCount() > 0);
+        // and the child palette shown (the gate updateHierarchyEditActions
+        // applies); restoring them all to true enabled them in every flat session
+        // after its first realign.  A flat session's one entry is Promote.
+        updateHierarchyEditActions();
         if (mPromoteToHierarchy)
             mPromoteToHierarchy->setEnabled(doc && !doc->url().isEmpty() && !doc->isHierarchicalSession());
         // Re-sync with tab state so any tab-specific disabling is reapplied.
