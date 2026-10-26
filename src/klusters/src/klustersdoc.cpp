@@ -569,6 +569,39 @@ void KlustersDoc::applyMask(){
     }
 }
 
+int KlustersDoc::setReservedClustersShown(bool shown){
+    reservedShown = shown;
+    if(!clusteringData)
+        return 0;                                  // no document: the next one opens with it
+
+    int count = 0;
+    for(dataType id : clusteringData->clusterIds())
+        if(isReservedClusterId(id)) ++count;
+
+    // The parent palette lists them or not (ClusterPalette::updateClusterList).  Its
+    // selection stays, less the clusters now hidden.
+    const QList<int> selected = clusterPalette.selectedClusters();
+    clusterPalette.updateClusterList();
+    clusterPalette.selectItems(shown ? selected : reservedclusters::withoutReserved(selected));
+    // Nothing to take out of the displays when they come back, or while the
+    // displays show atoms (the child scope: an atom is not a reserved cluster).
+    if(shown || childScopeActive)
+        return count;
+
+    // Hidden: no display keeps showing one.
+    KlustersView* activeView = app() ? app()->activeView() : nullptr;
+    ItemColors* colors = activeColorList ? activeColorList : clusterColorList;
+    for(KlustersView* view : *viewList){
+        const QList<int> kept = reservedclusters::withoutReserved(view->clusters());
+        if(kept.size() == view->clusters().size())
+            continue;
+        view->shownClustersUpdate(kept);
+        if(view == activeView)
+            view->updateTraceView(electrodeGroupID, colors, true);
+    }
+    return count;
+}
+
 // ── time-chunk curation ─────────────────────────────────────────────────────
 void KlustersDoc::enterChunkMode(double chunkMinutes, double overlapMinutes, int minSpikes){
     const double fs = clusteringData->getSamplingRate();   // Hz (samples per second)
@@ -667,7 +700,10 @@ void KlustersDoc::showAllClustersExcept(const QList<int>& clustersToHide){
 
     QList<dataType>::iterator clustersToAdd;
     for(clustersToAdd = clusterList.begin(); clustersToAdd != clusterList.end(); ++clustersToAdd ){
-        if(!clustersToHide.contains(static_cast<int>(*clustersToAdd))) clustersToShow.append(static_cast<int>(*clustersToAdd));
+        const int id = static_cast<int>(*clustersToAdd);
+        if(clustersToHide.contains(id)) continue;
+        if(!reservedShown && isReservedClusterId(id)) continue;   // hidden (View menu)
+        clustersToShow.append(id);
     }
 
     //Update the palette of cluster

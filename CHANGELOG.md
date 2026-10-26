@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: View ▸ Show Reserved Chunk Clusters hides them from the palette and the displays](#2026-10-26--klusters-view--show-reserved-chunk-clusters-hides-them-from-the-palette-and-the-displays) |
 | 2026-10-26 | [Klusters: reserved chunk clusters are shown as R0 … R99](#2026-10-26--klusters-reserved-chunk-clusters-are-shown-as-r0--r99) |
 | 2026-10-26 | [Klusters: Align All and the automatic realign skip reserved chunk clusters](#2026-10-26--klusters-align-all-and-the-automatic-realign-skip-reserved-chunk-clusters) |
 | 2026-10-26 | [Klusters: the matrices leave reserved chunk clusters out](#2026-10-26--klusters-the-matrices-leave-reserved-chunk-clusters-out) |
@@ -122,6 +123,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: View ▸ Show Reserved Chunk Clusters hides them from the palette and the displays
+
+<details>
+<summary>Details</summary>
+
+A chunk run can leave up to 100 reserved chunk clusters (R0 … R99) in the
+cluster palette.  The new **View** menu's **Show Reserved Chunk Clusters** hides
+them.
+
+- Unchecked, the parent palette leaves them out, every display drops the ones
+  it shows, and Select All skips them (`KlustersDoc::setReservedClustersShown`).
+  Checked again, they are listed again but not selected.
+- The clustering does not change, nor do the operations over all clusters.  A
+  child palette lists every atom: an atom is not a reserved cluster.
+- The entry starts checked and holds for every document until Klusters closes.
+  It is a registered command, so Preferences ▸ Input can give it a key.
+
+Files: `src/klusters/src/klusters.{h,cpp}`, `klustersdoc.{h,cpp}`,
+`clusterPalette.cpp`, `doc/klusters/README.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: reserved chunk clusters are shown as R0 … R99
 

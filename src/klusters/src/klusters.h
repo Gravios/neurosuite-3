@@ -277,6 +277,9 @@ private Q_SLOTS:
     void slotViewParameterBar();
     /** Toggles the user cluster information in the cluster palette.*/
     void slotViewClusterInfo();
+    /** View ▸ Show Reserved Chunk Clusters: lists them in the cluster palette, or
+     *  hides them from it and from the displays (KlustersDoc::setReservedClustersShown).*/
+    void slotShowReservedClusters(bool shown);
     
     /** Creates a new cluster display for the document and adds the new display to the
      * list of displays the document maintains.
@@ -1282,6 +1285,7 @@ private:
     QAction* newGroupingAssistantDisplay;
     //time-chunk curation actions (see slotChunkModeToggled)
     QAction* mHierarchicalView = nullptr;   // View: toggle the child (.clc) palette
+    QAction* mShowReservedClusters = nullptr;  // View: list the reserved chunk clusters
     QAction* mMergeParents = nullptr;        // Hierarchy: merge selected parents
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)
     QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new parent

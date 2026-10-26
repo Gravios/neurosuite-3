@@ -417,6 +417,18 @@ void KlustersApp::createMenus()
     mSelectAllExceptAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
     connect(mSelectAllExceptAction, &QAction::triggered, this, &KlustersApp::slotSelectAllWO01);
 
+    //View menu: what the left column lists.  Each entry starts checked and holds
+    //until Klusters closes.
+    QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
+    viewMenu->setToolTipsVisible(true);
+    mShowReservedClusters = viewMenu->addAction(tr("Show &Reserved Chunk Clusters"));
+    mShowReservedClusters->setCheckable(true);
+    mShowReservedClusters->setChecked(true);
+    mShowReservedClusters->setToolTip(tr("List the reserved chunk clusters (R0 … R99: the chunks a fiber-kit\n"
+                                         "chunk run left unsorted) in the cluster palette.  Unchecked, they\n"
+                                         "leave the palette and the displays, and Select All skips them."));
+    connect(mShowReservedClusters, &QAction::toggled, this, &KlustersApp::slotShowReservedClusters);
+
 
     //Actions menu
     QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
@@ -2431,6 +2443,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("edit.redo"),             QStringLiteral("Edit"),    mRedo);
     registerActionCommand(QStringLiteral("edit.selectAll"),        QStringLiteral("Edit"),    mSelectAllAction);
     registerActionCommand(QStringLiteral("edit.selectAllExcept"),  QStringLiteral("Edit"),    mSelectAllExceptAction);
+    registerActionCommand(QStringLiteral("view.showReservedClusters"), QStringLiteral("View"), mShowReservedClusters);
     registerActionCommand(QStringLiteral("action.deleteArtifact"), QStringLiteral("Actions"), mDeleteArtifact);
     registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
     registerActionCommand(QStringLiteral("action.groupClusters"),  QStringLiteral("Actions"), mGroupeClusters);
@@ -4585,6 +4598,15 @@ void KlustersApp::slotViewClusterInfo(){
 
 }
 
+void KlustersApp::slotShowReservedClusters(bool shown){
+    if(!doc) return;
+    const int count = doc->setReservedClustersShown(shown);
+    if(count > 0)
+        statusBar()->showMessage(shown
+            ? tr("%n reserved chunk cluster(s) listed again.", nullptr, count)
+            : tr("%n reserved chunk cluster(s) hidden; View ▸ Show Reserved Chunk Clusters lists them again.",
+                 nullptr, count), 6000);
+}
 
 void KlustersApp::slotWindowNewClusterDisplay()
 {

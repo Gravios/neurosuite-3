@@ -183,6 +183,13 @@ The window is divided into:
   - **Cluster bar**: Previous Spike, Next Spike (trace view).
   - **Parameters**: feature axes, waveform and correlogram settings, the feature space box — see [Parameters toolbar reference](#parameters-toolbar-reference).
 
+The **View** menu shows or hides parts of the left column. Each entry starts
+checked and holds until Klusters closes.
+
+- **Show Reserved Chunk Clusters**: unchecked, the reserved chunk clusters
+  leave the cluster palette and the displays
+  ([Reserved chunk clusters](#reserved-chunk-clusters)).
+
 ### Radial context menu (experimental)
 
 **Right-click** in a view (cluster, waveform, correlogram, trace, the curation
@@ -589,6 +596,12 @@ chunk as fiber-kit numbers it (`FK_CHUNKS` counts from 0). Chunk 14's cluster,
 label, and hovering over R14 in the palette shows its id. The files Klusters
 writes, the curation log and plugin arguments keep the number. Set Oblique
 Basis accepts R14 as well as 16777130.
+
+**View ▸ Show Reserved Chunk Clusters** hides them: unchecked, they leave the
+cluster palette and every display that shows one, and Select All skips them.
+The clustering does not change, nor do the operations over all clusters or the
+child palette (an atom is not a reserved cluster). Checked again, they are
+listed again but not selected.
 
 ### DipSplit — automatic bimodal split
 

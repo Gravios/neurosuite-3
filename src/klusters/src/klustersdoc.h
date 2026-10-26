@@ -370,10 +370,21 @@ public:
     void addClustersToActiveView(const QList<int>& clustersToShow);
 
     /**Updates the selection of clusters to be shown by showing all the clusters
-    * except those contained in @p clustersToHide.
+    * except those contained in @p clustersToHide (and the reserved chunk clusters
+    * while they are hidden, see showsReservedClusters).
     * @param clustersToHide list of clusters to not show.
     */
     void showAllClustersExcept(const QList<int>& clustersToHide);
+
+    /**Whether the cluster palette lists the reserved chunk clusters (View ▸ Show
+     * Reserved Chunk Clusters; yes until it is unchecked).  Hidden, they leave the
+     * palette and every display that shows one, and Select All skips them.  The
+     * clustering is unchanged, and so is every operation over all clusters.  The
+     * choice holds for every document until Klusters closes.*/
+    bool showsReservedClusters() const {return reservedShown;}
+    /**Shows or hides the reserved chunk clusters (see showsReservedClusters).
+     * Returns how many the open clustering holds (0 with no document open).*/
+    int setReservedClustersShown(bool shown);
 
     // ── cluster masking ──────────────────────────────────────────────────
     //  Masking focuses curation on a SUBSET of clusters.  Masked clusters are
@@ -2104,6 +2115,8 @@ private:
     /** Re-apply the current mask: rebuild the palette list (which omits masked
      *  clusters) and drop any masked cluster from the active view's shown set. */
     void applyMask();
+    /** See showsReservedClusters. */
+    bool reservedShown = true;
 
     // time-chunk curation state (see enterChunkMode)
     bool chunkMode = false;

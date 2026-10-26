@@ -518,6 +518,12 @@ void ClusterPalette::updateClusterList(){
         for(int i = 0; i < nbClusters; ++i) visitOrder.append(i);
     }
 
+    // View ▸ Show Reserved Chunk Clusters unchecked: the palette of the layer that
+    // holds them (the parent layer, see Data::protectsReservedClusters) leaves the
+    // reserved chunk clusters out.  An atom's id says nothing about that, so a
+    // child palette lists every atom.
+    const bool hideReserved = !doc->showsReservedClusters() && boundData().protectsReservedClusters();
+
     for(int i : visitOrder){
         const QColor swatchColor = clusterColors.color(i,ItemColors::BY_INDEX);
         const QRgb   swatchKey   = swatchColor.rgb();
@@ -531,8 +537,9 @@ void ClusterPalette::updateClusterList(){
             swatchCache.insert(swatchKey, pix);
         }
         const int curId = clusterColors.itemId(i);
-        if(doc->isMasked(curId) || (showsChildScope && paletteScoped && !paletteScope.contains(curId)))
-            continue;   // masking + hierarchical child-scope: omit from the active list
+        if(doc->isMasked(curId) || (hideReserved && isReservedClusterId(curId))
+           || (showsChildScope && paletteScoped && !paletteScope.contains(curId)))
+            continue;   // masking, hidden reserved clusters, hierarchical child-scope: omit from the active list
         QString clusterText = clusterLabel(curId);   // a reserved chunk cluster shows as R<chunk>
 
         if(isInUserClusterInfoMode){
