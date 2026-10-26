@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Formats: the .clu header is the number of distinct ids](#2026-10-26--formats-the-clu-header-is-the-number-of-distinct-ids) |
 | 2026-10-25 | [Klusters: new clusters are numbered below the reserved chunk clusters](#2026-10-25--klusters-new-clusters-are-numbered-below-the-reserved-chunk-clusters) |
 | 2026-10-24 | [Klusters: the waveform sorts can use mean waveforms](#2026-10-24--klusters-the-waveform-sorts-can-use-mean-waveforms) |
 | 2026-10-24 | [Klusters: a cluster sort logs one Sort All Clusters entry](#2026-10-24--klusters-a-cluster-sort-logs-one-sort-all-clusters-entry) |
@@ -116,6 +117,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Formats: the .clu header is the number of distinct ids
+
+<details>
+<summary>Details</summary>
+
+fiber-kit 0.56.0–0.57.2 wrote the highest id + 1 as the header of the `.clu`
+files it wrote.  For the files of a chunk run (`FK_CHUNKS`), whose reserved
+clusters sit at 2^24 − 100 … 2^24 − 1, that is about 16.8 million, and Klusters
+refused them: "Invalid or missing .clu header (nClusters=16777136)".  fiber-kit
+0.57.3 writes the number of distinct ids, as Klusters does on Save, and its
+`fiber-clu-header` rewrites the header of a file written before.
+
+- `doc/ndmanager-plugins/formats/clu.md`: the header is the
+  number of distinct ids, not the highest id + 1.  KiloKlustaKwik's highest id
+  is the same number.  A new section, "Reserved ids", describes the block.
+- `formats/clc.md`: the same rule for the
+  atom ids.  Klusters loads the atom layer with the `.clu` loader, so the
+  0–65536 check applies to a `.clc` too.
+- `FILE_FORMATS.md` §3.2 says what the count counts.
+
+No code changes: Klusters' Save, the `.clc` written on Save and
+`process_drifttracker` already write the number of distinct ids.
+`process_reassignspikes` and Klusters' decollide keep the header of the file
+they read.
+
+</details>
 
 ## 2026-10-25 — Klusters: new clusters are numbered below the reserved chunk clusters
 

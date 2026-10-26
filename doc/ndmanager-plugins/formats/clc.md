@@ -10,7 +10,7 @@ a fiber is a set of atoms, and [`.clp`](clp.md) records which.
 Identical to the binary [`.clu`](clu.md):
 
 ```
-int32            header (cluster count)
+int32            header (number of distinct atom ids)
 nSpikes × int32  atom id per spike, .res order
 fileSize = 4 + nSpikes × 4
 ```
@@ -22,6 +22,9 @@ required.
 - Atom ids are **global** within the group (`1 … nAtoms`), not numbered per
   fiber.
 - `0` = noise, as in `.clu`.
+- The header is the number of distinct atom ids, as for [`.clu`](clu.md#layout).
+  Klusters reads the atom layer with the `.clu` loader, so it refuses a `.clc`
+  header outside 0–65536 too.
 
 ## Nesting invariant
 

@@ -9,7 +9,7 @@ the [`.clc`](clc.md) / [`.clp`](clp.md) triple.
 Binary, little-endian:
 
 ```
-int32            header (cluster count)
+int32            header (number of distinct ids)
 nSpikes × int32  cluster id per spike, .res order
 fileSize = 4 + nSpikes × 4
 ```
@@ -18,9 +18,15 @@ fileSize = 4 + nSpikes × 4
   `.clu` that holds a different number of ids (`neurofileio::readCluBinary`
   reports how many it found). A `.clu` belonging to another run, group or method
   is rejected, not truncated.
-- **Header:** informational. KiloKlustaKwik writes its highest id, Klusters the
-  number of distinct clusters. Klusters refuses a header outside 0–65536; other
-  readers ignore it.
+- **Header:** informational: the number of distinct ids in the file. Klusters
+  writes that on Save, and fiber-kit from 0.57.3. KiloKlustaKwik writes its
+  highest id, which is the same number, since it numbers without gaps from 1.
+  The header is not the highest id + 1: once [reserved ids](#reserved-ids) are
+  in a file, that is about 16.8 million. Klusters refuses a header outside
+  0–65536 ("Invalid or missing .clu header"); other readers ignore it.
+  - fiber-kit 0.56.0–0.57.2 wrote the highest id + 1, so Klusters refused the
+    files of its chunk runs. fiber-kit's `fiber-clu-header FILE…` rewrites such
+    a header in place and leaves the ids as they are.
 - **Ids by convention:** `0` = noise / artefact, `1` = unsorted multi-unit
   activity, `≥ 2` = candidate units. KiloKlustaKwik renumbers its output without
   gaps from 1 (its noise class becomes 1). Nothing enforces the convention.
@@ -29,6 +35,14 @@ A plain-text form (first line the cluster count, then one id per line) is read
 by `neurofileio::readClusterRes` when the paired `.res` is also text
 (NeuroScope, the template generator). Klusters, `process_spikefilter.py` and the
 other plugins read binary only.
+
+### Reserved ids
+
+Ids 16 777 116 – 16 777 215 (2^24 − 100 … 2^24 − 1) are reserved for fiber-kit's
+chunk runs (`FK_CHUNKS`). Such a run sorts only some chunks of the recording and
+puts every spike of each other chunk in that chunk's reserved cluster. Klusters
+numbers new clusters below the block (`isReservedClusterId()` in
+`src/libklustersshared/src/klustersshared/types.h`).
 
 ## Naming
 

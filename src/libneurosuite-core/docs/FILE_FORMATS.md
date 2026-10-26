@@ -95,7 +95,7 @@ Format auto-detection probes the `.res`: **binary iff its size is a non-zero mul
 
 ### 3.2 `.clu` — cluster ids (`int32`)
 
-First value is the **cluster count**, then one id per spike (`CluFile` in `neurofileio.h`, `clu.md`). Text: first line = count, then one id per line (`readClu`). Binary: `int32` count header, then `nSpikes × int32` ids (`writeCluBinary`).
+First value is the **cluster count**, the number of distinct ids (informational; the rule and its writers are in `clu.md`), then one id per spike (`CluFile` in `neurofileio.h`). Text: first line = count, then one id per line (`readClu`). Binary: `int32` count header, then `nSpikes × int32` ids (`writeCluBinary`).
 
 ```cpp
 // writeCluBinary  — int32 header, then int32 ids
