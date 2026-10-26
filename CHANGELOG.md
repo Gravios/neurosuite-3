@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: a recluster that ends early removes its temporary files](#2026-10-26--klusters-a-recluster-that-ends-early-removes-its-temporary-files) |
 | 2026-10-26 | [Klusters: the drift actions do not start while another job runs](#2026-10-26--klusters-the-drift-actions-do-not-start-while-another-job-runs) |
 | 2026-10-26 | [Klusters: the end of a drift job no longer locks Klusters](#2026-10-26--klusters-the-end-of-a-drift-job-no-longer-locks-klusters) |
 | 2026-10-26 | [Klusters: an output tab's last line gives the program's exit code](#2026-10-26--klusters-an-output-tabs-last-line-gives-the-programs-exit-code) |
@@ -128,6 +129,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: a recluster that ends early removes its temporary files
+
+<details>
+<summary>Details</summary>
+
+A recluster writes the selected clusters' features to a temporary
+`<base>--<cluster ids>--<date>.fet.N` in the session folder, with a copy of the
+session YAML under the same base, and the program writes `….clu.N` beside
+them.  Three ways out of a recluster left them in the folder: a feature file
+that could not be created (the YAML stayed), a program that could not be
+started, and a program that wrote no cluster file.  They are now removed
+however the recluster ends (`KlustersApp::removeReclusterTempFiles`, and the
+missing-cluster-file path of `KlustersDoc::integrateReclusteredClusters`).
+
+A program that wrote no cluster file was also reported twice, the first time
+as "Could not delete the temporary cluster file used by the reclustering
+program", which was not what had happened.  That box is gone.
+
+Files: `src/klusters/src/klusters.h`, `klusters_recluster.cpp`,
+`klustersdoc_recluster.cpp`.
+
+</details>
 
 ## 2026-10-26 — Klusters: the drift actions do not start while another job runs
 

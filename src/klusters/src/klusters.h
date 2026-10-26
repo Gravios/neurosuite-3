@@ -1673,6 +1673,12 @@ private:
      *  can be read.  Does nothing when the tab was not held back. */
     void showHeldReclusterOutput();
 
+    /** Removes the current recluster's temporary files (feature file, the
+     *  program's cluster file, staged YAML) when it ends before its result is
+     *  read: the feature file cannot be written, the program cannot start, or
+     *  it fails. */
+    void removeReclusterTempFiles();
+
     /**True if the external process has exited, false otherwise.*/
     bool processFinished;
 

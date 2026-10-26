@@ -536,8 +536,10 @@ void KlustersApp::slotRecluster(){
     //
     // Fix: copy the original session YAML to the temp basename before
     // launching, so KKExp's tryPath("<tempBase>", ".yaml") finds it.
-    // The temp YAML is removed by patch81_cleanupTempYaml() at every
-    // existing reclusteringFetFileName cleanup site.
+    // The temp YAML goes with the other temporary files on every way the
+    // recluster ends: in KlustersDoc::integrateReclusteredClusters once the
+    // program has written its result (or failed to), and in
+    // removeReclusterTempFiles() otherwise.
     //
     // Order matters: this happens AFTER reclusteringFetFileName is
     // computed (so the path-derivation in cleanupTempYaml stays
@@ -716,9 +718,11 @@ void KlustersApp::slotRecluster(){
         : doc->createFeatureFile(clustersToRecluster,reclusteringFetFileName);
     if(returnStatus == KlustersDoc::OPEN_ERROR){
         QMessageBox::critical (this,tr("Error !"),tr("The reclustering feature file cannot be created (possibly because of insufficient file access permissions).\n Reclustering can not be done."));
+        removeReclusterTempFiles();
         return;
     } else if(returnStatus == KlustersDoc::CREATION_ERROR) {
         QMessageBox::critical (this,tr("IO Error !"),tr("An error happened while creating the reclustering feature file.\n Reclustering can not be done."));
+        removeReclusterTempFiles();
         return;
     }
 
@@ -764,6 +768,7 @@ void KlustersApp::slotRecluster(){
     status = processWidget->startJob(doc->documentDirectory(), reclusteringExecutable, argList);
 
     if(!status){
+        removeReclusterTempFiles();
         showHeldReclusterOutput();     // its log holds the command and the error
         QMessageBox::critical (this,tr("Error !"),tr("The reclustering program could not be started.\n"
                                                      "One possible reason is that the automatic reclustering program could not be found."));
@@ -775,6 +780,23 @@ void KlustersApp::slotRecluster(){
         statusBar()->showMessage(tr("Reclustering %1…")
                                  .arg(clusterLabels(clustersToRecluster).join(QStringLiteral(", "))));
     }
+}
+
+// The current recluster's temporary files: the feature file, the cluster file
+// the program writes beside it, and the session YAML staged under the same
+// base name (patch81).  Once the program has ended normally,
+// KlustersDoc::integrateReclusteredClusters removes them instead.
+void KlustersApp::removeReclusterTempFiles(){
+    if(QFileInfo(reclusteringFetFileName).isFile() && !QFile::remove(reclusteringFetFileName))
+        QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program."));
+    const int dotFet = reclusteringFetFileName.lastIndexOf(QLatin1String(".fet."));
+    if(dotFet < 0) return;
+    QString cluFileName(reclusteringFetFileName);
+    cluFileName.replace(dotFet, 5, QLatin1String(".clu."));
+    QFile::remove(cluFileName);
+    const QString base = reclusteringFetFileName.left(dotFet);
+    QFile::remove(base + QLatin1String(".yaml"));
+    QFile::remove(base + QLatin1String(".yml"));
 }
 
 void KlustersApp::showHeldReclusterOutput(){
@@ -798,18 +820,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
             statusBar()->clearMessage();   // stopped by a close: drop "Reclustering …"
         }
 
-        if(!QFile::remove(reclusteringFetFileName))
-            QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program."));
-        // patch81 — also clean up the staged YAML
-        {
-            const int dotFet = reclusteringFetFileName.lastIndexOf(
-                QLatin1String(".fet."));
-            if (dotFet >= 0) {
-                const QString base = reclusteringFetFileName.left(dotFet);
-                QFile::remove(base + QLatin1String(".yaml"));
-                QFile::remove(base + QLatin1String(".yml"));
-            }
-        }
+        removeReclusterTempFiles();
 
         processFinished = true;
         processOutputsFinished = true;

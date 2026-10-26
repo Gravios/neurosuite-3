@@ -193,7 +193,11 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     QString cluFileUrl(cluFileName);
     QString cluFilePath = cluFileUrl;
     if(!QFile::exists(cluFileUrl)) {
-        QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
+        // The program wrote no cluster file (KlustersApp says so): remove the
+        // files it was given, as the read errors below do.
+        if(!QFile::remove(reclusteringFetFileName))
+            QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
+        patch81_cleanupTempYaml(reclusteringFetFileName);
         // Aborted before any mutation: close the log block (no undo twin).
         logAfterNotUndoable(clustersToRecluster);
         return DOWNLOAD_ERROR;
