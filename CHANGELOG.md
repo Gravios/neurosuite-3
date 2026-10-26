@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: the matrices leave reserved chunk clusters out](#2026-10-26--klusters-the-matrices-leave-reserved-chunk-clusters-out) |
 | 2026-10-26 | [Klusters: renumbering and sorting keep the reserved chunk clusters' ids](#2026-10-26--klusters-renumbering-and-sorting-keep-the-reserved-chunk-clusters-ids) |
 | 2026-10-26 | [Klusters: a reserved chunk cluster gains no spikes, and only reclustering and feature-space selections take spikes out of it](#2026-10-26--klusters-a-reserved-chunk-cluster-gains-no-spikes-and-only-reclustering-and-feature-space-selections-take-spikes-out-of-it) |
 | 2026-10-26 | [Formats: the .clu header is the number of distinct ids](#2026-10-26--formats-the-clu-header-is-the-number-of-distinct-ids) |
@@ -119,6 +120,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: the matrices leave reserved chunk clusters out
+
+<details>
+<summary>Details</summary>
+
+A reserved chunk cluster holds every spike of a chunk a fiber-kit chunk run
+left unsorted: a mixture, not a unit.  The matrices compared it with every
+unit, and the merge tools proposed merges with it.
+
+- The template, residual and drift matrices leave reserved chunk clusters out
+  of their cluster lists.
+- So do the error matrix and everything built on it: the merge
+  recommendations, Auto-Merge's error-matrix scores and the error-matrix sort.
+  The change is in `GroupingAssistant::clusterInScope`, the model's one
+  membership test.
+- A reserved parent contributes no atoms to the scoped (child) matrices
+  (`resolveMatrixScope`), and does not count toward a joint child view: a
+  selection of one ordinary and one reserved fiber is the ordinary fiber's
+  child view.
+- On the atom layer an atom's own number says nothing (an atom can carry its
+  parent's reserved id after a split), so the filters there go by parent.
+- Auto-Merge's template scores and Split by KNN's reference clusters leave
+  them out.
+
+Files: `src/klusters/src/templatematrixthread.cpp`,
+`residualmatrixthread.cpp`, `driftmatrixthread.cpp`,
+`groupingassistant.{h,cpp}`, `klustersdoc_hierarchy.cpp`, `klusters.cpp`,
+`autoMerge.cpp`, `data.cpp`, `reservedclusters.h`, `doc/klusters/README.md`,
+`doc/ndmanager-plugins/formats/clu.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: renumbering and sorting keep the reserved chunk clusters' ids
 

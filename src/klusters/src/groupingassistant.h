@@ -275,10 +275,20 @@ private:
      * destination the curator uses, which is why the other three matrices keep it
      * too.  Cluster 0 is NOT carved out: the artefact bin is not a comparison
      * target, and keeping it would put a row in the scoped matrix that the other
-     * three views do not have.*/
+     * three views do not have.  A reserved chunk cluster (the chunks a fiber-kit
+     * chunk run left unsorted, isReservedClusterId) is never in scope on a layer
+     * that protects them (excludeReserved): it is not a unit and takes no part in
+     * any matrix.  On the atom layer an id says nothing about that -- the scope
+     * there already leaves out a reserved parent's atoms.*/
     inline bool clusterInScope(int id) const {
+        if (excludeReserved && isReservedClusterId(id)) return false;
         return activeClusters.isEmpty() || id == ClusterId::Noise || activeClusters.contains(id);
     }
+
+    /**Whether the model leaves reserved chunk clusters out: the layer's own
+     * Data::protectsReservedClusters(), set by each compute entry from the Data it
+     * is given.*/
+    bool excludeReserved = true;
 
     /**Map a 1-based model dimension to the 1-based .fet column it reads.
      * Identity when unrestricted.*/

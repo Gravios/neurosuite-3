@@ -44,7 +44,8 @@ puts every spike of each other chunk in that chunk's reserved cluster. Klusters
 numbers new clusters below the block (`isReservedClusterId()` in
 `src/libklustersshared/src/klustersshared/types.h`). It also protects reserved
 clusters. Nothing is added to one, and only reclustering and selections in the
-feature space take spikes out of one. Renumbering keeps their ids. See
+feature space take spikes out of one. Renumbering keeps their ids, and the
+matrices leave them out. See
 [Reserved chunk clusters](../../klusters/README.md#reserved-chunk-clusters).
 
 ## Naming

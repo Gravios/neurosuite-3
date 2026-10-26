@@ -20,6 +20,7 @@
 #include "config-klusters.h"
 // application specific includes
 #include "klusters.h"
+#include "reservedclusters.h"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -2576,7 +2577,11 @@ void KlustersApp::registerInputBindings()
             if(childPanel && childPanel->isVisible()
                && doc->curatedParentsList().size() >= 2)
                 repopulateChildPalette(clusterPalette->selectedClusters());
-            if (on && !doc->matrixScopeActive())
+            if (on && !doc->matrixScopeActive() && isReservedClusterId(doc->curatedParent()))
+                statusBar()->showMessage(
+                    tr("Matrices: child-scoped — cluster %1 is a reserved chunk cluster, which takes "
+                       "no part in the matrices; select another parent.").arg(doc->curatedParent()), 4000);
+            else if (on && !doc->matrixScopeActive())
                 statusBar()->showMessage(
                     tr("Matrices: child-scoped — select a parent with children to see it."), 3000);
             else
@@ -5414,9 +5419,17 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
             // mode armed would silently re-scope to whatever parent happened
             // to be first, which is how a comparison of the wrong unit's atoms
             // reaches the screen looking entirely plausible.
-            const bool multipleParents = (selectedClusters.size() > 1);
+            //
+            // A reserved chunk cluster (a chunk a fiber-kit chunk run left unsorted)
+            // takes no part in the curation matrices, so it does not make a selection
+            // joint: [P, R] is P's child view.  Selected on its own it is still adopted,
+            // and the scope resolves to nothing (resolveMatrixScope).
+            const QList<int> curatable = reservedclusters::withoutReserved(selectedClusters);
+            const bool multipleParents = (curatable.size() > 1);
+            const int  firstParent     = curatable.isEmpty() ? selectedClusters.first()
+                                                             : curatable.first();
             const bool parentMoved     = (doc->curatedParent() >= 0 &&
-                                          doc->curatedParent() != selectedClusters.first());
+                                          doc->curatedParent() != firstParent);
             if(doc->matrixScopeEnabled() && !multipleParents && parentMoved){
                 doc->setMatrixScopeEnabled(false);
                 statusBar()->showMessage(
@@ -5435,8 +5448,8 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
             // Order matters: update the single parent BEFORE the joint list, so
             // narrowing from joint to single resolves the scope exactly once.
             if(!multipleParents)
-                doc->setCuratedParent(selectedClusters.first());
-            doc->setCuratedParents(multipleParents ? selectedClusters : QList<int>());
+                doc->setCuratedParent(firstParent);
+            doc->setCuratedParents(multipleParents ? curatable : QList<int>());
             if(multipleParents && doc->matrixScopeEnabled() && doc->matrixScopeActive())
                 statusBar()->showMessage(
                     tr("Curation matrices: joint child view — children of %1 parents; "

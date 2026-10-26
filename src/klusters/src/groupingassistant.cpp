@@ -110,6 +110,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilities(
         QList<int>& computedClusterList,
         QList<int>& ignoreClusterIndex)
 {
+    excludeReserved = clusteringData.protectsReservedClusters();
     if (stopRequested()) return new Array<double>(0, 0);
 
     QElapsedTimer emxTmg;
@@ -208,6 +209,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
         Array<double>** outRaw, QList<int>* outRawIds, QList<int>* outRawSizes,
         int* outNbReused, bool verifyReuse)
 {
+    excludeReserved = clusteringData.protectsReservedClusters();
     if (outRaw)      *outRaw = nullptr;
     if (outRawIds)   outRawIds->clear();
     if (outRawSizes) outRawSizes->clear();
@@ -539,6 +541,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
         QList<int>& ignoreClusterIndex,
         Array<double>** errorMatrixOut)
 {
+    excludeReserved = clusteringData.protectsReservedClusters();
     dataType nbSpikes     = clusteringData.totalNbOfSpikes();
     // Use the actual number of PCA features loaded from the .fetD file
     // (nbDimensions - 1, excluding the timestamp column) rather than

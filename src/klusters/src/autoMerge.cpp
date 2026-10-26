@@ -214,11 +214,14 @@ QList<MergeGroup> computeProposals(
 {
     QList<MergeGroup> result;
 
-    // ── 1. Filter candidates: skip 0 (artefact), 1 (noise), and clusters
+    // ── 1. Filter candidates: skip 0 (artefact), 1 (noise), the reserved
+    //       chunk clusters of a layer that protects them (the chunks a fiber-kit
+    //       chunk run left unsorted: never merged, never scored), and clusters
     //       below minClusterSize.
+    const bool skipReserved = data.protectsReservedClusters();
     QList<int> candidates;
     for (int c : candidatesIn) {
-        if (c <= 1) continue;
+        if (c <= 1 || (skipReserved && isReservedClusterId(c))) continue;
         if (static_cast<int>(data.nbOfSpikes(c)) < settings.minClusterSize) continue;
         candidates.append(c);
     }

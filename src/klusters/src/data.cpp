@@ -2999,6 +2999,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
         const int cid = static_cast<int>(it.key());
         if (cid == sourceCluster) continue;
         if (cid <= 1) continue;                       // skip artifact + MUA
+        if (protectsReserved && isReservedClusterId(it.key())) continue;  // a reserved chunk cluster is no unit
         // Caller-restricted pool: a null list means every cluster of this
         // layer is eligible (the historical behaviour); a list restricts the
         // classifiers to its members -- the child scope passes its atoms so

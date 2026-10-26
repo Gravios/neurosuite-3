@@ -20,6 +20,8 @@
         batch decollide.
       - Renumbering and sorting keep a reserved id as it is and leave the
         cluster out of the order.
+      - The matrices (error, template, residual, drift, merge
+        recommendations) leave reserved clusters out.
 
     Qt-free, so klusters_test_reservedclusters tests it directly.
 

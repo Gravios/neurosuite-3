@@ -64,6 +64,7 @@
 // application specific includes
 #include "processwidget.h"
 #include "klusters.h"
+#include "reservedclusters.h"
 #include "klustersdoc.h"
 #include "configuration.h"
 #include "klustersview.h"
@@ -592,8 +593,11 @@ void KlustersDoc::setCuratedParents(const QList<int>& parents)
 {
     // Fewer than two parents is the single-parent mode; hold an empty list so
     // resolveMatrixScope() has exactly one fact to test.  The list is the
-    // palette's multi-selection verbatim: selection order is block order.
-    const QList<int> held = (parents.size() >= 2) ? parents : QList<int>();
+    // palette's multi-selection verbatim: selection order is block order.  A
+    // reserved chunk cluster has no place in it (no atoms of it reach a matrix),
+    // so it does not count toward the two.
+    const QList<int> curatable = reservedclusters::withoutReserved(parents);
+    const QList<int> held = (curatable.size() >= 2) ? curatable : QList<int>();
     if (curatedParents == held) return;        // no spurious recomputes
     if (scopeTraceEnabled())
         qDebug().noquote() << QStringLiteral("[scope] curatedParents %1 -> %2  matrixScope=%3")
@@ -650,6 +654,9 @@ void KlustersDoc::resolveMatrixScope()
         if (curatedParents.size() >= 2)   parents = curatedParents;
         else if (curatedParentId >= 0)    parents << curatedParentId;
         for (int p : parents) {
+            // A reserved parent (a chunk a fiber-kit chunk run left unsorted) is not a
+            // unit; its atoms take no part in the matrices.
+            if (isReservedClusterId(p)) continue;
             const QList<int> kids = childrenOf(QList<int>{p});
             if (kids.isEmpty()) continue;
             scopeResolvedClusters += kids;
