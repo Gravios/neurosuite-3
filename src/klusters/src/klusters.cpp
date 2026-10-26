@@ -5976,8 +5976,8 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
     if (configuration().getAutoRealignAfterMerge()
             && !realignRunning && !realignBatchActive) {
         QList<int> parents;
-        for (int f : dirty)
-            if (f > 1 && doc->clusterHasMembers(f))
+        for (int f : dirty)   // a reserved chunk cluster is no unit: nothing to align it to
+            if (f > 1 && !isReservedClusterId(f) && doc->clusterHasMembers(f))
                 parents.append(f);
         if (!parents.isEmpty()) {
             // Async: lock change-initiating actions, show progress, realign the

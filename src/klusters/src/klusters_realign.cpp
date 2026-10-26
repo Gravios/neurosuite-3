@@ -554,14 +554,16 @@ void KlustersApp::slotPcaAlignAllClusters()
         return;
     }
 
-    // Build the cluster list — skip 0 (noise) and 1 (artifact).  clusterIds()
+    // Build the cluster list — skip 0 (noise) and 1 (artifact), and the reserved
+    // chunk clusters of a fiber-kit chunk run: each holds every spike of a chunk the
+    // run left unsorted, so there is no unit to align them to.  clusterIds()
     // returns a QMap key list, so it's already sorted ascending; we iterate in
     // that order to give the user a predictable progression in the log.
     QList<int> clusters;
     {
         const QList<dataType> ids = doc->data().clusterIds();
         for (dataType id : ids) {
-            if (id > 1) clusters.append(static_cast<int>(id));
+            if (id > 1 && !isReservedClusterId(id)) clusters.append(static_cast<int>(id));
         }
     }
     if (clusters.isEmpty()) {

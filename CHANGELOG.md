@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: Align All and the automatic realign skip reserved chunk clusters](#2026-10-26--klusters-align-all-and-the-automatic-realign-skip-reserved-chunk-clusters) |
 | 2026-10-26 | [Klusters: the matrices leave reserved chunk clusters out](#2026-10-26--klusters-the-matrices-leave-reserved-chunk-clusters-out) |
 | 2026-10-26 | [Klusters: renumbering and sorting keep the reserved chunk clusters' ids](#2026-10-26--klusters-renumbering-and-sorting-keep-the-reserved-chunk-clusters-ids) |
 | 2026-10-26 | [Klusters: a reserved chunk cluster gains no spikes, and only reclustering and feature-space selections take spikes out of it](#2026-10-26--klusters-a-reserved-chunk-cluster-gains-no-spikes-and-only-reclustering-and-feature-space-selections-take-spikes-out-of-it) |
@@ -120,6 +121,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: Align All and the automatic realign skip reserved chunk clusters
+
+<details>
+<summary>Details</summary>
+
+Align All (`Shift+P`) and the automatic realign after an edit realigned a
+reserved chunk cluster like a unit.  It holds every spike of a chunk a fiber-kit
+chunk run left unsorted, so there is no template to align its spikes to, and
+fiber-kit's realign leaves those spikes in place.  Both now skip reserved chunk
+clusters.  Realign on a selected cluster still runs.
+
+Files: `src/klusters/src/klusters_realign.cpp`, `klusters.cpp`,
+`doc/klusters/README.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: the matrices leave reserved chunk clusters out
 
