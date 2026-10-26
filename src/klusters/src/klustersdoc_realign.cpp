@@ -78,6 +78,7 @@
 #include "klusters.h"
 #include "klustersdoc.h"
 #include "configuration.h"
+#include "clusterlabel.h"
 #include "klustersview.h"
 #include <neurosuite/core/watershed2d.hpp>
 #include "clusterview.h"
@@ -3364,7 +3365,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                         sb->showMessage(QString(
                             "Cluster %1: existing alignment off by %2 "
                             "samples; nudge will preserve the offset.")
-                            .arg(clusterId).arg(median), 5000);
+                            .arg(clusterLabel(clusterId)).arg(median), 5000);
                     // Fall through — proceed with the nudge.
                 }
             }
@@ -3796,7 +3797,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         QString msg = QString(
             "Nudge: cluster %1 — %2 of %3 spike(s) near recording boundary "
             "kept at original timestamp (new window outside .fil range).")
-            .arg(clusterId)
+            .arg(clusterLabel(clusterId))
             .arg(static_cast<long long>(boundarySkip))
             .arg(static_cast<long long>(N));
         qInfo().noquote() << "[nudge]" << msg;

@@ -45,7 +45,8 @@ numbers new clusters below the block (`isReservedClusterId()` in
 `src/libklustersshared/src/klustersshared/types.h`). It also protects reserved
 clusters. Nothing is added to one, and only reclustering and selections in the
 feature space take spikes out of one. Renumbering keeps their ids, and the
-matrices leave them out. See
+matrices leave them out. Klusters shows them as R0 … R99: R14 is chunk 14's
+cluster, 16 777 130; the file keeps the number. See
 [Reserved chunk clusters](../../klusters/README.md#reserved-chunk-clusters).
 
 ## Naming

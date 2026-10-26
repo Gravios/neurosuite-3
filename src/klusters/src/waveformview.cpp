@@ -22,6 +22,7 @@
 #include "klustersdoc.h"
 #include "data.h"
 #include "itemcolors.h"
+#include "clusterlabel.h"
 #include "waveformview.h"
 #include <QThread>   // msleep for the synchronous job quiesce
 #include "waveformthread.h"
@@ -1066,7 +1067,7 @@ void WaveformView::drawClusterIds(QPainter& painter){
         painter.setPen(clusterColor);
 
         const long nSpk = static_cast<long>(clusteringData.nbOfSpikes(static_cast<dataType>(cid)));
-        const QString label = QString("%1 (%2)").arg(cid).arg(nSpk);
+        const QString label = QString("%1 (%2)").arg(clusterLabel(cid)).arg(nSpk);
 
         painter.drawText(worldToViewport(X,-Y).x() + 8,
                          worldToViewport(X,-Y).y(),

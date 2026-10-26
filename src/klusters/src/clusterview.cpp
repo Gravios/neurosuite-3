@@ -23,6 +23,7 @@
 #include "waveformview.h"          // residual preview is pushed to the sibling view
 #include "data.h"
 #include "itemcolors.h"
+#include "clusterlabel.h"
 #include "configuration.h"
 
 #include <QDebug>
@@ -2444,12 +2445,12 @@ bool ClusterView::setObliqueBasis(const QList<int>& ids, QString* message){
     for (int id : clean)
         if (d.nbOfSpikes(static_cast<dataType>(id)) <= 0) {
             if (message) *message = tr("Oblique basis: cluster %1 does not exist or "
-                                       "has no spikes in the active view.").arg(id);
+                                       "has no spikes in the active view.").arg(clusterLabel(id));
             return false;
         }
     obliqueBasis = clean;
     refreshProjectionScope();                   // rebuild the temporal scope from the new basis
-    QStringList s; for (int id : clean) s << QString::number(id);
+    const QStringList s = clusterLabels(clean);
     if (message) *message = tr("Oblique basis pinned to cluster(s) %1 — select a cluster "
                                "to examine and press Shift+O to project it onto these axes.")
                                .arg(s.join(QStringLiteral(", ")));
@@ -3526,7 +3527,7 @@ void ClusterView::startOblique(){
     update();
     if (statusBar) {
         if (usePinned) {
-            QStringList b; for (int id : pinned) b << QString::number(id);
+            const QStringList b = clusterLabels(pinned);
             statusBar->showMessage(
                 tr("oblique: %1 spikes on the pinned basis [%2], condition %3 — "
                    "lasso to cut, %4Shift+O returns")

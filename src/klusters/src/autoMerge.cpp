@@ -27,6 +27,7 @@
 
 #include "klustersdoc.h"
 #include "data.h"
+#include "clusterlabel.h"
 #include "sortabletable.h"
 #include "configuration.h"
 #include "templatematrixthread.h"   // tmReadSpikeFloat
@@ -499,8 +500,7 @@ QList<MergeGroup> promptPreview(
 
     QList<QCheckBox*> boxes;
     for (const MergeGroup& g : proposals) {
-        QStringList ids;
-        for (int c : g.clusters) ids << QString::number(c);
+        const QStringList ids = clusterLabels(g.clusters);
         const QString lbl = QObject::tr(
             "[%1]   best score %2   spikes %3")
             .arg(ids.join(QLatin1String(", ")))

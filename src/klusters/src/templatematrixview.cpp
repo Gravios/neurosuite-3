@@ -4,6 +4,7 @@
 #include <QStringList>
 #include "matrixgrid.h"
 #include "matrixbadge.h"
+#include "clusterlabel.h"
 #include "templatematrixthread.h"
 #include "pairxcorrthread.h"
 #include "klustersdoc.h"
@@ -876,14 +877,14 @@ void TemplateMatrixView::drawClusterIds(QPainter& p)
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         p.drawText(QRect(px, 0, w, base.y()),
                    Qt::AlignHCenter | Qt::AlignBottom,
-                   QString::number(clusterList[col]));
+                   clusterLabel(clusterList[col]));
     }
 
     for (int row = 0; row < n; ++row) {
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   QString::number(clusterList[row]));
+                   clusterLabel(clusterList[row]));
     }
 }
 
@@ -941,11 +942,11 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
     if (col < 0 || row < 0) return;
     const int cA = clusterList[col], cB = clusterList[row];
     if (cA == cB)
-        statusBar->showMessage(QString("Cluster %1").arg(cA));
+        statusBar->showMessage(QString("Cluster %1").arg(clusterLabel(cA)));
     else
         statusBar->showMessage(
             QString("Clusters (row=%1 \u2192 col=%2): %3 = %4")
-                .arg(cB).arg(cA)
+                .arg(clusterLabel(cB), clusterLabel(cA))
                 .arg([]{ switch (configuration().getTemplateXcorrMetric()) {
                              case 1:  return QStringLiteral("Pearson");
                              case 2:  return QStringLiteral("raw");

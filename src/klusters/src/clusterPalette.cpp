@@ -23,6 +23,7 @@
 #include "itemcolors.h"
 #include "clusterinformationdialog.h"
 #include "unitannotation.h"
+#include "clusterlabel.h"
 
 // include files for Qt
 #include <QVariant>
@@ -532,7 +533,7 @@ void ClusterPalette::updateClusterList(){
         const int curId = clusterColors.itemId(i);
         if(doc->isMasked(curId) || (showsChildScope && paletteScoped && !paletteScope.contains(curId)))
             continue;   // masking + hierarchical child-scope: omit from the active list
-        QString clusterText = QString::fromLatin1("%1").arg(curId);
+        QString clusterText = clusterLabel(curId);   // a reserved chunk cluster shows as R<chunk>
 
         if(isInUserClusterInfoMode){
             if(curId == 0){
@@ -605,7 +606,7 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
 
                 //update the text of the item
                 if(isInUserClusterInfoMode){
-                    QString clusterText = QString::number(clusterNumber);
+                    QString clusterText = clusterLabel(clusterNumber);
                     if(!annotation.summary().isEmpty())
                         clusterText.append(" - ").append(annotation.summary());
                     item->setText(clusterText);
@@ -631,7 +632,14 @@ void ClusterPalette::slotOnItem(QListWidgetItem* item){
             //Update the statusbar with the cluster information
             QList<QString> clusterInformation;
             boundData().getUserClusterInformation(clusterNumber,clusterInformation);
-            const QString clusterText = UnitAnnotation::fromFields(clusterInformation).labelled();
+            QString clusterText = UnitAnnotation::fromFields(clusterInformation).labelled();
+            // A reserved id is shown as R<chunk>: the hover gives its number.
+            const int chunk = reservedclusters::chunkOf(clusterNumber);
+            if(chunk >= 0){
+                const QString reserved = tr("%1 is id %2, reserved for chunk %3 (a chunk the fiber-kit chunk run "
+                                            "left unsorted).").arg(clusterLabel(clusterNumber)).arg(clusterNumber).arg(chunk);
+                clusterText = clusterText.isEmpty() ? reserved : reserved + QStringLiteral("  ") + clusterText;
+            }
 
             statusBar->showMessage(clusterText);
 
@@ -922,7 +930,7 @@ void ClusterPalette::hideUserClusterInformation(){
         // Resolve by stored CLUSTER_ID (display row != ItemColors index under a
         // parent similarity order or masking).
         int clusterId = iconView->item(i)->data(CLUSTER_ID).toInt();
-        iconView->item(i)->setText(QString::number(clusterId));
+        iconView->item(i)->setText(clusterLabel(clusterId));
     }
 
     iconView->setWordWrap(true);

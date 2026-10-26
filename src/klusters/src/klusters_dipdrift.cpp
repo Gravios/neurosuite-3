@@ -29,6 +29,7 @@
 #include <QTimer>
 #include "clusterview.h"
 #include "reservedclusters.h"
+#include "clusterlabel.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include "clusterPalette.h"
@@ -227,7 +228,7 @@ void KlustersApp::slotDipSplit()
             return tr("unknown reason (%1)").arg(r);
         }();
         statusBar()->showMessage(
-            tr("DipSplit: no split for cluster %1 — %2").arg(clusterId).arg(why),
+            tr("DipSplit: no split for cluster %1 — %2").arg(clusterLabel(clusterId), why),
             10000);
         slotStatusMsg(tr("Ready."));
         return;
@@ -260,9 +261,9 @@ void KlustersApp::slotDipSplit()
         "  cluster %1   →   %2 (left, %3 spikes) + %4 (right, %5 spikes)\n"
         "  best PC = %6    valley depth = %7    ΔBIC = %8\n"
         "  Enter: keep     Esc: undo")
-        .arg(R.sourceId)
-        .arg(R.leftId).arg(R.n0)
-        .arg(R.rightId).arg(R.n1)
+        .arg(clusterLabel(R.sourceId))
+        .arg(clusterLabel(R.leftId)).arg(R.n0)
+        .arg(clusterLabel(R.rightId)).arg(R.n1)
         .arg(R.bestPC)
         .arg(R.bestDepth, 0, 'f', 3)
         .arg(R.deltaBIC,  0, 'f', 1);
@@ -273,7 +274,7 @@ void KlustersApp::slotDipSplit()
     // HUD is missed).
     statusBar()->showMessage(
         tr("DipSplit: %1 → %2 + %3 (Esc to undo, Enter to keep)")
-            .arg(R.sourceId).arg(R.leftId).arg(R.rightId), 10000);
+            .arg(clusterLabel(R.sourceId), clusterLabel(R.leftId), clusterLabel(R.rightId)), 10000);
 
     // Install scoped Esc/Enter shortcuts on the active view.  These
     // self-clean when the post-commit window ends.
@@ -601,7 +602,7 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
     nudgeInProgress = true;
     nudgeMinusAction->setEnabled(false);
     nudgePlusAction->setEnabled(false);
-    statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(id));
+    statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(clusterLabel(id)));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
     const bool ok = doc->nudgeClusterTimestamps(id, deltaSamples);
     nudgeInProgress = false;
@@ -621,7 +622,7 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
     if (ok) {
         const QString sign = (deltaSamples >= 0) ? QStringLiteral("+") : QStringLiteral("");
         statusBar()->showMessage(
-            tr("Cluster %1: %2%3 sample.").arg(id).arg(sign).arg(deltaSamples), 2000);
+            tr("Cluster %1: %2%3 sample.").arg(clusterLabel(id), sign).arg(deltaSamples), 2000);
         populateFeatureSpaceCombo();     // synced spaces are now stale (tooltip)
     } else {
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);
@@ -671,7 +672,7 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
         doc->renumberChildrenToEnd(kids);
         statusBar()->showMessage(
             kids.size() == 1
-                ? tr("Child cluster %1 moved to end.").arg(kids.first())
+                ? tr("Child cluster %1 moved to end.").arg(clusterLabel(kids.first()))
                 : tr("%1 child clusters moved to end.").arg(kids.size()),
             2500);
         return;

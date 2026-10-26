@@ -41,6 +41,7 @@
 #include "input/inputdispatcher.h"   // eventFilter: registry-bound right presses reach the view
 #include "input/bindingregistry.h"
 #include "klustersdoc.h"
+#include "clusterlabel.h"
 #include "clusterview.h"
 #include "waveformview.h"
 #include "errormatrixview.h"
@@ -1038,7 +1039,7 @@ void KlustersView::onTraceClusterActivated(long recordingSample, bool extend)
             msg = tr("spike-pick: click smp %1 (t≈%2 ms) | %3 spk scanned | nearest clu %4 smp %5 "
                      "(t≈%6 ms) Δ=%7 smp (≈%8 ms) | tol=%9 smp%10")
                       .arg(recordingSample).arg(recordingSample * msPerSample, 0, 'f', 2)
-                      .arg(scanned).arg(clusterId).arg(nearestTime)
+                      .arg(scanned).arg(clusterLabel(clusterId)).arg(nearestTime)
                       .arg(nearestTime * msPerSample, 0, 'f', 2)
                       .arg(delta).arg(delta * msPerSample, 0, 'f', 2)
                       .arg(tol).arg(hit ? (extend ? tr(" → MARKED") : tr(" → SELECTED")) : QString());

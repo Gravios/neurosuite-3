@@ -64,6 +64,7 @@
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "reservedclusters.h"
+#include "clusterlabel.h"
 #include "types.h"
 #include "parameteryamlmodifier.h"
 #include <neurosuite/core/dipsplit.hpp>
@@ -208,7 +209,7 @@ int KlustersDoc::leaveOutReserved(QList<int>& ids, const QString& operation) con
     ids = reservedclusters::withoutReserved(ids);
     QStringList shown;
     for (int i = 0; i < reserved.size() && i < 4; ++i)
-        shown << QString::number(reserved.at(i));
+        shown << clusterLabel(reserved.at(i));
     if (reserved.size() > shown.size()) shown << QStringLiteral("…");
     const QString note = tr("%1: left out %n reserved chunk cluster(s) (%2). Only Recluster and the "
                             "feature-space selections take spikes out of one, and nothing adds any.",

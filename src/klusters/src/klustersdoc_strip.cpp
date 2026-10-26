@@ -27,6 +27,7 @@
 
 #include "klustersdoc.h"
 #include "data.h"
+#include "clusterlabel.h"
 #include "klustersview.h"
 #include "klusters.h"
 #include "templatematrixthread.h"   // tmReadSpikeFloat — the shared .spk reader
@@ -74,7 +75,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     if (nTpl < 8) {
         R.reason = tr("Template cluster %1 has only %2 spikes; at least 8 are "
                       "needed for a stable median waveform.")
-                       .arg(templateCluster).arg(nTpl);
+                       .arg(clusterLabel(templateCluster)).arg(nTpl);
         return R;
     }
 
@@ -98,7 +99,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     SortableTable tplPos;
     if (!layer.spikePositions(templateCluster, tplPos)) {
         R.reason = tr("Template cluster %1 has no spike-position table.")
-                       .arg(templateCluster);
+                       .arg(clusterLabel(templateCluster));
         return R;
     }
     const int  nSel = chans.size();
@@ -328,7 +329,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
                       "rejected by the amplitude window, %5 by channel "
                       "uniformity).  Raise the threshold, widen the gates, or "
                       "check the channel selection.")
-                       .arg(templateCluster).arg(nCand)
+                       .arg(clusterLabel(templateCluster)).arg(nCand)
                        .arg(R.nRejectedAmplitude).arg(maxDistance)
                        .arg(R.nRejectedChannel);
         return R;
@@ -378,7 +379,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
     R.reason = tr("Stripped %1 of %2 examined spikes matching template %3 "
                   "(distance <= %4, %5 channel(s)) out of %6 source "
                   "cluster(s) into %7 new cluster(s)%8.")
-                   .arg(R.nMatched).arg(R.nCandidates).arg(templateCluster)
+                   .arg(R.nMatched).arg(R.nCandidates).arg(clusterLabel(templateCluster))
                    .arg(maxDistance).arg(nSel).arg(R.sources.size())
                    .arg(nProducts)
                    .arg(onePerSource ? tr(" (one per source)")
@@ -710,7 +711,7 @@ KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
                        "Enter to apply, Esc to cancel")
                         .arg(nUsed).arg(R.medResidNorm, 0, 'f', 0);
     } else {
-        QStringList b; for (int id : R.basis) b << QString::number(id);
+        const QStringList b = clusterLabels(R.basis);
         const QString read = (frac < 0.10)
             ? tr("explained by the basis (~mix/single, low residual)")
             : (frac < 0.25) ? tr("partly explained, some residual structure")

@@ -72,6 +72,7 @@
 #include "klustersdoc.h"
 #include "clusterPalette.h"
 #include "types.h"
+#include "clusterlabel.h"
 #include "parameteryamlmodifier.h"
 #include <neurosuite/core/dipsplit.hpp>
 #include "parameteryamlreader.h"
@@ -551,7 +552,7 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
         R.reason = tr("Cluster %1 is not registered in clusterInfoMap "
                       "(spikesByCluster ↔ clusterInfoMap desync). "
                       "Save the session and re-open before retrying.")
-                      .arg(sourceCluster);
+                      .arg(clusterLabel(sourceCluster));
         return R;
     }
 
@@ -696,7 +697,7 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
     logAfter(newClusters);
 
     R.reason = tr("Split %1 into %2 new cluster(s)%3.")
-                .arg(sourceCluster)
+                .arg(clusterLabel(sourceCluster))
                 .arg(newClusters.size())
                 .arg(emptiedClusters.contains(sourceCluster)
                      ? tr(" (source consumed)") : tr(""));

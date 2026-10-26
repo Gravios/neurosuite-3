@@ -8,7 +8,8 @@
 // reserved cluster, and names the reserved cluster when one gains a spike:
 // moved in from another cluster, swapped in for one taken out, moved from one
 // reserved cluster to another, created out of nothing, or a row out of range.
-// Qt-free, own main, run via ctest.
+// chunkOf / label / idFromLabel show a reserved id as R<chunk> and read a typed
+// label back.  Qt-free, own main, run via ctest.
 
 #include "reservedclusters.h"
 
@@ -97,6 +98,38 @@ int main()
         const dataType first = run(a, a);    // marks row 1 as R's
         const dataType second = run(b, c);   // row 1 was cluster 2: R gains it
         check(first == -1 && second == R, "the scratch buffer carries nothing from one call to the next");
+    }
+
+    // Labels: R<chunk> for a reserved id, the number for any other; a typed label reads back.
+    {
+        using reservedclusters::chunkOf;
+        using reservedclusters::idFromLabel;
+        using reservedclusters::label;
+        check(chunkOf(kReservedClusterLo) == 0 && chunkOf(kReservedClusterLo + 14) == 14
+                  && chunkOf(kReservedClusterHi) == 99,
+              "chunkOf: the block holds chunks 0 .. 99");
+        check(chunkOf(kReservedClusterLo - 1) == -1 && chunkOf(kReservedClusterHi + 1) == -1
+                  && chunkOf(0) == -1 && chunkOf(1) == -1 && chunkOf(-5) == -1,
+              "chunkOf: -1 just outside the block, for 0, 1 and negatives");
+        check(label(kReservedClusterLo) == "R0" && label(kReservedClusterLo + 14) == "R14"
+                  && label(kReservedClusterHi) == "R99",
+              "label: a reserved id is R<chunk>");
+        check(label(0) == "0" && label(1) == "1" && label(57) == "57"
+                  && label(kReservedClusterLo - 1) == "16777115" && label(kReservedClusterHi + 1) == "16777216",
+              "label: any other id is its number, also just outside the block");
+        bool roundTrip = true;
+        const long long samples[] = { 0, 1, 2, 4321, kReservedClusterLo - 1, kReservedClusterLo,
+                                      kReservedClusterLo + 50, kReservedClusterHi };
+        for (const long long id : samples)
+            roundTrip = roundTrip && idFromLabel(label(id)) == id;
+        check(roundTrip, "idFromLabel(label(id)) == id, in and outside the block");
+        check(idFromLabel("r14") == kReservedClusterLo + 14 && idFromLabel("R007") == kReservedClusterLo + 7,
+              "idFromLabel: either case, leading zeros");
+        check(idFromLabel("16777130") == kReservedClusterLo + 14, "idFromLabel: the number of a reserved id reads as itself");
+        check(idFromLabel("R100") == -1 && idFromLabel("R") == -1 && idFromLabel("") == -1 && idFromLabel("R-1") == -1
+                  && idFromLabel("14a") == -1 && idFromLabel(" 14") == -1 && idFromLabel("RR1") == -1
+                  && idFromLabel("1234567890123") == -1,
+              "idFromLabel: -1 for R100, a bare R, empty text, signs, other characters, 13+ digits");
     }
 
     std::printf("%d/%d checks passed\n", g_ran - g_fail, g_ran);

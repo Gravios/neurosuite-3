@@ -7,6 +7,7 @@
  ***************************************************************************/
 
 #include "realignreviewdialog.h"
+#include "clusterlabel.h"
 
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -154,7 +155,7 @@ RealignReviewDialog::RealignReviewDialog(
         QWidget* parent)
     : QDialog(parent)
 {
-    setWindowTitle(tr("Review Realignment \u2014 Cluster %1").arg(clusterId));
+    setWindowTitle(tr("Review Realignment \u2014 Cluster %1").arg(clusterLabel(clusterId)));
     setModal(true);
     resize(640, std::max(400, nChan * 90 + 160));
 
@@ -178,7 +179,7 @@ RealignReviewDialog::RealignReviewDialog(
         tr("<b>Cluster %1</b>: %2 spike(s) shifted.<br>"
            "Mean waveform: before (grey dashed) and after (blue) realignment.<br>"
            "Yellow dashed line marks the expected peak sample.")
-        .arg(clusterId).arg(nShifted), this);
+        .arg(clusterLabel(clusterId)).arg(nShifted), this);
     summaryLabel->setWordWrap(true);
     mainLayout->addWidget(summaryLabel);
 

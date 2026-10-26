@@ -28,6 +28,7 @@
 #include "channelmask.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
+#include "clusterlabel.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include "clusterPalette.h"
 #include "autoMerge.h"      // patch 0069
@@ -224,7 +225,7 @@ void KlustersApp::slotRecluster(){
         QStringList emptyIds;
         for (int id : clustersToRecluster) {
             if (!doc->activeClusterHasMembers(id))
-                emptyIds.append(QString::number(id));
+                emptyIds.append(clusterLabel(id));
         }
         if (!emptyIds.isEmpty()) {
             // The row table is the source of truth and clusterInfoMap is wholly
@@ -238,7 +239,7 @@ void KlustersApp::slotRecluster(){
             emptyIds.clear();
             for (int id : clustersToRecluster) {
                 if (!doc->activeClusterHasMembers(id))
-                    emptyIds.append(QString::number(id));
+                    emptyIds.append(clusterLabel(id));
             }
         }
         if (!emptyIds.isEmpty()) {

@@ -28,6 +28,7 @@
 #include "correlationview.h"
 #include "input/bindingregistry.h"   // registerInput: Ctrl+wheel amplitude scaling (the seam)
 #include "correlationgrid.h"
+#include "clusterlabel.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -630,7 +631,7 @@ void CorrelationView::drawClusterIds(QPainter& painter){
             rl = QRect(worldToViewport(X,-Y).x() + 10,worldToViewport(X,-Y).y() -4 ,worldToViewportWidth(width),10);
         else
             rl = QRect(worldToViewport(X,-Y).x() + 10  - XMARGIN,worldToViewport(X,-Y).y() -4 ,worldToViewportWidth(width),10);
-        painter.drawText(rl,Qt::AlignHCenter,QString::fromLatin1("%1").arg(*iterator));
+        painter.drawText(rl,Qt::AlignHCenter,clusterLabel(*iterator));
 
         if(shoulderLine){
             QString firingRate;
@@ -687,7 +688,7 @@ void CorrelationView::drawClusterIds(QPainter& painter){
 
     for(iterator = shownClusters.begin(); iterator != shownClusters.end(); ++iterator){
         QRect rl(worldToViewport(X,-Y).x(),worldToViewport(X,-Y).y(),10,worldToViewportHeight(YsizeForMaxAmp + Yspace));
-        painter.drawText(rl,Qt::AlignCenter,QString::fromLatin1("%1").arg(*iterator));
+        painter.drawText(rl,Qt::AlignCenter,clusterLabel(*iterator));
         Y += yshift;
     }
 }
@@ -852,7 +853,8 @@ void CorrelationView::mouseMoveEvent(QMouseEvent* event){
 
                 if (yCluster >= 0 && xCluster >= 0) {
                   if (xCluster<shownClusters.count() && yCluster <shownClusters.count() )
-                     statusBar->showMessage(tr("Time (ms): %1, Clusters (%2,%3)").arg(time).arg(shownClusters[xCluster]).arg(shownClusters[yCluster]));
+                     statusBar->showMessage(tr("Time (ms): %1, Clusters (%2,%3)").arg(time).arg(clusterLabel(shownClusters[xCluster]),
+                                                                                                  clusterLabel(shownClusters[yCluster])));
                 }
             } else {
                 statusBar->showMessage(tr("Time (ms): %1").arg(time));

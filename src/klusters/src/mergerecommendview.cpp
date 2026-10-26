@@ -10,6 +10,7 @@
 #include "configuration.h"
 #include "errormatrixview.h"
 #include "data.h"
+#include "clusterlabel.h"
 #include "klustersview.h"
 #include <neurosuite/core/mergerecommend.hpp>
 
@@ -246,7 +247,7 @@ void MergeRecommendView::populate(const std::vector<neurosuite::merge::MergeCand
 
     for (const neurosuite::merge::MergeCandidate& c : recs) {
         QTreeWidgetItem* it = new QTreeWidgetItem(tree);
-        it->setText(0, tr("%1 + %2").arg(c.a).arg(c.b));
+        it->setText(0, tr("%1 + %2").arg(clusterLabel(c.a), clusterLabel(c.b)));
         it->setText(1, QString::number(c.errorScore,    'f', 3));
         it->setText(2, QString::number(c.overlapScore, 'f', 3));
         it->setText(3, QString::number(c.quality,       'f', 2));

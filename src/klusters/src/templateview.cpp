@@ -4,6 +4,7 @@
 #include "klustersdoc.h"
 #include "klustersview.h"
 #include "data.h"                          // Data::clusterSpkIndices / totalNbOfSpikes
+#include "clusterlabel.h"
 #include "configuration.h"                 // projection-scope mode + grain (no-.wti seed)
 
 #include "neurosuite/core/custody.hpp"     // parseAnchor / untaggedPath / stagePath / resolveAny
@@ -489,7 +490,7 @@ void TemplateView::rebuildUnitList()
         // bins = rows across all links for this unit (just a hint count).
         int nBins = 0;
         for (const auto& r : wti.rows) if (r.unitId == u) ++nBins;
-        auto* item = new QListWidgetItem(tr("Unit %1  (%2 bins)").arg(u).arg(nBins), unitList);
+        auto* item = new QListWidgetItem(tr("Unit %1  (%2 bins)").arg(clusterLabel(u)).arg(nBins), unitList);
         item->setData(Qt::UserRole, u);
     }
     pinButton->setEnabled(unitList->count() > 0);

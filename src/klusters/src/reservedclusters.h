@@ -23,6 +23,10 @@
       - The matrices (error, template, residual, drift, merge
         recommendations) leave reserved clusters out.
 
+    Klusters shows a reserved id as R<chunk>, R0 .. R99 (label below,
+    clusterLabel in clusterlabel.h): chunk 14's cluster 16777130 is R14.
+    Files, logs and plugin arguments keep the number.
+
     Qt-free, so klusters_test_reservedclusters tests it directly.
 
     Copyright (C) 2026  neurosuite-3 contributors
@@ -35,9 +39,44 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <string>
+#include <string_view>
 #include <vector>
 
 namespace reservedclusters {
+
+/// The chunk a reserved id holds (id - kReservedClusterLo: 0 .. 99), or -1 for
+/// any other id.  It is the chunk number fiber-kit uses: FK_CHUNKS counts the
+/// chunks from 0, and chunk k's spikes go to kReservedClusterLo + k.
+constexpr int chunkOf(long long id)
+{
+    return (id >= kReservedClusterLo && id <= kReservedClusterHi)
+               ? static_cast<int>(id - kReservedClusterLo) : -1;
+}
+
+/// How Klusters shows a cluster id: "R<chunk>" for a reserved id (R0 .. R99),
+/// the number for any other.
+inline std::string label(long long id)
+{
+    const int chunk = chunkOf(id);
+    return chunk >= 0 ? "R" + std::to_string(chunk) : std::to_string(id);
+}
+
+/// The cluster id a typed label names: "R<chunk>" or "r<chunk>" (chunk 0 .. 99)
+/// or a number, digits only; -1 for any other text.
+inline long long idFromLabel(std::string_view text)
+{
+    const bool reserved = !text.empty() && (text.front() == 'R' || text.front() == 'r');
+    if (reserved) text.remove_prefix(1);
+    if (text.empty() || text.size() > 12) return -1;
+    long long n = 0;
+    for (const char ch : text) {
+        if (ch < '0' || ch > '9') return -1;
+        n = n * 10 + (ch - '0');
+    }
+    if (!reserved) return n;
+    return n <= kReservedClusterHi - kReservedClusterLo ? kReservedClusterLo + n : -1;
+}
 
 /// @p ids without the reserved ones, in their order (QList<int>, std::vector, ...).
 template <class Ids>

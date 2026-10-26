@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <memory>     // std::make_shared — used by Shift+S stale-matrix wait
 /***************************************************************************
                           klusters.cpp  -  description
@@ -21,6 +22,7 @@
 // application specific includes
 #include "klusters.h"
 #include "reservedclusters.h"
+#include "clusterlabel.h"
 
 #include <QPainter>
 #include <QPainterPath>
@@ -2580,7 +2582,7 @@ void KlustersApp::registerInputBindings()
             if (on && !doc->matrixScopeActive() && isReservedClusterId(doc->curatedParent()))
                 statusBar()->showMessage(
                     tr("Matrices: child-scoped — cluster %1 is a reserved chunk cluster, which takes "
-                       "no part in the matrices; select another parent.").arg(doc->curatedParent()), 4000);
+                       "no part in the matrices; select another parent.").arg(clusterLabel(doc->curatedParent())), 4000);
             else if (on && !doc->matrixScopeActive())
                 statusBar()->showMessage(
                     tr("Matrices: child-scoped — select a parent with children to see it."), 3000);
@@ -5522,7 +5524,7 @@ void KlustersApp::slotMergeOrphanChildren(){
     }
     if(doc->childrenOf(QList<int>{parent}).size() < 2){
         statusBar()->showMessage(
-            tr("Merge orphan children: cluster %1 has no children to gather.").arg(parent), 4000);
+            tr("Merge orphan children: cluster %1 has no children to gather.").arg(clusterLabel(parent)), 4000);
         return;
     }
 
@@ -5547,7 +5549,7 @@ void KlustersApp::slotMergeOrphanChildren(){
     if(consumed < 0)
         statusBar()->showMessage(
             tr("Merge orphan children: cluster %1 has no orphans, or no established "
-               "child to take the reference from.").arg(parent), 6000);
+               "child to take the reference from.").arg(clusterLabel(parent)), 6000);
     else if(consumed == 0)
         statusBar()->showMessage(
             tr("Merge orphan children: nothing to merge — each group held at most one child."), 5000);
@@ -5555,7 +5557,7 @@ void KlustersApp::slotMergeOrphanChildren(){
         statusBar()->showMessage(
             tr("Merge orphan children: %1 matched the median waveform, %2 did not "
                "(cluster %3, threshold %4 spikes, r ≥ %5).")
-                .arg(matched).arg(stray).arg(parent).arg(minSpikes)
+                .arg(matched).arg(stray).arg(clusterLabel(parent)).arg(minSpikes)
                 .arg(minCorr, 0, 'f', 2), 8000);
 }
 
@@ -5582,7 +5584,7 @@ void KlustersApp::slotPartitionClusterByTime(){
     if(!doc->isChildClusteringActive() && isReservedClusterId(clusterId)){
         statusBar()->showMessage(
             tr("Partition by time: cluster %1 is a reserved chunk cluster; only Recluster and "
-               "the feature-space selections take spikes out of it.").arg(clusterId), 6000);
+               "the feature-space selections take spikes out of it.").arg(clusterLabel(clusterId)), 6000);
         return;
     }
 
@@ -5612,11 +5614,11 @@ void KlustersApp::slotPartitionClusterByTime(){
     if(created == 0)
         statusBar()->showMessage(
             tr("Partition by time: cluster %1 lies within a single %2-minute block — nothing to cut.")
-                .arg(clusterId).arg(minutes), 5000);
+                .arg(clusterLabel(clusterId)).arg(minutes), 5000);
     else
         statusBar()->showMessage(
             tr("Partition by time: cluster %1 cut into %2 blocks of %3 minutes (%4 new clusters).")
-                .arg(clusterId).arg(created + 1).arg(minutes).arg(created), 6000);
+                .arg(clusterLabel(clusterId)).arg(created + 1).arg(minutes).arg(created), 6000);
 }
 
 void KlustersApp::slotChunkModeToggled(bool on){
@@ -5717,7 +5719,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
         slotStatusMsg(tr("Ready."));
         if (merged > 0)
             statusBar()->showMessage(
-                tr("%1 child clusters merged into %2.").arg(kids.size()).arg(merged), 3000);
+                tr("%1 child clusters merged into %2.").arg(kids.size()).arg(clusterLabel(merged)), 3000);
         return;
     }
 
@@ -6410,7 +6412,7 @@ void KlustersApp::slotSetObliqueBasis()
     if (prefill.isEmpty() && activeView())
         for (int id : activeView()->clusters())
             if (id > 1 && !prefill.contains(id)) prefill.append(id);
-    QStringList pre; for (int id : prefill) pre << QString::number(id);
+    const QStringList pre = clusterLabels(prefill);
 
     bool ok = false;
     const QString text = QInputDialog::getText(
@@ -6420,17 +6422,22 @@ void KlustersApp::slotSetObliqueBasis()
         QLineEdit::Normal, pre.join(QLatin1Char(' ')), &ok);
     if (!ok) return;                                 // Cancel -> leave the pin unchanged
 
-    // Parse: every run of digits is one id; any other character is a separator.
+    // Parse: every run of digits is one id, and an R (or r) right before it makes
+    // it a reserved chunk cluster's label (R14 is chunk 14's cluster, as the
+    // palette shows it); any other character is a separator.
     QList<int> ids;
     QString cur;
     auto flush = [&]() {
-        if (cur.isEmpty()) return;
-        bool good = false;
-        const int v = cur.toInt(&good);
-        if (good) ids.append(v);
+        if (cur.isEmpty() || cur.compare(QLatin1String("R"), Qt::CaseInsensitive) == 0) { cur.clear(); return; }
+        const long long v = clusterIdFromLabel(cur);
+        if (v >= 0 && v <= std::numeric_limits<int>::max()) ids.append(static_cast<int>(v));
         cur.clear();
     };
-    for (QChar ch : text) { if (ch.isDigit()) cur += ch; else flush(); }
+    for (QChar ch : text) {
+        if (ch.isDigit() && ch.unicode() < 128) cur += ch;
+        else if ((ch == QLatin1Char('R') || ch == QLatin1Char('r'))) { flush(); cur = ch; }
+        else flush();
+    }
     flush();
 
     QString msg;
@@ -6570,7 +6577,7 @@ void KlustersApp::slotRecommendationActivated(const QList<int>& clusters)
     if (!clusterPalette || clusters.isEmpty()) return;
     clusterPalette->selectItems(clusters);
     slotStatusMsg(tr("Selected clusters %1 and %2 \u2014 merge them from the palette.")
-                      .arg(clusters.first()).arg(clusters.last()));
+                      .arg(clusterLabel(clusters.first()), clusterLabel(clusters.last())));
 }
 void KlustersApp::slotImmediateSelection(){
     //Disable the update action (see the klustersui.rc file)
@@ -7549,8 +7556,8 @@ void KlustersApp::slotSplitClusterByKnn()
     // ── Parameter dialog ─────────────────────────────────────────────────
     QDialog dlg(this);
     dlg.setWindowTitle(onChild
-        ? tr("Split atom %1 by KNN voting (child scope)").arg(sourceCluster)
-        : tr("Split cluster %1 by KNN voting").arg(sourceCluster));
+        ? tr("Split atom %1 by KNN voting (child scope)").arg(clusterLabel(sourceCluster))
+        : tr("Split cluster %1 by KNN voting").arg(clusterLabel(sourceCluster)));
     QVBoxLayout* outer = new QVBoxLayout(&dlg);
     QLabel* intro = new QLabel(tr(
         "<p>For each spike in cluster <b>%1</b>, find its K nearest "
@@ -7559,7 +7566,7 @@ void KlustersApp::slotSplitClusterByKnn()
         "spikes each).  Group spikes by which reference cluster they "
         "most resemble.  Each group becomes a <b>new</b> cluster (no "
         "spike is moved into an existing cluster).</p>")
-            .arg(sourceCluster), &dlg);
+            .arg(clusterLabel(sourceCluster)), &dlg);
     if (onChild)
         intro->setText(tr(
             "<p>For each spike in atom <b>%1</b>, find its K nearest "
@@ -7569,7 +7576,7 @@ void KlustersApp::slotSplitClusterByKnn()
             "reference atom they most resemble.  Each group becomes a "
             "<b>new sibling atom</b> under the source's parent (no spike is "
             "moved into a reference).  Atoms are small: lower the reference "
-            "minimum accordingly.</p>").arg(sourceCluster));
+            "minimum accordingly.</p>").arg(clusterLabel(sourceCluster)));
     intro->setWordWrap(true);
     outer->addWidget(intro);
 
@@ -7637,7 +7644,7 @@ void KlustersApp::slotSplitClusterByKnn()
     // up in the residual bin).
     QString summary;
     summary += tr("Cluster %1 was split into %2 new cluster(s)")
-                .arg(R.sourceId).arg(R.newClusters.size());
+                .arg(clusterLabel(R.sourceId)).arg(R.newClusters.size());
     if (R.emptiedClusters.contains(R.sourceId))
         summary += tr(" — source fully consumed");
     summary += QStringLiteral(":\n\n");
@@ -7651,10 +7658,10 @@ void KlustersApp::slotSplitClusterByKnn()
                 .nbOfSpikes(static_cast<dataType>(newId)));
         if (refId == -1)
             summary += tr("  cluster %1 (%2 spikes) — residual / ambiguous\n")
-                            .arg(newId).arg(nSpk);
+                            .arg(clusterLabel(newId)).arg(nSpk);
         else
             summary += tr("  cluster %1 (%2 spikes) — matches reference %3\n")
-                            .arg(newId).arg(nSpk).arg(refId);
+                            .arg(clusterLabel(newId)).arg(nSpk).arg(clusterLabel(refId));
     }
     summary += onChild
         ? QStringLiteral("\nUndo with Ctrl+Shift+Z if the partition isn't useful.")
@@ -7757,7 +7764,7 @@ void KlustersApp::slotStripByTemplate()
     QFormLayout* form = new QFormLayout();
     QComboBox* tplBox = new QComboBox(&dlg);
     for (int id : selected)
-        tplBox->addItem(QString::number(id), id);
+        tplBox->addItem(clusterLabel(id), id);
     tplBox->setCurrentIndex(0);                    // first-selected designates
     tplBox->setEnabled(!wholeScope);               // single selection: fixed
     static double lastStripThr  = 0.5;             // session-remembered knobs
@@ -8430,7 +8437,7 @@ void KlustersApp::slotToggleTemplate()
 
     QList<int> all = mTemplateUnits.values();
     std::sort(all.begin(), all.end());
-    QStringList s; for (int id : all) s << QString::number(id);
+    const QStringList s = clusterLabels(all);
     const QString list = s.isEmpty() ? tr("(none)") : s.join(QLatin1Char(' '));
     slotStatusMsg(allMarked
         ? tr("Unmarked %n cluster(s). Template units: %1", "", int(targets.size())).arg(list)

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-26 | [Klusters: reserved chunk clusters are shown as R0 … R99](#2026-10-26--klusters-reserved-chunk-clusters-are-shown-as-r0--r99) |
 | 2026-10-26 | [Klusters: Align All and the automatic realign skip reserved chunk clusters](#2026-10-26--klusters-align-all-and-the-automatic-realign-skip-reserved-chunk-clusters) |
 | 2026-10-26 | [Klusters: the matrices leave reserved chunk clusters out](#2026-10-26--klusters-the-matrices-leave-reserved-chunk-clusters-out) |
 | 2026-10-26 | [Klusters: renumbering and sorting keep the reserved chunk clusters' ids](#2026-10-26--klusters-renumbering-and-sorting-keep-the-reserved-chunk-clusters-ids) |
@@ -121,6 +122,43 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-26 — Klusters: reserved chunk clusters are shown as R0 … R99
+
+<details>
+<summary>Details</summary>
+
+A reserved chunk cluster's id, 16 777 116 + chunk, was shown as that
+8-digit number: it took several cells of the palette and was cut off in the
+correlogram labels.  Klusters now shows it as **R** and its chunk: R0 … R99,
+the chunk as fiber-kit numbers it (`FK_CHUNKS` counts from 0), so chunk 14's
+cluster, 16 777 130, is R14.
+
+- `clusterLabel()` (`clusterlabel.h`) is the one rule: R<chunk> for a reserved
+  id, the number for any other.  The Qt-free `reservedclusters::label` /
+  `idFromLabel` behind it are tested in `klusters_test_reservedclusters`.
+- The parent and child palettes, the correlogram, trace (raster), waveform and
+  template-library views, the error, template, residual, drift and
+  merge-recommendation matrices, the status-bar messages and the dialogs
+  (Split by KNN Voting, Strip by Template, DipSplit, the realign dialogs, …)
+  use it.  Hovering over R14 in the palette shows its id.
+- Set Oblique Basis shows the labels and accepts R14 as well as 16777130.
+- The files Klusters writes, the curation log and plugin arguments keep the
+  number.
+
+Files: `src/klusters/src/clusterlabel.h` (new), `reservedclusters.h`,
+`clusterPalette.cpp`, `correlationview.cpp`, `traceview.cpp`,
+`waveformview.cpp`, `templateview.cpp`, `errormatrixview.cpp`,
+`templatematrixview.cpp`, `residualmatrixview.cpp`, `driftmatrixview.cpp`,
+`mergerecommendview.cpp`, `clusterview.cpp`, `klusters.cpp`,
+`klusters_dipdrift.cpp`, `klusters_realign.cpp`, `klusters_recluster.cpp`,
+`klustersdoc.cpp`, `klustersdoc_dipsplit.cpp`, `klustersdoc_realign.cpp`,
+`klustersdoc_strip.cpp`, `klustersview.cpp`, `autoMerge.cpp`, `data.cpp`,
+`spikerealigndialog.cpp`, `realignreviewdialog.cpp`,
+`src/klusters/test/reservedclusters_test.cpp`, `doc/klusters/README.md`,
+`doc/ndmanager-plugins/formats/clu.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: Align All and the automatic realign skip reserved chunk clusters
 

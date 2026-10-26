@@ -27,6 +27,7 @@
 #include "klusters.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
+#include "clusterlabel.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include "clusterPalette.h"
 #include "autoMerge.h"      // patch 0069
@@ -719,7 +720,7 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
         // realign output panel and the user just saw "features not updating".
         slotStatusMsg(tr("Realign of cluster %1 FAILED — features unchanged; "
                          "see the realign output panel for the reason.")
-                      .arg(realignClusterId));
+                      .arg(clusterLabel(realignClusterId)));
         realignClusterId = -1;
     }
 

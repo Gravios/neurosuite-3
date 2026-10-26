@@ -5,6 +5,7 @@
 #include <QStringList>
 #include "matrixgrid.h"
 #include "matrixbadge.h"
+#include "clusterlabel.h"
 #include "matrixtemplatecols.h"  // drawMatrixTemplateStrip — the shared edge-strip renderer
 #include "channelmask.h"         // cmCompactChannels — match the template to the matrix's channels
 #include "residualmatrixthread.h"
@@ -468,13 +469,13 @@ void ResidualMatrixView::drawClusterIds(QPainter& p)
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         p.drawText(QRect(px, 0, w, base.y()),
                    Qt::AlignHCenter | Qt::AlignBottom,
-                   QString::number(clusterList[col]));
+                   clusterLabel(clusterList[col]));
     }
     for (int row = 0; row < n; ++row) {
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   QString::number(clusterList[row]));
+                   clusterLabel(clusterList[row]));
     }
 }
 
@@ -516,10 +517,10 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
             const int a = clusterList[row], b = clusterList[col];
             if (row == col)
                 setInfoText(tr("cluster %1: within-cluster variance %2")
-                    .arg(a).arg((*scores)(row+1, col+1), 0, 'g', 4));
+                    .arg(clusterLabel(a)).arg((*scores)(row+1, col+1), 0, 'g', 4));
             else
                 setInfoText(tr("A=%1 vs B=%2: separability %3   (A's noise floor %4)")
-                    .arg(a).arg(b)
+                    .arg(clusterLabel(a), clusterLabel(b))
                     .arg((*scores)(row+1, col+1), 0, 'g', 3)
                     .arg((*scores)(row+1, row+1), 0, 'g', 4));
         }

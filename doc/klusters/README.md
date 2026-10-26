@@ -583,6 +583,13 @@ them out without a note.
 - **Align All and the automatic realign after an edit skip them.** Realign on
   a selected cluster still runs.
 
+Klusters shows a reserved chunk cluster as **R** and its chunk: R0 … R99, the
+chunk as fiber-kit numbers it (`FK_CHUNKS` counts from 0). Chunk 14's cluster,
+16 777 130, is R14. The palettes, views, matrices, messages and dialogs use the
+label, and hovering over R14 in the palette shows its id. The files Klusters
+writes, the curation log and plugin arguments keep the number. Set Oblique
+Basis accepts R14 as well as 16777130.
+
 ### DipSplit — automatic bimodal split
 
 DipSplit (`Shift+D`) tests the active cluster for bimodality and splits it

@@ -7,6 +7,7 @@
 #include "spikerealigndialog.h"
 #include "klustersdoc.h"
 #include "data.h"
+#include "clusterlabel.h"
 #include "sortabletable.h"
 #include "realign_xcorr.h"
 #include "klustersdoc_internal.h"   // featureMethod / resolveFeature (custody)
@@ -34,7 +35,7 @@ SpikeRealignDialog::SpikeRealignDialog(KlustersDoc& document, int cluster,
     , clusterId(cluster)
     , args(realignArgs)
 {
-    setWindowTitle(tr("Realign Spikes — Cluster %1").arg(clusterId));
+    setWindowTitle(tr("Realign Spikes — Cluster %1").arg(clusterLabel(clusterId)));
     setMinimumWidth(500);
     buildUi();
 }
@@ -59,7 +60,7 @@ void SpikeRealignDialog::buildUi()
     int row = 0;
 
     grid->addWidget(new QLabel(tr("Cluster:")), row, 0);
-    grid->addWidget(new QLabel(QString::number(clusterId)), row++, 1);
+    grid->addWidget(new QLabel(clusterLabel(clusterId)), row++, 1);
 
     // Spike count
     grid->addWidget(new QLabel(tr("Spikes in cluster:")), row, 0);

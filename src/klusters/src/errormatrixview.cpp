@@ -26,6 +26,7 @@
 #include "matrixbadge.h"
 #include "matrixtemplatecols.h"  // drawMatrixTemplateStrip — the shared edge-strip renderer
 #include "featuremask.h"
+#include "clusterlabel.h"
 #include <QStringList>
 #include <vector>
 #include "errormatrixthread.h"
@@ -752,14 +753,14 @@ void ErrorMatrixView::drawClusterIds(QPainter& painter){
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         painter.drawText(QRect(px, 0, w, base.y()),
                          Qt::AlignHCenter | Qt::AlignBottom,
-                         QString::number(clusterList[displayToMatrix(col)]));
+                         clusterLabel(clusterList[displayToMatrix(col)]));
     }
     // Row labels: left strip [0, LABEL_MARGIN-2], y tracks the cell rows.
     for(int row = 0; row < n; ++row){
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         painter.drawText(QRect(0, py, LABEL_MARGIN - 2, w),
                          Qt::AlignRight | Qt::AlignVCenter,
-                         QString::number(clusterList[displayToMatrix(row)]));
+                         clusterLabel(clusterList[displayToMatrix(row)]));
     }
 }
 
@@ -1009,8 +1010,8 @@ void ErrorMatrixView::mouseMoveEvent(QMouseEvent* e){
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
     if(col >= 0 && row >= 0){
-        statusBar->showMessage("Clusters (" + QString::number(clusterList[displayToMatrix(row)]) + "," +
-                               QString::number(clusterList[displayToMatrix(col)]) + "): p = " +
+        statusBar->showMessage("Clusters (" + clusterLabel(clusterList[displayToMatrix(row)]) + "," +
+                               clusterLabel(clusterList[displayToMatrix(col)]) + "): p = " +
                                QString::fromLatin1("%1").arg((*probabilities)(displayToMatrix(row) + 1, displayToMatrix(col) + 1)));
     }
 }

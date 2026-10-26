@@ -18,6 +18,7 @@
 
 #include <QShowEvent>
 #include "matrixgrid.h"
+#include "clusterlabel.h"
 #include "matrixbadge.h"
 #include "driftmatrixthread.h"
 #include "driftmatrixkernel.h"
@@ -693,13 +694,13 @@ void DriftMatrixView::drawClusterIds(QPainter& p)
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         p.drawText(QRect(px, CTRL_H, w, base.y() - CTRL_H),
                    Qt::AlignHCenter | Qt::AlignBottom,
-                   QString::number(clusterList[col]));
+                   clusterLabel(clusterList[col]));
     }
     for (int row = 0; row < n; ++row) {
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   QString::number(clusterList[row]));
+                   clusterLabel(clusterList[row]));
     }
 }
 
@@ -917,15 +918,15 @@ void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
         if (row >= 0 && col >= 0) {
             const int a = clusterList[row], b = clusterList[col];
             if (row == col) {
-                setInfoText(tr("cluster %1 (diagonal)").arg(a));
+                setInfoText(tr("cluster %1 (diagonal)").arg(clusterLabel(a)));
             } else {
                 const int sign = (row < col) ? +1 : -1;
                 setInfoText(
                     tr("A=%1 shifted %2%3 µm vs B=%4: xcorr %5")
-                        .arg(a)
+                        .arg(clusterLabel(a))
                         .arg(sign < 0 ? QStringLiteral("−") : QStringLiteral("+"))
                         .arg(currentDriftUm)
-                        .arg(b)
+                        .arg(clusterLabel(b))
                         .arg((*scores)(row+1, col+1), 0, 'g', 3));
             }
         }

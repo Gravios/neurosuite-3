@@ -24,6 +24,7 @@
 //Application include files
 #include "data.h"
 #include "reservedclusters.h"
+#include "clusterlabel.h"
 #include "spkmemory.h"
 #include <neurosuite/core/waveformiou.hpp>
 #include "binfile.h"
@@ -2966,7 +2967,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
     // ── Validation ──────────────────────────────────────────────────────
     if (!clusterInfoMap->contains(static_cast<dataType>(sourceCluster))) {
         errorMessage = QStringLiteral("source cluster %1 is not registered "
-            "in clusterInfoMap").arg(sourceCluster);
+            "in clusterInfoMap").arg(clusterLabel(sourceCluster));
         return false;
     }
     if (K < 2) {

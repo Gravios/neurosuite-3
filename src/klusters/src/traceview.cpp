@@ -48,6 +48,7 @@
 #include "clustersprovider.h"
 #include "eventsprovider.h"
 #include "itemcolors.h"
+#include "clusterlabel.h"
 
 const int TraceView::XMARGIN = 50;
 const int TraceView::YMARGIN = 0;
@@ -1663,7 +1664,7 @@ void TraceView::drawTraces(QPainter& painter){
                     int nbSpikes = currentData.nbOfColumns();
                     QList<int>::iterator clusterIterator;
                     for(clusterIterator = clusterList.begin(); clusterIterator != clusterList.end(); ++clusterIterator){
-                        QString identifier = QString("%1-%2").arg(providerName).arg(*clusterIterator);
+                        QString identifier = QString("%1-%2").arg(providerName, clusterLabel(*clusterIterator));
                         clustersOrder.append(identifier);
                         rasterOrdinates.append(-rasterY);
                         rasterAbscisses.append(X);
@@ -1896,7 +1897,7 @@ void TraceView::drawTraces(QPainter& painter){
                 int nbSpikes = currentData.nbOfColumns();
                 QList<int>::iterator clusterIterator;
                 for(clusterIterator = clusterList.begin(); clusterIterator != clusterList.end(); ++clusterIterator){
-                    QString identifier = QString("%1-%2").arg(providerName).arg(*clusterIterator);
+                    QString identifier = QString("%1-%2").arg(providerName, clusterLabel(*clusterIterator));
                     clustersOrder.append(identifier);
                     rasterOrdinates.append(-Y);
                     rasterAbscisses.append(0);
