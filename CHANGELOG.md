@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-27 | [Klusters: Hierarchy ▸ Break Up Parent by Template sends each child to the large parent it matches](#2026-10-27--klusters-hierarchy--break-up-parent-by-template-sends-each-child-to-the-large-parent-it-matches) |
 | 2026-10-27 | [Klusters: Merge Orphan Parents says why when it merges nothing](#2026-10-27--klusters-merge-orphan-parents-says-why-when-it-merges-nothing) |
 | 2026-10-27 | [Klusters: Undo Child-Layer Edit is enabled right after Merge Orphan Children](#2026-10-27--klusters-undo-child-layer-edit-is-enabled-right-after-merge-orphan-children) |
 | 2026-10-27 | [Klusters: Merge Orphan Children leaves the orphans that do not match alone](#2026-10-27--klusters-merge-orphan-children-leaves-the-orphans-that-do-not-match-alone) |
@@ -135,6 +136,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-27 — Klusters: Hierarchy ▸ Break Up Parent by Template sends each child to the large parent it matches
+
+<details>
+<summary>Details</summary>
+
+A new Hierarchy entry, *Break Up Parent by Template…*, for a parent that holds atoms of several units.
+
+- **Input.**  It works on the parents selected in the main palette.  It asks for a spike count and a
+  correlation (defaults 100 and 0.90).
+- **Targets.**  Every other parent with *more than* that many spikes is a target, its template being its mean
+  waveform.  The parents being broken up are never targets, nor are the noise, artefact and reserved chunk
+  clusters.
+- **Matching.**  Each child is matched by its own mean waveform to the target it correlates with best (Pearson,
+  as for the orphan commands).  A child that reaches the threshold moves there whole, keeping its id.  The other
+  children become parents of their own, as *Dissolve Parent* makes them, and the largest of them keeps the
+  parent's id.  A parent whose only child matches nothing is left as it is.
+- **Plan.**  A box shows the plan before anything changes: how many children move and to how many parents, how
+  many become parents, and which child keeps the id.  The details list every child with its best match and r.
+- **Undo.**  The children going to the same target move in one step (`moveSpikeSubsetToCluster`), and each new
+  parent is one more (`promoteChildren`).  The box says how many steps the plan takes when that is more than the
+  undo depth.  The selection lands on every parent that received a child or now holds one.
+
+On g7's fiber-session sort (minutes 168–204), at the defaults, 212 of the 777 children of the 149 parents with
+two or more children would find a large parent.  Parent 510 (36 children, 1,943 spikes), for example, sends 6
+children (1,254 spikes) to 5 parents and leaves 29 as parents of their own.
+
+Files: `src/klusters/src/klustersdoc.h`, `klustersdoc_hierarchy.cpp` (`planBreakUpParents`,
+`breakUpParents`), `klusters.{h,cpp}`, `klusters_hierarchy.cpp`, `klusters_state.cpp`,
+`doc/klusters/hierarchical-clustering.md`.
+
+</details>
 
 ## 2026-10-27 — Klusters: Merge Orphan Parents says why when it merges nothing
 

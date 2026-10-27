@@ -105,6 +105,7 @@ child palette is shown.
 | Promote Child to New Parent | — | Makes each selected atom a fiber of its own (an atom that is already its fiber's only atom is left as is). |
 | Group Selected Children into New Parent | — | Takes the selected atoms out of their fiber(s) and makes one new fiber of them. |
 | Dissolve Parent into Children | — | Each atom of the selected fiber becomes its own fiber (one keeps the fiber's id). |
+| Break Up Parent by Template… | — | Each atom of the selected fiber(s) moves, whole and keeping its id, to the fiber whose template it matches best among those with more than a given number of spikes (default 100); the atoms matching none become fibers of their own. See [Break Up Parent by Template](#break-up-parent-by-template) below. |
 | Drop Child to Noise | — | Moves the selected atoms' spikes to the noise cluster (1). |
 | Compact Cluster IDs (parents and children) | — | Renumbers both layers into the low integers without gaps (0 and 1 stay). Clears the atom undo history. |
 | Merge Orphan Children (by median waveform)… | `Shift+B` | Gathers the selected fiber's tiny leftover atoms (below a spike count): those that match the median waveform of the fiber's other atoms, the ones not being merged, are merged into one atom; the rest stay as they are. Nothing is deleted; *Undo Child-Layer Edit* (`Ctrl+Shift+Z`) takes the merge back. |
@@ -117,7 +118,8 @@ child palette is shown.
 The corresponding document methods are `mergeParents`, `promoteChildren`,
 `dissolveParent`, `dropChildToNoise`, `mergeChildren`,
 `mergeOrphanChildren`, `planOrphanParents` / `mergeOrphanParents`,
-`flattenHierarchyToClu` and `repairNesting`;
+`planBreakUpParents` / `breakUpParents`, `flattenHierarchyToClu` and
+`repairNesting`;
 `childrenOf(fiber)` / `parentOfChild(atom)` query the maps.
 
 ### Merge Orphan Parents
@@ -158,6 +160,30 @@ matches at all. The noise and artefact clusters and the reserved chunk clusters
 take no part. Each new fiber is one step in **Edit → Undo**, so only as many as the
 undo depth (**Preferences → General → Session**) can be undone; the box says
 so when the plan needs more.
+
+### Break Up Parent by Template
+
+For a fiber that holds atoms of several units: each atom goes back to the unit
+it belongs to.
+
+1. Select the fiber(s) to break up in the main palette. It asks for a spike
+   count and a correlation (defaults 100 and 0.90).
+2. The **targets** are every other fiber with *more than* that many spikes,
+   whose template is its mean waveform. The fibers being broken up are never
+   targets, nor are the noise, artefact and reserved chunk clusters.
+3. Each atom is matched to the target its own mean waveform correlates with
+   best (Pearson, as for the orphan commands). An atom whose best correlation
+   reaches the threshold moves there whole. The other atoms become fibers of
+   their own, as *Dissolve Parent* makes them, and the largest of them keeps
+   the fiber's id.
+4. A box shows the plan; **Show Details…** lists every atom with its best match
+   and correlation. Nothing changes until it is accepted.
+
+Every atom keeps its id. The atoms going to the same target move in one step,
+and each new fiber is another, so the box says how many undo steps the plan
+takes when the undo depth (**Preferences → General → Session**) is smaller.
+The selection lands on every fiber that received an atom or now holds one. A
+fiber whose only atom matches nothing is left as it is.
 
 A fiber that is a reserved chunk cluster (a chunk a fiber-kit chunk run left
 unsorted) is left out of *Merge Selected Parents*, *Group*, *Dissolve*, and

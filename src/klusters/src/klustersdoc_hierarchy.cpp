@@ -1390,6 +1390,121 @@ int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
 }
 
 // ---------------------------------------------------------------------------
+// KlustersDoc::planBreakUpParents / breakUpParents
+//
+// Break a parent up and send each child, whole, to the large parent whose
+// template its own mean waveform matches best.  A parent that holds atoms of
+// several units -- the usual reason to break it up -- gives each atom back to
+// the unit it belongs to; the atoms that match no large parent become parents
+// of their own, as Dissolve Parent makes them, the largest keeping the id.
+// The targets are the parents with MORE than the given spike count, other than
+// those being broken up: a small parent is no reliable unit to hand atoms to.
+// ---------------------------------------------------------------------------
+QList<KlustersDoc::BreakUpMove> KlustersDoc::planBreakUpParents(
+        const QList<int>& parentsIn, int minTargetSpikes, double minCorrelation, int* targetsOut)
+{
+    if (targetsOut) *targetsOut = 0;
+    QList<BreakUpMove> plan;
+    if (!clusteringData || !childData)
+        return plan;
+    const auto inPlay = [](int c) { return c > 1 && !isReservedClusterId(c); };
+    QList<int> parents;                                  // ascending, whatever the selection order
+    for (int p : parentsIn)
+        if (inPlay(p) && !parents.contains(p) && !childrenOf(QList<int>{ p }).isEmpty())
+            parents.append(p);
+    if (parents.isEmpty())
+        return plan;
+    std::sort(parents.begin(), parents.end());
+
+    // The same template caches the orphan commands read, on both layers.
+    clusteringData->buildMissingClusterTemplates();
+    childData->buildMissingClusterTemplates();
+
+    QMap<int, std::vector<double>> templates;           // ascending id
+    std::vector<double> sd;
+    for (dataType id : clusteringData->clusterIds()) {
+        const int c = static_cast<int>(id);
+        if (!inPlay(c) || parents.contains(c)) continue;
+        if (clusteringData->nbSpikesInCluster(c) <= static_cast<dataType>(std::max(0, minTargetSpikes))) continue;
+        std::vector<double> mean;
+        if (clusteringData->clusterTemplateFor(c, mean, sd) && !mean.empty())
+            templates.insert(c, std::move(mean));
+    }
+    if (targetsOut) *targetsOut = static_cast<int>(templates.size());
+
+    for (int p : parents) {
+        QList<BreakUpMove> mine;
+        for (int c : childrenOf(QList<int>{ p })) {
+            BreakUpMove m;
+            m.child = c;
+            m.parent = p;
+            m.spikes = static_cast<int>(childData->nbSpikesInCluster(c));
+            std::vector<double> mean;
+            if (childData->clusterTemplateFor(c, mean, sd) && !mean.empty()) {
+                for (auto it = templates.constBegin(); it != templates.constEnd(); ++it) {
+                    const double r = waveformCorrelation(mean, it.value());
+                    if (r > m.r) { m.r = r; m.best = it.key(); }
+                }
+            }
+            if (m.best >= 0 && m.r >= minCorrelation)
+                m.target = m.best;
+            mine.append(m);
+        }
+        int keeper = -1;
+        for (int i = 0; i < mine.size(); ++i)
+            if (mine[i].target < 0 && (keeper < 0 || mine[i].spikes > mine[keeper].spikes))
+                keeper = i;
+        if (keeper >= 0)
+            mine[keeper].keepsParentId = true;
+        plan += mine;
+    }
+    return plan;
+}
+
+QList<int> KlustersDoc::breakUpParents(const QList<BreakUpMove>& plan, KlustersView& activeView)
+{
+    QList<int> landed;
+    if (!childData || plan.isEmpty())
+        return landed;
+    QList<int> order;                                    // parents, in plan order
+    for (const BreakUpMove& m : plan)
+        if (!order.contains(m.parent)) order.append(m.parent);
+    for (int p : order) {
+        QList<int> asked{ p };
+        if (leaveOutReserved(asked, tr("Break up parent")) > 0) continue;
+        // One move per target: the spikes of every child going there, which keep
+        // their child ids (moveSpikeSubsetToCluster relabels the parent layer only,
+        // and whole atoms leave nothing straddling).
+        QMap<int, QVector<int>> spikesByTarget;
+        QList<int> lone;
+        for (const BreakUpMove& m : plan) {
+            if (m.parent != p) continue;
+            if (m.target >= 0) spikesByTarget[m.target] += childData->clusterSpkIndices(m.child);
+            else if (!m.keepsParentId) lone.append(m.child);
+        }
+        setActiveClustering(false);
+        for (auto it = spikesByTarget.constBegin(); it != spikesByTarget.constEnd(); ++it) {
+            if (it.value().isEmpty()) continue;
+            moveSpikeSubsetToCluster(p, it.value(), it.key(), activeView);
+            if (!landed.contains(it.key())) landed.append(it.key());
+        }
+        // The children without a target, but the one keeping the parent's id, each
+        // become a parent: promoteChildren with one child at a time, as Dissolve
+        // Parent does.  The keeper stays, so the parent never runs out under them.
+        for (int c : lone) {
+            const int made = promoteChildren(QList<int>{ c }, activeView);
+            if (made >= 0 && !landed.contains(made)) landed.append(made);
+        }
+        if (clusteringData->nbSpikesInCluster(p) > 0 && !landed.contains(p))
+            landed.append(p);
+    }
+    rebuildHierarchyFromData();
+    setPendingParentSelection(landed);
+    emit hierarchyChanged();
+    return landed;
+}
+
+// ---------------------------------------------------------------------------
 // KlustersDoc::planOrphanParents / mergeOrphanParents
 //
 // The parent-layer counterpart of mergeOrphanChildren.  A parent has no parent

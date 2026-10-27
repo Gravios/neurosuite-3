@@ -175,6 +175,7 @@ void KlustersApp::updateHierarchyEditActions(){
     // Same gate: gathering orphans is a child-layer edit like the rest.
     if(mMergeOrphanChildren) mMergeOrphanChildren->setEnabled(editable);
     if(mMergeOrphanParents)  mMergeOrphanParents->setEnabled(editable);
+    if(mBreakUpParents)      mBreakUpParents->setEnabled(editable);
     if(mCompactIds)          mCompactIds->setEnabled(editable);
     if(mMergeChildren)  mMergeChildren->setEnabled(editable);
     if(mMergeAllChildren) mMergeAllChildren->setEnabled(editable);

@@ -1075,6 +1075,13 @@ void KlustersApp::createMenus()
     hierarchyMenu->addSeparator();
     mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Parent"));
     mDissolveParent = hierarchyMenu->addAction(tr("&Dissolve Parent into Children"));
+    mBreakUpParents = hierarchyMenu->addAction(tr("Brea&k Up Parent by Template…"));
+    mBreakUpParents->setToolTip(tr(
+        "Break the selected parent(s) up: each child moves, whole and keeping its id,\n"
+        "to the parent whose template (mean waveform) it matches best among the\n"
+        "parents with more than a given number of spikes (default 100).  The children\n"
+        "matching none become parents of their own, the largest keeping the parent's\n"
+        "id, as Dissolve Parent does.  Shows the plan first."));
     mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
     mCompactIds = hierarchyMenu->addAction(tr("Compact Cluster &IDs (parents and children)"));
     mCompactIds->setToolTip(tr(
@@ -1131,6 +1138,7 @@ void KlustersApp::createMenus()
     mPromoteChild->setEnabled(false);
     mGroupChildren->setEnabled(false);
     mDissolveParent->setEnabled(false);
+    mBreakUpParents->setEnabled(false);
     mDropChildNoise->setEnabled(false);
     mRepairNesting->setEnabled(false);
     mMergeOrphanChildren->setEnabled(false);
@@ -1144,6 +1152,7 @@ void KlustersApp::createMenus()
     connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
     connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoParent);
     connect(mDissolveParent, &QAction::triggered, this, &KlustersApp::slotDissolveParent);
+    connect(mBreakUpParents, &QAction::triggered, this, &KlustersApp::slotBreakUpParents);
     connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
     connect(mRepairNesting, &QAction::triggered, this, &KlustersApp::slotRepairNesting);
     connect(mMergeChildren, &QAction::triggered, this, &KlustersApp::slotMergeChildren);
@@ -2558,6 +2567,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("hierarchy.compactIds"),         QStringLiteral("Hierarchy"), mCompactIds);
     registerActionCommand(QStringLiteral("hierarchy.mergeOrphanChildren"),QStringLiteral("Hierarchy"), mMergeOrphanChildren);
     registerActionCommand(QStringLiteral("hierarchy.mergeOrphanParents"), QStringLiteral("Hierarchy"), mMergeOrphanParents);
+    registerActionCommand(QStringLiteral("hierarchy.breakUpParents"),     QStringLiteral("Hierarchy"), mBreakUpParents);
     registerActionCommand(QStringLiteral("hierarchy.repairNesting"),      QStringLiteral("Hierarchy"), mRepairNesting);
     registerActionCommand(QStringLiteral("hierarchy.promoteToHierarchical"), QStringLiteral("Hierarchy"), mPromoteToHierarchy);
     registerActionCommand(QStringLiteral("hierarchy.mergeChildren"),      QStringLiteral("Hierarchy"), mMergeChildren);
@@ -5864,6 +5874,118 @@ void KlustersApp::slotMergeOrphanParents(){
         tr("Merge orphan parents: %1 new parent(s) from %2 tiny parent(s), each beside the parent it "
            "matches; %3 left as they were (threshold %4 spikes, r ≥ %5).")
             .arg(made.size()).arg(besideOrphans).arg(stay)
+            .arg(minSpikes).arg(minCorr, 0, 'f', 2), 10000);
+}
+
+void KlustersApp::slotBreakUpParents(){
+    if(!doc || !activeView())
+        return;
+
+    // The parents selected in the main palette: each is broken up, and none of
+    // them is a target for another's children.
+    QList<int> parents;
+    if(clusterPalette)
+        for(int p : clusterPalette->selectedClusters())
+            if(p > 1 && !isReservedClusterId(p)) parents.append(p);
+    if(parents.isEmpty()){
+        statusBar()->showMessage(tr("Break up parent: select the parent(s) to break up."), 4000);
+        return;
+    }
+    const QString title = tr("Break Up Parent by Template");
+    const QString which = parents.size() == 1 ? tr("parent %1").arg(clusterLabel(parents.first()))
+                                              : tr("the %1 selected parents").arg(parents.size());
+
+    bool ok = false;
+    const int minSpikes = QInputDialog::getInt(
+        this, title, tr("Move children only to parents with more than this many spikes:"),
+        100, 0, 100000000, 1, &ok);
+    if(!ok) return;
+    const double minCorr = QInputDialog::getDouble(
+        this, title, tr("Minimum waveform correlation between a child and a parent's template, to move the child there:"),
+        0.90, -1.0, 1.0, 2, &ok);
+    if(!ok) return;
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    int nTargets = 0;
+    const QList<KlustersDoc::BreakUpMove> plan = doc->planBreakUpParents(parents, minSpikes, minCorr, &nTargets);
+    QApplication::restoreOverrideCursor();
+    if(plan.isEmpty()){
+        QMessageBox::information(this, title, tr("Nothing to break up: %1 has no children.").arg(which));
+        return;
+    }
+
+    // The plan, child by child, for the confirmation's details.
+    int total = 0, totalSpikes = 0, moved = 0, movedSpikes = 0, own = 0;
+    QSet<int> receivers;
+    QSet<QPair<int, int>> moves;                     // (parent, target): one undo step each
+    QStringList details, keepers;
+    for(const KlustersDoc::BreakUpMove& m : plan){
+        ++total;
+        totalSpikes += m.spikes;
+        const QString head = tr("Child %1 of %2 (%3 spikes)").arg(clusterLabel(m.child), clusterLabel(m.parent)).arg(m.spikes);
+        const QString best = m.best >= 0 ? tr("best %1, r %2").arg(clusterLabel(m.best)).arg(m.r, 0, 'f', 3)
+                                         : tr("no comparable template");
+        if(m.target >= 0){
+            ++moved;
+            movedSpikes += m.spikes;
+            receivers.insert(m.target);
+            moves.insert(qMakePair(m.parent, m.target));
+            details << tr("%1 → parent %2 (r %3)").arg(head, clusterLabel(m.target)).arg(m.r, 0, 'f', 3);
+        } else if(m.keepsParentId){
+            keepers << tr("child %1 keeps the id %2").arg(clusterLabel(m.child), clusterLabel(m.parent));
+            details << tr("%1: no match (%2) — keeps the id %3").arg(head, best, clusterLabel(m.parent));
+        } else {
+            ++own;
+            details << tr("%1: no match (%2) — becomes a parent of its own").arg(head, best);
+        }
+    }
+    if(moved == 0 && own == 0){
+        QMessageBox box(QMessageBox::Information, title,
+                        tr("Nothing to change: %1 has one child, and it matches no parent with more than %2 spikes "
+                           "at r ≥ %3.").arg(which).arg(minSpikes).arg(minCorr, 0, 'f', 2),
+                        QMessageBox::Ok, this);
+        box.setDetailedText(details.join(QLatin1Char('\n')));
+        box.exec();
+        return;
+    }
+
+    QString text = tr("Break up %1 (%2 child(ren), %3 spikes)?").arg(which).arg(total).arg(totalSpikes)
+                   + QStringLiteral("\n\n");
+    if(nTargets == 0)
+        text += tr("No other parent has more than %1 spikes, so no child has a parent to move to.").arg(minSpikes);
+    else if(moved == 0)
+        text += tr("No child matches any of the %1 parent(s) with more than %2 spikes at r ≥ %3.")
+                    .arg(nTargets).arg(minSpikes).arg(minCorr, 0, 'f', 2);
+    else
+        text += tr("%1 child(ren) (%2 spikes) match one of the %3 parent(s) with more than %4 spikes at r ≥ %5, "
+                   "and move to the one they match best: %6 parent(s) receive children.")
+                    .arg(moved).arg(movedSpikes).arg(nTargets).arg(minSpikes).arg(minCorr, 0, 'f', 2)
+                    .arg(receivers.size());
+    if(total > moved)
+        text += QStringLiteral("\n\n") +
+                tr("%1 child(ren) match none: %2 become parents of their own").arg(total - moved).arg(own) +
+                (keepers.isEmpty() ? QStringLiteral(".") : tr(", and %1.").arg(keepers.join(QStringLiteral(", "))));
+    text += QStringLiteral("\n\n") + tr("Every child keeps its id.  The details list every child with its best match.");
+    const int steps = static_cast<int>(moves.size()) + own;
+    if(steps > nbUndo)
+        text += QStringLiteral("\n\n") +
+                tr("This takes %1 undo steps, and only the last %2 can be undone (Preferences ▸ General ▸ Session).")
+                    .arg(steps).arg(nbUndo);
+    QMessageBox box(QMessageBox::Question, title, text, QMessageBox::Yes | QMessageBox::No, this);
+    box.setDefaultButton(QMessageBox::Yes);
+    box.setDetailedText(details.join(QLatin1Char('\n')));
+    if(box.exec() != QMessageBox::Yes)
+        return;
+
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    doc->breakUpParents(plan, *activeView());
+    QApplication::restoreOverrideCursor();
+
+    statusBar()->showMessage(
+        tr("Break up parent: %1 child(ren) moved to %2 parent(s), %3 became parents of their own%4 "
+           "(more than %5 spikes, r ≥ %6).")
+            .arg(moved).arg(receivers.size()).arg(own)
+            .arg(keepers.isEmpty() ? QString() : QStringLiteral("; ") + keepers.join(QStringLiteral(", ")))
             .arg(minSpikes).arg(minCorr, 0, 'f', 2), 10000);
 }
 

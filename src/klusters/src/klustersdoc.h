@@ -815,6 +815,37 @@ public:
   * @return the new parents, in plan order.*/
     QList<int> mergeOrphanParents(const QList<OrphanParentGroup>& plan,
                                   KlustersView& activeView);
+
+    /** One child in a Break Up Parent plan: where it goes. */
+    struct BreakUpMove {
+        int    child  = -1;
+        int    parent = -1;      ///< the parent being broken up
+        int    spikes = 0;
+        int    best   = -1;      ///< the best-matching parent; -1: no comparable template
+        double r      = -2.0;
+        int    target = -1;      ///< best, when r reaches the threshold; -1: the child does not move
+        bool   keepsParentId = false;   ///< the largest child with no target keeps the parent's id
+    };
+    /**Plans Break Up Parent by Template.  Every child of each parent in
+  * @p parents (noise, artefact and reserved chunk parents left out) is matched,
+  * by its own mean waveform, to the TEMPLATE -- the mean waveform -- of every
+  * other parent with more than @p minTargetSpikes spikes; a parent being
+  * broken up is never a target.  A child whose best correlation (Pearson, as in
+  * mergeOrphanChildren) reaches @p minCorrelation moves there whole; the others
+  * become parents of their own, the largest of them keeping the parent's id.
+  * A child without a waveform has no target.
+  * @return one entry per child, by ascending parent and child id;
+  *         @p targetsOut receives how many parents were large enough to be
+  *         targets.*/
+    QList<BreakUpMove> planBreakUpParents(const QList<int>& parents, int minTargetSpikes,
+                                          double minCorrelation, int* targetsOut = nullptr);
+    /**Applies a planBreakUpParents() plan.  Per parent: the children moving to
+  * the same target go in one move (moveSpikeSubsetToCluster: one undo step,
+  * each child keeps its id), and each child without a target, but the one
+  * keeping the parent's id, is promoted to a new parent (one undo step each).
+  * The selection lands on every parent that received or now holds a child.
+  * @return those parents.*/
+    QList<int> breakUpParents(const QList<BreakUpMove>& plan, KlustersView& activeView);
     /** Session-wide flatten: merge every parent's atoms into a single self child
      *  (atom id == parent id), applied to all parents including the reserve bins so
      *  the resulting .clc is exactly .clu and no atom can span two parents.

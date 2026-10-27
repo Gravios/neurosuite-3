@@ -675,6 +675,13 @@ private Q_SLOTS:
   * when fewer than two are selected.*/
     void slotMergeOrphanParents();
 
+    /**Asks for a target size and a shape cutoff, shows the plan, then breaks the
+  * selected parent(s) up: each child moves, whole and keeping its id, to the
+  * parent with more than that many spikes whose template it matches best; the
+  * children matching none become parents of their own, the largest keeping
+  * the parent's id.*/
+    void slotBreakUpParents();
+
     /**Compacts both layers' cluster ids into the low integers without gaps.*/
     void slotCompactClusterIds();
 
@@ -1324,6 +1331,7 @@ private:
     bool     mPromoteAfterSave = false;        // a promotion is waiting for the save it started
     QAction* mMergeOrphanChildren = nullptr;   // Hierarchy: gather a parent's tiny children
     QAction* mMergeOrphanParents = nullptr;    // Hierarchy: gather the tiny parents by template
+    QAction* mBreakUpParents = nullptr;        // Hierarchy: send a parent's children to the large parents they match
     QAction* mCompactIds = nullptr;            // Hierarchy: compact both layers' ids
     QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
     QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every parent to one self atom
