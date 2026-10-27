@@ -773,39 +773,43 @@ public:
                             KlustersView& activeView,
                             int* matchedOut = nullptr, int* strayOut = nullptr);
 
-    /** One tiny parent in a Merge Orphan Parents plan: the larger parent whose
+    /** One tiny parent in a Merge Orphan Parents plan: the parent whose
      *  template (mean waveform) its own matches best, and their correlation. */
     struct OrphanMatch {
         int    orphan = -1;
-        int    best   = -1;      ///< -1: no larger parent had a comparable template
+        int    best   = -1;      ///< -1: no other parent had a comparable template
         double r      = -2.0;
     };
-    /** Tiny parents to be merged together: those matching @p templateParent,
-     *  or, with templateParent -1, those matching no larger parent. */
+    /** Tiny parents to be merged together, beside the parent @p templateParent
+     *  their templates all match best. */
     struct OrphanParentGroup {
         int                templateParent = -1;
         QList<OrphanMatch> members;       ///< ascending orphan id
     };
-    /**Plans Merge Orphan Parents.  The ORPHANS are the parents of @p candidates
-  * (all parents when it is empty) with fewer than @p minSpikes spikes; every
-  * parent with at least @p minSpikes spikes, selected or not, is a TEMPLATE.
-  * Each orphan is matched to the template whose mean waveform its own
-  * correlates with best (Pearson, as in mergeOrphanChildren: a smaller copy of
-  * a unit still matches it).  Orphans whose best correlation reaches
-  * @p minCorrelation are grouped by that template; the rest form one more
-  * group.  The artefact and noise clusters and the reserved chunk clusters
-  * take no part; an orphan without a waveform is left out.
-  * @return one group per matched template (ascending template id), then the
-  *         unmatched group; no group is empty.  @p orphansOut and
-  *         @p templatesOut receive how many of each there were.*/
+    /**Plans Merge Orphan Parents.  The ORPHANS -- the parents being merged --
+  * are the parents of @p candidates (all parents when it is empty) with fewer
+  * than @p minSpikes spikes.  Every OTHER parent is a TEMPLATE, whatever its
+  * size and whether it is selected: an orphan is compared with all the parents
+  * that are not being merged, never with another orphan.  Each orphan is
+  * matched to the template whose mean waveform its own correlates with best
+  * (Pearson, as in mergeOrphanChildren: a smaller copy of a unit still matches
+  * it), and the orphans whose best correlation reaches @p minCorrelation are
+  * grouped by that template.  The others are not merged at all: they go to
+  * @p unmatchedOut, if given, for the report.  The artefact and noise clusters
+  * and the reserved chunk clusters take no part; an orphan without a waveform
+  * is left out of both lists.
+  * @return one group per matched template, ascending template id; no group is
+  *         empty.  @p orphansOut and @p templatesOut receive how many of each
+  *         there were.*/
     QList<OrphanParentGroup> planOrphanParents(const QList<int>& candidates,
                                                int minSpikes, double minCorrelation,
                                                int* orphansOut = nullptr,
-                                               int* templatesOut = nullptr);
+                                               int* templatesOut = nullptr,
+                                               QList<OrphanMatch>* unmatchedOut = nullptr);
     /**Applies a planOrphanParents() plan: each group of two or more orphans is
   * merged into one new parent (mergeParents: one undo step each), kept apart
-  * from the template it matched, which is not changed.  A group of one is
-  * left as it is.  The selection lands on the new parents.
+  * from the parent whose template they matched, which is not changed.  A group
+  * of one is left as it is.  The selection lands on the new parents.
   * @return the new parents, in plan order.*/
     QList<int> mergeOrphanParents(const QList<OrphanParentGroup>& plan,
                                   KlustersView& activeView);

@@ -5699,14 +5699,15 @@ void KlustersApp::slotMergeOrphanParents(){
     if(!ok) return;
     const double minCorr = QInputDialog::getDouble(
         this, tr("Merge Orphan Parents"),
-        tr("Minimum waveform correlation with a larger parent's template to count as a match:"),
+        tr("Minimum waveform correlation with a parent that is not being merged, to count as a match:"),
         0.90, -1.0, 1.0, 2, &ok);
     if(!ok) return;
 
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     int nOrphans = 0, nTemplates = 0;
+    QList<KlustersDoc::OrphanMatch> unmatched;
     const QList<KlustersDoc::OrphanParentGroup> plan =
-        doc->planOrphanParents(candidates, minSpikes, minCorr, &nOrphans, &nTemplates);
+        doc->planOrphanParents(candidates, minSpikes, minCorr, &nOrphans, &nTemplates, &unmatched);
     QApplication::restoreOverrideCursor();
 
     if(nOrphans == 0){
@@ -5716,61 +5717,53 @@ void KlustersApp::slotMergeOrphanParents(){
     }
     if(nTemplates == 0){
         statusBar()->showMessage(
-            tr("Merge orphan parents: no parent has %1 spikes or more to take a template from.").arg(minSpikes), 6000);
+            tr("Merge orphan parents: there is no other parent to match the %1 orphan(s) against.").arg(nOrphans), 6000);
         return;
     }
 
     // The plan, group by group, for the confirmation's details.
-    int besideMerges = 0, besideOrphans = 0, unmatchedOrphans = 0, compared = 0;
-    bool unmatchedMerge = false;
+    int besideMerges = 0, besideOrphans = 0, compared = 0;
     QStringList details;
     for(const KlustersDoc::OrphanParentGroup& g : plan){
         QStringList members;
-        for(const KlustersDoc::OrphanMatch& m : g.members){
-            if(g.templateParent >= 0)
-                members << tr("%1 (r %2)").arg(clusterLabel(m.orphan)).arg(m.r, 0, 'f', 2);
-            else if(m.best >= 0)
+        for(const KlustersDoc::OrphanMatch& m : g.members)
+            members << tr("%1 (r %2)").arg(clusterLabel(m.orphan)).arg(m.r, 0, 'f', 2);
+        compared += g.members.size();
+        const bool merges = g.members.size() >= 2;
+        details << tr("Beside %1: %2").arg(clusterLabel(g.templateParent), members.join(QStringLiteral(", ")))
+                   + (merges ? QString() : tr(" — one parent, left as it is"));
+        if(merges){ ++besideMerges; besideOrphans += g.members.size(); }
+    }
+    if(!unmatched.isEmpty()){
+        QStringList members;
+        for(const KlustersDoc::OrphanMatch& m : unmatched){
+            if(m.best >= 0)
                 members << tr("%1 (best %2, r %3)").arg(clusterLabel(m.orphan))
                                .arg(clusterLabel(m.best)).arg(m.r, 0, 'f', 2);
             else
                 members << tr("%1 (no comparable template)").arg(clusterLabel(m.orphan));
         }
-        compared += g.members.size();
-        const bool merges = g.members.size() >= 2;
-        if(g.templateParent >= 0){
-            details << tr("Beside %1: %2").arg(clusterLabel(g.templateParent), members.join(QStringLiteral(", ")))
-                       + (merges ? QString() : tr(" — one parent, left as it is"));
-            if(merges){ ++besideMerges; besideOrphans += g.members.size(); }
-        } else {
-            details << tr("Matching none: %1").arg(members.join(QStringLiteral(", ")))
-                       + (merges ? QString() : tr(" — one parent, left as it is"));
-            unmatchedMerge = merges;
-            unmatchedOrphans = g.members.size();
-        }
+        compared += unmatched.size();
+        details << tr("No match, left as they are: %1").arg(members.join(QStringLiteral(", ")));
     }
     if(compared < nOrphans)
         details << tr("Left out (no waveform): %1 parent(s)").arg(nOrphans - compared);
-    const int newParents = besideMerges + (unmatchedMerge ? 1 : 0);
-    if(newParents == 0){
+    const int stay = nOrphans - besideOrphans;
+    if(besideMerges == 0){
         statusBar()->showMessage(
-            tr("Merge orphan parents: nothing to merge — of the %1 parent(s) below %2 spikes %3, "
-               "no two match the same template, and at most one matches none.")
-                .arg(nOrphans).arg(minSpikes).arg(where), 8000);
+            tr("Merge orphan parents: nothing to merge — no two of the %1 parent(s) below %2 spikes %3 "
+               "match the same parent at r ≥ %4; they stay as they are.")
+                .arg(nOrphans).arg(minSpikes).arg(where).arg(minCorr, 0, 'f', 2), 8000);
         return;
     }
 
-    QStringList what;
-    if(besideMerges > 0)
-        what << tr("%1 parent(s) into %2 new parent(s), one beside each larger parent whose "
-                   "template they match (r ≥ %3)")
-                    .arg(besideOrphans).arg(besideMerges).arg(minCorr, 0, 'f', 2);
-    if(unmatchedMerge)
-        what << tr("the %1 matching no template into one new parent").arg(unmatchedOrphans);
-    QString text = tr("%1 parent(s) %2 have fewer than %3 spikes.\n\nMerge %4?\n\n"
-                      "The larger parents are not changed.  The details list every group.")
-                       .arg(nOrphans).arg(where).arg(minSpikes)
-                       .arg(what.join(tr(", and ")));
-    if(newParents > nbUndo)
+    QString text = tr("%1 parent(s) %2 have fewer than %3 spikes.  Each was compared with the %4 parent(s) "
+                      "that are not being merged.\n\nMerge %5 of them into %6 new parent(s), one beside each "
+                      "parent whose template they match (r ≥ %7)?\n\nThe other %8 stay as they are, and the "
+                      "parents they were compared with are not changed.  The details list every orphan.")
+                       .arg(nOrphans).arg(where).arg(minSpikes).arg(nTemplates)
+                       .arg(besideOrphans).arg(besideMerges).arg(minCorr, 0, 'f', 2).arg(stay);
+    if(besideMerges > nbUndo)
         text += tr("\n\nEach new parent is one undo step, and only the last %1 can be "
                    "undone (Preferences ▸ General ▸ Session).").arg(nbUndo);
     QMessageBox box(QMessageBox::Question, tr("Merge Orphan Parents"), text,
@@ -5785,10 +5778,9 @@ void KlustersApp::slotMergeOrphanParents(){
     QApplication::restoreOverrideCursor();
 
     statusBar()->showMessage(
-        tr("Merge orphan parents: %1 new parent(s) from %2 tiny parent(s): %3 beside a "
-           "template, %4 matching none (threshold %5 spikes, r ≥ %6).")
-            .arg(made.size()).arg(besideOrphans + (unmatchedMerge ? unmatchedOrphans : 0))
-            .arg(besideMerges).arg(unmatchedMerge ? 1 : 0)
+        tr("Merge orphan parents: %1 new parent(s) from %2 tiny parent(s), each beside the parent it "
+           "matches; %3 left as they were (threshold %4 spikes, r ≥ %5).")
+            .arg(made.size()).arg(besideOrphans).arg(stay)
             .arg(minSpikes).arg(minCorr, 0, 'f', 2), 10000);
 }
 

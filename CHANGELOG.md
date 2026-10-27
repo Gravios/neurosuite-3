@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-27 | [Klusters: Merge Orphan Parents matches against every parent not being merged, and leaves the unmatched alone](#2026-10-27--klusters-merge-orphan-parents-matches-against-every-parent-not-being-merged-and-leaves-the-unmatched-alone) |
 | 2026-10-26 | [Klusters: Hierarchy ▸ Merge Orphan Parents gathers the tiny parents by template](#2026-10-26--klusters-hierarchy--merge-orphan-parents-gathers-the-tiny-parents-by-template) |
 | 2026-10-26 | [Klusters: a recluster or drift job no longer adds a tab-change connection](#2026-10-26--klusters-a-recluster-or-drift-job-no-longer-adds-a-tab-change-connection) |
 | 2026-10-26 | [Klusters: a recluster that ends early removes its temporary files](#2026-10-26--klusters-a-recluster-that-ends-early-removes-its-temporary-files) |
@@ -131,6 +132,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-27 — Klusters: Merge Orphan Parents matches against every parent not being merged, and leaves the unmatched alone
+
+<details>
+<summary>Details</summary>
+
+Two changes to *Hierarchy ▸ Merge Orphan Parents (by template)* (`Ctrl+Shift+B`).
+
+- **The orphans that match no template are no longer merged.**  Until now they were merged into one more new
+  parent.  The higher the correlation threshold, the fewer orphans matched, so a strict threshold merged
+  nearly all of them into that one parent: at 0.99 the command pushed almost everything together.  They now
+  stay as they are, and the details list each one with its best match and correlation.
+- **The templates are every parent that is not being merged.**  Until now they were every parent at or above
+  the spike count, so with a selection, a small parent that was not selected was neither merged nor compared
+  with.  The orphans are still the selected parents below the spike count, or every parent below it when fewer
+  than two are selected.  Every other parent is a template, whatever its size and whether it is selected.
+  Orphans are compared with those parents only, never with each other.
+- The box says how many parents each orphan was compared with, and how many stay as they are.  The status bar
+  reports the parents left as they were.
+
+Files: `src/klusters/src/klustersdoc.h`, `klustersdoc_hierarchy.cpp`
+(`planOrphanParents`, `mergeOrphanParents`), `klusters.cpp`,
+`doc/klusters/hierarchical-clustering.md`.
+
+</details>
 
 ## 2026-10-26 — Klusters: Hierarchy ▸ Merge Orphan Parents gathers the tiny parents by template
 

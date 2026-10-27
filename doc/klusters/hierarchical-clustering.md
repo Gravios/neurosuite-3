@@ -108,7 +108,7 @@ child palette is shown.
 | Drop Child to Noise | — | Moves the selected atoms' spikes to the noise cluster (1). |
 | Compact Cluster IDs (parents and children) | — | Renumbers both layers into the low integers without gaps (0 and 1 stay). Clears the atom undo history. |
 | Merge Orphan Children (by median waveform)… | `Shift+B` | Gathers the selected fiber's tiny leftover atoms and merges them into two atoms: those that match the median waveform of the fiber's established atoms, and the rest. Nothing is deleted. |
-| Merge Orphan Parents (by template)… | `Ctrl+Shift+B` | Gathers the tiny fibers: each is matched to the template (mean waveform) of the larger fiber it resembles most; those matching the same fiber are merged into one new fiber beside it, those matching none into another. See [Merge Orphan Parents](#merge-orphan-parents) below. |
+| Merge Orphan Parents (by template)… | `Ctrl+Shift+B` | Gathers the tiny fibers: each is matched to the template (mean waveform) of the fiber it resembles most among those not being merged; those matching the same fiber are merged into one new fiber beside it, those matching none stay as they are. See [Merge Orphan Parents](#merge-orphan-parents) below. |
 | Repair Nesting (re-cut atoms onto parents) | `Shift+N` | See [Repair Nesting](#repair-nesting) below. |
 | Merge Selected Children (atom) | — | Merges the selected atoms of one fiber into one atom. |
 | Flatten Hierarchy to Flat Clustering | — | Merges every fiber's atoms into one atom with the fiber's id, so the atom layer becomes a copy of the fiber layer. |
@@ -126,25 +126,31 @@ The fiber-layer counterpart of *Merge Orphan Children*, for the tiny fibers
 that splitting, reclustering and promotions leave in the main palette.
 
 1. It asks for a spike count and a correlation (defaults 25 and 0.90). A
-   fiber below the spike count is an **orphan**; every fiber at or above it is
-   a **template**, its mean waveform (the template the merge recommendations
+   fiber below the spike count is an **orphan**, one of the fibers being
+   merged. Every other fiber is a **template**, whatever its size and whether
+   it is selected: its mean waveform (the template the merge recommendations
    use).
 2. Each orphan is matched to the template its own mean waveform correlates
    with best (Pearson, so a smaller copy of a unit still matches it). Orphans
-   whose best correlation reaches the threshold are grouped by that template;
-   the rest form one more group.
+   are compared with the fibers that are not being merged, never with each
+   other. Orphans whose best correlation reaches the threshold are grouped by
+   that template; an orphan below it matches nothing and **stays as it is**.
 3. A box shows the plan; **Show Details…** lists every group with its
-   correlations. Nothing changes until it is accepted.
+   correlations and every orphan left alone with its best match. Nothing
+   changes until it is accepted.
 4. Each group of two or more orphans is merged into one new fiber, beside the
-   template it matched: the template fiber is not changed, and folding the new
-   fiber into it is left to you. A group of one is left as it is. The orphans'
-   atoms stay apart under the new fiber, and the selection lands on the new
-   fibers.
+   fiber whose template they matched: that fiber is not changed, and folding
+   the new fiber into it is left to you. A group of one is left as it is. The
+   orphans' atoms stay apart under the new fiber, and the selection lands on
+   the new fibers.
 
 It works on the fibers selected in the main palette, or on all of them when
-fewer than two are selected; the templates always come from every larger
-fiber. The noise and artefact clusters and the reserved chunk clusters take
-no part. Each new fiber is one step in **Edit → Undo**, so only as many as the
+fewer than two are selected. With a selection, the selected fibers below the
+spike count are the orphans and every other fiber, selected or not, is a
+template; with none, every fiber below the spike count is an orphan and every
+fiber at or above it a template. A high threshold (0.99) therefore merges
+little: only orphans nearly identical in shape to the same fiber. The noise and
+artefact clusters and the reserved chunk clusters take no part. Each new fiber is one step in **Edit → Undo**, so only as many as the
 undo depth (**Preferences → General → Session**) can be undone; the box says
 so when the plan needs more.
 
