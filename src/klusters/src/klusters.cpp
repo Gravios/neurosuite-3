@@ -5662,6 +5662,9 @@ void KlustersApp::slotMergeOrphanChildren(){
     const int consumed = doc->mergeOrphanChildren(parent, minSpikes, minCorr,
                                                   *activeView(), &matched, &stray);
     QApplication::restoreOverrideCursor();
+    // The merge is an atom-layer edit: Undo Child-Layer Edit must follow the
+    // atom stack now, as after Merge Selected Children.
+    refreshChildUndoActions();
 
     const QString scope = tr("cluster %1, threshold %2 spikes, r ≥ %3")
                               .arg(clusterLabel(parent)).arg(minSpikes).arg(minCorr, 0, 'f', 2);

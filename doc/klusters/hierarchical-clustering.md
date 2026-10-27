@@ -107,7 +107,7 @@ child palette is shown.
 | Dissolve Parent into Children | — | Each atom of the selected fiber becomes its own fiber (one keeps the fiber's id). |
 | Drop Child to Noise | — | Moves the selected atoms' spikes to the noise cluster (1). |
 | Compact Cluster IDs (parents and children) | — | Renumbers both layers into the low integers without gaps (0 and 1 stay). Clears the atom undo history. |
-| Merge Orphan Children (by median waveform)… | `Shift+B` | Gathers the selected fiber's tiny leftover atoms (below a spike count): those that match the median waveform of the fiber's other atoms, the ones not being merged, are merged into one atom; the rest stay as they are. Nothing is deleted. |
+| Merge Orphan Children (by median waveform)… | `Shift+B` | Gathers the selected fiber's tiny leftover atoms (below a spike count): those that match the median waveform of the fiber's other atoms, the ones not being merged, are merged into one atom; the rest stay as they are. Nothing is deleted; *Undo Child-Layer Edit* (`Ctrl+Shift+Z`) takes the merge back. |
 | Merge Orphan Parents (by template)… | `Ctrl+Shift+B` | Gathers the tiny fibers: each is matched to the template (mean waveform) of the fiber it resembles most among those not being merged; those matching the same fiber are merged into one new fiber beside it, those matching none stay as they are. See [Merge Orphan Parents](#merge-orphan-parents) below. |
 | Repair Nesting (re-cut atoms onto parents) | `Shift+N` | See [Repair Nesting](#repair-nesting) below. |
 | Merge Selected Children (atom) | — | Merges the selected atoms of one fiber into one atom. |

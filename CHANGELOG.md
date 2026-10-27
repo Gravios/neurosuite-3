@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-27 | [Klusters: Undo Child-Layer Edit is enabled right after Merge Orphan Children](#2026-10-27--klusters-undo-child-layer-edit-is-enabled-right-after-merge-orphan-children) |
 | 2026-10-27 | [Klusters: Merge Orphan Children leaves the orphans that do not match alone](#2026-10-27--klusters-merge-orphan-children-leaves-the-orphans-that-do-not-match-alone) |
 | 2026-10-27 | [Klusters: Merge Orphan Parents matches against every parent not being merged, and leaves the unmatched alone](#2026-10-27--klusters-merge-orphan-parents-matches-against-every-parent-not-being-merged-and-leaves-the-unmatched-alone) |
 | 2026-10-26 | [Klusters: Hierarchy ▸ Merge Orphan Parents gathers the tiny parents by template](#2026-10-26--klusters-hierarchy--merge-orphan-parents-gathers-the-tiny-parents-by-template) |
@@ -133,6 +134,21 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-27 — Klusters: Undo Child-Layer Edit is enabled right after Merge Orphan Children
+
+<details>
+<summary>Details</summary>
+
+*Hierarchy ▸ Merge Orphan Children* merges atoms, and the merge goes on the atom layer's undo stack, but
+*Hierarchy ▸ Undo Child-Layer Edit* (`Ctrl+Shift+Z`) stayed disabled after it: the command did not refresh the
+atom undo and redo entries, as *Merge Selected Children* does.  Until something else refreshed them,
+`Ctrl+Shift+Z` did nothing.  They now follow the atom stack as soon as the command ends.
+
+Files: `src/klusters/src/klusters.cpp` (`slotMergeOrphanChildren`),
+`doc/klusters/hierarchical-clustering.md`.
+
+</details>
 
 ## 2026-10-27 — Klusters: Merge Orphan Children leaves the orphans that do not match alone
 
