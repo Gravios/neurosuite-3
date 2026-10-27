@@ -668,9 +668,10 @@ private Q_SLOTS:
     void slotMergeOrphanChildren();
 
     /**Asks for a size threshold and a shape cutoff, shows the plan, then merges
-  * the tiny parents matching the same larger parent's template into one new
-  * parent beside it, and those matching none into one more.  Works on the
-  * selected parents, or on all of them when fewer than two are selected.*/
+  * the tiny parents matching the same parent's template -- among the parents
+  * that are not being merged -- into one new parent beside it; those matching
+  * none stay as they are.  Works on the selected parents, or on all of them
+  * when fewer than two are selected.*/
     void slotMergeOrphanParents();
 
     /**Compacts both layers' cluster ids into the low integers without gaps.*/

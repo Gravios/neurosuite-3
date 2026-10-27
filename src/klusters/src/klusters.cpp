@@ -1096,11 +1096,12 @@ void KlustersApp::createMenus()
     mMergeOrphanParents = hierarchyMenu->addAction(tr("Merge Orphan Paren&ts (by template)…"));
     mMergeOrphanParents->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
     mMergeOrphanParents->setToolTip(tr(
-        "Gather the tiny parents (below a spike count) by the larger parent whose\n"
-        "template (mean waveform) each matches best: those matching the same parent\n"
-        "are merged into one new parent beside it, those matching none into another.\n"
-        "The larger parents are not changed.  Works on the selected parents, or on\n"
-        "all of them when fewer than two are selected; shows the plan first."));
+        "Gather the tiny parents (below a spike count) by the parent whose template\n"
+        "(mean waveform) each matches best among the parents that are not being\n"
+        "merged: those matching the same parent are merged into one new parent\n"
+        "beside it, and those matching none stay as they are.  The parents they are\n"
+        "compared with are not changed.  Works on the selected parents, or on all\n"
+        "of them when fewer than two are selected; shows the plan first."));
     connect(mMergeOrphanParents, &QAction::triggered, this, &KlustersApp::slotMergeOrphanParents);
 
     mRepairNesting = hierarchyMenu->addAction(tr("Re&repairNesting (re-cut atoms onto parents)"));

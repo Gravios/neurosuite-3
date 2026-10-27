@@ -150,10 +150,10 @@ Two changes to *Hierarchy ▸ Merge Orphan Parents (by template)* (`Ctrl+Shift+B
   than two are selected.  Every other parent is a template, whatever its size and whether it is selected.
   Orphans are compared with those parents only, never with each other.
 - The box says how many parents each orphan was compared with, and how many stay as they are.  The status bar
-  reports the parents left as they were.
+  reports the parents left as they were, and the menu entry's tooltip describes the new behaviour.
 
 Files: `src/klusters/src/klustersdoc.h`, `klustersdoc_hierarchy.cpp`
-(`planOrphanParents`, `mergeOrphanParents`), `klusters.cpp`,
+(`planOrphanParents`, `mergeOrphanParents`), `klusters.{h,cpp}`,
 `doc/klusters/hierarchical-clustering.md`.
 
 </details>
