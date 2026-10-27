@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-27 | [Klusters: Merge Orphan Children leaves the orphans that do not match alone](#2026-10-27--klusters-merge-orphan-children-leaves-the-orphans-that-do-not-match-alone) |
 | 2026-10-27 | [Klusters: Merge Orphan Parents matches against every parent not being merged, and leaves the unmatched alone](#2026-10-27--klusters-merge-orphan-parents-matches-against-every-parent-not-being-merged-and-leaves-the-unmatched-alone) |
 | 2026-10-26 | [Klusters: Hierarchy ▸ Merge Orphan Parents gathers the tiny parents by template](#2026-10-26--klusters-hierarchy--merge-orphan-parents-gathers-the-tiny-parents-by-template) |
 | 2026-10-26 | [Klusters: a recluster or drift job no longer adds a tab-change connection](#2026-10-26--klusters-a-recluster-or-drift-job-no-longer-adds-a-tab-change-connection) |
@@ -132,6 +133,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-27 — Klusters: Merge Orphan Children leaves the orphans that do not match alone
+
+<details>
+<summary>Details</summary>
+
+*Hierarchy ▸ Merge Orphan Children (by median waveform)* (`Shift+B`) judges a parent's children below the spike
+count (the orphans) against the per-point median of the mean waveforms of its other children, the ones not
+being merged.  The orphans that match are merged into one child, as before.  The orphans that do not match
+were merged into a second child; they now stay as they are, each its own atom.  The higher the correlation
+threshold, the fewer orphans matched, so a strict threshold gathered nearly all of them into that second
+child: at 0.99 the command merged almost every orphan, whatever its shape.  *Merge Orphan Parents* had the
+same change (the entry below).
+
+The status bar says how many orphans were merged and how many stay as they are, and the correlation dialog
+and the menu entry's tooltip describe the reference as the median of the children that are not being merged.
+
+Files: `src/klusters/src/klustersdoc.h`, `klustersdoc_hierarchy.cpp`
+(`mergeOrphanChildren`), `klusters.{h,cpp}`,
+`doc/klusters/hierarchical-clustering.md`.
+
+</details>
 
 ## 2026-10-27 — Klusters: Merge Orphan Parents matches against every parent not being merged, and leaves the unmatched alone
 

@@ -1322,6 +1322,8 @@ int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
     // scan reads, so an orphan sweep costs nothing extra after the first call.
     childData->buildMissingClusterTemplates();
 
+    // The orphans are the children up for merging; every other child of the
+    // parent is ESTABLISHED, and they all go into the reference.
     QList<int> orphans, established;
     for (int c : kids) {
         const dataType n = childData->nbSpikesInCluster(c);
@@ -1360,36 +1362,31 @@ int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
     }
 
     // Score each orphan against the reference.  An orphan with no template --
-    // it can happen if its spikes were not readable -- is left alone rather
-    // than pushed into either group: no waveform, no opinion.
-    QList<int> matched, stray;
+    // it can happen if its spikes were not readable -- is left out of both
+    // counts: no waveform, no opinion.
+    QList<int> matched;
+    int stray = 0;
     for (int c : orphans) {
         std::vector<double> mean;
         if (!childData->clusterTemplateFor(c, mean, sd) || mean.size() != len)
             continue;
         const double r = waveformCorrelation(mean, reference);
         if (r <= -2.0) continue;
-        (r >= minCorrelation ? matched : stray).append(c);
+        if (r >= minCorrelation) matched.append(c);
+        else                     ++stray;
     }
+    if (matchedOut) *matchedOut = static_cast<int>(matched.size());
+    if (strayOut)   *strayOut   = stray;
 
-    // Merge each group into ONE atom.  mergeChildren merges into an existing id
-    // rather than minting a new one, which is the right thing: the recovered
-    // spikes keep an identity the curator has already seen, and a group of one
-    // is already its own child, so merging it would be a no-op edit.
-    int consumed = 0;
-    if (matched.size() > 1) {
-        if (mergeChildren(matched, activeView) >= 0) {
-            consumed += matched.size();
-            if (matchedOut) *matchedOut = matched.size();
-        }
-    }
-    if (stray.size() > 1) {
-        if (mergeChildren(stray, activeView) >= 0) {
-            consumed += stray.size();
-            if (strayOut) *strayOut = stray.size();
-        }
-    }
-    return consumed;
+    // The matching orphans are merged into ONE atom (mergeChildren: one atom
+    // undo step); a group of one is already its own child, so merging it would
+    // be a no-op edit.  The orphans that do not match are not merged at all:
+    // each stays its own atom for the curator to judge.  Merging them together
+    // would make one atom of every shape that failed the test, and the stricter
+    // the threshold, the more of them -- at r 0.99 nearly all the orphans.
+    if (matched.size() < 2 || mergeChildren(matched, activeView) < 0)
+        return 0;
+    return static_cast<int>(matched.size());
 }
 
 // ---------------------------------------------------------------------------

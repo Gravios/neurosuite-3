@@ -663,8 +663,9 @@ private Q_SLOTS:
   * session-origin-anchored blocks of that length.*/
     void slotPartitionClusterByTime();
 
-    /**Asks for a size threshold and a shape cutoff, then gathers the selected
-  * parent's orphan children into a matching and a non-matching child.*/
+    /**Asks for a size threshold and a shape cutoff, then merges the selected
+  * parent's orphan children that match the median waveform of its other
+  * children into one child; the orphans that do not match stay as they are.*/
     void slotMergeOrphanChildren();
 
     /**Asks for a size threshold and a shape cutoff, shows the plan, then merges

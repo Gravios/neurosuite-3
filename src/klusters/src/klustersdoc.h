@@ -759,16 +759,18 @@ public:
 
     /**Gathers a parent's ORPHAN children -- those holding fewer than
   * @p minSpikes spikes, the single-spike debris that accumulates after
-  * repeated splitting -- and merges them in two groups, judged against the
-  * parent's median waveform: those whose own mean waveform correlates with
-  * the reference at least @p minCorrelation merge into one child, the rest
-  * into another.  Nothing is deleted and nothing is promoted; the two
-  * results are ordinary atoms of the same parent, so a bad call is one undo
-  * away.
-  * @param matchedOut  spikes recovered into the matching child
-  * @param strayOut    spikes gathered into the non-matching child
-  * @return the number of orphans consumed, or -1 when the parent has no
-  *         usable reference (fewer than one above-threshold child).*/
+  * repeated splitting -- judged against the reference, the per-point median
+  * of the mean waveforms of the parent's other children (those at or above
+  * @p minSpikes, the ones not up for merging): the orphans whose own mean
+  * waveform correlates with the reference at least @p minCorrelation are
+  * merged into one child; the others are not merged and stay as they are.
+  * Nothing is deleted and nothing is promoted; the merged child is an
+  * ordinary atom of the same parent, so a bad call is one undo away.
+  * @param matchedOut  the orphans that match (merged when there are two or more)
+  * @param strayOut    the orphans that do not, left as they are
+  * @return the number of orphans merged (0 when fewer than two match), or -1
+  *         when the parent has no orphan or no other child to take the
+  *         reference from.*/
     int mergeOrphanChildren(int parent, int minSpikes, double minCorrelation,
                             KlustersView& activeView,
                             int* matchedOut = nullptr, int* strayOut = nullptr);

@@ -1087,10 +1087,10 @@ void KlustersApp::createMenus()
     mMergeOrphanChildren->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_B));
     mMergeOrphanChildren->setToolTip(tr(
         "Gather the selected parent's tiny children — the single-spike debris that\n"
-        "accumulates after repeated splitting — and merge them in two groups,\n"
-        "judged against the median waveform of the parent's established children:\n"
-        "those whose shape matches into one child, the rest into another.\n"
-        "Nothing is deleted; both results are ordinary atoms of the same parent."));
+        "accumulates after repeated splitting — judged against the median waveform\n"
+        "of the parent's other children, the ones not being merged: those whose\n"
+        "shape matches are merged into one child, the rest stay as they are.\n"
+        "Nothing is deleted; the merged child is an ordinary atom of the same parent."));
     connect(mMergeOrphanChildren, &QAction::triggered, this, &KlustersApp::slotMergeOrphanChildren);
 
     mMergeOrphanParents = hierarchyMenu->addAction(tr("Merge Orphan Paren&ts (by template)…"));
@@ -5652,7 +5652,8 @@ void KlustersApp::slotMergeOrphanChildren(){
     if(!ok) return;
     const double minCorr = QInputDialog::getDouble(
         this, tr("Merge Orphan Children"),
-        tr("Minimum waveform correlation with the parent's median to count as a match:"),
+        tr("Minimum waveform correlation with the median of the children that are not being merged, "
+           "to count as a match:"),
         0.90, -1.0, 1.0, 2, &ok);
     if(!ok) return;
 
@@ -5662,19 +5663,30 @@ void KlustersApp::slotMergeOrphanChildren(){
                                                   *activeView(), &matched, &stray);
     QApplication::restoreOverrideCursor();
 
+    const QString scope = tr("cluster %1, threshold %2 spikes, r ≥ %3")
+                              .arg(clusterLabel(parent)).arg(minSpikes).arg(minCorr, 0, 'f', 2);
     if(consumed < 0)
         statusBar()->showMessage(
-            tr("Merge orphan children: cluster %1 has no orphans, or no established "
-               "child to take the reference from.").arg(clusterLabel(parent)), 6000);
+            tr("Merge orphan children: cluster %1 has no child below %2 spikes, or no other "
+               "child to take the median waveform from.").arg(clusterLabel(parent)).arg(minSpikes), 6000);
+    else if(consumed == 0 && matched >= 2)
+        statusBar()->showMessage(
+            tr("Merge orphan children: the %1 matching orphan(s) could not be merged; nothing changed (%2).")
+                .arg(matched).arg(scope), 8000);
     else if(consumed == 0)
         statusBar()->showMessage(
-            tr("Merge orphan children: nothing to merge — each group held at most one child."), 5000);
+            tr("Merge orphan children: nothing to merge — no two of the %1 orphan(s) below %2 spikes "
+               "match the median waveform at r ≥ %3 (cluster %4); they stay as they are.")
+                .arg(matched + stray).arg(minSpikes).arg(minCorr, 0, 'f', 2).arg(clusterLabel(parent)), 8000);
+    else if(stray == 0)
+        statusBar()->showMessage(
+            tr("Merge orphan children: all %1 orphan(s) matched the median waveform and were merged "
+               "into one child (%2).").arg(consumed).arg(scope), 8000);
     else
         statusBar()->showMessage(
-            tr("Merge orphan children: %1 matched the median waveform, %2 did not "
-               "(cluster %3, threshold %4 spikes, r ≥ %5).")
-                .arg(matched).arg(stray).arg(clusterLabel(parent)).arg(minSpikes)
-                .arg(minCorr, 0, 'f', 2), 8000);
+            tr("Merge orphan children: %1 of the %2 orphan(s) matched the median waveform and were merged "
+               "into one child; the other %3 stay as they are (%4).")
+                .arg(consumed).arg(consumed + stray).arg(stray).arg(scope), 8000);
 }
 
 void KlustersApp::slotMergeOrphanParents(){
