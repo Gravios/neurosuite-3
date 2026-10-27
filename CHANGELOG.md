@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-27 | [Klusters: Merge Orphan Parents says why when it merges nothing](#2026-10-27--klusters-merge-orphan-parents-says-why-when-it-merges-nothing) |
 | 2026-10-27 | [Klusters: Undo Child-Layer Edit is enabled right after Merge Orphan Children](#2026-10-27--klusters-undo-child-layer-edit-is-enabled-right-after-merge-orphan-children) |
 | 2026-10-27 | [Klusters: Merge Orphan Children leaves the orphans that do not match alone](#2026-10-27--klusters-merge-orphan-children-leaves-the-orphans-that-do-not-match-alone) |
 | 2026-10-27 | [Klusters: Merge Orphan Parents matches against every parent not being merged, and leaves the unmatched alone](#2026-10-27--klusters-merge-orphan-parents-matches-against-every-parent-not-being-merged-and-leaves-the-unmatched-alone) |
@@ -134,6 +135,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-27 — Klusters: Merge Orphan Parents says why when it merges nothing
+
+<details>
+<summary>Details</summary>
+
+When *Hierarchy ▸ Merge Orphan Parents (by template)* found nothing to merge, it said so only in the status bar,
+which after two dialogs looked like a command that did nothing.  It now shows a box in each such case, and keeps
+the status-bar line:
+
+- **No orphan.**  No parent is below the spike count.  With two or more parents selected, only the selected
+  ones can be orphans, and the box says so: select one parent, or none, to work on all of them.  A merge leaves
+  its new parents selected, so a second run right after a merge looks only at those.
+- **No other parent** to compare the orphans with.
+- **Nothing to merge.**  No two orphans match the same parent.  The box gives:
+  - the orphans' best correlations: lowest, highest and median;
+  - how many reach the threshold;
+  - the strictest threshold at which two of them would match the same parent;
+  - details listing every orphan with its best match.
+
+A parent with few spikes has a noisy mean waveform, so its correlation with a template stays well below 1 even
+when it is the same unit.  In g7's fiber-session sort (minutes 168–204), the 67 parents below 25 spikes reach
+at most 0.978 (median 0.850), so at 0.99 nothing matched and the command looked dead.  The strictest threshold
+at which two of them share a parent is 0.94.  The correlations in the details and the box now have three
+decimals, so an r of 0.995 no longer shows as 1.00 beside a threshold of 1.00.
+
+Files: `src/klusters/src/klusters.cpp` (`slotMergeOrphanParents`),
+`doc/klusters/hierarchical-clustering.md`.
+
+</details>
 
 ## 2026-10-27 — Klusters: Undo Child-Layer Edit is enabled right after Merge Orphan Children
 

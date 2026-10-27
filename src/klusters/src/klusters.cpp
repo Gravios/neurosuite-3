@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <memory>     // std::make_shared — used by Shift+S stale-matrix wait
 /***************************************************************************
@@ -5726,14 +5727,31 @@ void KlustersApp::slotMergeOrphanParents(){
         doc->planOrphanParents(candidates, minSpikes, minCorr, &nOrphans, &nTemplates, &unmatched);
     QApplication::restoreOverrideCursor();
 
+    // When nothing will be merged, say why in a box as well as in the status
+    // bar: after two dialogs, a status-bar line alone reads as a command that
+    // did nothing at all.
+    const auto nothingToMerge = [this](const QString& text, const QString& status, const QString& details){
+        statusBar()->showMessage(status, 8000);
+        QMessageBox box(QMessageBox::Information, tr("Merge Orphan Parents"), text, QMessageBox::Ok, this);
+        if(!details.isEmpty()) box.setDetailedText(details);
+        box.exec();
+    };
     if(nOrphans == 0){
-        statusBar()->showMessage(
-            tr("Merge orphan parents: no parent has fewer than %1 spikes %2.").arg(minSpikes).arg(where), 6000);
+        const QString status = tr("Merge orphan parents: no parent has fewer than %1 spikes %2.").arg(minSpikes).arg(where);
+        nothingToMerge(candidates.isEmpty()
+                           ? tr("No parent has fewer than %1 spikes, so there is nothing to merge.").arg(minSpikes)
+                           : tr("None of the %1 selected parents has fewer than %2 spikes, so there is nothing to "
+                                "merge.\n\nWith two or more parents selected, only the selected ones can be "
+                                "orphans.  Select one parent, or none, to work on all of them.")
+                                 .arg(candidates.size()).arg(minSpikes),
+                       status, QString());
         return;
     }
     if(nTemplates == 0){
-        statusBar()->showMessage(
-            tr("Merge orphan parents: there is no other parent to match the %1 orphan(s) against.").arg(nOrphans), 6000);
+        nothingToMerge(tr("There is no other parent to compare the %1 orphan(s) with, so there is nothing to merge.")
+                           .arg(nOrphans),
+                       tr("Merge orphan parents: there is no other parent to match the %1 orphan(s) against.").arg(nOrphans),
+                       QString());
         return;
     }
 
@@ -5743,7 +5761,7 @@ void KlustersApp::slotMergeOrphanParents(){
     for(const KlustersDoc::OrphanParentGroup& g : plan){
         QStringList members;
         for(const KlustersDoc::OrphanMatch& m : g.members)
-            members << tr("%1 (r %2)").arg(clusterLabel(m.orphan)).arg(m.r, 0, 'f', 2);
+            members << tr("%1 (r %2)").arg(clusterLabel(m.orphan)).arg(m.r, 0, 'f', 3);
         compared += g.members.size();
         const bool merges = g.members.size() >= 2;
         details << tr("Beside %1: %2").arg(clusterLabel(g.templateParent), members.join(QStringLiteral(", ")))
@@ -5755,7 +5773,7 @@ void KlustersApp::slotMergeOrphanParents(){
         for(const KlustersDoc::OrphanMatch& m : unmatched){
             if(m.best >= 0)
                 members << tr("%1 (best %2, r %3)").arg(clusterLabel(m.orphan))
-                               .arg(clusterLabel(m.best)).arg(m.r, 0, 'f', 2);
+                               .arg(clusterLabel(m.best)).arg(m.r, 0, 'f', 3);
             else
                 members << tr("%1 (no comparable template)").arg(clusterLabel(m.orphan));
         }
@@ -5766,10 +5784,59 @@ void KlustersApp::slotMergeOrphanParents(){
         details << tr("Left out (no waveform): %1 parent(s)").arg(nOrphans - compared);
     const int stay = nOrphans - besideOrphans;
     if(besideMerges == 0){
-        statusBar()->showMessage(
-            tr("Merge orphan parents: nothing to merge — no two of the %1 parent(s) below %2 spikes %3 "
-               "match the same parent at r ≥ %4; they stay as they are.")
-                .arg(nOrphans).arg(minSpikes).arg(where).arg(minCorr, 0, 'f', 2), 8000);
+        // Why: every orphan's best correlation, and the strictest threshold at
+        // which two orphans would share a parent (the second-best r among the
+        // orphans whose best match is the same parent, the highest such).
+        QList<double> best;
+        QMap<int, QList<double>> byParent;
+        int reach = 0;
+        for(const KlustersDoc::OrphanParentGroup& g : plan)
+            for(const KlustersDoc::OrphanMatch& m : g.members){ best << m.r; byParent[m.best] << m.r; ++reach; }
+        for(const KlustersDoc::OrphanMatch& m : unmatched)
+            if(m.best >= 0){ best << m.r; byParent[m.best] << m.r; }
+        std::sort(best.begin(), best.end());
+        double strictest = -2.0;
+        for(QList<double> rs : byParent){
+            if(rs.size() < 2) continue;
+            std::sort(rs.begin(), rs.end(), std::greater<double>());
+            strictest = std::max(strictest, rs[1]);
+        }
+        QString text = tr("Nothing to merge: no two of the %1 parent(s) below %2 spikes %3 match the same parent "
+                          "at r ≥ %4.").arg(nOrphans).arg(minSpikes).arg(where).arg(minCorr, 0, 'f', 2);
+        const QString capped = tr("A parent with few spikes has a noisy mean waveform, which caps its correlation "
+                                  "with any template.");
+        if(best.size() == 1){
+            text += QStringLiteral("\n\n") +
+                    tr("It was compared with the %1 parent(s) that are not being merged; its best correlation is %2.")
+                        .arg(nTemplates).arg(best.first(), 0, 'f', 3) + QLatin1Char(' ') +
+                    (reach == 0 ? tr("That is below %1.").arg(minCorr, 0, 'f', 2) + QLatin1Char(' ') + capped
+                                : tr("A parent matched by one orphan is left as it is."));
+        } else if(!best.isEmpty()){
+            const double median = best.size() % 2 ? best[best.size() / 2]
+                                                  : 0.5 * (best[best.size() / 2 - 1] + best[best.size() / 2]);
+            text += QStringLiteral("\n\n") +
+                    tr("Each was compared with the %1 parent(s) that are not being merged.  Their best correlations "
+                       "run from %2 to %3 (median %4)")
+                        .arg(nTemplates).arg(best.first(), 0, 'f', 3).arg(best.last(), 0, 'f', 3).arg(median, 0, 'f', 3);
+            if(reach == 0)
+                text += tr("; none reaches %1.").arg(minCorr, 0, 'f', 2) + QLatin1Char(' ') + capped;
+            else if(reach == 1)
+                text += tr("; one reaches %1, and a parent matched by one orphan is left as it is.").arg(minCorr, 0, 'f', 2);
+            else
+                text += tr("; %1 reach %2, each with a different parent, and a parent matched by one orphan is "
+                           "left as it is.").arg(reach).arg(minCorr, 0, 'f', 2);
+            text += QStringLiteral("\n\n") +
+                    (strictest > -2.0
+                         ? tr("The strictest threshold at which two of them match the same parent is r ≥ %1.")
+                               .arg(std::floor(strictest * 100.0) / 100.0, 0, 'f', 2)
+                         : tr("No two of them have the same best match, at any threshold."));
+        }
+        text += QStringLiteral("\n\n") + tr("Nothing was changed.  The details list every orphan with its best match.");
+        nothingToMerge(text,
+                       tr("Merge orphan parents: nothing to merge — no two of the %1 parent(s) below %2 spikes %3 "
+                          "match the same parent at r ≥ %4; they stay as they are.")
+                           .arg(nOrphans).arg(minSpikes).arg(where).arg(minCorr, 0, 'f', 2),
+                       details.join(QLatin1Char('\n')));
         return;
     }
 

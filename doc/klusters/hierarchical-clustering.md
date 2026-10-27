@@ -137,7 +137,10 @@ that splitting, reclustering and promotions leave in the main palette.
    that template; an orphan below it matches nothing and **stays as it is**.
 3. A box shows the plan; **Show Details…** lists every group with its
    correlations and every orphan left alone with its best match. Nothing
-   changes until it is accepted.
+   changes until it is accepted. When nothing would be merged, a box says
+   why instead: no orphan below the spike count, or no two orphans matching
+   the same fiber. It gives the orphans' best correlations and the strictest
+   threshold at which two of them would match the same fiber.
 4. Each group of two or more orphans is merged into one new fiber, beside the
    fiber whose template they matched: that fiber is not changed, and folding
    the new fiber into it is left to you. A group of one is left as it is. The
@@ -148,9 +151,11 @@ It works on the fibers selected in the main palette, or on all of them when
 fewer than two are selected. With a selection, the selected fibers below the
 spike count are the orphans and every other fiber, selected or not, is a
 template; with none, every fiber below the spike count is an orphan and every
-fiber at or above it a template. A high threshold (0.99) therefore merges
-little: only orphans nearly identical in shape to the same fiber. The noise and
-artefact clusters and the reserved chunk clusters take no part. Each new fiber is one step in **Edit → Undo**, so only as many as the
+fiber at or above it a template. A high threshold merges little. A fiber
+with few spikes has a noisy mean waveform, so its correlation with a template
+stays well below 1 even when it is the same unit: at 0.99 often no orphan
+matches at all. The noise and artefact clusters and the reserved chunk clusters
+take no part. Each new fiber is one step in **Edit → Undo**, so only as many as the
 undo depth (**Preferences → General → Session**) can be undone; the box says
 so when the plan needs more.
 
