@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-28 | [Docs: CUDA on Ubuntu 26.04](#2026-10-28--docs-cuda-on-ubuntu-2604) |
 | 2026-10-28 | [Build: without a visible GPU, CUDA architectures the toolkit cannot compile are left out](#2026-10-28--build-without-a-visible-gpu-cuda-architectures-the-toolkit-cannot-compile-are-left-out) |
 | 2026-10-28 | [ndmanager-plugins: the CUDA filters, thresholds and grouper are built for the configured GPU architectures](#2026-10-28--ndmanager-plugins-the-cuda-filters-thresholds-and-grouper-are-built-for-the-configured-gpu-architectures) |
 | 2026-10-28 | [Klusters: the CUDA code is built for the configured GPU architectures](#2026-10-28--klusters-the-cuda-code-is-built-for-the-configured-gpu-architectures) |
@@ -140,6 +141,19 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-28 — Docs: CUDA on Ubuntu 26.04
+
+<details>
+<summary>Details</summary>
+
+`doc/gpu/README.md` has an Ubuntu 26.04 section: which CUDA toolkits compile neurosuite-3's CUDA code there (Ubuntu's
+CUDA 12.4: yes up to sm_89 here, no Blackwell; NVIDIA 13.0: no, glibc 2.43 `rsqrt` clash; NVIDIA 13.4: yes, with
+GCC 15.2), how the architectures are chosen, and what a build that makes the machine stop responding means.
+
+Files: `doc/gpu/README.md`.
+
+</details>
 
 ## 2026-10-28 — Build: without a visible GPU, CUDA architectures the toolkit cannot compile are left out
 

@@ -57,6 +57,35 @@ nvcc --version
 nvidia-smi
 ```
 
+### Ubuntu 26.04
+
+Ubuntu 26.04 has GCC 15.2, glibc 2.43 and CMake 4.2. Which CUDA toolkit works
+depends on where it comes from (checked on 2026-10-28 in an Ubuntu 26.04
+system, compiling and device-linking Klusters' CUDA files):
+
+| Toolkit | Result |
+|---|---|
+| Ubuntu's `nvidia-cuda-toolkit` (CUDA 12.4) | Compiles for sm\_75, sm\_86 and sm\_89 (`nvcc --list-gpu-arch` goes up to sm\_90). Its `nvcc` calls `g++-13` through its own wrapper, installed with it, so GCC 15 is not involved. No sm\_100 / sm\_120, so **not for RTX 50xx** (Blackwell); RTX 30xx (sm\_86) and 40xx (sm\_89) are covered. |
+| NVIDIA CUDA 13.0 | Fails on any `.cu` file, even a one-line kernel: `exception specification is incompatible with that of previous function "rsqrt"` from glibc 2.43's `mathcalls.h`. |
+| NVIDIA CUDA 13.4 | Works with GCC 15.2, all architectures sm\_75 to sm\_120. |
+
+A toolkit left over from Ubuntu 24.04 (for example `/usr/local/cuda-12.8`
+from NVIDIA's `ubuntu2404` repository) was not tested here; if its `.cu`
+files fail to compile after the upgrade, install a current toolkit from NVIDIA
+or use Ubuntu's package.
+
+When `nvidia-smi` sees the GPU, configure builds for that GPU only
+(`CUDA architectures = native`); an RTX 3060 gives sm\_86. With no GPU
+visible (driver not loaded yet after the upgrade, or headless), configure
+uses the fallback list minus what the installed `nvcc` cannot compile, and
+says which it left out.
+
+If the machine **stops responding during the build** (desktop, ThinLinc
+and ssh hang, often right after `Building CUDA object …`), it ran out of
+memory from too many parallel jobs, not because of CUDA: see
+[BUILD.md §2](../BUILD.md#2-configure-build-install) and build with
+`-G Ninja`.
+
 ### Secure Boot and kernel module signing (Ubuntu 24.04)
 
 If Secure Boot is enabled, the NVIDIA open kernel module must be signed with a Machine Owner Key (MOK):
