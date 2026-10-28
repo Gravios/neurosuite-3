@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-28 | [Build: parallel jobs are limited to the installed memory](#2026-10-28--build-parallel-jobs-are-limited-to-the-installed-memory) |
 | 2026-10-27 | [Klusters: Hierarchy ▸ Break Up Parent by Template sends each child to the large parent it matches](#2026-10-27--klusters-hierarchy--break-up-parent-by-template-sends-each-child-to-the-large-parent-it-matches) |
 | 2026-10-27 | [Klusters: Merge Orphan Parents says why when it merges nothing](#2026-10-27--klusters-merge-orphan-parents-says-why-when-it-merges-nothing) |
 | 2026-10-27 | [Klusters: Undo Child-Layer Edit is enabled right after Merge Orphan Children](#2026-10-27--klusters-undo-child-layer-edit-is-enabled-right-after-merge-orphan-children) |
@@ -136,6 +137,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-28 — Build: parallel jobs are limited to the installed memory
+
+<details>
+<summary>Details</summary>
+
+A full build no longer takes the machine down.  On Ubuntu 26.04 a first build could swap the machine until the desktop
+session (ThinLinc) and sshd stopped answering; the last lines printed were Klusters' "Building CUDA object …".
+
+- **Cause.**  The quick start's `cmake --build build --parallel` has no job count, and with the default Makefile
+  generator CMake turns that into `make -j` with **no** limit.  One Klusters source file takes 0.7–0.9 GiB to
+  compile with GCC 15, Qt 6 and LTO, and Klusters has 122.  The `.cu` files are only where the output stopped:
+  they come last in Klusters' source list, and each peaks at 0.2–0.6 GiB (CUDA 12.4 and 13.4 on Ubuntu 26.04).
+- **Ninja.**  Configure puts every compile step into one job pool and every link step into another, sized from the
+  installed memory: memory ÷ `NS_COMPILE_JOB_MIB` (1536) compile jobs and memory ÷ `NS_LINK_JOB_MIB` (4096) link
+  jobs, each at most the core count.  The configure output prints the depths.  `-DNS_JOB_POOLS=OFF` turns it off.
+- **Makefiles.**  A pool cannot be expressed there.  Configure warns and prints a `-j` that fits.
+- **Docs.**  The README, INSTALL.md and BUILD.md build with `-G Ninja`; BUILD.md §9 has the symptom.
+
+Files: `cmake/NsJobPools.cmake` (new), `CMakeLists.txt`, `README.md`, `CLAUDE.md`, `doc/INSTALL.md`, `doc/BUILD.md`.
+
+</details>
 
 ## 2026-10-27 — Klusters: Hierarchy ▸ Break Up Parent by Template sends each child to the large parent it matches
 

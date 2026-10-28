@@ -373,6 +373,13 @@ endif() # NS_INSTALL_DEPS
 # ---------------------------------------------------------------------------
 include(cmake/ZenOptimizations.cmake OPTIONAL)
 
+# ---------------------------------------------------------------------------
+# Parallel jobs limited to the installed memory (Ninja job pools; a warning
+# with a job count for the Makefile generators).  Before any add_subdirectory()
+# so every target picks up the pools.  -DNS_JOB_POOLS=OFF to disable.
+# ---------------------------------------------------------------------------
+include(cmake/NsJobPools.cmake)
+
 
 # ---------------------------------------------------------------------------
 # Helper: add one subdirectory with skip-flag support

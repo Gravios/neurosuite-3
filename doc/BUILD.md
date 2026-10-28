@@ -84,10 +84,20 @@ when CMake does not already find one); `-DNS_DEPS_HDF5=ON` and
 ## 2. Configure, build, install
 
 ```sh
-cmake -B build -DCMAKE_INSTALL_PREFIX=/usr/local
-cmake --build build --parallel
+cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX=/usr/local
+cmake --build build
 cmake --install build            # or: sudo cmake --install build
 ```
+
+Use Ninja. Configure puts every compile step into a job pool and every link
+step into another, sized from the installed memory (`NS_JOB_POOLS`, §3), so a
+full build never starts more jobs than fit, whatever `-j` it is given. The
+Makefile generators cannot express a pool, and `cmake --build build --parallel`
+without a number runs `make -j` with **no** limit: on this tree that asks for
+tens of GiB at once (one Klusters source file takes 0.7–0.9 GiB with GCC 15,
+Qt 6 and LTO, and Klusters has 122), and the machine swaps until the desktop
+session and sshd stop answering. Configure warns about this and prints a job
+count that fits; pass it as `cmake --build build -j N`.
 
 The whole monorepo configures and builds in a **single** CMake invocation — no
 ExternalProject stamp-file dance, no per-package install step between configure
@@ -119,6 +129,8 @@ All are passed with `-D` at configure time.
 | `NS_ASAN` | `OFF` | build host code with AddressSanitizer (§7) |
 | `NS_SKIP_<COMPONENT>` | `OFF` | skip one component (§5) |
 | `NS_INSTALL_DEPS` | `OFF` | install system dependencies first (apt/Homebrew/vcpkg) |
+| `NS_JOB_POOLS` | `ON` | Ninja: limit parallel compile and link jobs to the installed memory (`cmake/NsJobPools.cmake`); the configure output prints the pool depths |
+| `NS_COMPILE_JOB_MIB` / `NS_LINK_JOB_MIB` | `1536` / `4096` | memory budgeted per compile / link job (MiB); compile jobs = memory ÷ this, at most the core count |
 | `NS_VCPKG_ROOT` | `$VCPKG_ROOT` or `C:/vcpkg` | vcpkg root for Windows `NS_INSTALL_DEPS` |
 | `NS_QT_ROOT` / `NS_QT_VERSION` | `C:/Qt` / `6.8.3` | Windows `NS_INSTALL_DEPS`: where and which Qt to install when CMake finds none |
 | `NS_DEPS_HDF5` / `NS_DEPS_FFMPEG` | `OFF` | Windows `NS_INSTALL_DEPS`: also install HDF5 / FFmpeg with vcpkg |
@@ -337,6 +349,7 @@ install`" for a Linux build.
 | SYCL backend not built | configure with `-DCMAKE_CXX_COMPILER=icpx -DCMAKE_C_COMPILER=icx` at the top level (§4) |
 | A component won't build and blocks the rest | isolate it with `-DNS_SKIP_<NAME>=ON` while you work on another |
 | Memory corruption with a far-away backtrace | rebuild with `-DNS_ASAN=ON` and the `ASAN_OPTIONS` above (§7) |
+| The machine stops responding during the build (desktop, ThinLinc and ssh hang; the last line is often `Building CUDA object …`) | out of memory from too many parallel jobs, not CUDA: reboot, then configure a new build directory with `-G Ninja` (§2), or with Makefiles build with `-j N` as the configure warning says. Lower `NS_COMPILE_JOB_MIB` only if the machine has memory to spare |
 | `no space left on device` mid-build | the build tree is large with all backends; delete the `build/` dir and reconfigure, or build fewer components with skip flags |
 
 ---

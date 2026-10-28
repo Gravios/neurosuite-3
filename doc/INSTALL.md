@@ -21,12 +21,20 @@ works. See [gpu/README.md](gpu/README.md).
 ## Linux
 
 ```bash
+sudo apt install cmake ninja-build
 git clone https://github.com/Gravios/neurosuite-3.git
 cd neurosuite-3
-cmake -B build -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DNS_INSTALL_DEPS=ON
-cmake --build build --parallel
+cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DNS_INSTALL_DEPS=ON
+cmake --build build
 cmake --install build
 ```
+
+Ninja runs only as many compile and link jobs at once as the installed memory
+holds (one Klusters source file needs up to about 1 GiB with LTO; see
+[BUILD.md §3](BUILD.md#3-build-options), `NS_JOB_POOLS`). With the default
+Makefile generator give a job count instead, `cmake --build build -j 4`:
+`--parallel` without a number becomes `make -j` with no limit, which can use
+up the memory until the desktop and ssh stop responding.
 
 `-DNS_INSTALL_DEPS=ON` installs the required packages with `apt` (it asks for
 your password through `sudo`); leave it out if you install them yourself. The
@@ -174,10 +182,11 @@ on Windows) and the [ndmanager-plugins Windows notes](ndmanager-plugins/install/
 With [Homebrew](https://brew.sh) installed:
 
 ```bash
+brew install cmake ninja
 git clone https://github.com/Gravios/neurosuite-3.git
 cd neurosuite-3
-cmake -B build -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DNS_INSTALL_DEPS=ON
-cmake --build build --parallel
+cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DNS_INSTALL_DEPS=ON
+cmake --build build
 cmake --install build
 ```
 

@@ -27,10 +27,11 @@ All documentation online: **https://gravios.github.io/neurosuite-3/** [![docs](h
 **Linux and macOS**
 
 ```bash
+sudo apt install cmake ninja-build        # macOS: brew install cmake ninja
 git clone https://github.com/Gravios/neurosuite-3.git
 cd neurosuite-3
-cmake -B build -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DNS_INSTALL_DEPS=ON
-cmake --build build --parallel
+cmake -B build -G Ninja -DCMAKE_INSTALL_PREFIX="$HOME/.local" -DNS_INSTALL_DEPS=ON
+cmake --build build
 cmake --install build
 ```
 
@@ -43,6 +44,7 @@ cmake --build --preset windows
 cmake --install build
 ```
 
+- With Ninja (`-G Ninja`) the build runs only as many jobs at once as the memory holds. With the default Makefile generator, give a job count (`cmake --build build -j 4`): a bare `--parallel` there starts every job at once and can make the machine stop responding.
 - `-DNS_INSTALL_DEPS=ON` installs the required packages (apt, Homebrew, vcpkg); leave it out to manage them yourself. On Windows, `install-deps-windows.bat` installs the compiler, the libraries (vcpkg) and Qt, and the install puts the programs on your `PATH`.
 - Build types, GPU backends, skipping a component (`-DNS_SKIP_KILOKLUSTAKWIK=ON`), sanitizers and reproducing CI: [BUILD.md](doc/BUILD.md). Each platform step by step: [INSTALL.md](doc/INSTALL.md).
 

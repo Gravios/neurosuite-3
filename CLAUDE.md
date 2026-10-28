@@ -45,8 +45,8 @@ Architecture and change history live in
 ## Build (detail in [`README.md`](README.md))
 
 ```sh
-cmake -B build                      # GPU backends (CUDA/HIP/SYCL) auto-detected; a CPU/OpenMP fallback always builds
-cmake --build build --parallel
+cmake -B build -G Ninja             # GPU backends (CUDA/HIP/SYCL) auto-detected; a CPU/OpenMP fallback always builds
+cmake --build build                 # Ninja job pools keep the parallel jobs within the memory
 ```
 
 Pass `-DNS_INSTALL_DEPS=ON` on the first configure to install system packages, or
