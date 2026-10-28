@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-28 | [Build: without a visible GPU, CUDA architectures the toolkit cannot compile are left out](#2026-10-28--build-without-a-visible-gpu-cuda-architectures-the-toolkit-cannot-compile-are-left-out) |
 | 2026-10-28 | [ndmanager-plugins: the CUDA filters, thresholds and grouper are built for the configured GPU architectures](#2026-10-28--ndmanager-plugins-the-cuda-filters-thresholds-and-grouper-are-built-for-the-configured-gpu-architectures) |
 | 2026-10-28 | [Klusters: the CUDA code is built for the configured GPU architectures](#2026-10-28--klusters-the-cuda-code-is-built-for-the-configured-gpu-architectures) |
 | 2026-10-28 | [Build: parallel jobs are limited to the installed memory](#2026-10-28--build-parallel-jobs-are-limited-to-the-installed-memory) |
@@ -139,6 +140,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-28 — Build: without a visible GPU, CUDA architectures the toolkit cannot compile are left out
+
+<details>
+<summary>Details</summary>
+
+With no GPU visible at configure time, the CUDA architecture list is cut to what the installed `nvcc` can compile.
+
+- **Before.**  The fallback list `75;86;89;100;120` was used as it is.  sm_100 and sm_120 need CUDA 12.8, so with an
+  older toolkit (Ubuntu 26.04's packaged CUDA 12.4) CMake's compiler check failed: "The CUDA compiler … is not able
+  to compile a simple test program".
+- **Now.**  `ns_gpu_cuda_arch_supported()` asks `nvcc --list-gpu-arch` and leaves out what it does not list, saying
+  so in the configure output.  With CUDA 12.4: `75;86;89`.  With 13.4 the list is unchanged.  `native`, used when
+  `nvidia-smi` sees a GPU, is not affected.
+
+Files: `cmake/GpuBackends.cmake`.
+
+</details>
 
 ## 2026-10-28 — ndmanager-plugins: the CUDA filters, thresholds and grouper are built for the configured GPU architectures
 

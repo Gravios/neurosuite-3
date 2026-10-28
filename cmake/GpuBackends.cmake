@@ -103,6 +103,7 @@ function(ns_gpu_select_cuda_arch)
     if(CMAKE_CUDA_ARCHITECTURES)
         return()
     endif()
+    ns_gpu_cuda_arch_supported(_fallback "${NS_GPU_CUDA_ARCH_FALLBACK}")
     find_program(_nvidia_smi nvidia-smi)
     if(_nvidia_smi)
         if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.24")
@@ -110,17 +111,61 @@ function(ns_gpu_select_cuda_arch)
                 CACHE STRING "CUDA architectures (native = auto-detect installed GPU)" FORCE)
             message(STATUS "neurosuite-3: CUDA architectures = native (GPU detected via nvidia-smi)")
         else()
-            set(CMAKE_CUDA_ARCHITECTURES "${NS_GPU_CUDA_ARCH_FALLBACK}"
+            set(CMAKE_CUDA_ARCHITECTURES "${_fallback}"
                 CACHE STRING "CUDA architectures (CMake < 3.24, native not supported)" FORCE)
-            message(STATUS "neurosuite-3: CUDA architectures = ${NS_GPU_CUDA_ARCH_FALLBACK} (CMake < 3.24)")
+            message(STATUS "neurosuite-3: CUDA architectures = ${_fallback} (CMake < 3.24)")
         endif()
     else()
         # No GPU at configure time (headless/CI) — explicit list.
-        set(CMAKE_CUDA_ARCHITECTURES "${NS_GPU_CUDA_ARCH_FALLBACK}"
+        set(CMAKE_CUDA_ARCHITECTURES "${_fallback}"
             CACHE STRING "CUDA architectures (explicit list — no GPU detected)" FORCE)
-        message(STATUS "neurosuite-3: CUDA architectures = ${NS_GPU_CUDA_ARCH_FALLBACK} (no GPU at configure time)")
+        message(STATUS "neurosuite-3: CUDA architectures = ${_fallback} (no GPU at configure time)")
     endif()
     unset(_nvidia_smi CACHE)
+endfunction()
+
+# -----------------------------------------------------------------------------
+# ns_gpu_cuda_arch_supported(<out> <archs>)
+#   <archs> without the entries CMAKE_CUDA_COMPILER cannot compile, judged by
+#   `nvcc --list-gpu-arch` (compute_NN lines).  An entry is kept by its leading
+#   number, so 90a and 100-real follow 90 and 100.  Unchanged when nvcc is not
+#   known, the query fails, or nothing would be left (the configure then names
+#   the problem itself).  Pre-project() safe.
+#
+#   Why: the fallback list reaches sm_100/sm_120 (CUDA >= 12.8).  With an older
+#   toolkit, e.g. Ubuntu 26.04's packaged CUDA 12.4, the whole list made CMake's
+#   compiler check fail ("The CUDA compiler ... is not able to compile a simple
+#   test program") whenever no GPU was visible at configure time.
+# -----------------------------------------------------------------------------
+function(ns_gpu_cuda_arch_supported _out _archs)
+    set(${_out} "${_archs}" PARENT_SCOPE)
+    if(NOT CMAKE_CUDA_COMPILER)
+        return()
+    endif()
+    execute_process(COMMAND "${CMAKE_CUDA_COMPILER}" --list-gpu-arch
+        OUTPUT_VARIABLE _list ERROR_QUIET RESULT_VARIABLE _rc TIMEOUT 60)
+    if(NOT _rc EQUAL 0)
+        return()
+    endif()
+    string(REGEX MATCHALL "compute_[0-9]+" _have "${_list}")
+    if(NOT _have)
+        return()
+    endif()
+    set(_keep "")
+    set(_drop "")
+    foreach(_a IN LISTS _archs)
+        string(REGEX MATCH "^[0-9]+" _num "${_a}")
+        if(_num AND "compute_${_num}" IN_LIST _have)
+            list(APPEND _keep "${_a}")
+        else()
+            list(APPEND _drop "${_a}")
+        endif()
+    endforeach()
+    if(_drop AND _keep)
+        message(STATUS "neurosuite-3: ${CMAKE_CUDA_COMPILER} cannot compile CUDA architectures "
+                       "${_drop}; leaving them out")
+        set(${_out} "${_keep}" PARENT_SCOPE)
+    endif()
 endfunction()
 
 # -----------------------------------------------------------------------------
