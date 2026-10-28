@@ -16,11 +16,11 @@ optional.
 | `process_decomposecollisions` | `ndm_decomposecollisions` | `PDC_USE_CUDA` (default `ON`); `process_decomposecollisions_cpu` is always built and is installed as `process_decomposecollisions` when there is no CUDA build |
 | `process_extractemg` | `ndm_extractemg` | `USE_CUDA`, `USE_HIP`, `USE_SYCL` (each default `ON`; CUDA > HIP > SYCL > CPU) |
 
-The first four set `CMAKE_CUDA_ARCHITECTURES` to `86 89 100 120` in their own
-CMakeLists, overriding any `-DCMAKE_CUDA_ARCHITECTURES` you pass. Compute
-capability 12.0 (Blackwell) needs **CUDA ≥ 12.8**, so with these four the
-toolkit must be 12.8 or newer whenever `nvcc` is on `PATH`, whatever GPU you
-have.
+In the full build the first four use the architectures the top-level
+configure chose: `native` (the GPU `nvidia-smi` sees), otherwise the fallback
+list, or `-DCMAKE_CUDA_ARCHITECTURES`. Only a standalone configure of the
+plugins (`cmake -S src/ndmanager-plugins`) sets `86 89 100 120` itself;
+compute capabilities 10.0 and 12.0 (Blackwell) need **CUDA ≥ 12.8** there.
 
 ## Step 1 — Install the CUDA Toolkit
 
@@ -39,11 +39,13 @@ the [CPU guide](linux-cpu.md#system-packages) (including `libgsl-dev`).
 The programs have no `--version` option. Check the configure output instead:
 
 ```
--- process_butterworth: CUDA build (86;89;100;120)
--- process_medianfilter: CUDA build (86;89;100;120)
--- process_medianthreshold: CUDA build (86;89;100;120)
--- process_spikegrouper: CUDA build (86;89;100;120)
+-- process_butterworth: CUDA build (native)
+-- process_medianfilter: CUDA build (native)
+-- process_medianthreshold: CUDA build (native)
+-- process_spikegrouper: CUDA build (native)
 ```
+
+(`86;89;100;120` in a standalone plugin configure, or the list you passed.)
 
 `CPU build` on those lines means CMake did not find `nvcc`: check
 `nvcc --version` and re-configure from a clean build directory.

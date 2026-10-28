@@ -6,7 +6,12 @@ if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
     set(CMAKE_CUDA_STANDARD          17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-    set(CMAKE_CUDA_ARCHITECTURES     86 89 100 120)
+    # In the monorepo the top-level CMakeLists.txt has chosen the architectures
+    # (native, the fallback list or -DCMAKE_CUDA_ARCHITECTURES=); keep them.
+    # This list is only for a standalone configure of the plugins.
+    if(NOT DEFINED NS_GPU_CUDA_ARCH_FALLBACK)
+        set(CMAKE_CUDA_ARCHITECTURES     86 89 100 120)
+    endif()
     add_executable(process_butterworth
         process_butterworth.cpp
         process_butterworth_cuda.cu)

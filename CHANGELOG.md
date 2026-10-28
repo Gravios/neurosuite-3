@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-28 | [ndmanager-plugins: the CUDA filters, thresholds and grouper are built for the configured GPU architectures](#2026-10-28--ndmanager-plugins-the-cuda-filters-thresholds-and-grouper-are-built-for-the-configured-gpu-architectures) |
 | 2026-10-28 | [Klusters: the CUDA code is built for the configured GPU architectures](#2026-10-28--klusters-the-cuda-code-is-built-for-the-configured-gpu-architectures) |
 | 2026-10-28 | [Build: parallel jobs are limited to the installed memory](#2026-10-28--build-parallel-jobs-are-limited-to-the-installed-memory) |
 | 2026-10-27 | [Klusters: Hierarchy ▸ Break Up Parent by Template sends each child to the large parent it matches](#2026-10-27--klusters-hierarchy--break-up-parent-by-template-sends-each-child-to-the-large-parent-it-matches) |
@@ -138,6 +139,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-28 — ndmanager-plugins: the CUDA filters, thresholds and grouper are built for the configured GPU architectures
+
+<details>
+<summary>Details</summary>
+
+`process_butterworth`, `process_medianfilter`, `process_medianthreshold` and `process_spikegrouper` are built for
+the architectures the rest of the build uses.
+
+- **Before.**  Each set `CMAKE_CUDA_ARCHITECTURES` to `86 89 100 120` in its own directory, overriding `native`
+  and `-DCMAKE_CUDA_ARCHITECTURES=`.  With Ubuntu 26.04's packaged CUDA 12.4 they stopped at
+  `nvcc fatal : Unsupported gpu architecture 'compute_100'`.
+- **Now.**  In the full build they keep the top-level choice.  A standalone configure of the plugins
+  (`cmake -S src/ndmanager-plugins`) still uses `86 89 100 120`.
+
+Files: the four `src/ndmanager-plugins/src/process_*/CMakeLists.txt`, `doc/ndmanager-plugins/install/linux-cuda.md`,
+`doc/gpu/README.md`.
+
+</details>
 
 ## 2026-10-28 — Klusters: the CUDA code is built for the configured GPU architectures
 

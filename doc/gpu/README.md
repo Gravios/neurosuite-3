@@ -205,8 +205,8 @@ After installing the GPU toolkit, run `cmake` on the repository root and check t
 -- neurosuite-3: CUDA architectures = native (GPU detected via nvidia-smi)
 -- CUDA backend enabled — compiler: /usr/local/cuda-12.8/bin/nvcc
 -- neurosuite-spectral: CUDA (cuFFT) GPU backend enabled
--- process_butterworth: CUDA build (86;89;100;120)
--- process_medianfilter: CUDA build (86;89;100;120)
+-- process_butterworth: CUDA build (native)
+-- process_medianfilter: CUDA build (native)
 -- KiloKlustaKwik: CUDA available — /usr/local/cuda-12.8/bin/nvcc
 -- KiloKlustaKwik: active backend → CUDA  (NVIDIA)
 ```
@@ -221,7 +221,7 @@ If only the CPU path is selected you will see messages such as:
 -- KiloKlustaKwik: active backend → CPU only (no GPU toolkit found)
 ```
 
-Pass `-DCMAKE_CUDA_ARCHITECTURES="120"` to target only a specific GPU generation and reduce build time. The `process_*` CUDA programs build for `86;89;100;120` regardless.
+Pass `-DCMAKE_CUDA_ARCHITECTURES="120"` to target only a specific GPU generation and reduce build time; every CUDA target in the build follows it (a standalone configure of the plugins uses `86;89;100;120` unless you pass it).
 
 ---
 
