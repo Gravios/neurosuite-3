@@ -695,10 +695,10 @@ corrected; the text describes the problem as it was.
    installed; `gui/qpagewidget_p.h` sits outside `gui/page/`.
 8. `customtypes.h` uses `int16_t`/`int64_t` but includes only `<stdlib.h>`;
    its `NVT_SHIFT_Y` comment says `(2^12-1)*2^16` for the value 65536.
-9. Klusters hard-codes `CUDA_ARCHITECTURES "75;86;89;120"`
-   (`src/klusters/src/CMakeLists.txt:177`), bypassing
-   `ns_gpu_select_cuda_arch()` ("native") and `NS_GPU_CUDA_ARCH_FALLBACK`
-   (which also has 100).
+9. **Fixed (0912):** Klusters hard-coded `CUDA_ARCHITECTURES "75;86;89;120"`,
+   bypassing `ns_gpu_select_cuda_arch()` ("native") and
+   `NS_GPU_CUDA_ARCH_FALLBACK`; with CUDA before 12.8 the build stopped at
+   `compute_120`.  It now takes `CMAKE_CUDA_ARCHITECTURES`.
 
 **xcorr**
 

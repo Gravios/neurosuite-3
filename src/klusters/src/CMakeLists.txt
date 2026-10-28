@@ -193,14 +193,14 @@ endif()
 # ---------------------------------------------------------------------------
 if(USE_CUDA)
     target_compile_definitions(klusters PRIVATE USE_CUDA)
+    # Architectures come from CMAKE_CUDA_ARCHITECTURES, which the top-level
+    # CMakeLists.txt sets before project(): "native" when nvidia-smi sees a GPU,
+    # otherwise the fallback list (cmake/GpuBackends.cmake), or whatever was
+    # passed with -DCMAKE_CUDA_ARCHITECTURES=.  No per-target list here: one
+    # overrode all of those and asked for sm_120, which CUDA before 12.8 (Ubuntu
+    # 26.04's packaged 12.4) refuses.
     set_target_properties(klusters PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON
-        # Architectures:
-        #   75  = Turing   (RTX 2000)
-        #   86  = Ampere   (RTX 3000)
-        #   89  = Ada      (RTX 4000)
-        #   120 = Blackwell (RTX 5000, e.g. RTX 5070 Ti)
-        CUDA_ARCHITECTURES "75;86;89;120"
     )
     target_link_libraries(klusters PRIVATE CUDA::cudart)
 endif()

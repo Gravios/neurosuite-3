@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-28 | [Klusters: the CUDA code is built for the configured GPU architectures](#2026-10-28--klusters-the-cuda-code-is-built-for-the-configured-gpu-architectures) |
 | 2026-10-28 | [Build: parallel jobs are limited to the installed memory](#2026-10-28--build-parallel-jobs-are-limited-to-the-installed-memory) |
 | 2026-10-27 | [Klusters: Hierarchy ▸ Break Up Parent by Template sends each child to the large parent it matches](#2026-10-27--klusters-hierarchy--break-up-parent-by-template-sends-each-child-to-the-large-parent-it-matches) |
 | 2026-10-27 | [Klusters: Merge Orphan Parents says why when it merges nothing](#2026-10-27--klusters-merge-orphan-parents-says-why-when-it-merges-nothing) |
@@ -137,6 +138,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-28 — Klusters: the CUDA code is built for the configured GPU architectures
+
+<details>
+<summary>Details</summary>
+
+Klusters' CUDA code is built for the architectures the rest of the build uses.
+
+- **Before.**  `src/klusters/src/CMakeLists.txt` set `CUDA_ARCHITECTURES "75;86;89;120"` on the target.  That
+  overrode `native` (the GPU `nvidia-smi` sees), the fallback list and `-DCMAKE_CUDA_ARCHITECTURES=`, and it asked
+  for sm_120, which CUDA before 12.8 refuses: with Ubuntu 26.04's packaged CUDA 12.4 the build stopped at
+  `nvcc fatal : Unsupported gpu architecture 'compute_120'`.  On an RTX 3060 it also compiled three architectures
+  the card does not use.
+- **Now.**  The target takes `CMAKE_CUDA_ARCHITECTURES`: `native` when a GPU is visible at configure time.
+
+Files: `src/klusters/src/CMakeLists.txt`, `src/libklustersshared/docs/LIBRARY.md` (known issue 9 marked fixed).
+
+</details>
 
 ## 2026-10-28 — Build: parallel jobs are limited to the installed memory
 
