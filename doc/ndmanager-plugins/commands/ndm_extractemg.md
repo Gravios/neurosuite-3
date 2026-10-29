@@ -126,6 +126,13 @@ the built GPU backend if a device is found, else the CPU; a named backend
 that is not built or has no device falls back to the CPU with a warning.
 Problems with N·nch < 100 000 samples run on the CPU regardless.
 
+On the CPU the threads are split between the probes and each probe's
+FastICA step (two probes on 16 threads: 2 × 8), and the result is the
+same for any thread count. The output gives the time per FastICA
+iteration for every probe and the time of each pass (`FastICA time`,
+`time: identification … streaming … events and waveforms`); compare
+`backend: cpu` with your GPU backend on your own recording to choose.
+
 ## Parameters
 
 | Name | Default | Meaning |

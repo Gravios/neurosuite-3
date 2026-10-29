@@ -81,6 +81,7 @@
 #include "progressbar.h"      // BlockProgress — stage progress on the terminal
 
 #include <algorithm>
+#include <chrono>
 #include <neurosuite/core/fileio64.hpp>
 #include <cerrno>
 #include <climits>
@@ -865,6 +866,12 @@ static bool parseArgs(int argc, char **argv, EmgArgs &args)
 //  Helpers
 // =============================================================================
 
+// Seconds since t0, for the -v timing lines.
+static double secondsSince(std::chrono::steady_clock::time_point t0)
+{
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+}
+
 static int64_t fileSizeBytes(const string &path)
 {
     return neurosuite::core::fileSize64(path);   // -1 on error; 64-bit on Windows too
@@ -1110,6 +1117,7 @@ static bool identifyComponent(const EmgArgs    &args,
     const uint64_t seed = 0x5eed1234ull
                         ^ (uint64_t)groupChans.front()
                         ^ ((uint64_t)nch << 32);
+    const auto icaStart = std::chrono::steady_clock::now();
     const bool icaOk = fastIcaDeflationPow3(hpData, nch, N, K,
                                             Amat, Wmat,
                                             icaIter, icaAcc,
@@ -1119,6 +1127,7 @@ static bool identifyComponent(const EmgArgs    &args,
                                             seed,
                                             pow3Kernel,
                                             [&](double f) { report(0.5 + 0.5 * f); });
+    const double icaSeconds = secondsSince(icaStart);
 
     if (icaAcc == 0) {
         cerr << "process_extractemg: FastICA produced no components\n";
@@ -1226,6 +1235,9 @@ static bool identifyComponent(const EmgArgs    &args,
              <<       " (accepted " << icaAcc << ", "
              << (icaOk ? "converged" : "partial") << ")\n"
              << "    FastICA total iterations  = " << icaIter << "\n"
+             << "    FastICA time              = " << icaSeconds << " s ("
+             <<       (icaIter > 0 ? 1e3 * icaSeconds / icaIter : 0.0)
+             <<       " ms per iteration, N = " << N << ")\n"
              << "    EMG component index       = " << bestK
              <<       " (uniformity = " << bestUni << ")\n"
              << "    cov-eig leading / total   = " << model.eigenvalueRatio << "\n"
@@ -1677,6 +1689,7 @@ int main(int argc, char **argv)
         cout << "Pass 1 threads: " << outerThreads << " probe(s) at a time × "
              << innerThreads << " per FastICA step\n";
 
+    const auto pass1Start = std::chrono::steady_clock::now();
     #pragma omp parallel for schedule(dynamic, 1) num_threads(outerThreads) if(runtime.size() > 1)
     for (int gi = 0; gi < (int)runtime.size(); ++gi) {
         if (pass1Failed) continue;
@@ -1745,10 +1758,12 @@ int main(int argc, char **argv)
     }
 
     prog.endStage();
+    const double pass1Seconds = secondsSince(pass1Start);
 
     // ------------------------------------------------------------------
     //  PASS 2 — streaming subtraction + EMG_au accumulation
     // ------------------------------------------------------------------
+    const auto pass2Start = std::chrono::steady_clock::now();
     prog.beginStage("CLEAN", totalSamples);
     if (!streamProcess(args, fdat, totalSamples, runtime, prog)) {
         std::fclose(fdat);
@@ -1756,10 +1771,12 @@ int main(int argc, char **argv)
     }
     std::fclose(fdat);
     prog.endStage();
+    const double pass2Seconds = secondsSince(pass2Start);
 
     // ------------------------------------------------------------------
     //  Detect events for each group (parallel across probes)
     // ------------------------------------------------------------------
+    const auto pass3Start = std::chrono::steady_clock::now();
     vector<vector<int64_t>> allEvents(runtime.size());
     #pragma omp parallel for schedule(dynamic, 1) if(runtime.size() > 1)
     for (int gi = 0; gi < (int)runtime.size(); ++gi) {
@@ -1897,6 +1914,10 @@ int main(int argc, char **argv)
     }
 
     prog.endStage();
+    if (args.verbose)
+        cout << "time: identification " << pass1Seconds << " s, streaming "
+             << pass2Seconds << " s, events and waveforms "
+             << secondsSince(pass3Start) << " s\n";
     progGuard.ok = true;
     prog.finish();
     return EXIT_SUCCESS;
