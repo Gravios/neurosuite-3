@@ -417,8 +417,11 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
     // If a GPU kernel was passed in, upload Z once.  prepare() may
     // refuse (returns false) for problems that are too small to benefit
     // — in that case we silently fall back to the inline CPU code.
+    // The Cpu kernel (--backend cpu, or the factory's fallback) runs the
+    // same pow3StepCpu as the inline code but on its own copy of Z, one
+    // more N × nch doubles per probe; the inline code is used instead.
     bool useExternalKernel = false;
-    if (pow3Kernel) {
+    if (pow3Kernel && pow3Kernel->backend() != IcaBackend::Cpu) {
         if (pow3Kernel->prepare(Z, nch, N)) {
             useExternalKernel = true;
         } else {

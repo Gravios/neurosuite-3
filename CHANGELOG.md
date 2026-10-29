@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-29 | [process_extractemg: no second copy of the whitened data on the CPU](#2026-10-29--process_extractemg-no-second-copy-of-the-whitened-data-on-the-cpu) |
 | 2026-10-29 | [process_extractemg: with several probes, FastICA uses every thread](#2026-10-29--process_extractemg-with-several-probes-fastica-uses-every-thread) |
 | 2026-10-29 | [process_extractemg: FastICA gives the same result on every run and for any thread count](#2026-10-29--process_extractemg-fastica-gives-the-same-result-on-every-run-and-for-any-thread-count) |
 | 2026-10-28 | [Docs: CUDA on Ubuntu 26.04](#2026-10-28--docs-cuda-on-ubuntu-2604) |
@@ -143,6 +144,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-29 — process_extractemg: no second copy of the whitened data on the CPU
+
+<details>
+<summary>Details</summary>
+
+On the CPU, FastICA no longer keeps a second copy of the whitened data.
+
+- **Before.**  With `--backend cpu`, and whenever a GPU kernel was not available, the Cpu pow3 kernel copied the
+  whitened matrix (N × nch doubles) and ran the same step as the inline code on the copy.
+- **Now.**  The inline code runs the step; only a GPU kernel gets the matrix.  Peak memory for one 64-channel probe
+  with a 20 s ID window: 487 → 381 MiB; at the default 60 s, about 330 MB less per probe.  Results unchanged.
+
+Files: `src/ndmanager-plugins/src/process_extractemg/process_extractemg.cpp`.
+
+</details>
 
 ## 2026-10-29 — process_extractemg: with several probes, FastICA uses every thread
 
