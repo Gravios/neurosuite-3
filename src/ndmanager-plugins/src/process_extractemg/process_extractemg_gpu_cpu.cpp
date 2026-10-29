@@ -90,10 +90,22 @@ void pow3StepCpu(const double *Z, int nch, int N, const double *w, double *newW,
         const int t1 = std::min(N, t0 + kPow3BlockRows);
         for (int t = t0; t < t1; ++t) {
             const double *zrow = Z + (size_t)t * nch;
-            double s = 0.0;
-            for (int c = 0; c < nch; ++c) s += zrow[c] * w[c];
+            // Four partial sums: one accumulator makes the dot product a
+            // chain of dependent adds, which (without -ffast-math) the
+            // compiler may not reorder, so it ran at the add latency.  The
+            // order is fixed, so the result is still deterministic.
+            double s0 = 0.0, s1 = 0.0, s2 = 0.0, s3 = 0.0;
+            int c = 0;
+            for (; c + 4 <= nch; c += 4) {
+                s0 += zrow[c]     * w[c];
+                s1 += zrow[c + 1] * w[c + 1];
+                s2 += zrow[c + 2] * w[c + 2];
+                s3 += zrow[c + 3] * w[c + 3];
+            }
+            for (; c < nch; ++c) s0 += zrow[c] * w[c];
+            const double s  = (s0 + s1) + (s2 + s3);
             const double yt = s * s * s;
-            for (int c = 0; c < nch; ++c) pb[c] += zrow[c] * yt;
+            for (c = 0; c < nch; ++c) pb[c] += zrow[c] * yt;
         }
     }
 

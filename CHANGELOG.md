@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-29 | [process_extractemg: the CPU FastICA step is faster per core](#2026-10-29--process_extractemg-the-cpu-fastica-step-is-faster-per-core) |
 | 2026-10-29 | [ndm_extractemg: the output gives the time of FastICA and of each pass](#2026-10-29--ndm_extractemg-the-output-gives-the-time-of-fastica-and-of-each-pass) |
 | 2026-10-29 | [process_extractemg: event detection no longer copies the EMG trace](#2026-10-29--process_extractemg-event-detection-no-longer-copies-the-emg-trace) |
 | 2026-10-29 | [process_extractemg: the streaming pass uses every thread for one probe too](#2026-10-29--process_extractemg-the-streaming-pass-uses-every-thread-for-one-probe-too) |
@@ -147,6 +148,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-29 — process_extractemg: the CPU FastICA step is faster per core
+
+<details>
+<summary>Details</summary>
+
+The CPU FastICA step is faster per core: the dot product in it uses four partial sums instead of one serial chain.
+
+- One 64-channel probe, 20 s ID window: 21.2 → 17.6 ms per iteration on 1 thread, 9.4 → 6.4 ms on 2 threads.
+- Results stay the same for any thread count, but differ in the last bits from the previous entry.  On the test
+  data the loading, unmixing, threshold and events were identical; the number of FastICA iterations changed, as
+  it does after any last-bit change (it depends on the data, not on this change).
+
+Files: `src/ndmanager-plugins/src/process_extractemg/process_extractemg_gpu_cpu.cpp`.
+
+</details>
 
 ## 2026-10-29 — ndm_extractemg: the output gives the time of FastICA and of each pass
 
