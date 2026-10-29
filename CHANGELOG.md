@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-29 | [process_extractemg: with several probes, FastICA uses every thread](#2026-10-29--process_extractemg-with-several-probes-fastica-uses-every-thread) |
 | 2026-10-29 | [process_extractemg: FastICA gives the same result on every run and for any thread count](#2026-10-29--process_extractemg-fastica-gives-the-same-result-on-every-run-and-for-any-thread-count) |
 | 2026-10-28 | [Docs: CUDA on Ubuntu 26.04](#2026-10-28--docs-cuda-on-ubuntu-2604) |
 | 2026-10-28 | [Build: without a visible GPU, CUDA architectures the toolkit cannot compile are left out](#2026-10-28--build-without-a-visible-gpu-cuda-architectures-the-toolkit-cannot-compile-are-left-out) |
@@ -142,6 +143,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-29 — process_extractemg: with several probes, FastICA uses every thread
+
+<details>
+<summary>Details</summary>
+
+With two or more probes, FastICA uses every thread.
+
+- **Before.**  Nested parallelism was switched off (`omp_set_max_active_levels(1)`), so each probe's pow3 step ran
+  on one thread: P probes used P threads during identification however many the machine had (two probes, 8
+  threads: 2 busy).  Since the step reads the whole whitened matrix every iteration, that left most of the memory
+  bandwidth unused.
+- **Now.**  The threads are split: min(P, threads) probes at a time, and threads ÷ that for each probe's pow3 step
+  (two probes on 16 threads: 2 × 8).  `-v` prints the split.  A single probe is unchanged (all threads in the
+  step), as are the results: the step is order-independent since the previous entry.
+
+Files: `src/ndmanager-plugins/src/process_extractemg/process_extractemg.cpp`.
+
+</details>
 
 ## 2026-10-29 — process_extractemg: FastICA gives the same result on every run and for any thread count
 

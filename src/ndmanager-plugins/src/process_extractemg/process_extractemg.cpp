@@ -1597,10 +1597,9 @@ int main(int argc, char **argv)
     //  inside the parallel region (fopen/fseek/fread is not thread-safe
     //  on a shared FILE*), separate FastICA run, separate model.  The
     //  identifyComponent function itself is internally OpenMP-parallel
-    //  in its pow3 inner kernel; nested parallelism is set to off so a
-    //  multi-probe session uses its threads on the across-probes axis,
-    //  while a single-probe session has them all available for the
-    //  inner kernel.
+    //  in its pow3 inner kernel; the threads are split between the two
+    //  levels (probes × pow3 step), so every thread works whatever the
+    //  number of probes.
     // ------------------------------------------------------------------
     vector<GroupRuntime> runtime(args.groupChannels.size());
     for (size_t g = 0; g < args.groupChannels.size(); ++g)
@@ -1649,16 +1648,34 @@ int main(int argc, char **argv)
         cout << ")\n";
     }
 
-#if defined(_OPENMP) && _OPENMP >= 200805
-    omp_set_max_active_levels(1);   // avoid nested oversubscription
-#elif defined(_OPENMP)
-    omp_set_nested(0);              // OpenMP 2.0 (MSVC): no max_active_levels
+    // Threads: one per probe on the outer level (at most the thread count),
+    // the rest shared out to each probe's pow3 step.  Before, nesting was
+    // switched off, so P probes ran FastICA on P threads however many the
+    // machine had (2 busy threads of 8 with two probes).
+    int outerThreads = 1, innerThreads = 1;
+#ifdef _OPENMP
+    {
+        const int maxThreads = std::max(1, omp_get_max_threads());
+        outerThreads = std::max(1, std::min<int>((int)runtime.size(), maxThreads));
+        innerThreads = std::max(1, maxThreads / outerThreads);
+    }
+#  if _OPENMP >= 200805
+    omp_set_max_active_levels(2);
+#  else
+    omp_set_nested(1);              // OpenMP 2.0 (MSVC): no max_active_levels
+#  endif
 #endif
+    if (args.verbose)
+        cout << "Pass 1 threads: " << outerThreads << " probe(s) at a time × "
+             << innerThreads << " per FastICA step\n";
 
-    #pragma omp parallel for schedule(dynamic, 1) if(runtime.size() > 1)
+    #pragma omp parallel for schedule(dynamic, 1) num_threads(outerThreads) if(runtime.size() > 1)
     for (int gi = 0; gi < (int)runtime.size(); ++gi) {
         if (pass1Failed) continue;
         const size_t g = (size_t)gi;
+#ifdef _OPENMP
+        omp_set_num_threads(innerThreads);   // this probe's nested regions
+#endif
 
         // One Pow3Kernel per OpenMP thread.  GPU kernels keep device
         // buffers (Z, w, newW, y) in their state, so they cannot be
