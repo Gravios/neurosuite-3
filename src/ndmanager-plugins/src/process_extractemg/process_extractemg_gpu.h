@@ -96,3 +96,19 @@ public:
 // Factory.  Returns a CPU kernel if the requested backend is
 // unavailable; never returns nullptr.
 std::unique_ptr<Pow3Kernel> makePow3Kernel(IcaBackend backend);
+
+// ---------------------------------------------------------------------------
+// pow3StepCpu — the CPU pow3 step, shared by FastICA's inline path and the
+// Cpu kernel:
+//     newW[c] = ( Σ_t Z[t,c] * (Σ_c' Z[t,c']*w[c'])^3 ) / N  -  3 * w[c]
+//
+// The rows are summed in fixed blocks of kPow3BlockRows and the block sums
+// are added in block order, so the result is the same, bit for bit, for any
+// number of OpenMP threads and on every rerun.  (Per-thread sums merged in a
+// critical section, as before, are added in whatever order the threads
+// arrive: with 3 or more threads every run took a different FastICA path.)
+// `partials` is scratch space, resized as needed; keep it across calls.
+// ---------------------------------------------------------------------------
+constexpr int kPow3BlockRows = 4096;
+void pow3StepCpu(const double *Z, int nch, int N, const double *w, double *newW,
+                 std::vector<double> &partials);

@@ -14,6 +14,7 @@
 
 #include "process_extractemg_gpu.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -34,7 +35,8 @@ bool gpuHipRuntimeAvailable();
 bool gpuSyclRuntimeAvailable();
 
 // ---------------------------------------------------------------------------
-// Pow3KernelCpu — OpenMP-parallel reduction with thread-local buffers.
+// Pow3KernelCpu — pow3StepCpu on its own copy of Z (the reference kernel
+// the pow3 test checks).
 // ---------------------------------------------------------------------------
 namespace {
 
@@ -50,42 +52,59 @@ public:
 
     bool step(const double *w, double *newW) override
     {
-        const int nch = m_nch;
-        const int N   = m_N;
-        const double *Z = m_Z.data();
-
-        for (int c = 0; c < nch; ++c) newW[c] = 0.0;
-
-        #pragma omp parallel
-        {
-            std::vector<double> localW((size_t)nch, 0.0);
-            #pragma omp for nowait schedule(static)
-            for (int t = 0; t < N; ++t) {
-                const double *zrow = Z + (size_t)t * nch;
-                double s = 0.0;
-                for (int c = 0; c < nch; ++c) s += zrow[c] * w[c];
-                const double yt = s * s * s;
-                for (int c = 0; c < nch; ++c) localW[(size_t)c] += zrow[c] * yt;
-            }
-            #pragma omp critical
-            for (int c = 0; c < nch; ++c) newW[c] += localW[(size_t)c];
-        }
-
-        const double invN = 1.0 / (double)N;
-        for (int c = 0; c < nch; ++c) newW[c] = newW[c] * invN - 3.0 * w[c];
+        pow3StepCpu(m_Z.data(), m_nch, m_N, w, newW, m_partials);
         return true;
     }
 
-    void destroy() override { m_Z.clear(); m_Z.shrink_to_fit(); }
+    void destroy() override
+    {
+        m_Z.clear(); m_Z.shrink_to_fit();
+        m_partials.clear(); m_partials.shrink_to_fit();
+    }
     IcaBackend backend() const override { return IcaBackend::Cpu; }
 
 private:
     std::vector<double> m_Z;
+    std::vector<double> m_partials;
     int                 m_nch = 0;
     int                 m_N   = 0;
 };
 
 } // namespace
+
+// ---------------------------------------------------------------------------
+// pow3StepCpu — fixed blocks, block sums added in order (see the header).
+// ---------------------------------------------------------------------------
+void pow3StepCpu(const double *Z, int nch, int N, const double *w, double *newW,
+                 std::vector<double> &partials)
+{
+    const int nBlocks = (N + kPow3BlockRows - 1) / kPow3BlockRows;
+    partials.resize((size_t)nBlocks * nch);
+    double *part = partials.data();
+
+    #pragma omp parallel for schedule(static)
+    for (int b = 0; b < nBlocks; ++b) {
+        double *pb = part + (size_t)b * nch;
+        for (int c = 0; c < nch; ++c) pb[c] = 0.0;
+        const int t0 = b * kPow3BlockRows;
+        const int t1 = std::min(N, t0 + kPow3BlockRows);
+        for (int t = t0; t < t1; ++t) {
+            const double *zrow = Z + (size_t)t * nch;
+            double s = 0.0;
+            for (int c = 0; c < nch; ++c) s += zrow[c] * w[c];
+            const double yt = s * s * s;
+            for (int c = 0; c < nch; ++c) pb[c] += zrow[c] * yt;
+        }
+    }
+
+    for (int c = 0; c < nch; ++c) newW[c] = 0.0;
+    for (int b = 0; b < nBlocks; ++b) {
+        const double *pb = part + (size_t)b * nch;
+        for (int c = 0; c < nch; ++c) newW[c] += pb[c];
+    }
+    const double invN = 1.0 / (double)N;
+    for (int c = 0; c < nch; ++c) newW[c] = newW[c] * invN - 3.0 * w[c];
+}
 
 // ---------------------------------------------------------------------------
 // Backend availability + parsing

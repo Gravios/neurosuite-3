@@ -440,7 +440,8 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
     int    iterTotal   = 0;
 
     std::vector<double> w(nch), wOld(nch);
-    std::vector<double> y((size_t)N), proj((size_t)K), newW((size_t)nch);
+    std::vector<double> proj((size_t)K), newW((size_t)nch);
+    std::vector<double> pow3Partials;     // pow3StepCpu scratch
 
     auto orthoAgainstB = [&](double *vec) {
         // proj_k = sum_c B[c, k] * vec[c]
@@ -548,42 +549,11 @@ bool fastIcaDeflationPow3(const std::vector<double> &X,    // N × nch (row-majo
                 continue;
             }
 
-            for (int c = 0; c < nch; ++c) newW[(size_t)c] = 0.0;
-
-            // ── Parallel pow3 update with thread-local newW accumulators.
-            //
-            // The reduction target is a length-nch vector, which OpenMP's
-            // built-in reduction(+:array) supports but with per-thread
-            // private buffers; we do the same explicitly so the access
-            // pattern is unambiguous to the compiler and to the reader.
-            //
-            // For typical nch (~8–32) each thread's buffer is 64–256 B —
-            // L1-resident — and the across-thread merge in the critical
-            // section is O(numThreads × nch), negligible compared with
-            // the O(N × nch) inner work.
-            //
-            // When nested inside the across-probes parallel region,
-            // omp_set_max_active_levels(1) ensures this construct runs
-            // serially (only the outer probe-loop level is active),
-            // avoiding oversubscription on multi-probe sessions.
-            #pragma omp parallel
-            {
-                std::vector<double> localW((size_t)nch, 0.0);
-                #pragma omp for nowait schedule(static)
-                for (int t = 0; t < N; ++t) {
-                    const double *zrow = Z.data() + (size_t)t * nch;
-                    double s = 0.0;
-                    for (int c = 0; c < nch; ++c) s += zrow[c] * w[c];
-                    const double yt = s * s * s;
-                    for (int c = 0; c < nch; ++c) localW[(size_t)c] += zrow[c] * yt;
-                }
-                #pragma omp critical
-                for (int c = 0; c < nch; ++c) newW[(size_t)c] += localW[(size_t)c];
-            }
-
-            const double invN = 1.0 / (double)N;
-            for (int c = 0; c < nch; ++c)
-                w[c] = newW[(size_t)c] * invN - 3.0 * w[c];
+            // ── CPU pow3 update: fixed row blocks, block sums added in
+            // order, so the step (and so the whole FastICA path) is the same
+            // for any thread count and on every rerun (pow3StepCpu).
+            pow3StepCpu(Z.data(), nch, N, w.data(), newW.data(), pow3Partials);
+            for (int c = 0; c < nch; ++c) w[c] = newW[(size_t)c];
 
             normalize(w.data());
         }

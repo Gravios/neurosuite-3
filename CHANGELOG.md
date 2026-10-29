@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-29 | [process_extractemg: FastICA gives the same result on every run and for any thread count](#2026-10-29--process_extractemg-fastica-gives-the-same-result-on-every-run-and-for-any-thread-count) |
 | 2026-10-28 | [Docs: CUDA on Ubuntu 26.04](#2026-10-28--docs-cuda-on-ubuntu-2604) |
 | 2026-10-28 | [Build: without a visible GPU, CUDA architectures the toolkit cannot compile are left out](#2026-10-28--build-without-a-visible-gpu-cuda-architectures-the-toolkit-cannot-compile-are-left-out) |
 | 2026-10-28 | [ndmanager-plugins: the CUDA filters, thresholds and grouper are built for the configured GPU architectures](#2026-10-28--ndmanager-plugins-the-cuda-filters-thresholds-and-grouper-are-built-for-the-configured-gpu-architectures) |
@@ -141,6 +142,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-29 — process_extractemg: FastICA gives the same result on every run and for any thread count
+
+<details>
+<summary>Details</summary>
+
+`process_extractemg` gives the same FastICA result on every run and for any number of threads.
+
+- **Before.**  The pow3 step summed per-thread partial sums in a critical section, in whatever order the threads
+  arrived.  With 3 or more threads, one-ulp differences sent FastICA down a different path on every run: on a
+  synthetic 64-channel probe, four runs with 4 threads took 3,601, 4,569, 4,913 and 11,666 iterations and wrote
+  four different loadings.  The per-group seed ("so reruns reproduce") only held up to 2 threads.
+- **Now.**  `pow3StepCpu()` sums the rows in fixed blocks of 4,096 and adds the block sums in order.  The same probe
+  takes 7,668 iterations with 1 or 4 threads, run after run, with identical outputs.  The inline FastICA loop and
+  the Cpu kernel share it; an unused N-length buffer is gone.
+- **Results change once:** the summation order differs from the old serial order, so loadings differ in the last
+  bits from earlier runs (event times and the `.emg` trace were the same on the test data).
+- **Test:** `ndm_test_extractemg_pow3` checks the step is bit-identical for 1, 2, 3, 4 and 7 threads.
+
+Files: `src/ndmanager-plugins/src/process_extractemg/process_extractemg.cpp`, `process_extractemg_gpu.h`,
+`process_extractemg_gpu_cpu.cpp`, `process_extractemg_pow3_test.cpp`.
+
+</details>
 
 ## 2026-10-28 — Docs: CUDA on Ubuntu 26.04
 

@@ -32,6 +32,10 @@
 #include <random>
 #include <vector>
 
+#ifdef _OPENMP
+#  include <omp.h>
+#endif
+
 namespace {
 
 int failures = 0;
@@ -134,6 +138,35 @@ int main(int argc, char **argv)
             k->destroy();
         }
     }
+
+    // The CPU step is the same, bit for bit, whatever the thread count: FastICA
+    // follows a different path after any one-ulp difference, so a sum whose
+    // order depends on scheduling made every run with 3+ threads different.
+#ifdef _OPENMP
+    {
+        const Problem p = makeProblem(3 * kPow3BlockRows + 77, 13, 23u);
+        std::vector<double> ref(static_cast<std::size_t>(p.nch));
+        std::vector<double> got(static_cast<std::size_t>(p.nch));
+        std::vector<double> scratch;
+        const int saved = omp_get_max_threads();
+        omp_set_num_threads(1);
+        pow3StepCpu(p.Z.data(), p.nch, p.n, p.w.data(), ref.data(), scratch);
+        bool same = true;
+        int badThreads = 0;
+        for (int th : {2, 3, 4, 7}) {
+            omp_set_num_threads(th);
+            for (int rep = 0; rep < 3; ++rep) {
+                pow3StepCpu(p.Z.data(), p.nch, p.n, p.w.data(), got.data(), scratch);
+                if (std::memcmp(got.data(), ref.data(), sizeof(double) * ref.size()) != 0) {
+                    same = false;
+                    badThreads = th;
+                }
+            }
+        }
+        omp_set_num_threads(saved);
+        check(same, "cpu step is bit-identical for 1, 2, 3, 4 and 7 threads", badThreads, 0);
+    }
+#endif
 
     // Timing (not a check).
     const int tn = benchN > 0 ? benchN : 100000;
