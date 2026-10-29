@@ -1333,23 +1333,28 @@ static bool streamProcess(const EmgArgs        &args,
 
         // Per-group EMG projection + subtraction
         //
-        // Groups are independent: each group only writes to its own slice
-        // of emgAu (one float per sample, indexed by group), and to its
-        // own subset of channels in bufClean.  Group-channel disjointness
-        // is enforced at parseArgs() time, so per-channel writes into
-        // bufClean from different groups never collide.  This makes the
-        // loop trivially parallelisable across probes.
-        #pragma omp parallel for schedule(static) if(runtime.size() > 1)
-        for (int gi = 0; gi < (int)runtime.size(); ++gi) {
-            const size_t g = (size_t)gi;
+        // Every sample is independent: it writes only its own emgAu
+        // entries and its own row of bufClean (the groups' channels are
+        // disjoint, enforced at parseArgs() time).  So the chunk is split
+        // over the threads by blocks of samples, which keeps every thread
+        // busy whatever the number of probes (splitting by probe left a
+        // one-probe session on one thread).  The block count is an int for
+        // OpenMP 2.0 (MSVC); the arithmetic per sample is unchanged.
+        const int64_t kStreamRows = 4096;
+        const int     nStreamBlocks = (int)((gotN + kStreamRows - 1) / kStreamRows);
+        #pragma omp parallel for schedule(static)
+        for (int bi = 0; bi < nStreamBlocks; ++bi)
+        for (size_t g = 0; g < runtime.size(); ++g) {
             const auto &chans = runtime[g].channels;
             const auto &As    = runtime[g].model.loading;       // mixing
             const auto &Ws    = runtime[g].model.unmixing;      // unmixing
             const auto &mu    = runtime[g].chanMean;
             const int   nch   = (int)chans.size();
             float       *au   = runtime[g].emgAu.data() + soFar;
+            const int64_t tBegin = (int64_t)bi * kStreamRows;
+            const int64_t tEnd   = std::min(gotN, tBegin + kStreamRows);
 
-            for (int64_t t = 0; t < gotN; ++t) {
+            for (int64_t t = tBegin; t < tEnd; ++t) {
                 const int16_t *row = bufRaw.data() + (size_t)t * args.nChannels;
                 // EMG_au[t] = (x[t,:] - mu) · Ws    (MATLAB: x*Ws')
                 double s = 0.0;
