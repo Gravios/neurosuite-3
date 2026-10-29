@@ -880,8 +880,10 @@ static double medianAbs(const vector<double> &x)
     return tmp[tmp.size() / 2];
 }
 
-// Boxcar smoothing of |signal|, in-place into dst (same length).
-static void boxcarAbs(const vector<double> &signal,
+// Boxcar smoothing of |signal|, in-place into dst (same length).  The
+// float input is widened per sample, exactly as a double copy of it would
+// be, without holding that copy (8 bytes per sample per probe).
+static void boxcarAbs(const vector<float>  &signal,
                       int                   windowSamples,
                       vector<double>       &dst)
 {
@@ -894,15 +896,15 @@ static void boxcarAbs(const vector<double> &signal,
     int       cnt  = 0;
 
     // Prime accumulator on [0, half)
-    for (int i = 0; i < half && (size_t)i < n; ++i) { acc += std::fabs(signal[(size_t)i]); ++cnt; }
+    for (int i = 0; i < half && (size_t)i < n; ++i) { acc += std::fabs((double)signal[(size_t)i]); ++cnt; }
 
     for (size_t i = 0; i < n; ++i) {
         // Add right-edge sample
         const ptrdiff_t addIdx = (ptrdiff_t)i + half;
-        if (addIdx >= 0 && (size_t)addIdx < n) { acc += std::fabs(signal[(size_t)addIdx]); ++cnt; }
+        if (addIdx >= 0 && (size_t)addIdx < n) { acc += std::fabs((double)signal[(size_t)addIdx]); ++cnt; }
         // Drop left-edge sample
         const ptrdiff_t dropIdx = (ptrdiff_t)i - half - 1;
-        if (dropIdx >= 0 && (size_t)dropIdx < n) { acc -= std::fabs(signal[(size_t)dropIdx]); --cnt; }
+        if (dropIdx >= 0 && (size_t)dropIdx < n) { acc -= std::fabs((double)signal[(size_t)dropIdx]); --cnt; }
         dst[i] = (cnt > 0) ? acc / (double)cnt : 0.0;
     }
 }
@@ -1442,10 +1444,8 @@ static vector<int64_t> detectEvents(const EmgArgs    &args,
                                                  * args.samplingRate));
 
     // Smoothed |EMG_au| envelope
-    vector<double> auD((size_t)emgAu.size());
-    for (size_t i = 0; i < emgAu.size(); ++i) auD[i] = emgAu[i];
     vector<double> env;
-    boxcarAbs(auD, envSamp, env);
+    boxcarAbs(emgAu, envSamp, env);
 
     // Peaks above threshold separated by at least refractorySamples,
     // refined within a peakSearchLength window.

@@ -71,8 +71,10 @@ fallback this rules out spike groups that share channels).
    Windows that run past the file edge are zero-padded.
 
 The full-length EMG trace of every group is held in memory as float32
-during steps 3–4: 4 bytes × samples × groups (about 0.6 GB per probe for
-2 h at 20 kHz).
+during steps 3–4: 4 bytes × samples × groups. Event detection (step 4)
+adds the smoothed envelope, 8 bytes × samples per group, for all groups
+at once. For 2 h at 20 kHz that is about 0.6 GB per probe for the trace
+and 1.2 GB more per probe while the events are detected.
 
 **Progress.** A stage bar shows the run on the terminal, like the spike
 detectors': `ICA` (identification, steps 1–2 — the reads of the ID window

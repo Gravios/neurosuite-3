@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-29 | [process_extractemg: event detection no longer copies the EMG trace](#2026-10-29--process_extractemg-event-detection-no-longer-copies-the-emg-trace) |
 | 2026-10-29 | [process_extractemg: the streaming pass uses every thread for one probe too](#2026-10-29--process_extractemg-the-streaming-pass-uses-every-thread-for-one-probe-too) |
 | 2026-10-29 | [process_extractemg: no second copy of the whitened data on the CPU](#2026-10-29--process_extractemg-no-second-copy-of-the-whitened-data-on-the-cpu) |
 | 2026-10-29 | [process_extractemg: with several probes, FastICA uses every thread](#2026-10-29--process_extractemg-with-several-probes-fastica-uses-every-thread) |
@@ -145,6 +146,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-29 — process_extractemg: event detection no longer copies the EMG trace
+
+<details>
+<summary>Details</summary>
+
+EMG event detection holds one less full-length copy of each probe's trace.
+
+- **Before.**  `detectEvents` copied the float32 EMG trace into a double vector before smoothing: 8 bytes per
+  sample per probe, for all probes at once, on top of the trace (4 B) and the envelope (8 B).  For a 351-minute
+  recording at 32,552 Hz that copy is 5.5 GB per probe.
+- **Now.**  The boxcar reads the float trace and widens each sample as it goes; the numbers are the same.  Heap peak
+  on a 5-minute, 96-channel test file (one 64-channel probe): 195.4 → 117.3 MB.  `ndm_extractemg.md` now counts
+  the envelope in its memory estimate, which it left out.
+
+Files: `src/ndmanager-plugins/src/process_extractemg/process_extractemg.cpp`,
+`doc/ndmanager-plugins/commands/ndm_extractemg.md`.
+
+</details>
 
 ## 2026-10-29 — process_extractemg: the streaming pass uses every thread for one probe too
 
