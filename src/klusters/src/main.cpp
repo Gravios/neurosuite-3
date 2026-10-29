@@ -29,6 +29,7 @@
 #endif
 
 #include <klustersshared/appicon.h>
+#include <klustersshared/appsettings.h>
 #include <klustersshared/theme.h>
 #include "config-klusters.h"
 
@@ -54,9 +55,9 @@ int main(int argc, char* argv[])
         setrlimit(RLIMIT_NOFILE, &nofile);
     }
 #endif
-    QApplication::setOrganizationName("sourceforge");
-    QApplication::setOrganizationDomain("sourceforge.net");
-    QApplication::setApplicationName("klusters");
+    // Settings in ~/.config/neurosuite-3/klusters.conf (moved there from
+    // ~/.config/sourceforge/ on the first start; klustersshared/appsettings.h).
+    neurosuite::initApplicationIdentity(QStringLiteral("klusters"));
     QApplication::setApplicationVersion(KLUSTERS_VERSION);
 
     QApplication app(argc, argv);

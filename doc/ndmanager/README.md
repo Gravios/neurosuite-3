@@ -607,8 +607,10 @@ sessions can reuse it. The dialog asks for a name, an optional description and t
 sections to include, one checkbox each; the session's unsaved edits are included. By
 default the template holds everything except what belongs to this session alone:
 general information, `sourceRecording` and the units are left unchecked.
-Templates go to your template folder, `<AppDataLocation>/templates` (on Linux under
-`~/.local/share/`), as `<name>.template.yaml`. Browse… writes the file anywhere else.
+Templates go to your template folder, `<AppDataLocation>/templates` (on Linux
+`~/.local/share/neurosuite-3/ndmanager/templates`; templates saved before 2026-10-29
+under `~/.local/share/sourceforge/ndmanager/` are copied there on the first start), as
+`<name>.template.yaml`. Browse… writes the file anywhere else.
 
 **File ▸ Apply Template to Session…** lists the templates in that folder by name
 (Other File… takes any file, including an ordinary session file), and the sections the

@@ -120,6 +120,14 @@ if(NS_BUILD_TESTS)
     target_link_libraries(klustersshared_colors_test PRIVATE Neurosuite::qt Qt6::Gui)
     add_test(NAME klustersshared_colors_test COMMAND klustersshared_colors_test)
 
+    # Settings location: organization neurosuite-3, and the copy from the old
+    # "sourceforge" / "neurosuite" locations on the first start (appsettings.h).
+    add_executable(klustersshared_appsettings_test test/appsettings_test.cpp)
+    target_include_directories(klustersshared_appsettings_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/klustersshared")
+    target_link_libraries(klustersshared_appsettings_test PRIVATE Neurosuite::qt Qt6::Core)
+    add_test(NAME klustersshared_appsettings_test COMMAND klustersshared_appsettings_test)
+
     # sdiffPairs grammar (sdiff_pairs.h, header-only, no Qt): trees, sets,
     # strict positions; malformed patterns are rejected, not reinterpreted.
     add_executable(klustersshared_sdiff_pairs_test test/sdiff_pairs_test.cpp)

@@ -33,6 +33,7 @@
 #include "ndmanager.h"
 
 #include <klustersshared/appicon.h>
+#include <klustersshared/appsettings.h>
 #include <klustersshared/theme.h>
 
 QString version;
@@ -56,9 +57,10 @@ static QString sessionParameterFile(const QDir& dir)
 
 int main(int argc, char **argv)
 {
-    QApplication::setOrganizationName("sourceforge");
-    QApplication::setOrganizationDomain("sourceforge.net");
-    QApplication::setApplicationName("ndmanager");
+    // Settings in ~/.config/neurosuite-3/ndmanager.conf, session templates in
+    // ~/.local/share/neurosuite-3/ndmanager/templates (moved from sourceforge/
+    // on the first start; klustersshared/appsettings.h).
+    neurosuite::initApplicationIdentity(QStringLiteral("ndmanager"));
 
     QApplication app(argc, argv);
 

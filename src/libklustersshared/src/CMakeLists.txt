@@ -40,6 +40,7 @@ set(_srcs
     klustersshared/parameteryamlreader_probes.cpp
     klustersshared/theme.cpp
     klustersshared/appicon.cpp
+    klustersshared/appsettings.cpp
     # input binding core (relocated from src/klusters/src/input in the neuroscope
     # input-overhaul S0 — now shared by klusters + neuroscope; see
     # claude/neuroscope-input-plan.md and src/klusters/docs/INPUT_SYSTEM.md)
@@ -87,7 +88,8 @@ set(_hdrs
     klustersshared/neuroscopevideoinfo.h
     klustersshared/channelcolorentry.h
     klustersshared/theme.h
-    klustersshared/appicon.h)
+    klustersshared/appicon.h
+    klustersshared/appsettings.h)
 
 qt_add_resources(_srcs
     gui/libklustersshared-icons.qrc

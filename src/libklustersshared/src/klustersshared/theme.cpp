@@ -3,6 +3,7 @@
  ***************************************************************************/
 
 #include "theme.h"
+#include "appsettings.h"
 
 #include <QtGlobal>
 #include <QApplication>
@@ -188,14 +189,14 @@ QString themeDisplayName(Theme theme)
 
 Theme loadThemePreference()
 {
-    QSettings s(QStringLiteral("neurosuite"), QStringLiteral("appearance"));
+    QSettings s(settingsOrganization(), QStringLiteral("appearance"));
     return themeFromString(
         s.value(QStringLiteral("theme"), QStringLiteral("system")).toString());
 }
 
 void saveThemePreference(Theme theme)
 {
-    QSettings s(QStringLiteral("neurosuite"), QStringLiteral("appearance"));
+    QSettings s(settingsOrganization(), QStringLiteral("appearance"));
     s.setValue(QStringLiteral("theme"), themeToString(theme));
 }
 

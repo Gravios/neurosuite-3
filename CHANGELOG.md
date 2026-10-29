@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-29 | [Settings move to ~/.config/neurosuite-3](#2026-10-29--settings-move-to-configneurosuite-3) |
 | 2026-10-29 | [process_extractemg: the CPU FastICA step is faster per core](#2026-10-29--process_extractemg-the-cpu-fastica-step-is-faster-per-core) |
 | 2026-10-29 | [ndm_extractemg: the output gives the time of FastICA and of each pass](#2026-10-29--ndm_extractemg-the-output-gives-the-time-of-fastica-and-of-each-pass) |
 | 2026-10-29 | [process_extractemg: event detection no longer copies the EMG trace](#2026-10-29--process_extractemg-event-detection-no-longer-copies-the-emg-trace) |
@@ -148,6 +149,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-29 — Settings move to ~/.config/neurosuite-3
+
+<details>
+<summary>Details</summary>
+
+Klusters, NeuroScope and NDManager keep their settings in `~/.config/neurosuite-3/`.
+
+- **Before.**  `~/.config/sourceforge/<program>.conf` (the organization name inherited from the original
+  Neurosuite), the theme in `~/.config/neurosuite/appearance.conf`, and data such as NDManager's session templates
+  in `~/.local/share/sourceforge/<program>/`.
+- **Now.**  `~/.config/neurosuite-3/<program>.conf` and `appearance.conf`, data in
+  `~/.local/share/neurosuite-3/<program>/` (macOS: `com.neurosuite-3.*` plists; Windows:
+  `HKEY_CURRENT_USER\Software\neurosuite-3`).
+- **Moving over.**  The first start of each program copies its old settings, the theme and its data folder, when
+  it has none of its own yet, and prints a line saying so.  Nothing is overwritten or deleted; the old files stay
+  for older builds.  INSTALL.md has a table of the locations.
+- **Code.**  `neurosuite::initApplicationIdentity()` (`libklustersshared`, `appsettings.h`) replaces the
+  organization/domain/application lines in the three `main.cpp`; `theme.cpp` uses the same organization.  Test:
+  `klustersshared_appsettings_test`.
+
+Files: `src/libklustersshared/src/klustersshared/appsettings.{h,cpp}` (new), `theme.cpp`,
+`src/libklustersshared/CMakeLists.txt`, `src/libklustersshared/src/CMakeLists.txt`,
+`src/libklustersshared/test/appsettings_test.cpp` (new), `src/{klusters,ndmanager,neuroscope}/src/main.cpp`,
+`doc/INSTALL.md`, `doc/ndmanager/README.md`, `src/klusters/docs/PLUGIN_API.md`,
+`src/libklustersshared/docs/LIBRARY.md`.
+
+</details>
 
 ## 2026-10-29 — process_extractemg: the CPU FastICA step is faster per core
 

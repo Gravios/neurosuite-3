@@ -28,13 +28,14 @@
 #include "neuroscope.h"
 
 #include <klustersshared/appicon.h>
+#include <klustersshared/appsettings.h>
 #include <klustersshared/theme.h>
 
 int main(int argc, char *argv[])
 {
-    QApplication::setOrganizationName(QStringLiteral("sourceforge"));
-    QApplication::setOrganizationDomain(QStringLiteral("sourceforge.net"));
-    QApplication::setApplicationName(QStringLiteral("neuroscope"));
+    // Settings in ~/.config/neurosuite-3/neuroscope.conf (moved there from
+    // ~/.config/sourceforge/ on the first start; klustersshared/appsettings.h).
+    neurosuite::initApplicationIdentity(QStringLiteral("neuroscope"));
     QApplication::setApplicationVersion(QStringLiteral("2.0.0"));
 
     QApplication app(argc, argv);

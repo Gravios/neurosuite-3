@@ -239,3 +239,25 @@ cmake -B build -DNS_SKIP_NEUROSCOPE=ON -DNS_SKIP_NDMANAGER=ON \
 The shared libraries a program needs are always built with it. The plugins
 also configure on their own (`cmake -S src/ndmanager-plugins`); see
 [BUILD.md §5](BUILD.md#5-the-build-graph-and-skip-flags).
+
+---
+
+## Where the programs keep their settings
+
+Klusters, NeuroScope and NDManager keep their preferences, and the theme they
+share, under one folder, `neurosuite-3`:
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| Preferences | `~/.config/neurosuite-3/<program>.conf` | `~/Library/Preferences/com.neurosuite-3.<program>.plist` | registry `HKEY_CURRENT_USER\Software\neurosuite-3\<program>` |
+| Theme | `~/.config/neurosuite-3/appearance.conf` | `com.neurosuite-3.appearance.plist` | `…\neurosuite-3\appearance` |
+| Data (NDManager's session templates, Klusters' plugin descriptions) | `~/.local/share/neurosuite-3/<program>/` | `~/Library/Application Support/neurosuite-3/<program>/` | `%APPDATA%\neurosuite-3\<program>\` |
+
+Before 2026-10-29 they used `~/.config/sourceforge/<program>.conf`,
+`~/.config/neurosuite/appearance.conf` and `~/.local/share/sourceforge/<program>/`
+(and the matching macOS and Windows places). The first start of a newer
+program copies what it finds there, as long as it has no settings of its own
+yet, and says so on the terminal. The old files are left in place; delete them
+once you no longer run an older build. To start a program from its defaults,
+delete its file in `neurosuite-3` and the old one: while the new file is
+missing, the next start copies the old one again.

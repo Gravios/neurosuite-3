@@ -556,7 +556,7 @@ Namespace `neurosuite`. `enum class Theme { System, Light, Dark }`.
 |---|---|
 | `initThemeFromSettings()` | call once after `QApplication`: samples the OS appearance, applies the saved preference, and on Qt ≥ 6.5 re-applies when the OS colour scheme changes while the preference is `System` |
 | `applyTheme(Theme)` | sets the Fusion style and a built-in light or dark `QPalette` (incl. disabled colours); records `currentTheme()` |
-| `loadThemePreference()` / `saveThemePreference(Theme)` | `QSettings("neurosuite", "appearance")`, key `theme`, tokens `system`/`light`/`dark` — one value for the whole suite |
+| `loadThemePreference()` / `saveThemePreference(Theme)` | `QSettings(settingsOrganization(), "appearance")` (`neurosuite-3`; `appsettings.h`), key `theme`, tokens `system`/`light`/`dark` — one value for the whole suite |
 | `systemIsDark()`, `isDark(Theme)` | Qt ≥ 6.5: `QStyleHints::colorScheme()`; older: luminance of the startup window colour |
 | `themeToString`, `themeFromString`, `themeDisplayName` | token conversion (unknown → `System`), translated labels |
 

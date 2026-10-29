@@ -42,9 +42,11 @@ and **a later directory wins on a name collision**:
 
 1. `<AppDataLocation>/plugins/descriptions/` for each of Qt's
    `QStandardPaths::AppDataLocation` directories (per-user first). Klusters sets
-   the organization name `sourceforge` and the application name `klusters`
-   (`main.cpp`), so on Linux the per-user directory is
-   `~/.local/share/sourceforge/klusters/plugins/descriptions/`.
+   the organization name `neurosuite-3` and the application name `klusters`
+   (`main.cpp`, through `neurosuite::initApplicationIdentity`), so on Linux the
+   per-user directory is `~/.local/share/neurosuite-3/klusters/plugins/descriptions/`.
+   (Before 2026-10-29 it was under `~/.local/share/sourceforge/klusters/`; the
+   first start of a newer Klusters copies that folder over.)
 2. `<GenericDataLocation>/klusters/plugins/descriptions/` — the install share
    (`…/share/klusters/plugins/descriptions/`) on most layouts — then the
    `<bindir>/../share/klusters/plugins/descriptions/` fallback
