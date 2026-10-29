@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-10-29 | [Klusters: the matrices are shown on open by default](#2026-10-29--klusters-the-matrices-are-shown-on-open-by-default) |
 | 2026-10-29 | [Settings move to ~/.config/neurosuite-3](#2026-10-29--settings-move-to-configneurosuite-3) |
 | 2026-10-29 | [process_extractemg: the CPU FastICA step is faster per core](#2026-10-29--process_extractemg-the-cpu-fastica-step-is-faster-per-core) |
 | 2026-10-29 | [ndm_extractemg: the output gives the time of FastICA and of each pass](#2026-10-29--ndm_extractemg-the-output-gives-the-time-of-fastica-and-of-each-pass) |
@@ -149,6 +150,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-10-29 — Klusters: the matrices are shown on open by default
+
+<details>
+<summary>Details</summary>
+
+Opening a document shows the Error, Template, Residual and Drift matrices (and the trace view) by default.
+
+- **Default on.**  Preferences ▸ Views ▸ Matrices ▸ *Auto-show matrix displays on open* was off.
+- **Existing settings.**  Every save of the preferences stores every value, so settings written before held the old
+  default, `false`, as if it had been chosen.  A new `settingsRevision` (1) marks files written from now on;
+  a file without it takes the new default once.  Turning the option off afterwards is kept.
+- The checkbox's tooltip described an older layout (a separate Grouping Assistant display); it now says what
+  happens and that the default is on.
+
+Files: `src/klusters/src/configuration.{h,cpp}`, `src/klusters/src/prefmatriceslayout.ui`.
+
+</details>
 
 ## 2026-10-29 — Settings move to ~/.config/neurosuite-3
 

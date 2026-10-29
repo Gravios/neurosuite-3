@@ -698,6 +698,8 @@ private:
     // patch79 — auto-show error & template matrices on document open
     bool autoShowMatricesOnOpen;
     static const bool autoShowMatricesOnOpenDefault;
+    // Revision of the stored settings; read() upgrades older files (see there).
+    static constexpr int settingsRevision = 1;
     // Open a Template Library display on document open (on by default)
     bool autoShowTemplateLibraryOnOpen;
     static const bool autoShowTemplateLibraryOnOpenDefault;

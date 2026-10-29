@@ -37,7 +37,7 @@ const bool Configuration::reclusterMedianWaveformResidualDefault = false;
 // Suppressed by default: a recluster opens no output tab unless it fails.
 const bool Configuration::suppressReclusterOutputTabDefault = true;
 // patch79 — opt-in: off by default
-const bool Configuration::autoShowMatricesOnOpenDefault = false;
+const bool Configuration::autoShowMatricesOnOpenDefault = true;
 // Template Library display: open by default (on)
 const bool Configuration::autoShowTemplateLibraryOnOpenDefault = true;
 const bool Configuration::templatesModeDefault = true;
@@ -180,6 +180,13 @@ void Configuration::read() {
     autoShowMatricesOnOpen = settings.value(
         "autoShowMatricesOnOpen",
         autoShowMatricesOnOpenDefault).toBool();
+    // Settings revision: every write() stores every value, so a file written
+    // before a default changed holds the OLD default as if it had been chosen.
+    // Revision 1 (2026-10-29): the matrices are shown on open by default
+    // (was off); a file below revision 1 takes the new default once, and the
+    // next write() records revision 1, so a later choice of "off" is kept.
+    if (settings.value("settingsRevision", 0).toInt() < 1)
+        autoShowMatricesOnOpen = autoShowMatricesOnOpenDefault;
     autoShowTemplateLibraryOnOpen = settings.value(
         "autoShowTemplateLibraryOnOpen",
         autoShowTemplateLibraryOnOpenDefault).toBool();
@@ -331,6 +338,7 @@ void Configuration::write() const {
     // patch79
     settings.setValue("autoShowMatricesOnOpen",
                       autoShowMatricesOnOpen);
+    settings.setValue("settingsRevision", settingsRevision);
     settings.setValue("autoShowTemplateLibraryOnOpen",
                       autoShowTemplateLibraryOnOpen);
     settings.setValue("templatesMode", templatesMode);
