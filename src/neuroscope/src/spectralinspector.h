@@ -53,6 +53,7 @@ private:
     QCheckBox*       autoScaleCheck = nullptr;
     QDoubleSpinBox*  dynRangeSpin = nullptr;
     QComboBox*       backendCombo = nullptr;
+    QCheckBox*       autoUpdateCheck = nullptr;
 };
 
 #endif // NEUROSCOPE_SPECTRALINSPECTOR_H

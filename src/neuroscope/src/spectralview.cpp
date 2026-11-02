@@ -108,6 +108,7 @@ void SpectralView::loadSettings()
 {
     QSettings s;
     s.beginGroup(kSpectralGroup);
+    autoUpdate = s.value("autoUpdate", autoUpdate).toBool();
     if (!s.contains("mode")) { s.endGroup(); return; }  // nothing saved yet
 
     params.mode = static_cast<neuroscope::spectral::SpectralMode>(
@@ -162,6 +163,7 @@ void SpectralView::saveSettings() const
     s.setValue("dynamicRangeDb", dynamicRangeDb);
     s.setValue("lockToTrace", pendingLockToTrace);
     s.setValue("span", static_cast<qlonglong>(pendingSpan));
+    s.setValue("autoUpdate", autoUpdate);
     s.endGroup();
 }
 
@@ -226,7 +228,9 @@ void SpectralView::scheduleParamUpdate()
 {
     paramsDirty = true;
     update();      // the title flags the uncommitted change
-    if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
+    // Each edit restarts the debounce, so a burst of edits (typing a value,
+    // spinning a box) recomputes once.
+    if (autoUpdate) recomputeTimer->start(kAutoUpdateDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
 }
 
@@ -234,8 +238,18 @@ void SpectralView::scheduleWindowUpdate()
 {
     windowDirty = true;
     update();
-    if (recomputeDelayMs > 0) recomputeTimer->start(recomputeDelayMs);
+    if (autoUpdate) recomputeTimer->start(kAutoUpdateDelayMs);
     // else: manual mode — the change waits for commitNow() ("u").
+}
+
+void SpectralView::setAutoUpdate(bool on)
+{
+    autoUpdate = on;
+    if (!on)
+        recomputeTimer->stop();      // a waiting change now waits for "u"
+    else if (paramsDirty || windowDirty)
+        recomputeTimer->start(kAutoUpdateDelayMs);
+    update();                        // the title's pending-change note
 }
 
 void SpectralView::flushPending()
@@ -551,7 +565,9 @@ void SpectralView::drawAxes(QPainter& painter, const QRect& plot)
     title += QString(" \xE2\x80\x94 NW=%1 K=%2 win=%3")
                  .arg(params.nw).arg(lastIsPreview ? 1 : params.nTapers).arg(params.windowSamples);
     if (lastIsPreview) title += tr("  (preview)");
-    if (paramsDirty || windowDirty) title += tr("  \xE2\x80\x94 uncommitted changes");
+    if (paramsDirty || windowDirty)
+        title += autoUpdate ? tr("  \xE2\x80\x94 updating\xE2\x80\xA6")
+                            : tr("  \xE2\x80\x94 uncommitted changes (press U)");
     painter.drawText(plot.left(), plot.top() - 5, title);
 
     // X axis: time in ms across the visible part of the window.

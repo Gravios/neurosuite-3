@@ -44,7 +44,7 @@ public:
 
     // --- inspector-driven parameters -----------------------------------------
     // Each setter stages its value; nothing the view shows changes until the change
-    // is committed ("u", commitNow(), or the debounce delay when one is set).  The
+    // is committed (the automatic-update debounce, "u", or commitNow()).  The
     // displayed image always matches the committed parameters, so scrolling or a
     // channel change never applies a half-edited set.
     void setSpectralMode(neuroscope::spectral::SpectralMode mode);
@@ -82,13 +82,15 @@ public:
     void setSpan(long ms);
 
     /**Commits the staged parameter/window changes now (bound to the "u" key).
-    * With the default manual update mode this is the only thing that applies an
-    * inspector change; with a debounce delay set it also flushes early.*/
+    * With automatic update on it applies a change before the debounce runs out;
+    * with it off it is the only thing that applies an inspector change.*/
     void commitNow();
 
-    /**Debounce delay (ms) before a parameter change is applied. 0 (the default)
-    * means manual: changes are held until the user presses "u" (commitNow).*/
-    void setUpdateDelay(int ms) { recomputeDelayMs = ms < 0 ? 0 : ms; }
+    /**Automatic update (the default): a staged change is applied once the
+    * inspector has been still for kAutoUpdateDelayMs.  Off: changes wait for
+    * "u" (commitNow).  Turning it on applies any change already waiting.*/
+    void setAutoUpdate(bool on);
+    bool isAutoUpdate() const { return autoUpdate; }
 
     /// The staged parameters -- what the inspector controls show.  The image on
     /// screen was computed with the committed set, which equals this one unless a
@@ -214,7 +216,8 @@ private:
     QTimer* recomputeTimer = nullptr;
     bool paramsDirty = false;  // a parameter change awaits recompute
     bool windowDirty = false;  // a span/lock change awaits a window re-derive
-    int  recomputeDelayMs = 0;   // 0 = manual: changes apply only on "u"
+    bool autoUpdate = true;      // apply staged changes after the debounce; off: only on "u"
+    static constexpr int kAutoUpdateDelayMs = 400;   // the debounce: one recompute per burst of edits
 
     QTimer* settleTimer = nullptr; // fires when the window stops moving
     bool movePreview = false;      // true while scrolling: render the fast preview

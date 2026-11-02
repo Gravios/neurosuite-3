@@ -105,10 +105,17 @@ SpectralInspector::SpectralInspector(SpectralView* initialView, QWidget* parent)
     backendCombo->addItem(tr("GPU"));
     backendCombo->setCurrentIndex(0);
 
+    autoUpdateCheck = new QCheckBox(tr("update automatically"));
+    autoUpdateCheck->setChecked(true);
+    autoUpdateCheck->setToolTip(tr("recompute the spectral view shortly after a setting changes; "
+                                   "uncheck to hold changes until U is pressed "
+                                   "(U also applies a change at once)"));
+
     // ── grouped vertical layout (tab-friendly) ──────────────────────────────
     QVBoxLayout* root = new QVBoxLayout(this);
     root->setContentsMargins(6, 6, 6, 6);
     root->setSpacing(8);
+    root->addWidget(autoUpdateCheck);
 
     QGroupBox* estBox = new QGroupBox(tr("Estimator"));
     QFormLayout* est = new QFormLayout(estBox);
@@ -201,6 +208,8 @@ SpectralInspector::SpectralInspector(SpectralView* initialView, QWidget* parent)
         dynRangeSpin->setEnabled(!on);
         if(view) view->setAutoScale(on);
     });
+    connect(autoUpdateCheck, &QCheckBox::toggled, this,
+            [this](bool on){ if(view) view->setAutoUpdate(on); });
 
     // Bind (or disable when null).
     setView(initialView);
@@ -219,7 +228,8 @@ void SpectralInspector::reloadFromView()
                          b9(lockCheck),  b10(spanSpin),   b11(whitenCheck),
                          b12(decimCheck),b13(colormapCombo), b14(autoScaleCheck),
                          b15(dynRangeSpin), b16(backendCombo),
-                         b17(carCheck), b18(refRegressCheck), b19(refChannelSpin);
+                         b17(carCheck), b18(refRegressCheck), b19(refChannelSpin),
+                         b20(autoUpdateCheck);
 
     modeCombo->setCurrentIndex(p.mode == SpectralMode::FrequencyAcrossChannels ? 1 : 0);
     channelSpin->setValue(p.singleChannel);
@@ -237,6 +247,7 @@ void SpectralInspector::reloadFromView()
     refChannelSpin->setValue(p.refChannel);
     refChannelSpin->setEnabled(p.refRegress);
     backendCombo->setCurrentIndex(p.backend == SpectralBackend::Cuda ? 1 : 0);
+    autoUpdateCheck->setChecked(view->isAutoUpdate());
 
     colormapCombo->setCurrentIndex(static_cast<int>(view->colormapValue()));
     const bool autoOn = view->isAutoScale();

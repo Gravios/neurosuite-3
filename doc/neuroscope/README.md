@@ -101,7 +101,7 @@ A display shows one trace file — the file that was opened (`.dat`, `.lfp`, `.f
 
 ## Spectral view
 
-**Traces → Spectral View** (`S`) replaces the traces of the active display with a multitaper time-frequency image of the channels and window shown; `S` again returns to the traces. The *Spectral* palette tab sets the mode (*time-freq* for one channel, *band-chan* for one band across channels), tapers, window, FFT length, step, band, colour map and scale. Changes are staged: press `U` to recompute.
+**Traces → Spectral View** (`S`) replaces the traces of the active display with a multitaper time-frequency image of the channels and window shown; `S` again returns to the traces. The *Spectral* palette tab sets the mode (*time-freq* for one channel, *band-chan* for one band across channels), tapers, window, FFT length, step, band, colour map and scale. The view recomputes shortly after a setting changes; uncheck *update automatically* at the top of the tab to hold changes until you press `U` (which also applies a change at once).
 
 ---
 
@@ -423,7 +423,7 @@ neuroscope:
 
 ## Keyboard shortcuts
 
-**Help → Keyboard Shortcuts…** lists every keyboard and mouse binding currently in effect. Bindings are changed on **Settings → Preferences → Input**. The tools have single-key shortcuts: `Z` Zoom, `L` Draw Time Line, `C` Select Channels, `V` Measure, `T` Select Time, `E` Select Event; `S` toggles the spectral view and `U` recomputes it.
+**Help → Keyboard Shortcuts…** lists every keyboard and mouse binding currently in effect. Bindings are changed on **Settings → Preferences → Input**. The tools have single-key shortcuts: `Z` Zoom, `L` Draw Time Line, `C` Select Channels, `V` Measure, `T` Select Time, `E` Select Event; `S` toggles the spectral view and `U` applies a spectral setting change at once.
 
 ---
 

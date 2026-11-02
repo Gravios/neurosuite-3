@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-02 | [NeuroScope: the spectral view updates when a setting changes](#2026-11-02--neuroscope-the-spectral-view-updates-when-a-setting-changes) |
 | 2026-10-29 | [Klusters: the matrices are shown on open by default](#2026-10-29--klusters-the-matrices-are-shown-on-open-by-default) |
 | 2026-10-29 | [Settings move to ~/.config/neurosuite-3](#2026-10-29--settings-move-to-configneurosuite-3) |
 | 2026-10-29 | [process_extractemg: the CPU FastICA step is faster per core](#2026-10-29--process_extractemg-the-cpu-fastica-step-is-faster-per-core) |
@@ -150,6 +151,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-02 — NeuroScope: the spectral view updates when a setting changes
+
+<details>
+<summary>Details</summary>
+
+The Spectral tab staged every change and recomputed only when `U` was
+pressed. The debounce for automatic updates was already in
+`SpectralView`, but nothing ever switched it on. `U` was also easy to
+lose: after you edit a value, the focus stays in that spin box. A text
+field takes `U` for itself, so the key did nothing until you clicked
+somewhere else, such as the scrollbar.
+
+The tab now opens with **update automatically** checked. A change is
+applied 400 ms after the last edit, so typing or spinning a value
+recomputes once. The image title shows "updating…" while a change waits.
+Unchecking the box restores manual mode: the title then reads
+"uncommitted changes (press U)", and `U` applies the change. Checking it
+again applies any change already waiting. `U` still applies a change at
+once in either mode. The choice is saved with the other spectral
+settings as `autoUpdate`.
+
+`SpectralView::setUpdateDelay` (never called) is replaced by
+`setAutoUpdate` / `isAutoUpdate`.
+
+Files: `src/neuroscope/src/spectralview.{h,cpp}`,
+`spectralinspector.{h,cpp}`, `doc/neuroscope/README.md`.
+
+</details>
 
 ## 2026-10-29 — Klusters: the matrices are shown on open by default
 
