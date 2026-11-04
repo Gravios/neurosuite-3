@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | [ndm_estimategeometry: the estimate goes into the probe file, no report](#2026-11-04--ndm_estimategeometry-the-estimate-goes-into-the-probe-file-no-report) |
 | 2026-11-04 | [ndm_estimategeometry: a group never calibrates its own estimate](#2026-11-04--ndm_estimategeometry-a-group-never-calibrates-its-own-estimate) |
 | 2026-11-04 | [ndm_estimategeometry: a named group is estimated even with a geometry; wire-bundle templates do not count](#2026-11-04--ndm_estimategeometry-a-named-group-is-estimated-even-with-a-geometry-wire-bundle-templates-do-not-count) |
 | 2026-11-04 | [ndm_estimategeometry: command-line options as in ndm_pca](#2026-11-04--ndm_estimategeometry-command-line-options-as-in-ndm_pca) |
@@ -155,6 +156,51 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-04 — ndm_estimategeometry: the estimate goes into the probe file, no report
+
+<details>
+<summary>Details</summary>
+
+The step wrote two new files per group, `SESSION.bundle.N.probe` and a report
+`SESSION.bundle.N.yaml`, and left the group's own probe file alone. Requested:
+no extra YAML file; update the probe file, keeping the old geometry as
+`geometry_backup`.
+
+- **The probe file bound to the group** (`probeId` / `shankIndex`) is updated
+  in place:
+  - its sites for the group's channels, centred where they were;
+  - `sites.geometry_backup`: the earlier layout, written on the first run
+    only;
+  - for a bundle, `substrate.material: wire-bundle` and
+    `sites.plane: cross-section`;
+  - `probeFile.estimate.<shank>`: the run's weights, stress, per-site SD,
+    nearest neighbours, low-coherence wires and the agreement with the previous
+    layout.
+
+  The file's leading comment lines are kept.
+- **A group without a probe file** gets a new `SESSION.probe.<id>.probe`. The
+  log gives the `probeId` and `channelOffset` to attach it with. A rerun finds
+  it rather than writing another.
+- **A probe file outside the session folder** (the shared library) is not
+  changed. The session YAML is not changed either; a `sitePositions_um` left
+  stale is reported.
+- **Already estimated** groups (probe file with `estimate`, or an unattached
+  estimate) are skipped, named or not, unless `--force` / `overwrite: 1`.
+- **`--estimateKnown`** writes nothing; the log gives the check.
+- **No report:** the weights, positions with SD and the agreement with the
+  previous layout are printed.
+
+`test_estimategeometry.py`:
+
+- rewritten for the probe file: 24 checks;
+- new checks: in-place update with the backup kept across `--force`, header
+  comment kept, rerun skip, unattached estimate found again, library file not
+  changed, no report file.
+
+`test_estimategeometry_cli.sh` reads the estimate from the probe file.
+
+</details>
 
 ## 2026-11-04 — ndm_estimategeometry: a group never calibrates its own estimate
 

@@ -59,7 +59,10 @@ may list their channels in any order.
 octrode whose layout was estimated) gives `x` and `y` as the two axes of the
 bundle's cross-section, not the lateral offset and height above a tip. Without
 the key, `y` is the height above the tip, as above (the library's
-`general/tetrode.probe` puts every wire at `y = 0`).
+`general/tetrode.probe` puts every wire at `y = 0`). The same step keeps the
+file's earlier layout as `sites.geometry_backup` and records its run under
+`probeFile.estimate.<shank>`; readers ignore both (the Probe Maker may not
+keep them on a save).
 
 `count_per_shank` decides which geometry entries belong to which shank; it is
 a list when the shanks differ. A one-shank probe may leave it out (or null):

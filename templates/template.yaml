@@ -1042,20 +1042,22 @@ programs:
       spike detection if the layout is wanted for detection or extraction
       settings; it detects its own spikes.
 
-      OUTPUT FILES (per estimated group N)
+      OUTPUT: THE PROBE FILE
 
-      SESSION.bundle.N.probe  probe file with the estimated cross-section as
-                              sites.geometry (sites.plane: cross-section: x and
-                              y are the two axes of the cross-section, not the
-                              height above the tip)
-      SESSION.bundle.N.yaml   report: per-measure reliability, calibration and
-                              weight, similarity matrices, positions, per-site
-                              SD, nearest-neighbour stability, wires with low
-                              coherence, and, for a known group, the agreement
-                              with its geometry
+      The estimate is written into the probe file of the group (probeId /
+      shankIndex), at the group's sites, centred where they were.  The first
+      layout found there is kept as sites.geometry_backup (a later run never
+      overwrites it).  For a bundle, substrate.material becomes wire-bundle and
+      sites.plane cross-section: x and y are the two axes of the bundle's
+      cross-section, not the height above the tip.  probeFile.estimate records
+      the run: weights, stress, per-site SD, nearest neighbours, wires with low
+      coherence, and the comparison with the previous layout.
 
-      The session YAML is not changed; add the probe file in ndmanager's
-      Probes tab with the channelOffset given in the report.
+      A group without a probe file gets a new SESSION.probe.<id>.probe to add
+      in ndmanager's Probes tab (the log gives its probeId and channelOffset).
+      A probe file outside the session folder (the shared library) is not
+      changed.  The session YAML is not changed.  A group already estimated
+      is skipped unless overwrite: 1 (--force).
 
       Command line: ndm_estimategeometry [parameter-file] [electrodeGroup]
       [--force] [--inputExtension EXT] [--wireDiameterUm D]
@@ -1078,10 +1080,10 @@ programs:
       # groups
 
       Groups to estimate, e.g. 3 or 1,4 (default = every group without a
-      measured geometry: none, or a wire-bundle template).  A named group is
-      estimated whatever geometry it has (a drawn placeholder, say), gets a
-      probe file and does not calibrate.  A group given on the command line
-      wins.
+      geometry: none, or a wire-bundle template).  A named group is estimated
+      whatever geometry it has (a drawn placeholder, say) and does not
+      calibrate; one already estimated still needs overwrite.  A group given on
+      the command line wins.
 
       # calibrate
 
@@ -1093,9 +1095,9 @@ programs:
 
       # estimateKnown
 
-      1 = also estimate the groups that have a geometry, as a check; their
-      report gets a validation section (Spearman of the combined dissimilarity
-      with the true distances) and no probe file is written (default = 0).
+      1 = also estimate the groups that have a geometry, as a check: the log
+      gives the agreement with their layout, nothing is written, and a group
+      never calibrates its own check (default = 0).
 
       # nSegments, segmentSec
 
@@ -1136,7 +1138,8 @@ programs:
 
       # overwrite
 
-      1 = redo a group whose SESSION.bundle.N.yaml exists (default = 0).
+      1 = redo groups already estimated (probeFile.estimate, or an unattached
+      SESSION.probe.<id>.probe written for them) (default = 0).
 
       # probeLibrary
 

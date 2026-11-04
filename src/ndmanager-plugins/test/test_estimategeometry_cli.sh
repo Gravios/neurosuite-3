@@ -2,12 +2,12 @@
 # ndm_estimategeometry's command line follows ndm_pca / ndm_detectspikes:
 #   - no parameter file: the session is the folder's name;
 #   - [parameter-file] [electrodeGroup] positionals, a group alone works too;
-#   - --force redoes a group whose report exists (otherwise it is skipped);
+#   - --force redoes a group already estimated (otherwise it is skipped);
 #   - --wireDiameterUm / --layout / --estimateKnown win over the YAML;
 #   - an unknown option, a non-numeric group or a bad layout is refused with
 #     the usage and runs nothing.
 # Data: 8 channels of noise mixed with distance-dependent weights (a few
-# seconds), enough for every step to produce a report quickly.
+# seconds), enough for every step to produce an estimate quickly.
 # Run from anywhere:  bash src/ndmanager-plugins/test/test_estimategeometry_cli.sh
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,15 +38,15 @@ doc = dict(acquisitionSystem=dict(nChannels=8, samplingRate=sr, nBits=16),
 yaml.safe_dump(doc, open(f"{d}/rat.yaml", "w"))
 EOF
 cd "$S"
-rep=rat.bundle.1.yaml
-val() { python3 -c "import yaml,sys; print(yaml.safe_load(open('$rep'))['$1'])"; }
+rep=rat.probe.0.probe          # the group has no probe file: the estimate goes into a new one
+val() { python3 -c "import yaml; print(yaml.safe_load(open('$rep'))['probeFile']['estimate'][0]['$1'])"; }
 
 bash "$SCRIPTS/ndm_estimategeometry" >out1 2>&1
-check '[ -f $rep ] && [ -f rat.bundle.1.probe ]' "no argument: the session is the folder's name"
+check '[ -f $rep ]' "no argument: the session is the folder's name"
 check '[ "$(val wireDiameter_um)" = 15.0 ]' "the YAML value is used"
 m1=$(cksum < $rep)
 bash "$SCRIPTS/ndm_estimategeometry" rat.yaml 1 --wireDiameterUm 20 >out2 2>&1
-check '[ "$(cksum < $rep)" = "$m1" ]' "an existing report is kept without --force"
+check '[ "$(cksum < $rep)" = "$m1" ]' "an existing estimate is kept without --force"
 bash "$SCRIPTS/ndm_estimategeometry" 1 --force --wireDiameterUm 20 --layout free >out3 2>&1
 check '[ "$(val wireDiameter_um)" = 20.0 ] && [ "$(val layout)" = free ]' \
       "a group alone + --force: redone, the options win over the YAML"

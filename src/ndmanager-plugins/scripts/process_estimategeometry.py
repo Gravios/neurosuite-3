@@ -50,18 +50,22 @@ UNCERTAINTY
   reflection).  Per-site SD (µm) and how often each pair are nearest
   neighbours are reported.
 
-OUTPUTS (per estimated group g)
-  <session>.bundle.<g>.probe  probe file (probeFile format) with the
-                              estimated cross-section as sites.geometry
-                              and sites.plane: cross-section
-  <session>.bundle.<g>.yaml   report: features, weights, similarity
-                              matrices, combined dissimilarity, positions,
-                              bootstrap SD, neighbour stability, stress,
-                              suspect wires, and (validation) the agreement
-                              with a known geometry
+OUTPUT: THE PROBE FILE (per estimated group g)
+  The estimate is written into the probe file bound to the group (probeId/shankIndex), at the
+  group's sites (bound by channel number), centred where those sites were.  The first layout found
+  there is kept as sites.geometry_backup (never overwritten by a later run).  For a bundle,
+  substrate.material becomes wire-bundle and sites.plane cross-section: x and y are the two axes of
+  the bundle cross-section.  probeFile.estimate.<shank> records the run: weights, stress, per-site
+  SD, nearest neighbours, low-coherence wires, the comparison with the previous layout.
+  - no probe file: a new SESSION.probe.<id>.probe is written, to attach in ndmanager;
+  - a probe file outside the session folder (the shared library) is not changed;
+  - the session YAML is not changed (a stale sitePositions_um is reported).
 
-A group whose geometry is known is used for calibration and, with
---estimate-known, also estimated as a check (report only, no probe file).
+WHICH GROUPS
+  By default: groups without a geometry, or with a wire-bundle template (drawn, not measured).
+  Already estimated (probeFile.estimate): only with --overwrite.  Measured: calibration only;
+  --estimate-known checks them (nothing written).  A group named with --groups is estimated
+  whatever it has, and never calibrates itself.
 
 DEPENDENCIES  python >= 3.9, numpy, scipy, pyyaml
 
@@ -72,6 +76,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
 from __future__ import annotations
 
 import argparse
+import datetime
 import math
 import os
 import sys
@@ -109,14 +114,19 @@ def probe_library_paths(override: str = "", session_dir: str = "") -> list[str]:
     return paths
 
 
-def load_probe(probe_file: str, library_paths: list[str]) -> Optional[dict]:
+def find_probe(probe_file: str, library_paths: list[str]) -> tuple[Optional[dict], Optional[str]]:
+    """(the file's probeFile mapping, its path), or (None, None)."""
     for lib in ["", *library_paths]:
         cand = os.path.join(lib, probe_file) if lib else probe_file
         if os.path.isfile(cand):
             with open(cand) as fh:
                 doc = yaml.safe_load(fh)
-            return (doc or {}).get("probeFile")
-    return None
+            return (doc or {}).get("probeFile"), cand
+    return None, None
+
+
+def load_probe(probe_file: str, library_paths: list[str]) -> Optional[dict]:
+    return find_probe(probe_file, library_paths)[0]
 
 
 def _nominal(probe: Optional[dict]) -> bool:
@@ -124,43 +134,61 @@ def _nominal(probe: Optional[dict]) -> bool:
     an octrode template): its layout was drawn, not measured."""
     probe = probe or {}
     return (((probe.get("substrate") or {}).get("material")) == "wire-bundle"
-            and str(probe.get("vendor") or "") != "estimated")
+            and str(probe.get("vendor") or "") != "estimated" and not probe.get("estimate"))
 
 
-def known_positions(params: dict, g: int, libs: list[str]) -> tuple[Optional[np.ndarray], str, bool]:
-    """Site positions of 1-based group g in the group's channel order, the source, and whether
-    the layout is only NOMINAL (a wire-bundle template, see _nominal) -- or (None, reason, False).
-    Inline sitePositions_um first, then probeId/shankIndex -> probes: entry -> probe file,
-    looked up by channel number (probe_geometry)."""
+def _estimated(probe: Optional[dict], shank: int) -> bool:
+    est = (probe or {}).get("estimate") or {}
+    return isinstance(est, dict) and (shank in est or str(shank) in est)
+
+
+def group_probe(params: dict, g: int, libs: list[str]) -> Optional[dict]:
+    """The probe file bound to group g: dict(entry, probe, path, shank, offset), or None (no probeId),
+    or dict(error=...) when the binding is broken."""
+    groups = ((params.get("spikeDetection") or {}).get("channelGroups")) or []
+    grp = groups[g - 1] if 0 < g <= len(groups) else {}
+    pid = (grp or {}).get("probeId")
+    if pid is None:
+        return None
+    entry = next((pe for pe in (params.get("probes") or []) if pe.get("probeId", pe.get("id")) == pid), None)
+    if entry is None or not entry.get("probeFile"):
+        return dict(error=f"probeId {pid} not in probes:")
+    probe, path = find_probe(str(entry["probeFile"]), libs)
+    if probe is None:
+        return dict(error=f"probe file {entry['probeFile']} not found")
+    return dict(entry=entry, probe=probe, path=path, pid=pid, shank=int(grp.get("shankIndex", 0) or 0),
+                offset=int(entry.get("channelOffset", 0) or 0))
+
+
+def known_positions(params: dict, g: int, libs: list[str]) -> tuple[Optional[np.ndarray], str, str]:
+    """Site positions of 1-based group g in the group's channel order, their source, and their kind:
+    "given" (a layout from a probe file or sitePositions_um: measured, or a drawn placeholder -- the
+    step cannot tell), "template" (a wire-bundle template, see _nominal) or "estimated" (written by
+    this step) -- or (None, reason, "").  Inline sitePositions_um first, then probeId/shankIndex ->
+    probes: entry -> probe file, looked up by channel number (probe_geometry)."""
     groups = ((params.get("spikeDetection") or {}).get("channelGroups")) or []
     if not 0 < g <= len(groups):
-        return None, "no such group", False
+        return None, "no such group", ""
     grp = groups[g - 1] or {}
     chans = probe_geometry.group_channels(params, g)
-    probe, entry, why = None, None, "no probeId"
-    pid = grp.get("probeId")
-    if pid is not None:
-        entry = next((pe for pe in (params.get("probes") or []) if pe.get("probeId", pe.get("id")) == pid), None)
-        if entry is None or not entry.get("probeFile"):
-            why = f"probeId {pid} not in probes:"
-        else:
-            probe = load_probe(str(entry["probeFile"]), libs)
-            why = f"probe file {entry['probeFile']} not found" if probe is None else ""
-    nominal = _nominal(probe)
+    gp = group_probe(params, g, libs)
+    probe = gp.get("probe") if gp and "error" not in gp else None
+    kind = ("estimated" if probe is not None and _estimated(probe, gp["shank"]) else
+            "template" if _nominal(probe) else "given")
     inline = grp.get("sitePositions_um")
     if inline and len(inline) == len(chans) and all(p is not None for p in inline):
         P = np.array([[float(p[0]), float(p[1])] for p in inline])
-        src = "sitePositions_um" + (f" (from {entry['probeFile']})" if probe is not None else "")
+        src = "sitePositions_um" + (f" (from {gp['entry']['probeFile']})" if probe is not None else "")
     elif probe is not None:
-        pos = probe_geometry.positions_for_channels(probe, int(entry.get("channelOffset", 0) or 0), chans)
+        pos = probe_geometry.positions_for_channels(probe, gp["offset"], chans)
         if any(p is None for p in pos):
-            return None, f"{entry['probeFile']} has no geometry for every channel", False
-        P, src = np.array(pos, float), str(entry["probeFile"])
+            return None, f"{gp['entry']['probeFile']} has no geometry for every channel", ""
+        P, src = np.array(pos, float), str(gp["entry"]["probeFile"])
     else:
-        return None, why, False
+        return None, (gp or {}).get("error", "no probeId"), ""
     if len({tuple(p) for p in P.tolist()}) < len(P):
-        return None, f"{src}: several channels share a position (a point-sensor convention)", False
-    return P, src, nominal
+        return None, f"{src}: several channels share a position (a point-sensor convention)", ""
+    return P, src, kind
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -535,11 +563,11 @@ def parse_args(argv=None):
     p.add_argument("--calibration-groups", default="",
                    help="restrict calibration to these known-geometry groups (default: all of them)")
     p.add_argument("--estimate-known", type=int, default=0,
-                   help="1 = also estimate groups that have a geometry (validation; report only)")
+                   help="1 = also estimate groups that have a geometry, as a check (nothing written)")
     p.add_argument("--n-bootstrap", type=int, default=50)
     p.add_argument("--restarts", type=int, default=30)
     p.add_argument("--probe-library", default="")
-    p.add_argument("--overwrite", type=int, default=0)
+    p.add_argument("--overwrite", type=int, default=0, help="1 = redo groups already estimated")
     p.add_argument("--seed", type=int, default=0)
     return p.parse_args(argv)
 
@@ -568,43 +596,53 @@ def run(a) -> int:
     ngroups = len(((params.get("spikeDetection") or {}).get("channelGroups")) or [])
     known = {g: known_positions(params, g, libs) for g in range(1, ngroups + 1)}
     big = {g for g in range(1, ngroups + 1) if len(probe_geometry.group_channels(params, g)) >= 3}
-    has = {g for g in big if known[g][0] is not None}
-    nominal = {g for g in has if known[g][2]}
-    measured = has - nominal
+    kind = {g: known[g][2] for g in big if known[g][0] is not None}
+    template = {g for g, k in kind.items() if k == "template"}
+    estimated = {g for g, k in kind.items() if k == "estimated"}
+    measured = {g for g, k in kind.items() if k == "given"}
+    pending = {g: f for g in big - set(kind)
+               for f in [unattached_estimate(session, probe_geometry.group_channels(params, g))] if f}
     asked = [g for g in _parse_groups(a.groups) if g in big]
     for g in _parse_groups(a.groups):
         if g not in big:
             log(f"  group {g}: no such group or fewer than 3 channels; skipped")
-    for g in sorted(nominal):
-        log(f"  group {g}: {known[g][1]} is a wire-bundle template (drawn, not measured): estimated, "
-            "and not used for calibration")
-    if asked:                          # a group asked for by name is estimated, whatever it has
-        targets = list(asked)
+    if asked:                          # a group asked for by name is estimated, whatever geometry it has;
+        targets = list(asked)          # one this step already estimated only with --force, as always
+        if not a.overwrite:
+            for g in [g for g in targets if g in estimated or g in pending]:
+                log(f"  group {g}: already estimated ({pending.get(g) or known[g][1]}); --force to redo")
+            targets = [g for g in targets if g not in estimated and g not in pending]
     else:
-        targets = sorted((big - has) | nominal)
+        targets = (big - set(kind) - set(pending)) | template
+        if a.overwrite:
+            targets |= set(pending)
+        else:
+            for g in sorted(pending):
+                log(f"  group {g}: already estimated into {pending[g]} (not attached yet); --force to redo")
+        for g in sorted(template):
+            log(f"  group {g}: {known[g][1]} is a wire-bundle template (drawn, not measured): estimated, "
+                "and not used for calibration")
+        if a.overwrite:
+            targets |= estimated
+        else:
+            for g in sorted(estimated):
+                log(f"  group {g}: already estimated ({known[g][1]}); --force to redo")
         if a.estimate_known:
-            targets = sorted(set(targets) | measured)
+            targets |= measured
         else:
             for g in sorted(measured):
                 log(f"  group {g}: geometry known ({known[g][1]}); not estimated (name the group, or "
-                    "--estimateKnown, to estimate it)")
+                    "--estimateKnown to check it)")
+        targets = sorted(targets)
     calib = sorted(measured - set(asked)) if a.calibrate else []
     if a.calibration_groups:
         want = set(_parse_groups(a.calibration_groups))
         calib = [g for g in calib if g in want]
-    # the probe file is written for a group without a measured geometry, or one asked for by name;
-    # --estimateKnown on a silicon shank is a check (report only)
-    write_probe_for = {g for g in targets if g not in measured or g in asked}
+    # --estimateKnown on a measured shank (not named) is a check: nothing is written
+    check_only = {g for g in targets if g in measured and g not in asked}
     if not targets:
-        log("nothing to estimate: every group has a measured geometry (or fewer than 3 channels); "
-            "name a group to estimate it anyway")
-        return 0
-    for g in targets:
-        rep = f"{session}.bundle.{g}.yaml"
-        if os.path.exists(rep) and not a.overwrite:
-            log(f"  group {g}: {rep} exists (--force or overwrite: 1 to redo)")
-    targets = [g for g in targets if a.overwrite or not os.path.exists(f"{session}.bundle.{g}.yaml")]
-    if not targets:
+        log("nothing to estimate: every group has a geometry (or fewer than 3 channels); name a group "
+            "to estimate it anyway")
         return 0
     process = sorted(set(targets) | set(calib))
     log(f"estimating group(s) {targets}" + (f"; calibration from known geometry: {calib} (never a group's own)"
@@ -737,44 +775,35 @@ def run(a) -> int:
             # an outlier AND clearly less coherent (not a 0.01 wobble)
             suspect = [int(chans[g][i]) for i in np.flatnonzero(((m - med) / mad < -3.5) & (m < med - 0.1))]
         ev = sum(s["n_events"] for s in accs[g].segs)
-        rep = dict(
-            group=int(g), channels=[int(c) for c in chans[g]], flatChannelsLeftOut=flat_in.get(g, []), layout=a.layout,
-            wireDiameter_um=a.wire_diameter_um, segments=int(nseg), segmentSec=a.segment_sec,
-            spikesDetected=int(ev), spikeFreeFraction=round(float(np.mean([s["ok_frac"] for s in accs[g].segs])), 3),
+        live = [int(c) for c in chans[g]]
+        info = dict(
+            date=datetime.date.today().isoformat(), channels=live, flatChannelsLeftOut=flat_in.get(g, []),
+            layout=a.layout, wireDiameter_um=a.wire_diameter_um, segments=int(nseg), spikesDetected=int(ev),
             weightsFrom=("calibration groups " + ",".join(map(str, cal_used))) if cal_used else "split-half reliability",
-            features={nm: dict(splitHalfReliability=_r(rel.get(nm)), calibrationSpearman=_r(calib_rho.get(nm)),
-                               weight=_r(weights.get(nm)), present=nm in full[g]) for nm in names},
-            similarity_z={nm: np.round(full[g][nm], 3).tolist() for nm in names if nm in full[g]},
-            combinedDissimilarity=np.round(untriu(diss, n), 3).tolist(),
-            sites_um={int(c): [round(float(x), 1), round(float(y), 1)] for c, (x, y) in zip(chans[g], P)},
-            siteSD_um={int(c): round(float(s), 1) for c, s in zip(chans[g], site_sd)},
-            ordinalStress=round(stress, 4),
-            nearestNeighbourStability={int(chans[g][i]): {int(chans[g][j]): round(float(nn_count[i, j]) / max(len(reps), 1), 2)
-                                                          for j in np.argsort(-nn_count[i])[:3] if nn_count[i, j] > 0}
-                                       for i in range(n)},
-            lowCoherenceWires=suspect, bootstrapReplicates=int(len(reps)))
+            weights={nm: _r(w) for nm, w in weights.items() if w > 0},
+            ordinalStress=round(stress, 3),
+            siteSD_um={c: round(float(v), 1) for c, v in zip(live, site_sd)},
+            nearestNeighbour={live[i]: {live[j]: round(float(nn_count[i, j]) / max(len(reps), 1), 2)}
+                              for i in range(n) for j in [int(np.argmax(nn_count[i]))] if nn_count[i, j] > 0},
+            lowCoherenceWires=suspect)
+        log(f"  group {g}: weights ({info['weightsFrom']}) "
+            + ", ".join(f"{nm} {w}" for nm, w in info["weights"].items()))
+        log(f"  group {g}: sites (µm, ±SD) "
+            + "; ".join(f"{c}: {P[i, 0]:.1f},{P[i, 1]:.1f} ±{site_sd[i]:.1f}" for i, c in enumerate(live)))
         if known[g][0] is not None:
             Q = known[g][0]
             rho = _spearman(diss, pair_dist(Q))
-            A, rms = procrustes(P, Q, scale=True)
-            nom = bool(known[g][2])
-            rep["validation"] = dict(
-                knownGeometry=known[g][1], nominal=nom,
-                spearmanDissimilarityVsDistance=_r(rho), procrustesRMS_um_scaled=round(rms, 1),
-                note=("the attached layout is a wire-bundle template (drawn, not measured): agreement with it "
-                      "is not a check" if nom else
-                      "agreement with the attached layout; a check of the estimate only if that layout was "
-                      "measured (a drawn placeholder says nothing)"))
-            log(f"  group {g} (attached {known[g][1]}{', a template' if nom else ''}): Spearman(dissimilarity, "
-                f"its distances) {rho:.2f}, scaled Procrustes RMS {rms:.1f} µm")
-        if g in write_probe_for:
-            write_probe(f"{session}.bundle.{g}.probe", session, g, chans[g], P, a)
-            rep["probeFile"] = os.path.basename(f"{session}.bundle.{g}.probe")
-            rep["attachWithChannelOffset"] = int(min(chans[g]))
-        with open(f"{session}.bundle.{g}.yaml", "w") as fh:
-            yaml.safe_dump(rep, fh, sort_keys=False, default_flow_style=None, width=140)
+            _, rms = procrustes(P, Q, scale=True)
+            info["previousLayout"] = dict(source=known[g][1], kind=known[g][2], spearman=_r(rho),
+                                          procrustesRMS_um_scaled=round(rms, 1))
+            log(f"  group {g}: vs the previous layout ({known[g][1]}, {known[g][2]}): Spearman {rho:.2f}, "
+                f"scaled Procrustes RMS {rms:.1f} µm (a check only if that layout was measured)")
         log(f"  group {g}: stress {stress:.3f}; site SD median {np.nanmedian(site_sd):.1f} µm"
-            + (f"; low-coherence wires {suspect} (broken or high-impedance, or in another layer)" if suspect else "") + f" -> {session}.bundle.{g}.yaml")
+            + (f"; low-coherence wires {suspect} (broken or high-impedance, or in another layer)" if suspect else ""))
+        if g in check_only:
+            log(f"  group {g}: --estimateKnown check; {known[g][1]} not changed")
+            continue
+        update_probe(params, g, live, P, info, a, session, sdir, libs)
     return 0
 
 
@@ -782,30 +811,120 @@ def _r(v, k=3):
     return None if v is None or not np.isfinite(v) else round(float(v), k)
 
 
-def write_probe(path: str, session: str, g: int, chans: list[int], P: np.ndarray, a) -> None:
-    n = len(chans)
-    off = int(min(chans))
-    rel = [int(c) - off for c in chans]
-    lay = {4: "tetrode", 8: "octrode"}.get(n, "bundle") if a.layout == "bundle" else "estimated"
-    doc = {"probeFile": {
-        "version": "1.0", "vendor": "estimated", "model": f"{os.path.basename(session)} group {g}",
-        "totalChannels": int(max(rel)) + 1,
-        "substrate": {"material": "wire-bundle" if a.layout == "bundle" else None, "thickness_um": None},
-        "shanks": {"count": 1, "spacing_um": None, "length_mm": None},
-        "sites": {"count_per_shank": n, "layout": lay, "area_um2": None, "spacing_um": None,
-                  "plane": "cross-section" if a.layout == "bundle" else "unknown",
-                  "geometry": [[round(float(x), 1), round(float(y), 1)] for x, y in P]},
-        "channelMap": {"description": f"site j = channel {off} + map[j] (the group's channels "
-                       f"{[int(c) for c in chans]}); attach with channelOffset {off}",
-                       "map": None if rel == list(range(n)) else rel},
-        "notes": ("Estimated by ndm_estimategeometry from channel coherence and spike amplitude profiles "
-                  f"(wire diameter {a.wire_diameter_um:g} um, layout {a.layout}). For a bundle, x and y are the "
-                  "two axes of the bundle CROSS-SECTION (sites.plane), not lateral offset and height above "
-                  "the tip; orientation and handedness are arbitrary. See " + f"{session}.bundle.{g}.yaml "
-                  "for the uncertainty. Attach it with channelOffset " + str(off) + "."),
-    }}
+def _dump(path: str, doc: dict, header: str = "") -> None:
     with open(path, "w") as fh:
-        yaml.safe_dump(doc, fh, sort_keys=False, default_flow_style=None, width=140)
+        fh.write(header)
+        yaml.safe_dump(doc, fh, sort_keys=False, default_flow_style=None, width=140, allow_unicode=True)
+
+
+def unattached_estimate(session: str, chans: list[int]) -> Optional[str]:
+    """A SESSION.probe.<id>.probe written by this step for exactly these channels and not attached
+    yet (a group without a probeId), so a rerun finds it instead of writing another."""
+    import glob
+    for f in sorted(glob.glob(f"{glob.escape(session)}.probe.*.probe")):
+        try:
+            with open(f) as fh:
+                pr = (yaml.safe_load(fh) or {}).get("probeFile") or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        if str(pr.get("vendor")) != "estimated":
+            continue
+        for info in (pr.get("estimate") or {}).values():
+            if set((info or {}).get("channels") or []) | set((info or {}).get("flatChannelsLeftOut") or []) \
+                    == set(int(c) for c in chans):
+                return f
+    return None
+
+
+def _next_probe_id(params: dict, session: str) -> int:
+    used = {pe.get("probeId", pe.get("id")) for pe in (params.get("probes") or [])}
+    k = 0
+    while k in used or os.path.exists(f"{session}.probe.{k}.probe"):
+        k += 1
+    return k
+
+
+def update_probe(params: dict, g: int, chans: list[int], P: np.ndarray, info: dict, a, session: str,
+                 sdir: str, libs: list[str]) -> None:
+    """Write the estimate into the probe file bound to group g (its sites, by channel number), keeping
+    the first geometry as sites.geometry_backup.  A group without a probe file gets a new
+    SESSION.probe.<id>.probe to attach; a probe file outside the session folder (the shared library)
+    is not changed."""
+    bundle = a.layout == "bundle"
+    gp = group_probe(params, g, libs)
+    if gp is None or "error" in gp:
+        if gp is not None:
+            log(f"  group {g}: {gp['error']}; writing a new probe file")
+        path = unattached_estimate(session, probe_geometry.group_channels(params, g))
+        if path is None:
+            pid = _next_probe_id(params, session)
+            path = f"{session}.probe.{pid}.probe"
+        else:
+            pid = path[:-len(".probe")].rsplit(".", 1)[-1]          # SESSION.probe.<id>.probe
+        off = int(min(chans))
+        rel = [int(c) - off for c in chans]
+        doc = {"probeFile": {
+            "version": "1.0", "vendor": "estimated", "model": f"{os.path.basename(session)} group {g}",
+            "totalChannels": int(max(rel)) + 1,
+            "substrate": {"material": "wire-bundle" if bundle else None, "thickness_um": None},
+            "shanks": {"count": 1, "spacing_um": None, "length_mm": None},
+            "sites": {"count_per_shank": len(chans), "layout": {4: "tetrode", 8: "octrode"}.get(len(chans), "bundle"),
+                      "area_um2": None, "spacing_um": None,
+                      "plane": "cross-section" if bundle else "unknown",
+                      "geometry": [[round(float(x), 1), round(float(y), 1)] for x, y in P]},
+            "channelMap": {"description": f"site j = channel {off} + map[j]", "map": None if rel == list(range(len(chans))) else rel},
+            "notes": "Estimated by ndm_estimategeometry; see estimate.",
+            "estimate": {0: info}}}
+        _dump(path, doc)
+        log(f"  group {g}: wrote {path}; attach it in ndmanager's Probes tab (probeId {pid}, channelOffset {off}) "
+            "and set the group's probeId/shankIndex")
+        return
+    path = gp["path"]
+    if os.path.dirname(os.path.abspath(path)) != os.path.abspath(sdir):
+        log(f"  group {g}: {path} is outside the session folder (a shared library file) and is not changed; "
+            "copy it into the session (ndmanager's Probes tab does) and run again")
+        return
+    with open(path) as fh:
+        text = fh.read()
+    header = "".join(ln for ln in text.splitlines(True)[:50] if ln.startswith("#"))
+    header = header if text.startswith("#") else ""
+    doc = yaml.safe_load(text) or {}
+    probe = doc.setdefault("probeFile", {})
+    sites = probe.setdefault("sites", {})
+    site_ch = [gp["offset"] + c for c in probe_geometry.site_channels(probe)]
+    missing = [c for c in chans if c not in site_ch]
+    if missing:
+        log(f"  group {g}: {path} has no site for channel(s) {missing}; not changed")
+        return
+    idx = [site_ch.index(c) for c in chans]
+    geom = sites.get("geometry")
+    if geom and "geometry_backup" not in sites:
+        sites["geometry_backup"] = [list(p) if p is not None else None for p in geom]
+    geom = list(geom or [])
+    geom += [None] * (len(site_ch) - len(geom))
+    old = [geom[j] for j in idx]
+    if all(p is not None for p in old):
+        cx, cy = np.mean(np.array(old, float), 0)
+    else:
+        cx, cy = gp["shank"] * float(((probe.get("shanks") or {}).get("spacing_um")) or 0.0), 0.0
+    for k, j in enumerate(idx):
+        geom[j] = [round(float(P[k, 0] + cx), 1), round(float(P[k, 1] + cy), 1)]
+    sites["geometry"] = geom
+    if bundle:
+        probe.setdefault("substrate", {})
+        probe["substrate"]["material"] = "wire-bundle"
+        sites["plane"] = "cross-section"
+    est = probe.get("estimate") if isinstance(probe.get("estimate"), dict) else {}
+    est = {int(k) if str(k).isdigit() else k: v for k, v in est.items()}
+    est[gp["shank"]] = info
+    probe["estimate"] = est
+    _dump(path, doc, header)
+    log(f"  group {g}: updated {path} (shank {gp['shank']}, sites {idx[0]}..{idx[-1]})"
+        + ("; the first layout is kept as sites.geometry_backup" if "geometry_backup" in sites else ""))
+    grp = (((params.get("spikeDetection") or {}).get("channelGroups")) or [])[g - 1] or {}
+    if grp.get("sitePositions_um"):
+        log(f"  group {g}: the session YAML's sitePositions_um still holds the old layout and is read before "
+            "the probe file; rerun ndm_setupgroups or remove it")
 
 
 if __name__ == "__main__":

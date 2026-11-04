@@ -1,4 +1,4 @@
-# `ndm_estimategeometry` — wire-bundle site layout from channel coherence (`.dat`/`.fil` → `.bundle.N.probe`)
+# `ndm_estimategeometry` — wire-bundle site layout from channel coherence (`.dat`/`.fil` → the group's `.probe`)
 
 ## Synopsis
 
@@ -13,7 +13,7 @@ can be given alone (`ndm_estimategeometry 3`).
 
 | Option | Same as |
 |---|---|
-| `--force` | `overwrite: 1`: redo groups whose report exists |
+| `--force` | `overwrite: 1`: redo groups already estimated |
 | `--inputExtension EXT` | `inputExtension` |
 | `--wireDiameterUm D` | `wireDiameterUm` |
 | `--layout bundle\|free` | `layout` |
@@ -27,9 +27,9 @@ more than two arguments stop the step with the usage, before anything runs.
 **Input:** `session.dat` (raw) and/or `session.fil` (filtered); the spike
 groups of the session YAML. A probe file is **optional**.
 
-**Output:** per estimated group `session.bundle.N.probe` (a
-[`.probe`](../formats/probe.md) file) and `session.bundle.N.yaml` (report).
-The session YAML is not changed.
+**Output:** the group's [`.probe`](../formats/probe.md) file, updated in place
+(or a new one when the group has none). No other file; the session YAML is not
+changed.
 
 ## Description
 
@@ -47,23 +47,27 @@ the wires so that their distances follow it.
   library's `general/tetrode.probe`, for example), whose layout was drawn, not
   measured.
 - **Named groups:** a group given by `groups` or as `electrodeGroup` on the
-  command line is estimated whatever geometry it has, gets a probe file, and is
-  not used for calibration. This is the way past a hand-drawn placeholder
-  (e.g. a Probe Maker file marked `silicon`), which the step cannot tell from a
-  measured layout. Only the named groups are estimated.
+  command line is estimated whatever geometry it has, and is not used for
+  calibration. This is the way past a hand-drawn placeholder (e.g. a Probe
+  Maker file marked `silicon`), which the step cannot tell from a measured
+  layout. Only the named groups are estimated.
+- **Already estimated** (the probe file has `probeFile.estimate` for the
+  group's shank, or an unattached `session.probe.<id>.probe` was written for
+  its channels): skipped, named or not, unless `--force` / `overwrite: 1`.
 - **Calibration:** a group with a measured geometry — a probe file through
   `probeId`/`shankIndex`, or `sitePositions_um`, that is not a template — is
   not estimated. In a session that mixes silicon probes and wire bundles, those
   groups decide how much each similarity measure counts (`calibrate: 1`; see
-  Weights). `estimateKnown: 1` estimates them too, as a check against their
-  layout (report only, no probe file). A placeholder that is not a template
-  would calibrate too: leave it out with `calibrationGroups`.
-- **Flat channels** (median |x| = 0) are left out of their group and listed in
-  the report.
+  Weights); never for their own estimate. `estimateKnown: 1` estimates them
+  too, as a check against their layout: the log gives the agreement, nothing
+  is written. A placeholder that is not a template would calibrate too: leave
+  it out with `calibrationGroups`.
+- **Flat channels** (median |x| = 0) are left out of their group, listed in
+  `estimate`, and their sites keep their old positions.
 
-Every estimated group with a geometry attached gets a `validation` section
-comparing the estimate with that layout. It checks the estimate only if the
-layout was measured.
+For every estimated group that had a layout, the log and `estimate` give the
+agreement with it (Spearman and scaled Procrustes RMS). It checks the estimate
+only if that layout was measured.
 
 ### Pair similarities
 
@@ -87,7 +91,8 @@ Fisher-transformed.
 A measure counts only as far as it follows distance:
 
 - **With calibration groups:** its Spearman correlation with the known site
-  distances, averaged over those groups, squared (≤ 0 → weight 0).
+  distances, averaged over those groups (the estimated group itself left
+  out), squared (≤ 0 → weight 0).
 - **Without:** its split-half reliability: the Spearman correlation of the pair
   ordering between two random halves of the segments, averaged over 20 splits.
   This shows that a measure is reproducible, not that it is spatial, so an
@@ -115,8 +120,8 @@ centred, its long axis along x, its first channel at x ≥ 0.
 
 The segments are resampled with replacement `nBootstrap` times. Each replicate
 is embedded, started from the estimate, and aligned to it (rotation and
-reflection). The report gives each site's RMS deviation (µm) and, per wire,
-how often each other wire was its nearest neighbour. The bootstrap measures
+reflection). `estimate` gives each site's RMS deviation (µm) and, per wire,
+its most frequent nearest neighbour and how often. The bootstrap measures
 how stable the estimate is under resampling. It does not show whether the
 measures are spatial: a session without spatial structure can give an equally
 stable, wrong layout (see the negative control in the test). Calibration
@@ -131,28 +136,38 @@ site in another layer.
 
 ## Output
 
-`session.bundle.N.probe` — a one-shank probe file:
+The estimate goes into the probe file bound to the group (`probeId` /
+`shankIndex` → `probes:` entry), at the group's sites, found by channel number
+as every tool binds them (`scripts/probe_geometry.py`):
 
-- `vendor: estimated`, `substrate.material: wire-bundle`, `sites.layout:
-  tetrode` / `octrode` / `bundle`;
-- `sites.plane: cross-section`: `x` and `y` of `sites.geometry` are the two
-  axes of the bundle's cross-section, **not** the lateral offset and height
-  above the tip of a silicon shank. Tools that read `y` as depth
-  (`ndm_estimatedrift`) see the cross-section instead; a bundle has no depth
-  axis for them to use;
-- `channelMap.map` relative to the group's lowest channel; attach the file with
-  that `channelOffset` (the report's `attachWithChannelOffset`).
+- `sites.geometry`: the estimated positions, centred where the group's sites
+  were (so the shanks of a multi-bundle file keep their places). The other
+  sites are not touched.
+- `sites.geometry_backup`: the layout the file had before the first estimate.
+  Written once; a later run never overwrites it.
+- For a bundle (`layout: bundle`): `substrate.material: wire-bundle` and
+  `sites.plane: cross-section`. `x` and `y` are then the two axes of the
+  bundle's cross-section, **not** the lateral offset and height above the tip
+  of a silicon shank. Tools that read `y` as depth (`ndm_estimatedrift`) see
+  the cross-section instead; a bundle has no depth axis for them to use.
+- `estimate.<shank>`: the run — date, channels, flat channels left out, layout,
+  wire diameter, segments and spikes, where the weights came from and the
+  weights, ordinal stress, per-site SD, each wire's most frequent nearest
+  neighbour, low-coherence wires, and the agreement with the previous layout.
 
-`session.bundle.N.yaml` — the report: channels, flat channels left out,
-segments and spikes used, every measure's reliability, calibration Spearman
-and weight, the similarity matrices, the combined dissimilarity, site
-positions and SDs, nearest-neighbour stability, ordinal stress,
-low-coherence wires and, for a group with a geometry, a `validation` section
-(Spearman of the combined dissimilarity with the true distances, and the
-scaled Procrustes RMS).
+The file's leading comment lines are kept; the rest is rewritten (key order
+kept, comments inside dropped).
 
-To use the estimate, add the probe file in ndmanager's Probes tab with the
-given `channelOffset` and set the group's `probeId`/`shankIndex`.
+- **No probe file** (no `probeId`): a new `session.probe.<id>.probe` (the next
+  free id, `vendor: estimated`, `channelMap` relative to the group's lowest
+  channel). Add it in ndmanager's Probes tab with the `probeId` and
+  `channelOffset` given in the log, and set the group's `probeId`/`shankIndex`.
+  Until then a rerun finds it and treats the group as already estimated.
+- **A probe file outside the session folder** (the shared library) is not
+  changed: copy it into the session (ndmanager's Probes tab does) and run again.
+- **`sitePositions_um`** in the session YAML (written by `ndm_setupgroups`) is
+  read before the probe file and is not updated: the log says so; rerun
+  `ndm_setupgroups` or remove it.
 
 ## Parameters
 
@@ -162,10 +177,10 @@ Set in the `ndm_estimategeometry` block (see [parameters](../parameters.md)):
 |---|---|---|
 | `wireDiameterUm` | `15` | outer diameter of a wire with its insulation, µm: the smallest centre-to-centre distance |
 | `layout` | `bundle` | `bundle` (packed) or `free` (ordering only) |
-| `groups` | without a measured geometry | groups to estimate, e.g. `3` or `1,4`; named groups are estimated whatever geometry they have |
+| `groups` | without a geometry | groups to estimate, e.g. `3` or `1,4`; named groups are estimated whatever geometry they have |
 | `calibrate` | `1` | weight the measures on the groups with a geometry |
 | `calibrationGroups` | all known | restrict the calibration to these groups |
-| `estimateKnown` | `0` | also estimate groups with a geometry (report only) |
+| `estimateKnown` | `0` | also estimate groups with a geometry, as a check (nothing written) |
 | `nSegments`, `segmentSec` | `120`, `2` | stretches used, and their length |
 | `datBands` | `1-12,12-40,40-100,100-300,300-1000` | bands of the `.dat` coherence, Hz |
 | `filBands` | `1000-3000,3000-6000` | bands of the `.fil` coherence, Hz |
@@ -176,7 +191,7 @@ Set in the `ndm_estimategeometry` block (see [parameters](../parameters.md)):
 | `inputExtension`, `filExtension` | `dat`, `fil` | the raw and the filtered file |
 | `nBootstrap` | `50` | resamples for the uncertainty |
 | `seed` | `0` | random seed |
-| `overwrite` | `0` | redo a group whose report exists |
+| `overwrite` | `0` | redo groups already estimated |
 | `probeLibrary` | — | extra probe directory for the calibration groups' probe files |
 
 The helper is `process_estimategeometry.py` (Python 3 with `numpy`, `scipy`,

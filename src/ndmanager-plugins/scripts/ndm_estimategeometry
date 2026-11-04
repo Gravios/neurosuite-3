@@ -13,27 +13,29 @@
 #//  places the wires in the bundle cross-section so that their distances
 #//  follow that order without overlapping (wireDiameterUm) and packed.
 #//
-#//  The probe file is optional: groups that HAVE a measured geometry
-#//  (silicon shanks in a mixed session) are not estimated; they calibrate
-#//  which features follow distance (calibrate: 1), and estimateKnown: 1
-#//  also estimates them as a check.  A wire-bundle template probe file
-#//  (drawn, not measured) does not count as a geometry.  A group NAMED on
-#//  the command line is estimated whatever it has (e.g. a hand-drawn
-#//  placeholder) and gets a probe file.
+#//  The probe file is optional: groups that HAVE a geometry (silicon
+#//  shanks in a mixed session) are not estimated; they calibrate which
+#//  features follow distance (calibrate: 1; never a group's own), and
+#//  estimateKnown: 1 checks them (nothing written).  A wire-bundle
+#//  template probe file (drawn, not measured) does not count as a
+#//  geometry.  A group NAMED on the command line is estimated whatever
+#//  geometry it has (e.g. a hand-drawn placeholder).
 #//
-#//  Output (per estimated group N):
-#//    SESSION.bundle.N.probe   probe file with the estimated cross-section
-#//    SESSION.bundle.N.yaml    report: features, weights, positions,
-#//                             bootstrap SD, neighbour stability
-#//  The session YAML is not changed; attach the probe file in ndmanager.
+#//  Output: the group's PROBE FILE, updated in place (its sites, by
+#//  channel number); the first layout is kept as sites.geometry_backup,
+#//  and probeFile.estimate records the run (weights, per-site SD, ...).
+#//  A group without a probe file gets a new SESSION.probe.<id>.probe to
+#//  attach in ndmanager; a probe file outside the session folder (the
+#//  shared library) is not changed.  The session YAML is not changed.
+#//  A group already estimated is skipped unless --force.
 #//
 #//  Usage: ndm_estimategeometry [parameter-file] [electrodeGroup] [options]
 #//    Without a parameter file the session is the current folder's name.
-#//    --force               redo groups whose report exists (overwrite: 1)
+#//    --force               redo groups already estimated (overwrite: 1)
 #//    --inputExtension EXT  raw recording SESSION.EXT (default dat)
 #//    --wireDiameterUm D    wire diameter incl. insulation, µm (default 15)
 #//    --layout bundle|free  packed bundle (default) or ordering only
-#//    --estimateKnown       also estimate groups that have a geometry
+#//    --estimateKnown       also check groups that have a geometry
 #//  An option given here wins over the YAML value.
 #//
 #//  copyright (C) 2026 neurosuite-3 contributors  GPL-3.0-or-later
