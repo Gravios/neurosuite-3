@@ -91,6 +91,8 @@ META = [
     # ── Grouping ──
     ("ndm_setupgroups", "Setup Groups", "Build groups from probe file", "grouping", "spikes", [], False),
     ("ndm_spikegrouper", "Spike Grouper", "Auto-discover channel groups", "grouping", "spikes", [], False),
+    ("ndm_estimategeometry", "Estimate Bundle Geometry", "Wire-bundle site layout from channel coherence",
+     "grouping", "spikes", ["inputExtension"], False),
     # ── Detection ──
     ("ndm_detectspikes", "Detect Spikes", ".fil → .res (threshold detection)", "detection", "spikes",
      ["inputExtension"], False),

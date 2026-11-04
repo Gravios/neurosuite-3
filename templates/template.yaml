@@ -952,6 +952,188 @@ programs:
       \ directories; the first that holds it wins.\n\n# overwrite\nIf false (default),\
       \ abort if groups already exist.  Set to true to replace them."
 
+  - name: ndm_estimategeometry
+    parameters:
+      - name: wireDiameterUm
+        value: 15
+        status: Optional
+      - name: layout
+        value: bundle
+        status: Optional
+      - name: groups
+        status: Optional
+      - name: calibrate
+        value: 1
+        status: Optional
+      # - name: calibrationGroups
+      #   status: Optional
+      - name: estimateKnown
+        value: 0
+        status: Optional
+      - name: nSegments
+        value: 120
+        status: Optional
+      - name: segmentSec
+        value: 2
+        status: Optional
+      - name: datBands
+        value: 1-12,12-40,40-100,100-300,300-1000
+        status: Optional
+      - name: filBands
+        value: 1000-3000,3000-6000
+        status: Optional
+      - name: detectThreshold
+        value: 5
+        status: Optional
+      # - name: spikeWindowMs
+      #   value: 0.5
+      #   status: Optional
+      # - name: spikeGuardMs
+      #   value: 1
+      #   status: Optional
+      # - name: highPassHz
+      #   value: 800
+      #   status: Optional
+      # - name: inputExtension
+      #   value: dat
+      #   status: Optional
+      # - name: filExtension
+      #   value: fil
+      #   status: Optional
+      - name: nBootstrap
+        value: 50
+        status: Optional
+      # - name: seed
+      #   value: 0
+      #   status: Optional
+      - name: overwrite
+        value: 0
+        status: Optional
+      - name: probeLibrary
+        status: Optional
+    help: |-
+      Estimate the site layout of a wire bundle (tetrode, octrode, ...) whose
+      geometry is unknown, from how similar its channels' signals are.
+
+      A probe file is optional.  Spike groups that have a geometry (a probe
+      file through probeId/shankIndex, or sitePositions_um) are not estimated:
+      in a session that mixes silicon probes and wire bundles they CALIBRATE
+      the estimate, i.e. decide how much each similarity measure counts by how
+      well it follows the known site distances.  Without them, each measure
+      counts by how reproducible it is between two halves of the recording.
+
+      PAIR SIMILARITIES (every pair of the group's channels)
+
+        dat:<band>   coherence of the raw recording in a band; from 300 Hz up
+                     only on spike-free windows
+        fil:<band>   coherence of the filtered .fil on spike-free windows
+                     (the high-frequency background)
+        spike:amp    co-variation of the two channels' spike amplitudes
+        spike:shape  similarity of the two channels' spike waveforms
+
+      They are combined into one ordering of the pairs from close to far, and
+      the wires are placed in the bundle's cross-section so that their
+      distances follow it, no two closer than wireDiameterUm, packed.  The
+      orientation and handedness of the result are arbitrary.  The recording
+      is resampled (nBootstrap) for the uncertainty of every site.
+
+      Reads SESSION.dat and SESSION.fil; either may be missing, not both (the
+      .fil is then computed from the .dat with highPassHz).  Run it before
+      spike detection if the layout is wanted for detection or extraction
+      settings; it detects its own spikes.
+
+      OUTPUT FILES (per estimated group N)
+
+      SESSION.bundle.N.probe  probe file with the estimated cross-section as
+                              sites.geometry (sites.plane: cross-section: x and
+                              y are the two axes of the cross-section, not the
+                              height above the tip)
+      SESSION.bundle.N.yaml   report: per-measure reliability, calibration and
+                              weight, similarity matrices, positions, per-site
+                              SD, nearest-neighbour stability, wires with low
+                              coherence, and, for a known group, the agreement
+                              with its geometry
+
+      The session YAML is not changed; add the probe file in ndmanager's
+      Probes tab (channelOffset 0: its channelMap holds the channels).
+
+      OPTIONAL PARAMETERS
+
+      # wireDiameterUm
+
+      Outer diameter of one wire including insulation, µm = the smallest
+      centre-to-centre distance in the bundle (default = 15).
+
+      # layout
+
+      bundle (default): packed wires in the cross-section.  free: no packing,
+      only the ordering (scaled so the median nearest-neighbour distance is
+      wireDiameterUm); for a check on a silicon shank.
+
+      # groups
+
+      Groups to estimate, e.g. 3 or 1,4 (default = every group without a
+      geometry).  A group given on the command line wins.
+
+      # calibrate
+
+      1 (default) = weight the measures on the groups with a known geometry.
+
+      # calibrationGroups
+
+      Restrict the calibration to these groups (default = all known ones).
+
+      # estimateKnown
+
+      1 = also estimate the groups that have a geometry, as a check; their
+      report gets a validation section (Spearman of the combined dissimilarity
+      with the true distances) and no probe file is written (default = 0).
+
+      # nSegments, segmentSec
+
+      Recording segments spread over the session, and their length in seconds
+      (default = 120 x 2 s).
+
+      # datBands, filBands
+
+      Coherence bands in Hz for the raw and the filtered recording
+      (defaults 1-12,12-40,40-100,100-300,300-1000 and 1000-3000,3000-6000).
+
+      # detectThreshold
+
+      Spike detection threshold in robust SDs of the filtered signal (default
+      = 5).
+
+      # spikeWindowMs, spikeGuardMs
+
+      Half window for spike amplitudes (default 0.5 ms), and how far from a
+      spike a sample must be to count as background (default 1 ms).
+
+      # highPassHz
+
+      High-pass cut-off used when there is no .fil (default = 800).
+
+      # inputExtension, filExtension
+
+      The raw and the filtered file: SESSION.<inputExtension> (default dat)
+      and SESSION.<filExtension> (default fil).
+
+      # nBootstrap
+
+      Resamples of the segments for the per-site uncertainty (default = 50).
+
+      # seed
+
+      Random seed for the segments, splits and restarts (default = 0).
+
+      # overwrite
+
+      1 = redo a group whose SESSION.bundle.N.yaml exists (default = 0).
+
+      # probeLibrary
+
+      Extra probe library directory for the known groups' probe files.
+
   # == Spike detection pipeline =================================================
   - name: ndm_spikegrouper
     parameters:

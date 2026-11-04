@@ -10,6 +10,10 @@ set(_ndm_scripts
     ndm_spikecleaner
     ndm_start ndm_transcodevideo ndm_tsp2sts
     ndm_estimatedrift
+    # Site layout of a wire bundle (tetrode/octrode) with no probe geometry,
+    # from channel coherence (.dat/.fil) and spike amplitude profiles; groups
+    # with a known geometry calibrate it.  Backed by process_estimategeometry.py.
+    ndm_estimategeometry
     ndm_applydrift
     ndm_driftcorrect
     ndm_decomposecollisions
@@ -89,6 +93,7 @@ install(PROGRAMS
     process_driftcorrect.py
     process_autoklusta.py
     process_localise.py
+    process_estimategeometry.py
     process_setupgroups.py
     process_plxyaml.py
     kk_build_prior.py

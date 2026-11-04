@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm_estimategeometry — site layout of a wire bundle (tetrode, octrode,
+#//  …) from channel coherence and spike amplitude profiles
+#//
+#//  For spike groups with no known geometry (no probe file, no
+#//  sitePositions_um), measures how similar every pair of channels is:
+#//    * coherence of the raw .dat in frequency bands (spike-free from
+#//      300 Hz up),
+#//    * coherence of the filtered .fil background on spike-free windows,
+#//    * the spikes' amplitude profiles and waveform shapes,
+#//  combines them into one ordering of the pairs from close to far, and
+#//  places the wires in the bundle cross-section so that their distances
+#//  follow that order without overlapping (wireDiameterUm) and packed.
+#//
+#//  The probe file is optional: groups that HAVE a geometry (silicon
+#//  shanks in a mixed session) are not estimated; they calibrate which
+#//  features follow distance (calibrate: 1), and estimateKnown: 1 also
+#//  estimates them as a check against their known layout.
+#//
+#//  Output (per estimated group N):
+#//    SESSION.bundle.N.probe   probe file with the estimated cross-section
+#//    SESSION.bundle.N.yaml    report: features, weights, positions,
+#//                             bootstrap SD, neighbour stability
+#//  The session YAML is not changed; attach the probe file in ndmanager.
+#//
+#//  copyright (C) 2026 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+source ndm_functions
+
+program=$(basename $0)
+if [ $# -gt 2 ]; then
+    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+    exit $GENERAL_ERROR
+fi
+
+ndm_resolve_session "$@"
+[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+param_ext=$(param_file_ext "$session")
+electrodeGroup=$2
+
+print_header "$session - Estimating wire-bundle geometry"
+
+check_commands_installed python3
+python3 -c "import yaml, numpy, scipy.signal, scipy.optimize" 2>/dev/null || {
+    echo_error "Python packages missing: install pyyaml, numpy, scipy"
+    exit $GENERAL_ERROR
+}
+
+yamlfile=$(find_yaml_file "$session")
+[ -z "$yamlfile" ] && {
+    echo_error "No YAML parameter file found for session '$session'"
+    exit $INPUTS_MISSING
+}
+
+# The raw recording ($session.$inputExtension, default dat) and the filtered one
+# ($session.$filExtension, default fil); either may be missing, not both.
+ndm_input_extension dat
+filExtension=$(read_script_parameter "$session" filExtension) ; filExtension=${filExtension:-fil}
+filExtension=${filExtension#.}
+if [ "$NDM_INPUT_EXPLICIT" = 1 ] && [ ! -f "$session.$inputExtension" ]; then
+    echo_error "inputExtension is '$inputExtension' but '$session.$inputExtension' does not exist"
+    exit $GENERAL_ERROR
+fi
+if [ ! -f "$session.$inputExtension" ] && [ ! -f "$session.$filExtension" ]; then
+    inputs_missing "$session.$inputExtension" && exit $INPUTS_MISSING
+fi
+
+# Parameters (global program block > default)
+groups=$(read_script_parameter            "$session" groups)
+wireDiameterUm=$(read_script_parameter    "$session" wireDiameterUm)    ; wireDiameterUm=${wireDiameterUm:-15}
+layout=$(read_script_parameter            "$session" layout)            ; layout=${layout:-bundle}
+datBands=$(read_script_parameter          "$session" datBands)          ; datBands=${datBands:-1-12,12-40,40-100,100-300,300-1000}
+filBands=$(read_script_parameter          "$session" filBands)          ; filBands=${filBands:-1000-3000,3000-6000}
+nSegments=$(read_script_parameter         "$session" nSegments)         ; nSegments=${nSegments:-120}
+segmentSec=$(read_script_parameter        "$session" segmentSec)        ; segmentSec=${segmentSec:-2}
+detectThreshold=$(read_script_parameter   "$session" detectThreshold)   ; detectThreshold=${detectThreshold:-5}
+spikeWindowMs=$(read_script_parameter     "$session" spikeWindowMs)     ; spikeWindowMs=${spikeWindowMs:-0.5}
+spikeGuardMs=$(read_script_parameter      "$session" spikeGuardMs)      ; spikeGuardMs=${spikeGuardMs:-1}
+highPassHz=$(read_script_parameter        "$session" highPassHz)        ; highPassHz=${highPassHz:-800}
+calibrate=$(read_script_parameter         "$session" calibrate)         ; calibrate=${calibrate:-1}
+calibrationGroups=$(read_script_parameter "$session" calibrationGroups)
+estimateKnown=$(read_script_parameter     "$session" estimateKnown)     ; estimateKnown=${estimateKnown:-0}
+nBootstrap=$(read_script_parameter        "$session" nBootstrap)        ; nBootstrap=${nBootstrap:-50}
+seed=$(read_script_parameter              "$session" seed)              ; seed=${seed:-0}
+overwrite=$(read_script_parameter         "$session" overwrite)         ; overwrite=${overwrite:-0}
+probeLibrary=$(read_script_parameter      "$session" probeLibrary)
+
+# A group on the command line wins over the groups parameter.
+[ -n "$electrodeGroup" ] && groups=$electrodeGroup
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY_HELPER="${SCRIPT_DIR}/process_estimategeometry.py"
+[ -f "$PY_HELPER" ] || PY_HELPER="process_estimategeometry.py"
+
+python3 "$PY_HELPER" \
+    --param-file          "$yamlfile" \
+    --session             "$session" \
+    --dat                 "$session.$inputExtension" \
+    --fil                 "$session.$filExtension" \
+    ${groups:+--groups "$groups"} \
+    --wire-diameter-um    "$wireDiameterUm" \
+    --layout              "$layout" \
+    --dat-bands           "$datBands" \
+    --fil-bands           "$filBands" \
+    --n-segments          "$nSegments" \
+    --segment-sec         "$segmentSec" \
+    --detect-threshold    "$detectThreshold" \
+    --spike-window-ms     "$spikeWindowMs" \
+    --spike-guard-ms      "$spikeGuardMs" \
+    --high-pass-hz        "$highPassHz" \
+    --calibrate           "$calibrate" \
+    ${calibrationGroups:+--calibration-groups "$calibrationGroups"} \
+    --estimate-known      "$estimateKnown" \
+    --n-bootstrap         "$nBootstrap" \
+    --seed                "$seed" \
+    --overwrite           "$overwrite" \
+    ${probeLibrary:+--probe-library "$probeLibrary"}
+
+check_command_status python3

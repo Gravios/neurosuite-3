@@ -44,6 +44,7 @@ after the current folder.
 | [`ndm_xml2yaml`](ndm_xml2yaml.md) | Convert a legacy `.xml` parameter file |
 | [`ndm_setupgroups`](ndm_setupgroups.md) | Channel groups and site positions from the probe library |
 | [`ndm_spikegrouper`](ndm_spikegrouper.md) | Split spike groups by spike coincidence |
+| [`ndm_estimategeometry`](ndm_estimategeometry.md) | Wire-bundle (tetrode/octrode) site layout from channel coherence → `.bundle.N.probe` |
 | [`ndm_extractemg`](ndm_extractemg.md) | Remove the EMG component (FastICA); EMG events |
 
 ## 3. Filtering and continuous signals

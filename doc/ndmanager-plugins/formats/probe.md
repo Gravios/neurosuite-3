@@ -54,6 +54,13 @@ Every tool looks a channel's position up by channel number
 (`scripts/probe_geometry.py`; Klusters' `driftgeometry.cpp`), so spike groups
 may list their channels in any order.
 
+**Wire bundles.** A file with `sites.plane: cross-section` (written by
+[`ndm_estimategeometry`](../commands/ndm_estimategeometry.md) for a tetrode or
+octrode whose layout was estimated) gives `x` and `y` as the two axes of the
+bundle's cross-section, not the lateral offset and height above a tip. Without
+the key, `y` is the height above the tip, as above (the library's
+`general/tetrode.probe` puts every wire at `y = 0`).
+
 `count_per_shank` decides which geometry entries belong to which shank; it is
 a list when the shanks differ. A one-shank probe may leave it out (or null):
 every geometry entry is then a site of that shank. A multi-shank probe needs

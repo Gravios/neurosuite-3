@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | [ndm_estimategeometry: wire-bundle site layout from channel coherence](#2026-11-04--ndm_estimategeometry-wire-bundle-site-layout-from-channel-coherence) |
 | 2026-11-02 | [NeuroScope: the spectral view updates when a setting changes](#2026-11-02--neuroscope-the-spectral-view-updates-when-a-setting-changes) |
 | 2026-10-29 | [Klusters: the matrices are shown on open by default](#2026-10-29--klusters-the-matrices-are-shown-on-open-by-default) |
 | 2026-10-29 | [Settings move to ~/.config/neurosuite-3](#2026-10-29--settings-move-to-configneurosuite-3) |
@@ -151,6 +152,50 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-04 — ndm_estimategeometry: wire-bundle site layout from channel coherence
+
+<details>
+<summary>Details</summary>
+
+New step `ndm_estimategeometry` (helper `process_estimategeometry.py`) for
+tetrodes, octrodes and other wire bundles recorded without a geometry. For
+every pair of a group's channels it measures:
+
+- coherence of the raw `.dat` in bands, spike-free from 300 Hz up;
+- coherence of the `.fil` background on spike-free windows;
+- how the spikes' amplitude profiles and waveforms co-vary.
+
+The pairs are combined into one ordering from close to far. The wires are then
+placed in the bundle's cross-section by ordinal stress, no two closer than
+`wireDiameterUm` and packed. Segment resampling gives each site's uncertainty
+and the stability of its nearest neighbours.
+
+The probe file is optional. In a session that mixes silicon probes and wire
+bundles, the groups with a geometry are not estimated; they calibrate how much
+each measure counts (its Spearman correlation with the known distances).
+Without them, the measures are weighted by split-half reliability.
+
+Output per group: `SESSION.bundle.N.probe`, with `sites.plane: cross-section`,
+and `SESSION.bundle.N.yaml`, the report. The session YAML is not changed.
+
+Validation:
+
+- **Synthetic octrode (15 µm wires):** recovered within 3 µm RMS. Negative
+  control without spatial structure: 16 µm.
+- **Real Buzsaki64L shank, estimated as unknown:** Spearman 0.97 with the true
+  site distances.
+- **Not validated:** a real bundle against a measured geometry.
+
+Files: `src/ndmanager-plugins/scripts/{ndm_estimategeometry,
+process_estimategeometry.py,CMakeLists.txt}`, `templates/template.yaml`,
+`src/ndmanager/tools/pipeline_script_defs.py` and the generated
+`pipelinescriptdefs.inc` / `parametercatalog.inc`,
+`doc/ndmanager-plugins/commands/{ndm_estimategeometry,README}.md`,
+`doc/ndmanager-plugins/formats/probe.md`,
+`src/ndmanager-plugins/test/test_estimategeometry.py`.
+
+</details>
 
 ## 2026-11-02 — NeuroScope: the spectral view updates when a setting changes
 
