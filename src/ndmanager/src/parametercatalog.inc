@@ -215,7 +215,7 @@
 { "ndm_estimategeometry", "layout", "bundle", "Optional", true,
   "bundle (default): packed wires in the cross-section. free: no packing, only the ordering (scaled so the median nearest-neighbour distance is wireDiameterUm); for a check on a silicon shank." },
 { "ndm_estimategeometry", "groups", "", "Optional", true,
-  "Groups to estimate, e.g. 3 or 1,4 (default = every group without a geometry). A group given on the command line wins." },
+  "Groups to estimate, e.g. 3 or 1,4 (default = every group without a measured geometry: none, or a wire-bundle template). A named group is estimated whatever geometry it has (a drawn placeholder, say), gets a probe file and does not calibrate. A group given on the command line wins." },
 { "ndm_estimategeometry", "calibrate", "1", "Optional", true,
   "1 (default) = weight the measures on the groups with a known geometry." },
 { "ndm_estimategeometry", "calibrationGroups", "", "Optional", false,

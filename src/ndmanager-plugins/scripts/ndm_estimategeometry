@@ -13,10 +13,13 @@
 #//  places the wires in the bundle cross-section so that their distances
 #//  follow that order without overlapping (wireDiameterUm) and packed.
 #//
-#//  The probe file is optional: groups that HAVE a geometry (silicon
-#//  shanks in a mixed session) are not estimated; they calibrate which
-#//  features follow distance (calibrate: 1), and estimateKnown: 1 also
-#//  estimates them as a check against their known layout.
+#//  The probe file is optional: groups that HAVE a measured geometry
+#//  (silicon shanks in a mixed session) are not estimated; they calibrate
+#//  which features follow distance (calibrate: 1), and estimateKnown: 1
+#//  also estimates them as a check.  A wire-bundle template probe file
+#//  (drawn, not measured) does not count as a geometry.  A group NAMED on
+#//  the command line is estimated whatever it has (e.g. a hand-drawn
+#//  placeholder) and gets a probe file.
 #//
 #//  Output (per estimated group N):
 #//    SESSION.bundle.N.probe   probe file with the estimated cross-section

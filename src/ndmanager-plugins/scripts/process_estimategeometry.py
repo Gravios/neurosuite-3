@@ -119,34 +119,48 @@ def load_probe(probe_file: str, library_paths: list[str]) -> Optional[dict]:
     return None
 
 
-def known_positions(params: dict, g: int, libs: list[str]) -> tuple[Optional[np.ndarray], str]:
-    """Site positions of 1-based group g in the group's channel order, or (None, reason).
+def _nominal(probe: Optional[dict]) -> bool:
+    """A wire-bundle probe file not written by this step (the library's general/tetrode.probe,
+    an octrode template): its layout was drawn, not measured."""
+    probe = probe or {}
+    return (((probe.get("substrate") or {}).get("material")) == "wire-bundle"
+            and str(probe.get("vendor") or "") != "estimated")
+
+
+def known_positions(params: dict, g: int, libs: list[str]) -> tuple[Optional[np.ndarray], str, bool]:
+    """Site positions of 1-based group g in the group's channel order, the source, and whether
+    the layout is only NOMINAL (a wire-bundle template, see _nominal) -- or (None, reason, False).
     Inline sitePositions_um first, then probeId/shankIndex -> probes: entry -> probe file,
     looked up by channel number (probe_geometry)."""
     groups = ((params.get("spikeDetection") or {}).get("channelGroups")) or []
     if not 0 < g <= len(groups):
-        return None, "no such group"
+        return None, "no such group", False
     grp = groups[g - 1] or {}
     chans = probe_geometry.group_channels(params, g)
+    probe, entry, why = None, None, "no probeId"
+    pid = grp.get("probeId")
+    if pid is not None:
+        entry = next((pe for pe in (params.get("probes") or []) if pe.get("probeId", pe.get("id")) == pid), None)
+        if entry is None or not entry.get("probeFile"):
+            why = f"probeId {pid} not in probes:"
+        else:
+            probe = load_probe(str(entry["probeFile"]), libs)
+            why = f"probe file {entry['probeFile']} not found" if probe is None else ""
+    nominal = _nominal(probe)
     inline = grp.get("sitePositions_um")
     if inline and len(inline) == len(chans) and all(p is not None for p in inline):
-        return np.array([[float(p[0]), float(p[1])] for p in inline]), "sitePositions_um"
-    pid = grp.get("probeId")
-    if pid is None:
-        return None, "no probeId"
-    entry = next((pe for pe in (params.get("probes") or []) if pe.get("probeId", pe.get("id")) == pid), None)
-    if entry is None or not entry.get("probeFile"):
-        return None, f"probeId {pid} not in probes:"
-    probe = load_probe(str(entry["probeFile"]), libs)
-    if probe is None:
-        return None, f"probe file {entry['probeFile']} not found"
-    pos = probe_geometry.positions_for_channels(probe, int(entry.get("channelOffset", 0) or 0), chans)
-    if any(p is None for p in pos):
-        return None, f"{entry['probeFile']} has no geometry for every channel"
-    P = np.array(pos, float)
+        P = np.array([[float(p[0]), float(p[1])] for p in inline])
+        src = "sitePositions_um" + (f" (from {entry['probeFile']})" if probe is not None else "")
+    elif probe is not None:
+        pos = probe_geometry.positions_for_channels(probe, int(entry.get("channelOffset", 0) or 0), chans)
+        if any(p is None for p in pos):
+            return None, f"{entry['probeFile']} has no geometry for every channel", False
+        P, src = np.array(pos, float), str(entry["probeFile"])
+    else:
+        return None, why, False
     if len({tuple(p) for p in P.tolist()}) < len(P):
-        return None, f"{entry['probeFile']}: several channels share a position (a point-sensor convention)"
-    return P, str(entry["probeFile"])
+        return None, f"{src}: several channels share a position (a point-sensor convention)", False
+    return P, src, nominal
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -553,30 +567,42 @@ def run(a) -> int:
     rng = np.random.default_rng(a.seed)
     ngroups = len(((params.get("spikeDetection") or {}).get("channelGroups")) or [])
     known = {g: known_positions(params, g, libs) for g in range(1, ngroups + 1)}
-    asked = _parse_groups(a.groups)
-    targets = asked or [g for g in range(1, ngroups + 1) if known[g][0] is None]
-    targets = [g for g in targets if len(probe_geometry.group_channels(params, g)) >= 3]
-    calib = [g for g in range(1, ngroups + 1) if known[g][0] is not None
-             and len(probe_geometry.group_channels(params, g)) >= 3] if a.calibrate else []
+    big = {g for g in range(1, ngroups + 1) if len(probe_geometry.group_channels(params, g)) >= 3}
+    has = {g for g in big if known[g][0] is not None}
+    nominal = {g for g in has if known[g][2]}
+    measured = has - nominal
+    asked = [g for g in _parse_groups(a.groups) if g in big]
+    for g in _parse_groups(a.groups):
+        if g not in big:
+            log(f"  group {g}: no such group or fewer than 3 channels; skipped")
+    for g in sorted(nominal):
+        log(f"  group {g}: {known[g][1]} is a wire-bundle template (drawn, not measured): estimated, "
+            "and not used for calibration")
+    if asked:                          # a group asked for by name is estimated, whatever it has
+        targets = list(asked)
+    else:
+        targets = sorted((big - has) | nominal)
+        if a.estimate_known:
+            targets = sorted(set(targets) | measured)
+        else:
+            for g in sorted(measured):
+                log(f"  group {g}: geometry known ({known[g][1]}); not estimated (name the group, or "
+                    "--estimateKnown, to estimate it)")
+    calib = sorted(measured - set(asked)) if a.calibrate else []
     if a.calibration_groups:
         want = set(_parse_groups(a.calibration_groups))
         calib = [g for g in calib if g in want]
-    if a.estimate_known:
-        if not asked:
-            targets = sorted(set(targets) | {g for g in range(1, ngroups + 1) if known[g][0] is not None
-                                             and len(probe_geometry.group_channels(params, g)) >= 3})
-    else:
-        skipped = [g for g in targets if known[g][0] is not None]
-        for g in skipped:
-            log(f"  group {g}: geometry known ({known[g][1]}); not estimated (--estimate-known 1 to check it)")
-        targets = [g for g in targets if known[g][0] is None]
+    # the probe file is written for a group without a measured geometry, or one asked for by name;
+    # --estimateKnown on a silicon shank is a check (report only)
+    write_probe_for = {g for g in targets if g not in measured or g in asked}
     if not targets:
-        log("nothing to estimate: every group has a geometry (or fewer than 3 channels)")
+        log("nothing to estimate: every group has a measured geometry (or fewer than 3 channels); "
+            "name a group to estimate it anyway")
         return 0
     for g in targets:
         rep = f"{session}.bundle.{g}.yaml"
         if os.path.exists(rep) and not a.overwrite:
-            log(f"  group {g}: {rep} exists (overwrite: 1 to redo)")
+            log(f"  group {g}: {rep} exists (--force or overwrite: 1 to redo)")
     targets = [g for g in targets if a.overwrite or not os.path.exists(f"{session}.bundle.{g}.yaml")]
     if not targets:
         return 0
@@ -635,7 +661,8 @@ def run(a) -> int:
             targets = [t for t in targets if t != g]; calib = [c for c in calib if c != g]
         else:
             chans[g] = [chans[g][i] for i in keep[g]]
-    known = {g: ((v[0][keep[g]] if v[0] is not None and g in keep else v[0]), v[1]) for g, v in known.items()}
+    known = {g: ((v[0][keep[g]] if v[0] is not None and g in keep else v[0]), v[1], v[2])
+             for g, v in known.items()}
     if not targets:
         log("nothing left to estimate"); return 0
     accs = {g: GroupAccumulator(len(chans[g]), sr, dat_bands, fil_bands, half, guard) for g in process}
@@ -723,12 +750,17 @@ def run(a) -> int:
             Q = known[g][0]
             rho = _spearman(diss, pair_dist(Q))
             A, rms = procrustes(P, Q, scale=True)
-            rep["validation"] = dict(knownGeometry=known[g][1], spearmanDissimilarityVsDistance=_r(rho),
-                                     procrustesRMS_um_scaled=round(rms, 1),
-                                     note="known geometry: the estimate is a check, no probe file is written")
-            log(f"  group {g} (known {known[g][1]}): Spearman(dissimilarity, true distance) {rho:.2f}, "
-                f"scaled Procrustes RMS {rms:.1f} µm")
-        if known[g][0] is None:
+            nom = bool(known[g][2])
+            rep["validation"] = dict(
+                knownGeometry=known[g][1], nominal=nom,
+                spearmanDissimilarityVsDistance=_r(rho), procrustesRMS_um_scaled=round(rms, 1),
+                note=("the attached layout is a wire-bundle template (drawn, not measured): agreement with it "
+                      "is not a check" if nom else
+                      "agreement with the attached layout; a check of the estimate only if that layout was "
+                      "measured (a drawn placeholder says nothing)"))
+            log(f"  group {g} (attached {known[g][1]}{', a template' if nom else ''}): Spearman(dissimilarity, "
+                f"its distances) {rho:.2f}, scaled Procrustes RMS {rms:.1f} µm")
+        if g in write_probe_for:
             write_probe(f"{session}.bundle.{g}.probe", session, g, chans[g], P, a)
             rep["probeFile"] = os.path.basename(f"{session}.bundle.{g}.probe")
             rep["attachWithChannelOffset"] = int(min(chans[g]))

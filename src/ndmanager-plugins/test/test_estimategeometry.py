@@ -137,11 +137,39 @@ with tempfile.TemporaryDirectory() as d:
           all(p is not None for p in pos) and np.allclose(np.array(pos), P, atol=0.11))
     check("the probe file says the plane", probe["sites"]["plane"] == "cross-section")
 
-    r = run(d, "--groups", "1", "--estimate-known", "1", "--calibrate", "0", "--layout", "free")
+    r = run(d, "--estimate-known", "1", "--calibrate", "0", "--layout", "free", "--overwrite", "1")
     k = yaml.safe_load(open(os.path.join(d, "s.bundle.1.yaml")))
     rho = k["validation"]["spearmanDissimilarityVsDistance"]
     check("estimateKnown checks the known shank", rho is not None and rho > 0.8, str(rho))
-    check("no probe file for a known group", not os.path.exists(os.path.join(d, "s.bundle.1.probe")))
+    check("estimateKnown writes no probe file for it", not os.path.exists(os.path.join(d, "s.bundle.1.probe")))
+
+    # a group named on the command line is estimated whatever geometry it has (it may be a
+    # placeholder), gets a probe file, and does not calibrate itself
+    os.remove(os.path.join(d, "s.bundle.1.yaml"))
+    r = run(d, "--groups", "1", "--layout", "free")
+    k = yaml.safe_load(open(os.path.join(d, "s.bundle.1.yaml")))
+    check("a named group with a geometry is estimated, with a probe file",
+          os.path.exists(os.path.join(d, "s.bundle.1.probe")) and "validation" in k)
+    check("... and is not its own calibration", k["weightsFrom"] == "split-half reliability", k["weightsFrom"])
+    check("... the other group is left alone", "group(s) [1]" in r.stderr)
+
+# a wire-bundle TEMPLATE attached to the octrode (drawn, not measured) does not stop the estimate
+with tempfile.TemporaryDirectory() as d:
+    make(d)
+    tmpl = dict(probeFile=dict(vendor="general", model="octrode-template", totalChannels=8,
+                               substrate=dict(material="wire-bundle"), shanks=dict(count=1),
+                               sites=dict(count_per_shank=8, geometry=[[6 * j - 21, 0.5 * j] for j in range(8)])))
+    yaml.safe_dump(tmpl, open(os.path.join(d, "oct.probe"), "w"))
+    doc = yaml.safe_load(open(os.path.join(d, "s.yaml")))
+    doc["probes"] = [dict(probeId=0, probeFile="oct.probe", channelOffset=8)]
+    doc["spikeDetection"]["channelGroups"][1].update(probeId=0, shankIndex=0)
+    yaml.safe_dump(doc, open(os.path.join(d, "s.yaml"), "w"))
+    r = run(d)
+    rep, P, _ = estimate(d)
+    check("a wire-bundle template is estimated over", os.path.exists(os.path.join(d, "s.bundle.2.probe"))
+          and rep["validation"]["nominal"] is True)
+    check("... while the shank still calibrates", rep["weightsFrom"].startswith("calibration groups 1"),
+          rep["weightsFrom"])
 
 with tempfile.TemporaryDirectory() as d:
     make(d, flat=15)

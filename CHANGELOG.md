@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | [ndm_estimategeometry: a named group is estimated even with a geometry; wire-bundle templates do not count](#2026-11-04--ndm_estimategeometry-a-named-group-is-estimated-even-with-a-geometry-wire-bundle-templates-do-not-count) |
 | 2026-11-04 | [ndm_estimategeometry: command-line options as in ndm_pca](#2026-11-04--ndm_estimategeometry-command-line-options-as-in-ndm_pca) |
 | 2026-11-04 | [ndm_estimategeometry: wire-bundle site layout from channel coherence](#2026-11-04--ndm_estimategeometry-wire-bundle-site-layout-from-channel-coherence) |
 | 2026-11-02 | [NeuroScope: the spectral view updates when a setting changes](#2026-11-02--neuroscope-the-spectral-view-updates-when-a-setting-changes) |
@@ -153,6 +154,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-04 — ndm_estimategeometry: a named group is estimated even with a geometry; wire-bundle templates do not count
+
+<details>
+<summary>Details</summary>
+
+Reported on a Plexon octrode session: `ndm_estimategeometry 1` estimated
+nothing. Group 1 had a probe file attached, a Probe Maker placeholder (a
+20 µm grid marked `silicon`), and any group with a geometry was skipped, even
+when named.
+
+- **A group named** by `groups` or on the command line is estimated whatever
+  geometry it has, gets `SESSION.bundle.N.probe`, and is not used as its own
+  calibration. Only the named groups are estimated.
+- **A wire-bundle template** — a probe file with `substrate.material:
+  wire-bundle` not written by this step, such as the library's
+  `general/tetrode.probe` — no longer counts as a geometry. Its group is
+  estimated by default and does not calibrate.
+- A placeholder marked `silicon` cannot be told from a measured shank: name its
+  group, and keep it out of the calibration with `calibrationGroups` when other
+  groups are estimated.
+- The `validation` section now says whether the attached layout is a template.
+  Its note no longer claims to check the estimate unless the layout was
+  measured.
+- The skip messages name `--estimateKnown` and `--force`, the wrapper's
+  options; they named the helper's `--estimate-known 1` and `overwrite: 1`.
+
+`test_estimategeometry.py`: 5 new checks (named group, template, the shank
+still calibrating); 18 in all.
+
+</details>
 
 ## 2026-11-04 — ndm_estimategeometry: command-line options as in ndm_pca
 

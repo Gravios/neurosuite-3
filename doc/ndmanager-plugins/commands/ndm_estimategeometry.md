@@ -41,16 +41,29 @@ the wires so that their distances follow it.
 
 ### Which groups
 
-- **Estimated:** every spike group without a geometry, or the groups given by
-  `groups` (or `electrodeGroup` on the command line). A group needs at least
-  three live channels.
-- **Calibration:** a group *with* a geometry — a probe file through
-  `probeId`/`shankIndex`, or `sitePositions_um` — is not estimated. In a
-  session that mixes silicon probes and wire bundles, those groups decide how
-  much each similarity measure counts (`calibrate: 1`; see Weights).
-  `estimateKnown: 1` estimates them too, as a check against their known layout.
+- **Estimated by default:** every spike group (with at least three live
+  channels) that has no geometry, or only a wire-bundle **template**: a probe
+  file with `substrate.material: wire-bundle` not written by this step (the
+  library's `general/tetrode.probe`, for example), whose layout was drawn, not
+  measured.
+- **Named groups:** a group given by `groups` or as `electrodeGroup` on the
+  command line is estimated whatever geometry it has, gets a probe file, and is
+  not used for calibration. This is the way past a hand-drawn placeholder
+  (e.g. a Probe Maker file marked `silicon`), which the step cannot tell from a
+  measured layout. Only the named groups are estimated.
+- **Calibration:** a group with a measured geometry — a probe file through
+  `probeId`/`shankIndex`, or `sitePositions_um`, that is not a template — is
+  not estimated. In a session that mixes silicon probes and wire bundles, those
+  groups decide how much each similarity measure counts (`calibrate: 1`; see
+  Weights). `estimateKnown: 1` estimates them too, as a check against their
+  layout (report only, no probe file). A placeholder that is not a template
+  would calibrate too: leave it out with `calibrationGroups`.
 - **Flat channels** (median |x| = 0) are left out of their group and listed in
   the report.
+
+Every estimated group with a geometry attached gets a `validation` section
+comparing the estimate with that layout. It checks the estimate only if the
+layout was measured.
 
 ### Pair similarities
 
@@ -149,7 +162,7 @@ Set in the `ndm_estimategeometry` block (see [parameters](../parameters.md)):
 |---|---|---|
 | `wireDiameterUm` | `15` | outer diameter of a wire with its insulation, µm: the smallest centre-to-centre distance |
 | `layout` | `bundle` | `bundle` (packed) or `free` (ordering only) |
-| `groups` | all without a geometry | groups to estimate, e.g. `3` or `1,4` |
+| `groups` | without a measured geometry | groups to estimate, e.g. `3` or `1,4`; named groups are estimated whatever geometry they have |
 | `calibrate` | `1` | weight the measures on the groups with a geometry |
 | `calibrationGroups` | all known | restrict the calibration to these groups |
 | `estimateKnown` | `0` | also estimate groups with a geometry (report only) |
