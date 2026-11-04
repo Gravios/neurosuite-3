@@ -24,21 +24,65 @@
 #//                             bootstrap SD, neighbour stability
 #//  The session YAML is not changed; attach the probe file in ndmanager.
 #//
+#//  Usage: ndm_estimategeometry [parameter-file] [electrodeGroup] [options]
+#//    Without a parameter file the session is the current folder's name.
+#//    --force               redo groups whose report exists (overwrite: 1)
+#//    --inputExtension EXT  raw recording SESSION.EXT (default dat)
+#//    --wireDiameterUm D    wire diameter incl. insulation, µm (default 15)
+#//    --layout bundle|free  packed bundle (default) or ordering only
+#//    --estimateKnown       also estimate groups that have a geometry
+#//  An option given here wins over the YAML value.
+#//
 #//  copyright (C) 2026 neurosuite-3 contributors  GPL-3.0-or-later
 #////////////////////////////////////////////////////////////////////////////
 
 source ndm_functions
 
 program=$(basename $0)
-if [ $# -gt 2 ]; then
-    echo_error "usage: $program [parameter-file] [electrodeGroup]"
+
+# ── Command line: <= 2 positionals (parameter file, group) + overrides ─────────
+# As ndm_pca / ndm_detectspikes: the session is the parameter file given, else
+# the folder's name (ndm_resolve_session); an option given here wins over the
+# YAML value, which wins over the default.
+usage="usage: $program [parameter-file] [electrodeGroup] [--force] [--inputExtension EXT] [--wireDiameterUm D] [--layout bundle|free] [--estimateKnown]"
+positionals=()
+force=
+inputExtensionOverride=
+wireDiameterOverride=
+layoutOverride=
+estimateKnownOverride=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --force)            force=1;                           shift ;;
+        --inputExtension)   inputExtensionOverride="$2";       shift 2 ;;
+        --inputExtension=*) inputExtensionOverride="${1#*=}";   shift ;;
+        --wireDiameterUm)   wireDiameterOverride="$2";         shift 2 ;;
+        --wireDiameterUm=*) wireDiameterOverride="${1#*=}";     shift ;;
+        --layout)           layoutOverride="$2";               shift 2 ;;
+        --layout=*)         layoutOverride="${1#*=}";           shift ;;
+        --estimateKnown)    estimateKnownOverride=1;           shift ;;
+        --)                 shift; while [ $# -gt 0 ]; do positionals+=("$1"); shift; done ;;
+        -*)                 echo_error "unknown option: $1"; echo_error "$usage"; exit $GENERAL_ERROR ;;
+        *)                  positionals+=("$1");               shift ;;
+    esac
+done
+if [ ${#positionals[@]} -gt 2 ]; then
+    echo_error "$usage"
     exit $GENERAL_ERROR
 fi
-
-ndm_resolve_session "$@"
-[ "$NDM_SHIFTED" = 0 ] && set -- "$session" "$@"
+ndm_resolve_session "${positionals[@]}"
+[ "$NDM_SHIFTED" = 0 ] && positionals=("$session" "${positionals[@]}")
 param_ext=$(param_file_ext "$session")
-electrodeGroup=$2
+electrodeGroup=${positionals[1]:-}
+if [ -n "$electrodeGroup" ] && ! [[ "$electrodeGroup" =~ ^[0-9]+$ ]]; then
+    echo_error "electrodeGroup must be a group number, not '$electrodeGroup'"
+    echo_error "$usage"
+    exit $GENERAL_ERROR
+fi
+case "$layoutOverride" in
+    ""|bundle|free) : ;;
+    *) echo_error "--layout must be bundle or free, not '$layoutOverride'"; echo_error "$usage"; exit $GENERAL_ERROR ;;
+esac
 
 print_header "$session - Estimating wire-bundle geometry"
 
@@ -56,7 +100,7 @@ yamlfile=$(find_yaml_file "$session")
 
 # The raw recording ($session.$inputExtension, default dat) and the filtered one
 # ($session.$filExtension, default fil); either may be missing, not both.
-ndm_input_extension dat
+ndm_input_extension dat "$inputExtensionOverride"
 filExtension=$(read_script_parameter "$session" filExtension) ; filExtension=${filExtension:-fil}
 filExtension=${filExtension#.}
 if [ "$NDM_INPUT_EXPLICIT" = 1 ] && [ ! -f "$session.$inputExtension" ]; then
@@ -69,8 +113,12 @@ fi
 
 # Parameters (global program block > default)
 groups=$(read_script_parameter            "$session" groups)
-wireDiameterUm=$(read_script_parameter    "$session" wireDiameterUm)    ; wireDiameterUm=${wireDiameterUm:-15}
-layout=$(read_script_parameter            "$session" layout)            ; layout=${layout:-bundle}
+wireDiameterUm=$wireDiameterOverride
+[ -z "$wireDiameterUm" ] && wireDiameterUm=$(read_script_parameter "$session" wireDiameterUm)
+wireDiameterUm=${wireDiameterUm:-15}
+layout=$layoutOverride
+[ -z "$layout" ] && layout=$(read_script_parameter "$session" layout)
+layout=${layout:-bundle}
 datBands=$(read_script_parameter          "$session" datBands)          ; datBands=${datBands:-1-12,12-40,40-100,100-300,300-1000}
 filBands=$(read_script_parameter          "$session" filBands)          ; filBands=${filBands:-1000-3000,3000-6000}
 nSegments=$(read_script_parameter         "$session" nSegments)         ; nSegments=${nSegments:-120}
@@ -81,10 +129,13 @@ spikeGuardMs=$(read_script_parameter      "$session" spikeGuardMs)      ; spikeG
 highPassHz=$(read_script_parameter        "$session" highPassHz)        ; highPassHz=${highPassHz:-800}
 calibrate=$(read_script_parameter         "$session" calibrate)         ; calibrate=${calibrate:-1}
 calibrationGroups=$(read_script_parameter "$session" calibrationGroups)
-estimateKnown=$(read_script_parameter     "$session" estimateKnown)     ; estimateKnown=${estimateKnown:-0}
+estimateKnown=$estimateKnownOverride
+[ -z "$estimateKnown" ] && estimateKnown=$(read_script_parameter "$session" estimateKnown)
+estimateKnown=${estimateKnown:-0}
 nBootstrap=$(read_script_parameter        "$session" nBootstrap)        ; nBootstrap=${nBootstrap:-50}
 seed=$(read_script_parameter              "$session" seed)              ; seed=${seed:-0}
 overwrite=$(read_script_parameter         "$session" overwrite)         ; overwrite=${overwrite:-0}
+[ -n "$force" ] && overwrite=1
 probeLibrary=$(read_script_parameter      "$session" probeLibrary)
 
 # A group on the command line wins over the groups parameter.

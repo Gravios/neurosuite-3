@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | [ndm_estimategeometry: command-line options as in ndm_pca](#2026-11-04--ndm_estimategeometry-command-line-options-as-in-ndm_pca) |
 | 2026-11-04 | [ndm_estimategeometry: wire-bundle site layout from channel coherence](#2026-11-04--ndm_estimategeometry-wire-bundle-site-layout-from-channel-coherence) |
 | 2026-11-02 | [NeuroScope: the spectral view updates when a setting changes](#2026-11-02--neuroscope-the-spectral-view-updates-when-a-setting-changes) |
 | 2026-10-29 | [Klusters: the matrices are shown on open by default](#2026-10-29--klusters-the-matrices-are-shown-on-open-by-default) |
@@ -152,6 +153,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-04 — ndm_estimategeometry: command-line options as in ndm_pca
+
+<details>
+<summary>Details</summary>
+
+`ndm_estimategeometry` read only `[parameter-file] [electrodeGroup]`. It now
+reads its command line like `ndm_pca` and `ndm_detectspikes`:
+
+- At most two arguments: `[parameter-file] [electrodeGroup]`. Without a
+  parameter file, the session is the folder's name, and a group number can be
+  given alone.
+- Options: `--force` (redo groups whose report exists), `--inputExtension`,
+  `--wireDiameterUm`, `--layout`, `--estimateKnown`. Each wins over the YAML
+  value; `--option=value` works too.
+- An unknown option, a group that is not a number, a bad `--layout` or a third
+  argument stops the step with the usage before anything runs. Before, such
+  arguments were read as a group number and failed inside the Python helper.
+
+New test `test_estimategeometry_cli.sh`: 9 checks. On the previous wrapper, 5
+fail.
+
+Files: `src/ndmanager-plugins/scripts/ndm_estimategeometry`,
+`doc/ndmanager-plugins/commands/ndm_estimategeometry.md`,
+`templates/template.yaml`,
+`src/ndmanager-plugins/test/test_estimategeometry_cli.sh`.
+
+</details>
 
 ## 2026-11-04 — ndm_estimategeometry: wire-bundle site layout from channel coherence
 

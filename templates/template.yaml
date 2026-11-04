@@ -1055,7 +1055,12 @@ programs:
                               with its geometry
 
       The session YAML is not changed; add the probe file in ndmanager's
-      Probes tab (channelOffset 0: its channelMap holds the channels).
+      Probes tab with the channelOffset given in the report.
+
+      Command line: ndm_estimategeometry [parameter-file] [electrodeGroup]
+      [--force] [--inputExtension EXT] [--wireDiameterUm D]
+      [--layout bundle|free] [--estimateKnown]; an option given there wins
+      over the value set here.
 
       OPTIONAL PARAMETERS
 

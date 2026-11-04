@@ -3,8 +3,26 @@
 ## Synopsis
 
 ```bash
-ndm_estimategeometry [session.yaml] [electrodeGroup]
+ndm_estimategeometry [session.yaml] [electrodeGroup] [--force] [--inputExtension EXT]
+                     [--wireDiameterUm D] [--layout bundle|free] [--estimateKnown]
 ```
+
+Without `session.yaml`, the session is the current folder's name
+(`rat01-20261015/` → `rat01-20261015.yaml`), as for every step. A group number
+can be given alone (`ndm_estimategeometry 3`).
+
+| Option | Same as |
+|---|---|
+| `--force` | `overwrite: 1`: redo groups whose report exists |
+| `--inputExtension EXT` | `inputExtension` |
+| `--wireDiameterUm D` | `wireDiameterUm` |
+| `--layout bundle\|free` | `layout` |
+| `--estimateKnown` | `estimateKnown: 1` |
+
+An option on the command line wins over the YAML value, which wins over the
+default (as in [`ndm_pca`](pca.md) and [`ndm_detectspikes`](spike-detection.md)).
+`--option=value` works too. An unknown option, a group that is not a number or
+more than two arguments stop the step with the usage, before anything runs.
 
 **Input:** `session.dat` (raw) and/or `session.fil` (filtered); the spike
 groups of the session YAML. A probe file is **optional**.
