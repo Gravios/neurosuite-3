@@ -607,8 +607,8 @@ def run(a) -> int:
     if not targets:
         return 0
     process = sorted(set(targets) | set(calib))
-    log(f"estimating group(s) {targets}" + (f"; calibration from known geometry: {calib}" if calib else
-                                             "; no calibration groups (split-half weights)"))
+    log(f"estimating group(s) {targets}" + (f"; calibration from known geometry: {calib} (never a group's own)"
+                                             if calib else "; no calibration groups (split-half weights)"))
 
     dat_path = a.dat or f"{session}.dat"
     fil_path = a.fil or f"{session}.fil"
@@ -678,23 +678,30 @@ def run(a) -> int:
     # ── weights: calibration (known geometry) or split-half reliability ──
     names = accs[process[0]].feature_names()
     full = {g: accs[g].features(range(nseg)) for g in process}
-    calib_rho: dict[str, float] = {}
-    if calib:
+    # each calibration group's Spearman per measure; a target is never part of its own
+    # calibration (with --estimateKnown it would pick the measures that match the very layout it
+    # is then compared with)
+    group_rho = {c: {nm: _spearman(triu(full[c][nm]), -pair_dist(known[c][0])) for nm in names if nm in full[c]}
+                 for c in calib}
+
+    def calibration_for(t):
+        use = [c for c in calib if c != t]
+        out = {}
         for nm in names:
-            rs, ws = [], []
-            for g in calib:
-                if nm in full[g]:
-                    r = _spearman(triu(full[g][nm]), -pair_dist(known[g][0]))
-                    if np.isfinite(r):
-                        rs.append(r); ws.append(len(triu(full[g][nm])))
-            calib_rho[nm] = float(np.average(rs, weights=ws)) if rs else float("nan")
+            rs = [(group_rho[c][nm], len(triu(full[c][nm]))) for c in use
+                  if nm in group_rho[c] and np.isfinite(group_rho[c][nm])]
+            out[nm] = float(np.average([r for r, _ in rs], weights=[w for _, w in rs])) if rs else float("nan")
+        return use, out
     for g in targets:
         n = len(chans[g])
         rel = split_half_reliability(accs[g], names, rng)
-        if calib:
+        cal_used, calib_rho = calibration_for(g)
+        if cal_used:
             src = {nm: calib_rho.get(nm, float("nan")) for nm in names}
         else:
             src = rel
+            if g in calib:
+                log(f"  group {g}: no other group to calibrate on; split-half weights")
         weights = {nm: (max(v, 0.0) ** 2 if np.isfinite(v) else 0.0) for nm, v in src.items()}
         if not any(w > 0 for w in weights.values()):
             log(f"  group {g}: no feature carries distance information (all weights 0); skipped")
@@ -734,7 +741,7 @@ def run(a) -> int:
             group=int(g), channels=[int(c) for c in chans[g]], flatChannelsLeftOut=flat_in.get(g, []), layout=a.layout,
             wireDiameter_um=a.wire_diameter_um, segments=int(nseg), segmentSec=a.segment_sec,
             spikesDetected=int(ev), spikeFreeFraction=round(float(np.mean([s["ok_frac"] for s in accs[g].segs])), 3),
-            weightsFrom=("calibration groups " + ",".join(map(str, calib))) if calib else "split-half reliability",
+            weightsFrom=("calibration groups " + ",".join(map(str, cal_used))) if cal_used else "split-half reliability",
             features={nm: dict(splitHalfReliability=_r(rel.get(nm)), calibrationSpearman=_r(calib_rho.get(nm)),
                                weight=_r(weights.get(nm)), present=nm in full[g]) for nm in names},
             similarity_z={nm: np.round(full[g][nm], 3).tolist() for nm in names if nm in full[g]},

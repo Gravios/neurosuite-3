@@ -137,10 +137,14 @@ with tempfile.TemporaryDirectory() as d:
           all(p is not None for p in pos) and np.allclose(np.array(pos), P, atol=0.11))
     check("the probe file says the plane", probe["sites"]["plane"] == "cross-section")
 
-    r = run(d, "--estimate-known", "1", "--calibrate", "0", "--layout", "free", "--overwrite", "1")
+    r = run(d, "--estimate-known", "1", "--layout", "free", "--overwrite", "1")
     k = yaml.safe_load(open(os.path.join(d, "s.bundle.1.yaml")))
     rho = k["validation"]["spearmanDissimilarityVsDistance"]
     check("estimateKnown checks the known shank", rho is not None and rho > 0.8, str(rho))
+    check("... without calibrating on its own layout", k["weightsFrom"] == "split-half reliability",
+          k["weightsFrom"])
+    check("... while the octrode still calibrates on it",
+          yaml.safe_load(open(os.path.join(d, "s.bundle.2.yaml")))["weightsFrom"] == "calibration groups 1")
     check("estimateKnown writes no probe file for it", not os.path.exists(os.path.join(d, "s.bundle.1.probe")))
 
     # a group named on the command line is estimated whatever geometry it has (it may be a

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-04 | [ndm_estimategeometry: a group never calibrates its own estimate](#2026-11-04--ndm_estimategeometry-a-group-never-calibrates-its-own-estimate) |
 | 2026-11-04 | [ndm_estimategeometry: a named group is estimated even with a geometry; wire-bundle templates do not count](#2026-11-04--ndm_estimategeometry-a-named-group-is-estimated-even-with-a-geometry-wire-bundle-templates-do-not-count) |
 | 2026-11-04 | [ndm_estimategeometry: command-line options as in ndm_pca](#2026-11-04--ndm_estimategeometry-command-line-options-as-in-ndm_pca) |
 | 2026-11-04 | [ndm_estimategeometry: wire-bundle site layout from channel coherence](#2026-11-04--ndm_estimategeometry-wire-bundle-site-layout-from-channel-coherence) |
@@ -154,6 +155,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-04 — ndm_estimategeometry: a group never calibrates its own estimate
+
+<details>
+<summary>Details</summary>
+
+With `--estimateKnown`, a group with a geometry was both estimated and one of
+the calibration groups. Its estimate then weighted the measures by how well
+they matched its own attached layout, and was compared with that same layout.
+Seen on a Plexon octrode with a Probe Maker placeholder, where the log read
+"estimating group(s) [1]; calibration from known geometry: [1]".
+
+Calibration is now per estimated group and leaves that group out. A group with
+no other calibration group gets split-half weights, and the log says so. The
+other estimated groups still calibrate on it.
+
+`test_estimategeometry.py`: 2 new checks (20 in all). On the previous helper,
+the self-calibration check fails.
+
+</details>
 
 ## 2026-11-04 — ndm_estimategeometry: a named group is estimated even with a geometry; wire-bundle templates do not count
 
