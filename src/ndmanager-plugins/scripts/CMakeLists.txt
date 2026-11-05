@@ -113,10 +113,21 @@ install(PROGRAMS
     process_spikefilter.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
-foreach(_page IN ITEMS
-        cnt duration ndm ndm_recolorchannels ndm_start
-        ndm_estimatedrift ndm_decomposecollisions ndm_driftcorrect
-        ndm_setupgroups pad
-        process_reorderclusters rn)
+# Man pages.  The helpers with a .docbook page:
+foreach(_page IN ITEMS cnt duration pad process_reorderclusters rn)
     add_manpage(${_page})
+endforeach()
+# Every ndm command: its .docbook page when it has one, else the page generated
+# from its entry in the command reference (doc/ndmanager-plugins/commands), so
+# `man ndm_<step>` works for every step.
+set(_ndm_docdir "${CMAKE_CURRENT_SOURCE_DIR}/../../../doc/ndmanager-plugins/commands")
+foreach(_page IN LISTS _ndm_scripts)
+    if(NOT _page MATCHES "^ndm(_|$)")
+        continue()
+    endif()
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${_page}.docbook")
+        add_manpage(${_page})
+    else()
+        add_md_manpage(${_page} "${_ndm_docdir}")
+    endif()
 endforeach()

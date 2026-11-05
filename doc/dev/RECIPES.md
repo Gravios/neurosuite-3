@@ -279,8 +279,11 @@ designer and the docs in step. They fail until all four agree.
    writes a new file type, add `doc/ndmanager-plugins/formats/<ext>.md` and list
    it in [formats/README.md](../ndmanager-plugins/formats/README.md).
 6. **Optional:**
-   - a `.docbook` man page next to the script or program (`add_manpage` skips
-     it when it is absent);
+   - nothing for the man page: `man ndm_<name>` is generated from the step's
+     entry in the command reference (step 5) by
+     `src/ndmanager-plugins/cmake/md2man.py`. A `.docbook` page next to the
+     script is used instead when there is one. A program (`process_<name>`)
+     still needs its own `.docbook` for `add_manpage`;
    - nothing in `src/ndmanager-plugins/descriptions/`: those XML files are
      installed but not read (NDManager reads YAML). NDManager's description
      of the step, its parameters with their help for the Plugins pages and
@@ -291,7 +294,7 @@ designer and the docs in step. They fail until all four agree.
    `test_subset_pca` maps `process_pca`.
 
 **Test:**
-`ctest -R 'ndm_test_(template_parameters|pipeline_designer_defs|docs|<name>)'`,
+`ctest -R 'ndm_test_(template_parameters|pipeline_designer_defs|docs|manpages|<name>)'`,
 plus `python3 src/ndmanager/tools/pipeline_script_defs.py --check`.
 
 ### 2.5 Change a format version, the plugin protocol or the session schema

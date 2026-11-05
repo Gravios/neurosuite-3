@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-05 | [Man pages for every ndm step, generated from the command reference](#2026-11-05--man-pages-for-every-ndm-step-generated-from-the-command-reference) |
 | 2026-11-05 | [ndm: one command for the NDManager plugins](#2026-11-05--ndm-one-command-for-the-ndmanager-plugins) |
 | 2026-11-04 | [ndm_estimategeometry: the estimate goes into the probe file, no report](#2026-11-04--ndm_estimategeometry-the-estimate-goes-into-the-probe-file-no-report) |
 | 2026-11-04 | [ndm_estimategeometry: a group never calibrates its own estimate](#2026-11-04--ndm_estimategeometry-a-group-never-calibrates-its-own-estimate) |
@@ -157,6 +158,46 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-05 — Man pages for every ndm step, generated from the command reference
+
+<details>
+<summary>Details</summary>
+
+Only 9 of the ~50 `ndm` commands had a man page: the ones with a hand-written
+`.docbook`. Of those, `ndm_xml2yaml.docbook` was never registered. Every page
+also had `[FIXME: source]` / `[FIXME: manual]` in its header and footer.
+
+- **`src/ndmanager-plugins/cmake/md2man.py`** (Python 3, standard library):
+  renders a command's page in `doc/ndmanager-plugins/commands` as roff.
+  - It finds the command on its own page, or as a `## \`name\`` section of a
+    shared page (signal-processing, spike-detection, pca, …). From a shared
+    page it also takes the sections that belong to no command, the page's
+    introduction (as NOTES) and its See also.
+  - It handles headings, lists, tables (a tagged paragraph per row), code,
+    quotes, links and emphasis.
+  - Non-ASCII characters are written as `\\[uXXXX]`, so groff and mandoc read
+    them without preconv.
+- **`add_md_manpage()`** (in `NdmManPage.cmake`). In
+  `scripts/CMakeLists.txt` every `ndm*` command in the install list now gets
+  its `.docbook` page when it has one, else the generated page. That is 60 pages
+  installed, against 13 before, and `man ndm_detectspikes` works.
+- **Header and footer:** the DocBook pages take "neurosuite-3 3.1.0" and
+  "NDManager Plugins" from a generated `ndm-manpage-meta.xml` through the
+  stylesheet's profile parameters. The generated pages use the same values.
+- **Rebuilds:** `gzip -k` keeps the `.1` files, so an unchanged page is no
+  longer rebuilt on every build.
+- **Docs:** RECIPES (no man page work for a new step), the Linux install
+  optional packages (`xsltproc docbook-xsl-ns`), and the command index.
+
+Test `test_manpages.py`:
+
+- every installed `ndm` command has a page source;
+- every generated page is clean roff (groff `-ww`) with no Markdown left;
+- inline cases;
+- a DocBook page has no FIXME in its header.
+
+</details>
 
 ## 2026-11-05 — ndm: one command for the NDManager plugins
 

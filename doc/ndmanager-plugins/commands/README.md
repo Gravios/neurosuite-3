@@ -7,7 +7,8 @@ the [pipeline overview](../pipeline.md).
 
 Every command answers `-h` or `--help` with its description and usage, and runs
 nothing; without a parameter file, a step otherwise runs on the session named
-after the current folder.
+after the current folder. Each page here is also installed as a man page,
+`man ndm_<step>`, generated from it at build time.
 
 Every step can also be run through [`ndm`](ndm.md): `ndm detectspikes` is
 `ndm_detectspikes`, and `ndm list probes`, `ndm list spikegroups` and

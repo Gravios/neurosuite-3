@@ -28,10 +28,15 @@ sudo apt install \
 | `libavcodec-dev libavformat-dev libavutil-dev libswscale-dev` | `process_extractleds` (`ndm_extractleds`) | `process_extractleds` is skipped at configure time |
 | `libhdf5-dev` | `process_aomconvert` (`ndm_aom2dat`) | `process_aomconvert` is skipped at configure time |
 | `python3-sklearn python3-joblib` | `ndm_autoklusta` | `ndm_autoklusta` stops with an error |
+| `xsltproc docbook-xsl-ns` | the man pages written in DocBook (`ndm`, `ndm_start`, `ndm_setupgroups`, the `process_*` programs, …) | those man pages are not built |
 
 `ndm_transcodevideo` is a script and is always installed; it runs the
 `avconv` and `avprobe` programs (libav), which the `ffmpeg` package does not
 provide.
+
+Every `ndm_*` step without a DocBook page gets its man page from the command
+reference, with Python 3 alone, so `man ndm_detectspikes` works after an
+install whatever the optional packages.
 
 ## Verify
 
