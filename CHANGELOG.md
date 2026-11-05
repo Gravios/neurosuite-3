@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-05 | [ndm: one command for the NDManager plugins](#2026-11-05--ndm-one-command-for-the-ndmanager-plugins) |
 | 2026-11-04 | [ndm_estimategeometry: the estimate goes into the probe file, no report](#2026-11-04--ndm_estimategeometry-the-estimate-goes-into-the-probe-file-no-report) |
 | 2026-11-04 | [ndm_estimategeometry: a group never calibrates its own estimate](#2026-11-04--ndm_estimategeometry-a-group-never-calibrates-its-own-estimate) |
 | 2026-11-04 | [ndm_estimategeometry: a named group is estimated even with a geometry; wire-bundle templates do not count](#2026-11-04--ndm_estimategeometry-a-named-group-is-estimated-even-with-a-geometry-wire-bundle-templates-do-not-count) |
@@ -156,6 +157,41 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-05 — ndm: one command for the NDManager plugins
+
+<details>
+<summary>Details</summary>
+
+New command `ndm`, installed with the steps:
+
+| Command | What it does |
+|---|---|
+| `ndm <step> [arguments]` | runs `ndm_<step>` with the arguments unchanged (`ndm detectspikes`, `ndm pca 3 --method stderiv`) |
+| `ndm configure [session]` | starts ndmanager on the session |
+| `ndm list probes [session]` | `probes:` entries: the file each resolves to (searched as `ndm_setupgroups` does) or "not found", model, shanks, sites, layout, substrate, the groups on it, and estimated / template / `geometry_backup` flags |
+| `ndm list spikegroups [session]` | channels as ranges, `nSamples`, peak, `nFeatures`, probe and shank, where the site positions come from, skipped channels |
+| `ndm list programs [session]` | the steps under `programs:` and the values set |
+| `ndm list steps`, `ndm help` | every step by stage with one line each; `ndm help <step>` prints the step's own help |
+
+The session is the YAML given (or its folder), else the one named after the
+current folder, as for the steps.
+
+- A mistyped step is refused with the closest names, and a helper
+  (`ndm_functions`) is refused as not a step.
+- Deprecated aliases still run but are not listed.
+- Bash completion is installed as
+  `share/bash-completion/completions/ndm` (Unix only).
+
+Files:
+
+- `src/ndmanager-plugins/scripts/{ndm,ndm_list.py,ndm.bash-completion,CMakeLists.txt,ndm.docbook}`;
+- `doc/ndmanager-plugins/commands/{ndm,README}.md`;
+- `doc/ndmanager-plugins/README.md`;
+- `src/ndmanager-plugins/test/test_ndm_cli.sh` (25 checks; the step table
+  must match the install list).
+
+</details>
 
 ## 2026-11-04 — ndm_estimategeometry: the estimate goes into the probe file, no report
 

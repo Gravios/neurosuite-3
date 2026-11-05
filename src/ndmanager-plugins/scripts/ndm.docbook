@@ -9,6 +9,23 @@
 		<refname>ndm</refname><refpurpose>the <application>NDManager Plugins</application> are a collection of scripts and tools to process wideband brain signals, video and behavioral events.</refpurpose>
 	</refnamediv>
 
+	<refsynopsisdiv>
+		<cmdsynopsis><command>ndm</command> <arg choice="plain"><replaceable>step</replaceable></arg> <arg rep="repeat"><replaceable>argument</replaceable></arg></cmdsynopsis>
+		<cmdsynopsis><command>ndm configure</command> <arg><replaceable>session</replaceable></arg></cmdsynopsis>
+		<cmdsynopsis><command>ndm list</command> <group choice="req"><arg choice="plain">probes</arg><arg choice="plain">spikegroups</arg><arg choice="plain">programs</arg><arg choice="plain">steps</arg></group> <arg><replaceable>session</replaceable></arg></cmdsynopsis>
+		<cmdsynopsis><command>ndm help</command> <arg><replaceable>step</replaceable></arg></cmdsynopsis>
+	</refsynopsisdiv>
+
+	<refsect1>
+		<title>The ndm command</title>
+		<para>
+			<command>ndm</command> <replaceable>step</replaceable> runs <command>ndm_<replaceable>step</replaceable></command> with the arguments unchanged (<command>ndm detectspikes</command> is <command>ndm_detectspikes</command>). <command>ndm configure</command> opens the session in <application>NDManager</application>. <command>ndm list probes</command>, <command>ndm list spikegroups</command> and <command>ndm list programs</command> show the probe files (found or not, estimated, templates), the spike groups (channels, window, where the site positions come from) and the configured steps. <command>ndm list steps</command> and <command>ndm help</command> list every step by stage; <command>ndm help</command> <replaceable>step</replaceable> prints the step's own help.
+		</para>
+		<para>
+			The session is <filename>SESSION.yaml</filename> given on the command line (or the session folder), or else the one named after the current folder.
+		</para>
+	</refsect1>
+
 	<refsect1>
 		<title>Description</title>
 		<para>

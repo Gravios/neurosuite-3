@@ -41,6 +41,17 @@ ndm_klustakwik    rat01-20261015.yaml        # → .clu.standard.N  — open in 
 Or build the same chain in ndmanager's Pipeline tab and run it with
 [`ndm_start`](commands/ndm_start.md).
 
+[`ndm`](commands/ndm.md) runs the same steps with shorter names, and shows what
+the session holds:
+
+```bash
+ndm configure                 # open rat01-20261015.yaml in ndmanager
+ndm list probes               # probe files, found or not, and the groups on them
+ndm list spikegroups          # channels, window and site positions of each group
+ndm hipass && ndm detectspikes && ndm extractspikes
+ndm help pca                  # a step's own help
+```
+
 ## Conventions
 
 - **One argument.** Every step takes the session: `SESSION.yaml`, `SESSION`,

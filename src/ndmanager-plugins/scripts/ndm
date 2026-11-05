@@ -1,0 +1,203 @@
+#!/usr/bin/env bash
+#////////////////////////////////////////////////////////////////////////////
+#//  ndm — one command for the NDManager plugins
+#//
+#//    ndm <step> [arguments]     run ndm_<step> (ndm detectspikes = ndm_detectspikes)
+#//    ndm configure [session]    open the session in NDManager
+#//    ndm list probes [session]       the probes: entries and their files
+#//    ndm list spikegroups [session]  the spike groups, channels and geometry
+#//    ndm list programs [session]     the steps configured under programs:
+#//    ndm list steps             every step, by stage
+#//    ndm help [step]            this overview, or a step's own help
+#//
+#//  The session is SESSION.yaml given on the command line, or else the one
+#//  named after the current folder, as for every step.
+#//
+#//  copyright (C) 2026 neurosuite-3 contributors  GPL-3.0-or-later
+#////////////////////////////////////////////////////////////////////////////
+
+set -u
+program=ndm
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Every step, by stage: name<TAB>purpose.  test_ndm_cli.sh checks that this
+# covers every ndm_* step installed by scripts/CMakeLists.txt.
+STEPS='# Running a pipeline
+start	Run a pipeline (a pipeline file from NDManager, or a batch over days)
+# Conversion
+plx2dat	Plexon .plx / .pl2 -> .dat, .evt, extra streams, header metadata
+aom2dat	AlphaOmega .mat (HDF5 v7.3) -> .dat
+ncs2dat	Neuralynx .ncs -> .dat
+smr2dat	CED/Spike2 .smr -> .dat
+nev2evt	Neuralynx .nev -> .evt
+smr2evt	CED/Spike2 events -> .evt
+nvt2spots	Neuralynx .nvt tracking -> .spots / .sts
+smi2sts	Neuralynx .smi -> .sts
+tsp2sts	Amplipex .tsp / .meta -> .sts
+extractleds	LED tracking from video -> .spots
+transcodevideo	Transcode video
+# Channels and session set-up
+resample	Resample .dat files to a common rate
+mergedat	Merge .dat files of parallel systems channel-wise
+extractchannels	Keep, scale or re-reference channels
+reorderchannels	Reorder channels
+recolorchannels	Channel display colours (XML parameter files)
+concatenate	Concatenate a day'"'"'s sessions
+xml2yaml	Convert a legacy .xml parameter file
+setupgroups	Channel groups and site positions from the probe library
+spikegrouper	Split spike groups by spike coincidence
+estimategeometry	Wire-bundle (tetrode/octrode) site layout from channel coherence
+extractemg	Remove the EMG component (FastICA); EMG events
+# Filtering and continuous signals
+hipass	High-pass filter -> .fil (Butterworth or median)
+bandpass	Band-pass filter -> .fil (instead of hipass)
+lfp	Downsample -> .lfp
+slicebinary	Channel subset of any binary
+# Spike detection
+detectspikes	Threshold detection -> .res
+extractspikes	Waveforms at the detected times -> .spk
+spikecleaner	Drop flat / railed waveforms
+denoiseuniform	Drop uniform-noise events
+alignspikes	Align snippets to their peak before PCA
+# Features and clustering
+pca	PCA features -> .fet, basis .pca
+refeaturize	Re-project onto an existing basis
+pca_multichannel	Geometry-aware multi-channel PCA
+klustakwik	KiloKlustaKwik per spike group -> .clu
+autoklusta	Learn manual curation and apply it
+# After curation
+reextractspikes	Masked second-pass detection, shadow clustering
+subcluster_unmatched	Re-cluster the unmatched bin
+stripdat	Subtract sorted units -> -spkclean.dat
+redetectspikes	Detect again on the stripped recording
+alignspikes_pca	Per-cluster realignment
+decomposecollisions	Decompose collisions -> .col, .eap, .tcl
+localise	Per-spike source positions -> .loc
+# Drift
+estimatedrift	Probe drift from curated units -> .drift
+driftcorrect	Waveforms re-interpolated to the reference position
+applydrift	Drift-adaptive KiloKlustaKwik chunks -> .chunks
+drifttracker	Merge clusters along drift trajectories
+# Housekeeping
+clean	Remove intermediate files'
+
+# Still dispatched, not listed: deprecated aliases.
+HIDDEN="extractspikes_sdiff extractspikes_stderiv pca_stderiv"
+
+err() { echo "$program: $*" >&2; }
+
+step_names() { printf '%s\n' "$STEPS" | awk -F'\t' '!/^#/ { print $1 }'; }
+
+# Run a step as the file it is (so it sees its own name in $0): directly when
+# executable (an install), else with the interpreter its first line names.
+run_step() {
+    local path=$1; shift
+    if [ -x "$path" ]; then exec "$path" "$@"; fi
+    case "$(head -1 "$path")" in
+        *python*) exec python3 "$path" "$@" ;;
+        *)        exec bash "$path" "$@" ;;
+    esac
+}
+
+# The step's executable: beside this script first (an install puts them in
+# one directory), then PATH.
+find_step() {
+    local name=ndm_$1
+    if [ -f "$HERE/$name" ]; then echo "$HERE/$name"; return 0; fi
+    command -v "$name" 2>/dev/null
+}
+
+list_steps() {
+    printf '%s\n' "$STEPS" | awk -F'\t' '
+        /^#/ { sub(/^# */, ""); printf "%s%s\n", (n++ ? "\n" : ""), $0; next }
+        { printf "  %-22s %s\n", $1, $2 }'
+}
+
+usage() {
+    cat <<EOF
+usage: ndm <step> [arguments]          run a step: ndm detectspikes = ndm_detectspikes
+       ndm configure [session]         open the session in NDManager
+       ndm list probes [session]       probes: entries, their files and the groups on them
+       ndm list spikegroups [session]  spike groups: channels, window, site positions
+       ndm list programs [session]     the steps under programs:, with the values set
+       ndm list steps                  every step, by stage
+       ndm help [step]                 this overview, or the step's own help
+
+The session is SESSION.yaml given on the command line, or else the one named
+after the current folder.  A step reads its parameters from its entry under
+programs: in that file; options given on its command line win (see its help).
+EOF
+}
+
+overview() {
+    usage
+    echo
+    echo "Steps:"
+    echo
+    list_steps
+    echo
+    echo "Reference: https://gravios.github.io/neurosuite-3/ndmanager-plugins/commands/"
+}
+
+# Close names for a mistyped step (difflib when python3 is there, else a
+# shared prefix or substring).
+suggest() {
+    local want=$1 out=""
+    if command -v python3 >/dev/null; then
+        out=$(step_names | python3 -c 'import sys, difflib
+names = sys.stdin.read().split()
+print(" ".join(difflib.get_close_matches(sys.argv[1], names, n=3, cutoff=0.6)))' "$want")
+    else
+        local s
+        for s in $(step_names); do
+            case "$s" in "$want"*|*"$want"*) out="$out $s" ;; esac
+        done
+    fi
+    [ -n "${out// /}" ] && err "did you mean: ${out# }"
+    return 0
+}
+
+run_list() {
+    local what=${1:-}
+    [ $# -gt 0 ] && shift
+    case "$what" in
+        steps)
+            [ $# -eq 0 ] || { err "list steps takes no argument"; exit 2; }
+            list_steps ;;
+        probes|spikegroups|groups|programs)
+            [ "$what" = groups ] && what=spikegroups
+            [ $# -le 1 ] || { err "usage: ndm list $what [session]"; exit 2; }
+            local helper="$HERE/ndm_list.py"
+            [ -f "$helper" ] || helper=$(command -v ndm_list.py 2>/dev/null)
+            [ -n "$helper" ] || { err "ndm_list.py not found"; exit 1; }
+            command -v python3 >/dev/null || { err "python3 is needed"; exit 1; }
+            exec python3 "$helper" "$what" "$@" ;;
+        "")
+            err "list what? probes, spikegroups, programs or steps"; exit 2 ;;
+        *)
+            err "cannot list '$what': probes, spikegroups, programs or steps"; exit 2 ;;
+    esac
+}
+
+cmd=${1:-help}
+[ $# -gt 0 ] && shift
+case "$cmd" in
+    help|-h|--help)
+        if [ $# -eq 0 ]; then overview; exit 0; fi
+        s=${1#ndm_}
+        path=$(find_step "$s") || { err "no step '$s'"; suggest "$s"; exit 2; }
+        run_step "$path" --help ;;
+    configure|config)
+        [ $# -le 1 ] || { err "usage: ndm configure [session.yaml | session-folder]"; exit 2; }
+        gui=$(command -v ndmanager 2>/dev/null) || { err "ndmanager not found on PATH"; exit 1; }
+        exec "$gui" "$@" ;;
+    list)
+        run_list "$@" ;;
+    -*)
+        err "unknown option: $cmd"; usage >&2; exit 2 ;;
+    *)
+        s=${cmd#ndm_}
+        case "$s" in functions|custody) err "ndm_$s is a helper, not a step"; exit 2 ;; esac
+        path=$(find_step "$s") || { err "no step '$s' (ndm list steps)"; suggest "$s"; exit 2; }
+        run_step "$path" "$@" ;;
+esac

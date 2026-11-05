@@ -1,4 +1,7 @@
 set(_ndm_scripts
+    # ndm: one front end for the steps (ndm detectspikes, ndm configure,
+    # ndm list probes|spikegroups|programs|steps, ndm help); lists via ndm_list.py.
+    ndm
     cnt duration
     ndm_clean ndm_concatenate ndm_extractchannels ndm_extractemg ndm_extractleds
     ndm_detectspikes ndm_extractspikes ndm_extractspikes_sdiff
@@ -83,6 +86,10 @@ if(WIN32)
 else()
     install(PROGRAMS ${_ndm_scripts}
         DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    # Tab completion for ndm (bash-completion loads it on demand by name).
+    install(FILES ndm.bash-completion
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/bash-completion/completions"
+        RENAME ndm)
 endif()
 
 # Python helpers installed alongside their bash drivers so each script can
@@ -94,6 +101,7 @@ install(PROGRAMS
     process_autoklusta.py
     process_localise.py
     process_estimategeometry.py
+    ndm_list.py
     process_setupgroups.py
     process_plxyaml.py
     kk_build_prior.py

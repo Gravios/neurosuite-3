@@ -9,10 +9,15 @@ Every command answers `-h` or `--help` with its description and usage, and runs
 nothing; without a parameter file, a step otherwise runs on the session named
 after the current folder.
 
+Every step can also be run through [`ndm`](ndm.md): `ndm detectspikes` is
+`ndm_detectspikes`, and `ndm list probes`, `ndm list spikegroups` and
+`ndm configure` show and open the session.
+
 ## Running a pipeline
 
 | Command | Purpose |
 |---|---|
+| [`ndm`](ndm.md) | One command for the steps (`ndm detectspikes`), `ndm configure`, `ndm list probes / spikegroups / programs / steps`, `ndm help` |
 | [`ndm_start`](ndm_start.md) | Run a pipeline: a pipeline file from ndmanager, or batch over days and acquisition systems |
 
 ## 1. Conversion

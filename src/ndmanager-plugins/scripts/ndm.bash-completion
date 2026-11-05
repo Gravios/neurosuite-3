@@ -1,0 +1,29 @@
+# bash completion for ndm (installed as share/bash-completion/completions/ndm)
+#   ndm <TAB>              help, configure, list and every step
+#   ndm list <TAB>         probes spikegroups programs steps
+#   ndm help <TAB>         the steps
+#   session arguments      *.yaml files and folders
+_ndm()
+{
+    local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]} steps
+    steps=$(ndm list steps 2>/dev/null | awk '/^  / { print $1 }')
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        mapfile -t COMPREPLY < <(compgen -W "help configure list $steps" -- "$cur")
+        return
+    fi
+    case "${COMP_WORDS[1]}" in
+        list)
+            if [ "$COMP_CWORD" -eq 2 ]; then
+                mapfile -t COMPREPLY < <(compgen -W "probes spikegroups programs steps" -- "$cur")
+            elif [ "$COMP_CWORD" -eq 3 ] && [ "$prev" != steps ]; then
+                mapfile -t COMPREPLY < <(compgen -f -X '!*.@(yaml|yml)' -- "$cur"; compgen -d -- "$cur")
+            fi ;;
+        help)
+            [ "$COMP_CWORD" -eq 2 ] && mapfile -t COMPREPLY < <(compgen -W "$steps" -- "$cur") ;;
+        configure|config)
+            [ "$COMP_CWORD" -eq 2 ] && mapfile -t COMPREPLY < <(compgen -f -X '!*.@(yaml|yml)' -- "$cur"; compgen -d -- "$cur") ;;
+        *)
+            mapfile -t COMPREPLY < <(compgen -f -- "$cur") ;;
+    esac
+}
+complete -F _ndm ndm
