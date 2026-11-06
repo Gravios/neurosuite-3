@@ -7,7 +7,10 @@
 #   - `ndm configure [session]` starts ndmanager with the session;
 #   - `ndm list probes|spikegroups|programs` read the session named after the
 #     folder (or given), find probe files as ndm_setupgroups does, and show
-#     estimated / template / missing files and where site positions come from.
+#     estimated / template / missing files and where site positions come from;
+#   - `ndm list groupids` and the bash completion: steps, a step's options
+#     and their values from its usage line, session files, and the session's
+#     spike-group numbers for the steps that take a group.
 # Run from anywhere:  bash src/ndmanager-plugins/test/test_ndm_cli.sh
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -119,6 +122,40 @@ check 'grep -q "ndm_hipass  (1 of 2 parameters set)" "$TMP/r" && grep -q "highPa
 check '! grep -q Traceback "$TMP/pipe"' "a closed pipe (| head) is quiet"
 ( cd "$TMP" && ndm list probes >"$TMP/n" 2>&1 ); rc=$?
 check '[ $rc -ne 0 ] && grep -q "no session given and no" "$TMP/n"' "no session in the folder: a clear error"
+
+# ── group numbers and tab completion ──
+( cd "$S" && ndm list groupids >"$TMP/ids" 2>&1 )
+check '[ "$(cut -f1 "$TMP/ids" | tr "\n" " ")" = "1 2 3 4 5 " ] && grep -qxF "$(printf "4\t16-18,20")" "$TMP/ids"' \
+      "list groupids: one number and channel range per group"
+# The completion finds ndm and the steps on PATH as executables, as installed.
+mkdir -p "$TMP/inst"
+cp "$SCRIPTS"/ndm "$SCRIPTS"/ndm_* "$SCRIPTS"/*.py "$TMP/inst/" 2>/dev/null
+chmod +x "$TMP/inst"/*
+: >"$S/rat01.fil"; : >"$S/rat01.lfp"
+comp() {   # comp WORD... : the completions of the last word, space-separated
+    ( cd "$S" && PATH="$TMP/inst:$PATH" bash -c '
+        shopt -s extglob
+        source "$1"; shift
+        COMP_WORDS=("$@"); COMP_CWORD=$(($# - 1)); COMPREPLY=()
+        _ndm
+        [ ${#COMPREPLY[@]} -gt 0 ] && printf "%s\n" "${COMPREPLY[@]}" | sort | tr "\n" " "' _ "$SCRIPTS/ndm.bash-completion" "$@" )
+}
+check '[ "$(comp ndm klusta)" = "klustakwik " ]' "completion: a step"
+check '[ "$(comp ndm klustakwik "")" = "1 2 3 4 5 rat01.yaml " ]' "completion: a group step offers the session and its groups"
+check '[ "$(comp ndm pca rat01 "")" = "1 2 3 4 5 " ]' "completion: groups after the session"
+check '[ -z "$(comp ndm pca rat01 3 "")" ]' "completion: one group only"
+check '[ "$(comp ndm applydrift rat01 1 2 "")" = "1 2 3 4 5 " ]' "completion: target groups repeat (applydrift)"
+check '[ "$(comp ndm hipass "")" = "rat01.yaml " ]' "completion: a step without groups offers the session only"
+check '[ "$(comp ndm estimategeometry -)" = "--estimateKnown --force --help --inputExtension --layout --wireDiameterUm " ]' \
+      "completion: a step's options, from its usage line"
+check '[ "$(comp ndm detectspikes --m)" = "--method --methodOrder " ]' "completion: options parsed in ndm_functions (detect/extract)"
+check '[ "$(comp ndm estimategeometry --layout "")" = "bundle free " ]' "completion: an option's choices"
+check '[ "$(comp ndm klustakwik --method "")" = "sdiff standard stderiv " ]' "completion: --method"
+check '[ "$(comp ndm pca 2 --methodOrder "")" = "0 1 2 3 " ]' "completion: --methodOrder"
+x=$(comp ndm estimategeometry --inputExtension "")
+check 'printf "%s\n" $x | grep -qx fil && printf "%s\n" $x | grep -qx lfp && ! printf "%s\n" $x | grep -qx yaml' \
+      "completion: --inputExtension from the session's files (not the parameter file)"
+check '[ "$(comp ndm help locali)" = "localise " ]' "completion: help <step>"
 
 [ $fails -eq 0 ] && { echo "OK (0 failures)"; exit 0; }
 echo "FAILED ($fails)"; exit 1

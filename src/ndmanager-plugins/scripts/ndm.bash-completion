@@ -1,29 +1,164 @@
 # bash completion for ndm (installed as share/bash-completion/completions/ndm)
-#   ndm <TAB>              help, configure, list and every step
-#   ndm list <TAB>         probes spikegroups programs steps
-#   ndm help <TAB>         the steps
-#   session arguments      *.yaml files and folders
+#   ndm <TAB>                 help, configure, list and every step
+#   ndm list <TAB>            probes spikegroups programs steps
+#   ndm help <TAB>            the steps
+#   ndm <step> -<TAB>         the step's options, from its usage line
+#   ndm <step> --method <TAB> the option's values (standard sdiff stderiv, ...)
+#   ndm <step> <TAB>          session files; for a step that takes a spike
+#                             group (ndm klustakwik, pca, localise, ...), the
+#                             session's group numbers as well
+#   session arguments         *.yaml / *.yml / *.xml files and folders
+#
+# A step's options and whether it takes a group come from the usage line the
+# step prints on a wrong command line ("usage: ... [electrodeGroup] [--force]"),
+# so a new step or option completes without an edit here.  The group numbers
+# come from `ndm list groupids`, which reads the session named on the command
+# line or, failing that, the one named after the current folder.
+
+# The step's script: beside ndm first (an install puts them together), then PATH.
+_ndm_step_path()
+{
+    local ndm d
+    ndm=$(type -P ndm 2>/dev/null)
+    d=${ndm%/*}
+    if [ -n "$ndm" ] && [ -f "$d/ndm_$1" ]; then echo "$d/ndm_$1"; return; fi
+    type -P "ndm_$1" 2>/dev/null
+}
+
+# The step's usage lines.  ndm_detectspikes / ndm_extractspikes parse their
+# arguments in ndm_functions (ndm_process_spikes), so their usage is there.
+_ndm_step_usage()
+{
+    local path
+    path=$(_ndm_step_path "$1") || return
+    [ -n "$path" ] || return
+    grep -o 'usage: [^"]*' "$path" 2>/dev/null
+    if grep -q '^[^#]*ndm_process_spikes' "$path" 2>/dev/null; then
+        local fn=${path%/*}/ndm_functions
+        [ -f "$fn" ] || fn=$(type -P ndm_functions 2>/dev/null)
+        [ -n "$fn" ] && awk '/^ndm_process_spikes\(\)/ { f = 1 } f && /^}/ { exit } f' "$fn" \
+            | grep -o 'usage: [^"]*' | grep -v -- '--allMethods'
+    fi
+}
+
+# Session files and folders matching the word.
+_ndm_sessions()
+{
+    compgen -f -X '!*.@(yaml|yml|xml)' -- "$1"
+    compgen -d -- "$1"
+}
+
+# Session arguments the way the steps resolve them: the stem (or the file) of
+# an existing SESSION.yaml / .yml / .xml.
+_ndm_is_session()
+{
+    local stem=${1%.xml}
+    stem=${stem%.yaml}
+    stem=${stem%.yml}
+    [ -n "$stem" ] && { [ -f "$stem.yaml" ] || [ -f "$stem.yml" ] || [ -f "$stem.xml" ]; }
+}
+
+# The words of an option's value in a usage bracket "--name a|b|c" (not the
+# placeholders "M", "EXT", "stderiv_S<order>").
+_ndm_choices()
+{
+    local opt=$1 brackets=$2 arg
+    arg=$(printf '%s\n' "$brackets" | awk -v o="$opt" '$1 == o { sub(/^[^ ]* /, ""); print; exit }')
+    case "$arg" in *"|"*) printf '%s\n' "$arg" | tr '|' '\n' | grep -v '[<>]' ;; esac
+    case "$opt" in
+        --methodOrder) printf '%s\n' 0 1 2 3 ;;
+        --method) case "$arg" in *"|"*) ;; *) printf '%s\n' standard sdiff stderiv ;; esac ;;
+    esac
+}
+
+_ndm_step()
+{
+    local step=$1 first=$2 cur=${COMP_WORDS[COMP_CWORD]} IFS=$'\n'
+    local usage brackets opts valued takesGroup=0 manyGroups=0
+    usage=$(_ndm_step_usage "$step")
+    case "$usage" in *roup*) takesGroup=1 ;; esac
+    case "$usage" in *roups...*) manyGroups=1 ;; esac
+
+    # Options: every "[--name ...]" in the usage; "[--name X]" takes a value.
+    brackets=$(printf '%s\n' "$usage" | grep -oE '\[--[A-Za-z][A-Za-z0-9]*[^]]*\]' | sed 's/^\[//; s/\]$//')
+    opts=$(printf '%s\n' "$brackets" | cut -d' ' -f1 | sort -u)
+    valued=$(printf '%s\n' "$brackets" | grep ' ' | cut -d' ' -f1 | sort -u)
+
+    # Walk the words before the cursor: the positionals, and whether the last
+    # word is an option waiting for its value.
+    local i w session="" npos=0 groupGiven=0 afterDash=0 pending=""
+    for ((i = first; i < COMP_CWORD; i++)); do
+        w=${COMP_WORDS[i]}
+        if [ -n "$pending" ]; then pending=""; continue; fi
+        [ "$afterDash" = 1 ] && continue
+        case "$w" in
+            --) afterDash=1 ;;
+            --*=*) ;;
+            -*) printf '%s\n' "$valued" | grep -qxF -- "$w" && pending=$w ;;
+            *)
+                if [ $npos -eq 0 ] && _ndm_is_session "$w"; then session=$w
+                else groupGiven=$((groupGiven + 1)); fi
+                npos=$((npos + 1)) ;;
+        esac
+    done
+
+    # The value of an option.
+    if [ -n "$pending" ]; then
+        if [ "$pending" = --inputExtension ]; then
+            # The extensions of the session's own files: SESSION.<ext>.
+            local stem=${session:-${PWD##*/}} f exts=""
+            stem=${stem%.yaml}; stem=${stem%.yml}; stem=${stem%.xml}
+            for f in $(compgen -f -- "$stem."); do
+                f=${f#"$stem."}
+                case "$f" in yaml|yml|xml|"") ;; *) exts="$exts"$'\n'"$f" ;; esac
+            done
+            COMPREPLY=($(compgen -W "$exts" -- "$cur"))
+        else
+            COMPREPLY=($(compgen -W "$(_ndm_choices "$pending" "$brackets")" -- "$cur"))
+        fi
+        return
+    fi
+    if [ "$afterDash" = 1 ]; then COMPREPLY=($(compgen -f -- "$cur")); return; fi
+    case "$cur" in
+        -*) COMPREPLY=($(compgen -W "$opts"$'\n'"--help" -- "$cur")); return ;;
+    esac
+
+    # A positional: the session (first only), then group numbers.
+    local words=""
+    [ $npos -eq 0 ] && words=$(_ndm_sessions "$cur")
+    if [ "$takesGroup" = 1 ] && { [ "$manyGroups" = 1 ] || [ $groupGiven -eq 0 ]; }; then
+        local ids
+        ids=$(ndm list groupids ${session:+"$session"} 2>/dev/null | cut -f1)
+        words="$words"$'\n'"$(compgen -W "$ids" -- "$cur")"
+    fi
+    if [ $npos -eq 0 ] || [ "$takesGroup" = 1 ]; then
+        COMPREPLY=($(printf '%s\n' "$words" | sed '/^$/d'))
+    else
+        COMPREPLY=($(compgen -f -- "$cur"))
+    fi
+}
+
 _ndm()
 {
-    local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]} steps
+    local cur=${COMP_WORDS[COMP_CWORD]} prev=${COMP_WORDS[COMP_CWORD-1]} steps IFS=$'\n'
     steps=$(ndm list steps 2>/dev/null | awk '/^  / { print $1 }')
     if [ "$COMP_CWORD" -eq 1 ]; then
-        mapfile -t COMPREPLY < <(compgen -W "help configure list $steps" -- "$cur")
+        COMPREPLY=($(compgen -W "help configure list"$'\n'"$steps" -- "$cur"))
         return
     fi
     case "${COMP_WORDS[1]}" in
         list)
             if [ "$COMP_CWORD" -eq 2 ]; then
-                mapfile -t COMPREPLY < <(compgen -W "probes spikegroups programs steps" -- "$cur")
+                COMPREPLY=($(compgen -W "probes spikegroups programs steps" -- "$cur"))
             elif [ "$COMP_CWORD" -eq 3 ] && [ "$prev" != steps ]; then
-                mapfile -t COMPREPLY < <(compgen -f -X '!*.@(yaml|yml)' -- "$cur"; compgen -d -- "$cur")
+                COMPREPLY=($(_ndm_sessions "$cur"))
             fi ;;
-        help)
-            [ "$COMP_CWORD" -eq 2 ] && mapfile -t COMPREPLY < <(compgen -W "$steps" -- "$cur") ;;
+        help|-h|--help)
+            [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=($(compgen -W "$steps" -- "$cur")) ;;
         configure|config)
-            [ "$COMP_CWORD" -eq 2 ] && mapfile -t COMPREPLY < <(compgen -f -X '!*.@(yaml|yml)' -- "$cur"; compgen -d -- "$cur") ;;
+            [ "$COMP_CWORD" -eq 2 ] && COMPREPLY=($(_ndm_sessions "$cur")) ;;
         *)
-            mapfile -t COMPREPLY < <(compgen -f -- "$cur") ;;
+            _ndm_step "${COMP_WORDS[1]#ndm_}" 2 ;;
     esac
 }
 complete -F _ndm ndm

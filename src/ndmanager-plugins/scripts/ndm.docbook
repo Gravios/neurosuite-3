@@ -24,6 +24,9 @@
 		<para>
 			The session is <filename>SESSION.yaml</filename> given on the command line (or the session folder), or else the one named after the current folder.
 		</para>
+		<para>
+			Tab completion (bash) completes the commands and steps, a step's options and their values (<option>--method</option>, <option>--layout</option>, the session's extensions for <option>--inputExtension</option>), session files, and, for the steps that take a spike group (<command>ndm klustakwik</command>, <command>ndm pca</command>, <command>ndm localise</command> and others), the session's group numbers.
+		</para>
 	</refsect1>
 
 	<refsect1>

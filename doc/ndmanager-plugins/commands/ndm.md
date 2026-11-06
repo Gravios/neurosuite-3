@@ -62,13 +62,44 @@ or nowhere (`none`, or why the probe file did not give them).
 Every step under `programs:`, how many of its parameters have a value, and
 those values (long ones cut at 70 characters).
 
+### `ndm list groupids`
+
+One line per spike group: its number, a tab, and its channels as ranges
+(`16-18,20`). For scripts and the tab completion. The numbers are the ones the steps take.
+
+## Tab completion
+
+In bash, Tab completes:
+
+| After | Completes |
+|---|---|
+| `ndm ` | `help`, `configure`, `list` and every step |
+| `ndm list ` / `ndm help ` | the `list` targets / the steps |
+| `ndm <step> -` | the step's options, and `--help` |
+| `ndm <step> --method ` | the option's values: `standard sdiff stderiv`; `--methodOrder` 0–3, `--layout` `bundle free` |
+| `ndm <step> --inputExtension ` | the extensions of the session's files (`dat`, `fil`, `lfp`, …) |
+| `ndm <step> ` | session files; for a step that takes a spike group, the session's group numbers too |
+| `ndm pca rat01 ` | the group numbers of `rat01.yaml` |
+
+The steps that take a group are those whose usage line names one:
+`alignspikes_pca`, `applydrift` (a source group, then any number of
+targets), `autoklusta`, `denoiseuniform`, `estimategeometry`, `klustakwik`,
+`localise`, `pca`, `pca_multichannel`, `refeaturize`, `spikecleaner` and
+`subcluster_unmatched`. The group numbers come from the session named on the
+command line, else the folder's own; nothing is offered without one.
+
+The options are read from the usage line each step prints on a wrong command
+line, so a new step or option completes without a change to the completion
+script.
+
 ## Files
 
 - `ndm` (bash) and `ndm_list.py` (Python 3 with `pyyaml`; it uses
   `probe_geometry.py` and `process_setupgroups.py`), installed with the steps.
-- Tab completion: `share/bash-completion/completions/ndm` completes the
-  commands, the steps, the `list` targets and session files. bash-completion
-  loads it by name; otherwise `source` it from `~/.bashrc`.
+- Tab completion: `share/bash-completion/completions/ndm` (see
+  [Tab completion](#tab-completion)). bash-completion loads it by name the
+  first time `ndm` is completed; without bash-completion, `source` it from
+  `~/.bashrc`. It completes `ndm`, not the `ndm_*` names.
 
 ## See also
 

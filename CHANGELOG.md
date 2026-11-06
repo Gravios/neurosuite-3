@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-06 | [ndm: tab completion of options, their values and spike groups](#2026-11-06--ndm-tab-completion-of-options-their-values-and-spike-groups) |
 | 2026-11-05 | [Man pages for every ndm step, generated from the command reference](#2026-11-05--man-pages-for-every-ndm-step-generated-from-the-command-reference) |
 | 2026-11-05 | [ndm: one command for the NDManager plugins](#2026-11-05--ndm-one-command-for-the-ndmanager-plugins) |
 | 2026-11-04 | [ndm_estimategeometry: the estimate goes into the probe file, no report](#2026-11-04--ndm_estimategeometry-the-estimate-goes-into-the-probe-file-no-report) |
@@ -158,6 +159,48 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-06 — ndm: tab completion of options, their values and spike groups
+
+<details>
+<summary>Details</summary>
+
+The `ndm` tab completion goes beyond the commands and steps:
+
+- **Step options:** `ndm <step> -<Tab>` offers the step's options and
+  `--help`. They are read from the usage line the step prints on a wrong
+  command line, so a new step or option completes without an edit.
+  `detectspikes` and `extractspikes` take theirs from `ndm_process_spikes`.
+- **Option values:**
+  - `--method`: `standard sdiff stderiv`, or the choices the usage line names.
+  - `--methodOrder`: 0–3.
+  - `--layout`: `bundle free`.
+  - `--inputExtension`: the extensions of the session's own files.
+- **Spike groups:** for the steps whose usage names a group, a positional
+  argument completes to the session's group numbers. A session file is
+  also offered in the first position.
+  - The steps are `alignspikes_pca`, `applydrift`, `autoklusta`,
+    `denoiseuniform`, `estimategeometry`, `klustakwik`, `localise`, `pca`,
+    `pca_multichannel`, `refeaturize`, `spikecleaner` and
+    `subcluster_unmatched`.
+  - The session is the one on the command line, else the folder's own.
+  - One group is offered for most steps; `applydrift`'s target groups
+    repeat.
+  - After `--`, files are offered.
+
+`ndm list groupids [session]` prints one line per group, `<number><TAB>
+<channels>`, and is what the completion reads.
+
+`test_ndm_cli.sh` gains 14 checks (39 in all), and 11 of them fail with
+the old completion script. Also checked by pressing Tab in an interactive
+bash 5 with bash-completion loading the file by name:
+`ndm klustakwik <Tab><Tab>` listed `1 2 3 4 5 rat01.yaml`.
+
+Files: `src/ndmanager-plugins/scripts/{ndm,ndm.bash-completion,ndm_list.py,
+ndm.docbook}`, `test/test_ndm_cli.sh`,
+`doc/ndmanager-plugins/commands/ndm.md`.
+
+</details>
 
 ## 2026-11-05 — Man pages for every ndm step, generated from the command reference
 

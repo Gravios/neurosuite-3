@@ -8,6 +8,8 @@ ndm_list.py — what a session holds, for `ndm list`
                                      probe and shank, and where the site positions
                                      come from
   ndm_list.py programs [session]     the steps under programs:, with the values set
+  ndm_list.py groupids [session]     one line per spike group, "<number><TAB><channels>",
+                                     for ndm's tab completion
 
 The session is the YAML given (with or without its extension), or else the one
 named after the current folder, as for every ndm_* step.  Probe files are found
@@ -188,6 +190,13 @@ def list_spikegroups(doc: dict, sfile: Path) -> None:
                        "site positions", "skipped"]))
 
 
+def list_groupids(doc: dict, sfile: Path) -> None:
+    """Machine form for tab completion: the group number (as the steps take
+    it, 1-based) and its channels, tab-separated."""
+    for gi in range(1, len(groups_of(doc)) + 1):
+        print(f"{gi}\t{ranges(probe_geometry.group_channels(doc, gi))}")
+
+
 def list_programs(doc: dict, sfile: Path) -> None:
     progs = doc.get("programs") or []
     if not progs:
@@ -215,7 +224,8 @@ def main(argv: list[str]) -> int:
         die(f"usage: ndm list {what} [session]")
     sfile = session_file(rest[0] if rest else None)
     doc = load(sfile)
-    {"probes": list_probes, "spikegroups": list_spikegroups, "programs": list_programs}.get(
+    {"probes": list_probes, "spikegroups": list_spikegroups, "programs": list_programs,
+     "groupids": list_groupids}.get(
         what, lambda d, f: die(f"cannot list '{what}': probes, spikegroups, programs or steps"))(doc, sfile)
     return 0
 

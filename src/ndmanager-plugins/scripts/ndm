@@ -164,7 +164,7 @@ run_list() {
         steps)
             [ $# -eq 0 ] || { err "list steps takes no argument"; exit 2; }
             list_steps ;;
-        probes|spikegroups|groups|programs)
+        probes|spikegroups|groups|programs|groupids)
             [ "$what" = groups ] && what=spikegroups
             [ $# -le 1 ] || { err "usage: ndm list $what [session]"; exit 2; }
             local helper="$HERE/ndm_list.py"
