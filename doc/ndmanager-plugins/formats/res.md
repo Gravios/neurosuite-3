@@ -43,6 +43,12 @@ spike-time file per group, whatever method detected it.
   `sdiff`, then any other `SESSION.res.<token>.N`, then the untagged
   `SESSION.res.N`. A step running under `stderiv_C5` therefore finds the
   `.res.stderiv.N` written by detection.
+- `ndm_extractspikes`, `ndm_pca`, `ndm_refeaturize` and `ndm_reextractspikes`
+  read it with `ndm_shared_res` instead: the name `ndm_detectspikes` writes,
+  from the `method` of its node in the session file, and no other file.  With
+  no detection method set they fall back to the order above, taking only
+  waveform-method tokens, so an `ndm_extractemg` event file
+  `SESSION.res.emg.N` is never read as spike times.
 
 NeuroScope does not use the resolver: for a cluster file `X.clu.<…>` it reads
 the `.res` whose name is the same with `clu` replaced by `res`.

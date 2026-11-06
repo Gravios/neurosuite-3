@@ -156,6 +156,8 @@ Every type belongs to one class:
 | `ndm_untagged_path`, `ndm_session_path` | `base.type.group`, `base.type` |
 | `ndm_resolve base type group method` | Prints the resolved path by class; sets `NDM_R_FOUND`, `NDM_R_METHOD`; returns 0 if found. When nothing exists, prints the path a writer should use |
 | `ndm_resolve_any base type group [method]` | For `.res`: preferred method, `standard`, `stderiv`, `sdiff`, any other method-tagged copy, untagged. Prints the preferred path and returns 1 if none exists |
+| `ndm_shared_res base group [method]` | A group's spike times: `base.res.<M>.group`, `M` being the `method` of the `ndm_detectspikes` node (or `general`) in the session file, and nothing else. With no detection method set: as `ndm_resolve_any`, but only waveform-method tokens. Prints the expected path and returns 1 if missing; sets `NDM_RES_DETECT`, `NDM_R_METHOD` |
+| `ndm_shared_res_missing base group expected` | The error text for a missing shared `.res`: the expected file, the detection method, and the `.res` files present |
 | `ndm_method_of path` | Method token of a per-group file name, or empty |
 | `ndm_parse_anchor path` | Splits a name into `NDM_A_BASE`, `_TYPE`, `_METHOD`, `_GROUP`, `_SUFFIX`; `NDM_A_OK=1` on success |
 | `ndm_parse_method_token token` | Splits `family[_<S\|C><order>][_D<lag><dims>]` into `NDM_M_FAMILY`, `_KIND`, `_ORDER`, `_LAG`, `_DIMS`; an unmatched token is all family |

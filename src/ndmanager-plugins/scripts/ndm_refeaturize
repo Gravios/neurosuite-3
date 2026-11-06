@@ -106,12 +106,13 @@ once()
 	local electrodeGroup=$1
 
 	# Method-tagged artifact paths (chain-of-custody).  .res holds method-
-	# independent spike times — resolve it across all methods (Shared), falling
-	# back to the strict name only so a missing input reports a meaningful path.
+	# independent spike times: the one ndm_detectspikes writes, named from the
+	# session file (ndm_shared_res); a missing one reaches inputs_missing by name.
 	local spkfile=$(ndm_method_path "$session" spk "$electrodeGroup" "$method")
 	local pcafile=$(ndm_method_path "$session" pca "$electrodeGroup" "$method")
-	local resfile=$(ndm_resolve_any "$session" res "$electrodeGroup" "$method")
-	[ -z "$resfile" ] && resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$method")
+	local resfile
+	resfile=$(ndm_shared_res "$session" "$electrodeGroup" "$method") || \
+		echo_warning "$(ndm_shared_res_missing "$session" "$electrodeGroup" "$resfile")"
 	local fetout=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
 
 	# Inputs: parameter file, the waveforms, the basis, and the spike times.

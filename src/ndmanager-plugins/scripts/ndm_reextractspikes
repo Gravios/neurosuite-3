@@ -240,10 +240,10 @@ for group in $(seq 1 $nElectrodeGroups); do
         continue
     fi
 
-    # .res holds method-independent spike times — resolve it across methods.
-    resFile=$(ndm_resolve_any "$session" res "$group" "$method")
-    if [ -z "$resFile" ] || [ ! -f "$resFile" ]; then
-        echo_warning "  group $group: no .res (any method) — skipping"
+    # .res holds method-independent spike times: the one ndm_detectspikes writes,
+    # named from the session file (ndm_shared_res).
+    if ! resFile=$(ndm_shared_res "$session" "$group" "$method"); then
+        echo_warning "  $(ndm_shared_res_missing "$session" "$group" "$resFile") — skipping"
         groupActive[$group]=n
         skippedCount=$((skippedCount + 1))
         continue

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-06 | [ndm_extractspikes reads the .res ndm_detectspikes writes](#2026-11-06--ndm_extractspikes-reads-the-res-ndm_detectspikes-writes) |
 | 2026-11-06 | [ndm: tab completion of options, their values and spike groups](#2026-11-06--ndm-tab-completion-of-options-their-values-and-spike-groups) |
 | 2026-11-05 | [Man pages for every ndm step, generated from the command reference](#2026-11-05--man-pages-for-every-ndm-step-generated-from-the-command-reference) |
 | 2026-11-05 | [ndm: one command for the NDManager plugins](#2026-11-05--ndm-one-command-for-the-ndmanager-plugins) |
@@ -159,6 +160,41 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-06 — ndm_extractspikes reads the .res ndm_detectspikes writes
+
+<details>
+<summary>Details</summary>
+
+`ndm_extractspikes` took a group's spike times from whichever `.res` the
+resolver found first: its own method's tag, `standard`, `stderiv`, `sdiff`,
+then any other `SESSION.res.<token>.N` in byte order.  A session with
+`ndm_extractemg`'s EMG events `SESSION.res.emg.N` and spike times under
+`.res.stderiv_S3.N` extracted waveforms at the 68 EMG times (`emg` sorts
+before `stderiv_S3`), without a word.  A leftover `.res` tagged with the
+extraction method won the same way over the one detection wrote.
+
+Now the `.res` is named from the session file: `SESSION.res.<M>.N`, `M`
+being the `method` of the `ndm_detectspikes` node (or of `general`), and no
+other file is used.
+
+- **Missing:** when that `.res` is missing, the step stops before any engine
+  runs, naming the expected file, the detection method and the `.res` files
+  that are present; `--check` reports the same.
+- **Printed:** each group's `.res` is printed with its spike count.
+- **No detection method set** (a session detected before `ndm_detectspikes`,
+  or by hand): the old order, but only waveform-method tokens (`standard`,
+  `sdiff`, `stderiv[_S|C<n>]`), so `.res.emg.N` is never read as spike times;
+  the untagged `SESSION.res.N` still works.
+- **Same rule** in `ndm_pca`, `ndm_refeaturize` and `ndm_reextractspikes`,
+  which read the `.res` next to the `.spk`.  `ndm_alignspikes` and
+  `ndm_alignspikes_pca` are unchanged: their engines resolve the `.res`
+  themselves (`custody::resolveAny`).
+
+New helpers in `ndm_functions`: `ndm_shared_res` and `ndm_shared_res_missing`.
+`test/test_extract_res_name.sh` (14 checks; 11 fail on the old scripts).
+
+</details>
 
 ## 2026-11-06 — ndm: tab completion of options, their values and spike groups
 

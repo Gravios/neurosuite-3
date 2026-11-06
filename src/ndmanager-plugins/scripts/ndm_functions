@@ -1635,6 +1635,77 @@ ndm_sdiff_max_index()
 	echo "$nums" | awk 'BEGIN { m = -1 } NF { if ($1 + 0 > m) m = $1 + 0 } END { print m }'
 }
 
+# ndm_shared_res SESSION GROUP [PREFERRED_METHOD]
+# The group's shared spike times: the .res ndm_detectspikes writes.  Its name is
+# taken from the session file, not guessed from the files present:
+#   - the ndm_detectspikes node (or 'general') sets a method M: the .res is
+#     <session>.res.M.<group> and nothing else -- rc 1 when it is missing, so a
+#     stray .res of another program (ndm_extractemg's .res.emg.<id>) or of an
+#     earlier detection can never stand in for it;
+#   - no method set (a session detected before ndm_detectspikes, or by hand): the
+#     first of PREFERRED_METHOD, standard, stderiv, sdiff, any other WAVEFORM
+#     method token (byte order) and untagged -- as ndm_resolve_any, except that a
+#     token that is not a waveform method (emg) is never taken.
+# Echoes the path (the expected one when none exists); sets NDM_RES_DETECT to the
+# detection method from the session file ("" = not set) and NDM_R_METHOD to the
+# token of the path; returns 0 iff the file exists.  Leaves NDM_M_* as they were.
+ndm_shared_res()
+{
+	local base="$1" group="$2" pref="${3:-}" det cand mm
+	local sF="${NDM_M_FAMILY-}" sK="${NDM_M_KIND-}" sO="${NDM_M_ORDER-}" sL="${NDM_M_LAG-}" sD="${NDM_M_DIMS-}" sE="${NDM_M_ERROR-}"
+	det=$(read_script_parameter -s ndm_detectspikes -a "" "$base" method)
+	xml_read_failed "$det" && det=
+	NDM_RES_DETECT="$det"; NDM_R_METHOD=""
+	local rc=1 out=
+	if [ -n "$det" ]; then
+		out="$(ndm_method_path "$base" res "$group" "$det")"; NDM_R_METHOD="$det"
+		[ -f "$out" ] && rc=0
+	else
+		for mm in "$pref" standard stderiv sdiff; do
+			[ -z "$mm" ] && continue
+			cand="$(ndm_method_path "$base" res "$group" "$mm")"
+			if [ -f "$cand" ]; then out="$cand"; NDM_R_METHOD="$mm"; rc=0; break; fi
+		done
+		if [ $rc -ne 0 ]; then
+			local LC_ALL=C
+			for cand in "$base.res."*".$group"; do
+				[ -f "$cand" ] || continue
+				mm="${cand#"$base.res."}"; mm="${mm%".$group"}"
+				case "$mm" in ''|*.*) continue ;; esac
+				ndm_check_method_token "$mm" || continue          # emg and the like
+				out="$cand"; NDM_R_METHOD="$mm"; rc=0; break
+			done
+		fi
+		if [ $rc -ne 0 ]; then
+			cand="$(ndm_untagged_path "$base" res "$group")"
+			if [ -f "$cand" ]; then out="$cand"; rc=0
+			else out="$(ndm_method_path "$base" res "$group" "${pref:-standard}")"; NDM_R_METHOD="$pref"; fi
+		fi
+	fi
+	NDM_M_FAMILY="$sF"; NDM_M_KIND="$sK"; NDM_M_ORDER="$sO"; NDM_M_LAG="$sL"; NDM_M_DIMS="$sD"; NDM_M_ERROR="$sE"
+	echo "$out"
+	return $rc
+}
+
+# ndm_shared_res_missing SESSION GROUP EXPECTED -> the reason a group's .res was not
+# found, for an error message (EXPECTED = what ndm_shared_res echoed; it is usually
+# called in a $(...) subshell, so the detection method is read again here).
+ndm_shared_res_missing()
+{
+	local base="$1" group="$2" expected="$3" others= det
+	det=$(read_script_parameter -s ndm_detectspikes -a "" "$base" method)
+	xml_read_failed "$det" && det=
+	local LC_ALL=C cand
+	for cand in "$base.res."*".$group" "$base.res.$group"; do
+		[ -f "$cand" ] && others="$others ${cand##*/}"
+	done
+	if [ -n "$det" ]; then
+		echo "group $group has no ${expected##*/}, the .res ndm_detectspikes writes with its method '$det' (session file); run ndm_detectspikes, or set its method to the token of the .res you have${others:+ (present:$others)}"
+	else
+		echo "group $group has no .res of a waveform method${others:+ (present, not spike times:$others)}; run ndm_detectspikes first"
+	fi
+}
+
 # ndm_extract_preflight SESSION METHOD METHODORDER
 # Checks, before any engine runs, that the session file holds everything
 # extracting METHOD needs, and that what the engine would run is what the
@@ -1725,7 +1796,8 @@ ndm_extract_preflight()
 	for g in $(seq 1 "$nG"); do
 		chans=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/channels/channel")
 		xml_read_failed "$chans" && continue
-		ndm_resolve_any "$sess" res "$g" "$m" > /dev/null || _pf_err "group $g has no .res (run ndm_detectspikes first)"
+		local _r
+		_r=$(ndm_shared_res "$sess" "$g" "$m") || _pf_err "$(ndm_shared_res_missing "$sess" "$g" "$_r")"
 	done
 	unset -f _pf_err _pf_warn
 	[ $errors -eq 0 ]
@@ -2182,21 +2254,29 @@ ndm_process_spikes()
 			fi
 			echo_info " Noise statistics (.nst)    : $noiseWindows windows, reject beyond $noiseRejectZ robust SD${noiseGuard:+, guard $noiseGuard samples}"
 		fi
-		# ndm_resolve_any locates a group's shared .res (this method first, then
-		# any other method, then untagged); it is copied into the temp slot and
-		# left untouched.  Every group is checked before any engine runs.
+		# ndm_shared_res names a group's shared .res from the session file: the one
+		# ndm_detectspikes writes under its own method (or, when that node sets no
+		# method, the first waveform-method .res found); it is copied into the temp
+		# slot and left untouched.  Every group is checked before any engine runs,
+		# and each .res is named with its spike count, so a wrong one shows.
 		local -A sharedRes=()
 		for group in $electrodeGroups; do
-			# (ndm_resolve_any names the expected path even when it finds none:
-			# its status says whether it did.)
-			if ! r=$(ndm_resolve_any "$session" res "$group" "$method") \
-			   || [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then
-				echo_error "no valid shared .res for group $group — run ndm_detectspikes first"
+			# (ndm_shared_res names the expected path even when it finds none: its
+			# status says whether it did.)
+			if ! r=$(ndm_shared_res "$session" "$group" "$method"); then
+				echo_error "$(ndm_shared_res_missing "$session" "$group" "$r")"
+				exit $INPUTS_MISSING
+			fi
+			if [ $(( $(wc -c < "$r") % 8 )) -ne 0 ]; then
+				echo_error "group $group: $r is not a .res (size not a multiple of 8 bytes)"
 				exit $INPUTS_MISSING
 			fi
 			sharedRes[$group]="$r"
 		done
 		echo_info " Re-extracting waveforms at existing spike times (-R)"
+		for group in $electrodeGroups; do
+			echo_info "   group $group: ${sharedRes[$group]##*/} ($(( $(wc -c < "${sharedRes[$group]}") / 8 )) spikes)"
+		done
 	fi
 	export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 

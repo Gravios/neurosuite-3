@@ -21,7 +21,7 @@
   </parameters>
   <help>Extract spike waveforms at previously-detected spike times (this creates .spk files).
 
-Spike times are produced by ndm_detectspikes and stored in the shared .res files. ndm_extractspikes re-extracts a waveform for every one of those spikes and writes .spk; it does not detect, and errors if no .res exists yet. Because the spike times are method-independent, the extraction engine (method: standard, sdiff, or stderiv) may differ from the one used for detection, and ndm_extractspikes may be run several times with different methods to produce waveforms in different domains, each reusing the same .res.
+Spike times are produced by ndm_detectspikes and stored in the shared .res files. ndm_extractspikes re-extracts a waveform for every one of those spikes and writes .spk; it does not detect.  The .res read is the one ndm_detectspikes writes, .res.&lt;M&gt;.N with M the method of the ndm_detectspikes node in this session file; when it is missing the step stops, and no other .res (an ndm_extractemg .res.emg.N, an earlier detection) is used instead. Because the spike times are method-independent, the extraction engine (method: standard, sdiff, or stderiv) may differ from the one used for detection, and ndm_extractspikes may be run several times with different methods to produce waveforms in different domains, each reusing the same .res.
 
 The engine (method) and, for sdiff/stderiv, the spatial-derivative order (methodOrder) are set in the session's ndm_extractspikes program node; they are not declared here. Extraction needs no threshold or noise-window parameters — those belong to ndm_detectspikes.
 

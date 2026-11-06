@@ -61,8 +61,8 @@ groups keep their numbers.  It is an error only when no group has channels.
 Spike times are method-independent and later steps resolve the `.res` across
 methods (see [naming](../formats/naming.md#artifact-classes)).  Detect once.
 The skip test looks only at the requested method, so running detection again
-under a second method writes a second `.res` next to the first, and
-`ndm_extractspikes` then prefers the one tagged with its own method.
+under a second method writes a second `.res` next to the first.  The later
+steps read the one this node's `method` names (below).
 
 ### Parameters
 
@@ -285,10 +285,22 @@ per-spike files (below)
 
 Re-extracts (engine `-R`) a waveform for every spike in the group's shared
 `.res` and writes `session.spk.<method>.N` at full group width.  It never
-detects.  The `.res` is found across methods: this method's tag first, then
-`standard`, `stderiv`, `sdiff`, any other tag, then the untagged legacy
-`session.res.N`.  With no `.res` the step stops with an error; run
-`ndm_detectspikes` first.
+detects.  The `.res` is the one `ndm_detectspikes` writes, named from the
+session file: `session.res.<M>.N`, where `M` is the `method` of the
+`ndm_detectspikes` node (or of `general`).  Other `.res` files of the group are
+not used, whatever they are called: an EMG event file `session.res.emg.N` from
+`ndm_extractemg`, a `.res` of an earlier detection under another method, a
+`.res` tagged with the extraction method.  With that `.res` missing, the step
+stops before any engine runs, naming the expected file and the `.res` files
+present (`--check` reports the same).  Each group's `.res` is printed with its
+spike count.  The same rule applies to `ndm_pca`, `ndm_refeaturize` and
+`ndm_reextractspikes`.
+
+When the session file sets no detection method (a session detected before
+`ndm_detectspikes`, or by hand), the first `.res` found is used: this method's
+tag, `standard`, `stderiv`, `sdiff`, any other waveform-method tag in byte
+order, then the untagged legacy `session.res.N`.  A tag that is not a waveform
+method (`emg`) is never taken for spike times.
 
 Because spike times are method-independent, the extraction method may differ
 from the detection method, and the step can be run several times with different

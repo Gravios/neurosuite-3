@@ -17,9 +17,11 @@
 #
 #  DESCRIPTION
 #  -----------
-#  Re-extracts waveforms (-R) for every spike in the shared .res (written by
-#  ndm_detectspikes) and writes .spk.<method>.N.  It never detects: if no .res
-#  exists yet it errors, pointing you to ndm_detectspikes.  Spike times are
+#  Re-extracts waveforms (-R) for every spike in the shared .res and writes
+#  .spk.<method>.N.  The .res is the one ndm_detectspikes writes, named from the
+#  session file (.res.<M>.N, M = the ndm_detectspikes node's method), and no
+#  other: not an ndm_extractemg .res.emg.N, nor a .res of another detection.  It
+#  never detects: if that .res is missing it errors, naming it.  Spike times are
 #  method-independent, so the extraction engine (standard | sdiff | stderiv) may
 #  differ from the one used for detection — one engine may detect better, another
 #  may yield better waveform features — and it may be run several times with

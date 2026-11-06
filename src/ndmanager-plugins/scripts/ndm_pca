@@ -184,13 +184,12 @@ once()
 	# Method-tagged artifact paths (chain-of-custody).  Waveforms and the ordinary
 	# basis are named by the waveform method; a _D lag feature space by the full token.
 	local spkfile=$(ndm_method_path "$session" spk "$electrodeGroup" "$waveMethod")
-	# .res holds method-independent spike times — a Shared artifact owned by the
-	# first extraction run.  Resolve it across all methods (e.g. a standard PCA
-	# run reuses the .res written by an earlier stderiv extraction) instead of
-	# demanding .res.<method>.<group>, which need not exist.  Fall back to the
-	# strict path name only so a missing input reports a meaningful name.
-	local resfile=$(ndm_resolve_any "$session" res "$electrodeGroup" "$waveMethod")
-	[ -z "$resfile" ] && resfile=$(ndm_method_path "$session" res "$electrodeGroup" "$waveMethod")
+	# .res holds method-independent spike times -- the one ndm_detectspikes writes,
+	# named from the session file (ndm_shared_res), not .res.<method>.<group>, which
+	# need not exist.  When missing, the expected name reaches inputs_missing.
+	local resfile
+	resfile=$(ndm_shared_res "$session" "$electrodeGroup" "$waveMethod") || \
+		echo_warning "$(ndm_shared_res_missing "$session" "$electrodeGroup" "$resfile")"
 	local fetout=$(ndm_method_path "$session" fet "$electrodeGroup" "$waveMethod")
 	local lagfet=
 	[ -n "$featLag" ] && lagfet=$(ndm_method_path "$session" fet "$electrodeGroup" "$method")
