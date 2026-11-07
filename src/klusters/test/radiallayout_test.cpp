@@ -37,10 +37,19 @@ int main()
     CHECK(def.at(7).kind == N::Kind::Value && def.at(7).id == QStringLiteral("dimX"));
     CHECK(def.at(8).kind == N::Kind::Value && def.at(8).id == QStringLiteral("dimY"));
     CHECK(def.last().kind == N::Kind::Value && def.last().id == QStringLiteral("nFeat"));
-    CHECK(radiallayout::ringsNeeded(def) == 2);
+    CHECK(radiallayout::ringsNeeded(def) == 3);               // Recluster > Plugin > {KlustaKwik, fiber-kit}
     {
         QList<QString> ids; collectIds(def, ids);
         CHECK(QSet<QString>(ids.begin(), ids.end()).size() == ids.size());   // no duplicates
+        CHECK(ids.contains(QStringLiteral("recluster.engine.fiberkit")) && ids.contains(QStringLiteral("recluster.recluster")));
+        // the Plugin ring under Recluster: the engine choice, after the Recluster action
+        const RadialLayoutNode& recl = def.at(2);
+        CHECK(recl.kind == N::Kind::Group && recl.label == QStringLiteral("Recluster"));
+        CHECK(recl.children.at(0).id == QStringLiteral("recluster.recluster"));
+        const RadialLayoutNode& plug = recl.children.at(1);
+        CHECK(plug.kind == N::Kind::Group && plug.label == QStringLiteral("Plugin") && plug.children.size() == 2
+              && plug.children.at(0).id == QStringLiteral("recluster.engine.klustakwik") && plug.children.at(0).label == QStringLiteral("KlustaKwik")
+              && plug.children.at(1).id == QStringLiteral("recluster.engine.fiberkit")   && plug.children.at(1).label == QStringLiteral("fiber-kit"));
     }
 
     // ---- JSON round trip ----------------------------------------------------

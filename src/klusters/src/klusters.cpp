@@ -753,6 +753,29 @@ void KlustersApp::createMenus()
                                       "clusters' spikes (a sub-session) and replace them with its clusters"));
     connect(mReclusterFiberKit,&QAction::triggered, this,&KlustersApp::slotReclusterFiberKit);
 
+    // The ENGINE Recluster (Shift+R) runs: checkable, exclusive.  KlustaKwik and fiber-kit are
+    // built in; populateReclusterEngineMenu adds one entry per installed `recluster` descriptor.
+    mReclusterEngineMenu = reclusterMenu->addMenu(tr("&Engine"));
+    mReclusterEngineMenu->setToolTipsVisible(true);
+    mReclusterEngineGroup = new QActionGroup(this);
+    mReclusterEngineGroup->setExclusive(true);
+    mEngineKlustaKwik = mReclusterEngineMenu->addAction(tr("KlustaKwik"));
+    mEngineKlustaKwik->setCheckable(true);
+    mEngineKlustaKwik->setData(QStringLiteral("klustakwik"));
+    mEngineKlustaKwik->setToolTip(tr("Recluster runs KiloKlustaKwik on the selection's features (Preferences > Reclustering)"));
+    mReclusterEngineGroup->addAction(mEngineKlustaKwik);
+    mEngineFiberKit = mReclusterEngineMenu->addAction(tr("fiber-kit"));
+    mEngineFiberKit->setCheckable(true);
+    mEngineFiberKit->setData(QStringLiteral("fiber-kit"));
+    mEngineFiberKit->setToolTip(tr("Recluster runs the fiber-kit plan on the selection's sub-session "
+                                   "(the fiber-kit-recluster plugin's defaults, else the preferences' command)"));
+    mReclusterEngineGroup->addAction(mEngineFiberKit);
+    connect(mReclusterEngineGroup, &QActionGroup::triggered, this, [this](QAction* a) {
+        setActiveReclusterEngine(a->data().toString());
+    });
+    const QString engine = configuration().getReclusterEngine();
+    (engine == QLatin1String("fiber-kit") ? mEngineFiberKit : mEngineKlustaKwik)->setChecked(true);
+
     reclusterMenu->addSeparator();
 
     mSplitByKnn = reclusterMenu->addAction(tr("Split by &KNN voting…"));
@@ -2545,6 +2568,8 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("recluster.recluster"),    QStringLiteral("Recluster"), mReCluster);
     registerActionCommand(QStringLiteral("recluster.median"),       QStringLiteral("Recluster"), mReclusterMedian);
     registerActionCommand(QStringLiteral("recluster.fiberkit"),     QStringLiteral("Recluster"), mReclusterFiberKit);
+    registerActionCommand(QStringLiteral("recluster.engine.klustakwik"), QStringLiteral("Recluster"), mEngineKlustaKwik);
+    registerActionCommand(QStringLiteral("recluster.engine.fiberkit"),   QStringLiteral("Recluster"), mEngineFiberKit);
     registerActionCommand(QStringLiteral("recluster.channelVar"),   QStringLiteral("Recluster"), mReclusterChannelVar);
     registerActionCommand(QStringLiteral("recluster.splitByKnn"),   QStringLiteral("Recluster"), mSplitByKnn);
     registerActionCommand(QStringLiteral("recluster.stripByTemplate"), QStringLiteral("Recluster"), mStripByTemplate);
@@ -8574,8 +8599,11 @@ void KlustersApp::populatePluginsMenu()
     } else {
         for (const KlustersPlugin& p : plugins) {
             const QString kind = p.kind.isEmpty() ? tr("plugin") : p.kind;
-            QAction* act = mPluginsMenu->addAction(QStringLiteral("%1  [%2]").arg(p.name, kind));
-            const QString tip = p.help.section(QLatin1Char('\n'), 0, 0);
+            // The text is the bare name: it is also the action's catalogue id (menu:Plugins/<name>),
+            // by which Preferences > Radial menu places the plugin on the wheel; the kind goes to the
+            // tips.
+            QAction* act = mPluginsMenu->addAction(p.name);
+            const QString tip = QStringLiteral("[%1] %2").arg(kind, p.help.section(QLatin1Char('\n'), 0, 0));
             act->setToolTip(tip);
             act->setStatusTip(tip);
             const KlustersPlugin info = p;   // capture by value for the dialog
@@ -8597,6 +8625,60 @@ void KlustersApp::populatePluginsMenu()
     mPluginsMenu->addSeparator();
     QAction* reload = mPluginsMenu->addAction(tr("&Reload Plugins"));
     connect(reload, &QAction::triggered, this, &KlustersApp::slotReloadPlugins);
+    populateReclusterEngineMenu();
+}
+
+void KlustersApp::populateReclusterEngineMenu()
+{
+    if (!mReclusterEngineMenu || !mReclusterEngineGroup) return;
+    for (QAction* a : mEnginePluginActions) {
+        mReclusterEngineGroup->removeAction(a);
+        mReclusterEngineMenu->removeAction(a);
+        delete a;
+    }
+    mEnginePluginActions.clear();
+    // One entry per installed `recluster` descriptor other than fiber-kit's (the built-in fiber-kit
+    // entry runs that one).  Their catalogue ids are menu:Actions/Recluster/Engine/<name>.
+    for (const KlustersPlugin& p : mPluginRegistry.plugins()) {
+        if (!p.runsOnSubsession() || p.name == QLatin1String("fiber-kit-recluster")) continue;
+        QAction* a = mReclusterEngineMenu->addAction(p.name);
+        a->setCheckable(true);
+        a->setData(QStringLiteral("plugin:") + p.name);
+        a->setToolTip(tr("Recluster runs \"%1\" on the selection's sub-session (Preferences > Plugins holds its defaults)").arg(p.name));
+        mReclusterEngineGroup->addAction(a);
+        mEnginePluginActions.append(a);
+    }
+    // Re-check the stored engine (a plugin entry may have just appeared, or gone).
+    const QString engine = configuration().getReclusterEngine();
+    bool found = false;
+    for (QAction* a : mReclusterEngineGroup->actions())
+        if (a->data().toString() == engine) { a->setChecked(true); found = true; }
+    if (!found && mEngineKlustaKwik) {
+        mEngineKlustaKwik->setChecked(true);             // its plugin is gone: back to KlustaKwik
+        configuration().setReclusterEngine(QStringLiteral("klustakwik"));
+    }
+    if (mReCluster)
+        mReCluster->setStatusTip(tr("Recluster the selected cluster(s) with the active engine: %1")
+                                 .arg(engine == QLatin1String("klustakwik") ? tr("KlustaKwik")
+                                      : engine == QLatin1String("fiber-kit") ? tr("fiber-kit") : engine.mid(7)));
+}
+
+QString KlustersApp::activeReclusterEngine() const
+{
+    return configuration().getReclusterEngine();
+}
+
+void KlustersApp::setActiveReclusterEngine(const QString& engine)
+{
+    configuration().setReclusterEngine(engine);
+    configuration().write();
+    for (QAction* a : mReclusterEngineGroup ? mReclusterEngineGroup->actions() : QList<QAction*>())
+        if (a->data().toString() == engine) a->setChecked(true);
+    const QString shown = engine == QLatin1String("klustakwik") ? tr("KlustaKwik")
+                        : engine == QLatin1String("fiber-kit") ? tr("fiber-kit") : engine.mid(7);
+    if (mReCluster)
+        mReCluster->setStatusTip(tr("Recluster the selected cluster(s) with the active engine: %1").arg(shown));
+    statusBar()->showMessage(tr("Recluster engine: %1 (Shift+R)").arg(shown), 4000);
 }
 
 void KlustersApp::slotReloadPlugins()
@@ -8608,6 +8690,9 @@ void KlustersApp::slotReloadPlugins()
         prefDialog->deleteLater();
         prefDialog = nullptr;
     }
+    // The radial wheel holds the Plugins menu's QActions (not owned); the menu was just rebuilt, so
+    // the wheel is rebuilt on its next use.
+    rebuildRadialMenu();
     const int n = mPluginRegistry.plugins().size();
     statusBar()->showMessage(tr("Reloaded plugins: %1 descriptor(s) found.").arg(n), 4000);
 }

@@ -205,7 +205,17 @@ and with the lineage overlay engaged it opens the overlay's menu. By default the
 Clusters, Recluster, Undo, Redo, Hierarchy, Sort, the two feature axes
 **X: n** and **Y: n**, and **N: n**; hovering a group opens its actions as the next ring out. Sort holds the Actions ▸ Sort Clusters entries
 under short labels (Count, Time, SNR, Spectral, …); the status bar shows each
-one's full name.
+one's full name. Recluster holds the Recluster action and a **Plugin** wedge
+whose ring chooses the **active engine** -- **KlustaKwik** (the built-in
+recluster) or **fiber-kit** (its plan on the selection) -- the active one
+marked with the checked dot; then the other split tools. **Recluster
+(`Shift+R`) runs whichever engine is active**, as does the Recluster wedge, so
+switching engine is one flick and the shortcuts follow. The same choice is
+*Actions ▸ Recluster ▸ Engine*, where every installed `recluster` plugin is an
+entry too (placeable on the wheel from the catalogue in Preferences ▸ Radial
+menu). `Shift+M` / `Shift+C` stay KlustaKwik on other features, `Shift+Q` is
+fiber-kit explicitly. A layout saved before this ring existed keeps its own
+shape; *Default* on that page restores the shipped wheel.
 
 The X and Y wedges (marked with a pair of small arrows) set the cluster view's
 feature dimensions: hover one and turn the mouse wheel to step that axis through
@@ -277,7 +287,7 @@ The defaults for the most-used actions:
 | `U` | Update the error, template and residual matrices |
 | `E` | Next matrix tab |
 | `Shift+D` / `Shift+W` | DipSplit / Watershed split |
-| `Shift+R` | Recluster with KiloKlustaKwik |
+| `Shift+R` | Recluster with the active engine (Actions ▸ Recluster ▸ Engine: KlustaKwik, fiber-kit, a plugin) |
 | `Shift+Q` | Recluster with fiber-kit (the plan of `fiber-kit.yaml` on the selection) |
 | `Shift+L` / `Page Up` / `Page Down` | Realign / nudge the selected cluster +1 / −1 sample |
 | `A` / `F` | Auto-scale / t-SNE presentation in the Cluster Display |

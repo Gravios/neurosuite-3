@@ -87,7 +87,16 @@ RadialLayout defaults()
             N::action(QStringLiteral("action.purgeSmallClusters")),
         }),
         N::group(tr("Recluster"), {
+            // Recluster runs the ACTIVE engine; the Plugin ring chooses it -- KlustaKwik (the
+            // built-in recluster) or fiber-kit (its plan on the selection's sub-session), the active
+            // one marked with the checked dot.  Other installed `recluster` plugins' engine entries
+            // are placed from the catalogue (Actions > Recluster > Engine) in Preferences > Radial menu.
+            // An action sits in ONE wedge: the wheel's short label is per action.
             N::action(QStringLiteral("recluster.recluster")),
+            N::group(tr("Plugin"), {
+                N::action(QStringLiteral("recluster.engine.klustakwik"), tr("KlustaKwik")),
+                N::action(QStringLiteral("recluster.engine.fiberkit"),   tr("fiber-kit")),
+            }),
             N::action(QStringLiteral("recluster.median")),
             N::action(QStringLiteral("recluster.splitByKnn")),
             N::action(QStringLiteral("recluster.dipSplit")),

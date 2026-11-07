@@ -185,6 +185,30 @@ void KlustersApp::slotRecluster(){
         reclusterRetryTimer = nullptr;
     }
 
+    // The ACTIVE ENGINE: a plain Recluster (Shift+R, the wheel, the menu) runs whatever Actions >
+    // Recluster > Engine has checked.  The one-shot modes (Shift+M / Shift+C: KlustaKwik on other
+    // features; Shift+Q: fiber-kit explicitly; a plugin's own entry) carry their engine themselves.
+    if (reclusterOnce == ReclusterOnce::None) {
+        const QString engine = activeReclusterEngine();
+        if (engine == QLatin1String("fiber-kit")) {
+            slotReclusterFiberKit();                     // sets Subsession and comes back here
+            return;
+        }
+        if (engine.startsWith(QLatin1String("plugin:"))) {
+            const QString name = engine.mid(7);
+            if (mPluginRegistry.plugins().isEmpty()) mPluginRegistry.reload();
+            for (const KlustersPlugin& p : mPluginRegistry.plugins()) {
+                if (p.name == name && p.runsOnSubsession()) {
+                    startSubsessionRecluster(p, PluginSettings::values(p));
+                    return;
+                }
+            }
+            QMessageBox::warning(this, tr("Recluster"),
+                                 tr("The active recluster engine \"%1\" is not installed (Plugins > Reload Plugins, or "
+                                    "choose another engine under Actions > Recluster > Engine).  Running KlustaKwik.").arg(name));
+        }
+    }
+
     // Consume any one-shot mode requested by Shift+M / Shift+C.  We are now
     // past the busy-retry guard, so a retry preserved the request; clear it
     // here so it applies to exactly this run and a later manual recluster is

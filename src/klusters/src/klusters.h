@@ -658,6 +658,12 @@ private Q_SLOTS:
      *  sub-session is written, the plugin's command runs on it, and its final .clu replaces the
      *  selection as a recluster does.  The Plugins menu and Shift+Q come here. */
     void startSubsessionRecluster(const KlustersPlugin& plugin, const QMap<QString, QString>& params);
+    /** The active recluster engine (Configuration::getReclusterEngine): klustakwik | fiber-kit |
+     *  plugin:<name>.  setActiveReclusterEngine stores it, checks its Engine action and says so. */
+    QString activeReclusterEngine() const;
+    void setActiveReclusterEngine(const QString& engine);
+    /** (Re)build the Engine submenu's per-plugin entries from the registry. */
+    void populateReclusterEngineMenu();
 
     /** Splits the currently selected single cluster into N new clusters
      *  using a K-nearest-neighbour majority vote against a reference
@@ -1404,6 +1410,15 @@ private:
     QAction *mReCluster;
     QAction *mReclusterMedian;
     QAction *mReclusterFiberKit = nullptr;   // Recluster with fiber-kit (a plan on the selection's sub-session)
+    /** Actions > Recluster > Engine: checkable, exclusive -- the ACTIVE engine Recluster (Shift+R)
+     *  runs.  KlustaKwik and fiber-kit are built in; one more per installed `recluster` descriptor
+     *  (rebuilt by populatePluginsMenu).  The radial menu's Recluster > Plugin ring shows them, the
+     *  checked one with its dot. */
+    QMenu*        mReclusterEngineMenu = nullptr;
+    QActionGroup* mReclusterEngineGroup = nullptr;
+    QAction*      mEngineKlustaKwik = nullptr;
+    QAction*      mEngineFiberKit = nullptr;
+    QList<QAction*> mEnginePluginActions;
     QAction *mReclusterChannelVar;
 
     /** One-shot recluster mode requested via a keyboard shortcut (Shift+M /

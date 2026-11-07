@@ -84,6 +84,8 @@ public:
 
     /**Sets the command Recluster with fiber-kit runs on the sub-session (%fileBaseName, %electrodeGroupID).*/
     void setFiberKitReclusterCommand(const QString& command) {fiberKitReclusterCommand = command;}
+    /**Sets the active recluster engine: klustakwik | fiber-kit | plugin:<name>.*/
+    void setReclusterEngine(const QString& engine) {reclusterEngine = engine;}
 
     /**Sets the realignment executable.*/
     void setRealignExecutable(const QString& executable) {realignExecutable = executable;}
@@ -267,6 +269,8 @@ public:
      * fiberKitReclusterCommand; %fileBaseName = the sub-session's base name, %electrodeGroupID = the group).*/
     QString getFiberKitReclusterCommand() const{return fiberKitReclusterCommand.isEmpty() ? fiberKitReclusterCommandDefault : fiberKitReclusterCommand;}
     QString getFiberKitReclusterCommandDefault() const{return fiberKitReclusterCommandDefault;}
+    /**The active recluster engine (what Recluster / Shift+R runs): klustakwik | fiber-kit | plugin:<name>.*/
+    QString getReclusterEngine() const{return reclusterEngine.isEmpty() ? reclusterEngineDefault : reclusterEngine;}
 
     /**Returns the realignment executable.*/
     QString getRealignExecutable() const{return realignExecutable;}
@@ -599,6 +603,8 @@ private:
     QString reclusteringArgs;
     /**The Recluster with fiber-kit command.*/
     QString fiberKitReclusterCommand;
+    /**The active recluster engine.*/
+    QString reclusterEngine;
     /**Path to the realignment executable.*/
     QString realignExecutable;
     /**Arguments for the realignment executable.*/
@@ -729,6 +735,7 @@ private:
     static const QString reclusteringExecutableDefault;
     static const QString reclusteringArgsDefault;
     static const QString fiberKitReclusterCommandDefault;
+    static const QString reclusterEngineDefault;
     static const QString realignExecutableDefault;
     static const QString realignArgsDefault;
     static const int  markerSizeDefault;

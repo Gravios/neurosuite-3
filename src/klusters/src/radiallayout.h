@@ -58,7 +58,8 @@ namespace radiallayout {
 
 constexpr int kMaxRings = 4;    ///< RadialMenu shows at most this many rings
 
-/** The shipped wheel: Tools, Clusters, Recluster, Undo, Redo, Hierarchy, Sort, X, Y, N. */
+/** The shipped wheel: Tools, Clusters, Recluster (with a Plugin ring: KlustaKwik, fiber-kit), Undo,
+ *  Redo, Hierarchy, Sort, X, Y, N. */
 RadialLayout defaults();
 
 /** JSON text for the settings file ({"version":1,"items":[...]}). */

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: the active recluster engine, and the radial menu's Recluster ▸ Plugin ring](#2026-11-07--klusters-the-active-recluster-engine-and-the-radial-menus-recluster--plugin-ring) |
 | 2026-11-07 | [Klusters: recluster plugins on the sub-session, typed descriptors, Preferences → Plugins](#2026-11-07--klusters-recluster-plugins-on-the-sub-session-typed-descriptors-preferences--plugins) |
 | 2026-11-07 | [Klusters: Recluster with fiber-kit -- a plan on the selected clusters](#2026-11-07--klusters-recluster-with-fiber-kit--a-plan-on-the-selected-clusters) |
 | 2026-11-07 | [Klusters: leaving the child palette for the parent palette clears the atom selection](#2026-11-07--klusters-leaving-the-child-palette-for-the-parent-palette-clears-the-atom-selection) |
@@ -167,6 +168,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: the active recluster engine, and the radial menu's Recluster ▸ Plugin ring
+
+<details>
+<summary>Details</summary>
+
+- **An active recluster ENGINE** (setting `reclusterEngine`: `klustakwik` |
+  `fiber-kit` | `plugin:<name>`), chosen in *Actions ▸ Recluster ▸ Engine* -- a
+  checkable, exclusive group: KlustaKwik and fiber-kit built in, one entry per
+  installed `recluster` descriptor (rebuilt on *Reload Plugins*; a vanished
+  plugin falls back to KlustaKwik).  **Recluster (`Shift+R`) runs the active
+  engine**: KlustaKwik as before, fiber-kit through the sub-session (the
+  `fiber-kit-recluster` plugin's Preferences defaults, else the preferences'
+  command), a plugin through its descriptor with its Preferences defaults.
+  `Shift+M` / `Shift+C` stay KlustaKwik on other features; `Shift+Q` is
+  fiber-kit explicitly.  The status bar names the engine on a switch, and the
+  Recluster action's status tip carries it.
+- **The radial wheel**: the shipped Recluster group holds the Recluster action
+  and a **Plugin** ring with the two built-in engine entries
+  (`recluster.engine.klustakwik`, `recluster.engine.fiberkit`); the active one
+  shows the wheel's checked dot, and a flick switches it.  Plugin engine entries
+  are placeable from the catalogue (*Actions ▸ Recluster ▸ Engine*).  The
+  Plugins menu's actions carry the bare plugin name (kind in the tips), so their
+  ids are `menu:Plugins/<name>`; *Reload Plugins* rebuilds the wheel, which held
+  the menu's actions.  A stored layout is untouched.  radiallayout_test updated.
+
+</details>
 
 ## 2026-11-07 — Klusters: recluster plugins on the sub-session, typed descriptors, Preferences → Plugins
 

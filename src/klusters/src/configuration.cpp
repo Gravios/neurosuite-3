@@ -59,6 +59,11 @@ const QString Configuration::reclusteringArgsDefault =
 // fiber-kit.yaml and --final-clu names the .clu Klusters reads back (the clu of the .fet it wrote).
 const QString Configuration::fiberKitReclusterCommandDefault =
         "fk run %electrodeGroupID --session %fileBaseName --final-clu %fileBaseName.clu.klusters.%electrodeGroupID";
+// The active recluster ENGINE -- what Shift+R (Recluster) runs: "klustakwik" (the built-in
+// KlustaKwik path), "fiber-kit" (the fiber-kit plan on the selection's sub-session), or
+// "plugin:<name>" (another installed `recluster` descriptor).  Chosen in Actions > Recluster >
+// Engine, or on the radial menu's Recluster > Plugin ring.
+const QString Configuration::reclusterEngineDefault = QLatin1String("klustakwik");
 const QString Configuration::realignExecutableDefault = QLatin1String("");
 const QString Configuration::realignArgsDefault = QLatin1String("--threshold 0.70 --iterations 2");
 const int  Configuration::markerSizeDefault = 2;
@@ -90,6 +95,7 @@ void Configuration::read() {
         reclusteringExecutable = reclusteringExecutableDefault;
     reclusteringArgs = settings.value("reclusteringArgs",reclusteringArgsDefault).toString();
     fiberKitReclusterCommand = settings.value("fiberKitReclusterCommand", fiberKitReclusterCommandDefault).toString();
+    reclusterEngine = settings.value("reclusterEngine", reclusterEngineDefault).toString();
     realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
     realignArgs = settings.value("realignArgs",realignArgsDefault).toString();
     realignThreshold  = settings.value("realignThreshold",  0.70).toDouble();
@@ -264,6 +270,7 @@ void Configuration::write() const {
     settings.setValue("reclusteringExecutable",reclusteringExecutable);
     settings.setValue("reclusteringArgs",reclusteringArgs);
     settings.setValue("fiberKitReclusterCommand", fiberKitReclusterCommand);
+    settings.setValue("reclusterEngine", reclusterEngine);
     settings.setValue("realignExecutable",realignExecutable);
     settings.setValue("realignArgs",realignArgs);
     settings.setValue("realignThreshold",  realignThreshold);
