@@ -112,6 +112,7 @@
 #include <QMenu>
 #include <QAction>
 #include "plugindialog.h"
+#include "pluginsettings.h"
 #include <QMessageBox>
 #include <QLabel>
 #include <QPrinter>
@@ -1839,10 +1840,12 @@ void KlustersApp::initSelectionBoxes(){
 
 void KlustersApp::executePreferencesDlg(){
     if(prefDialog == nullptr){
+        if (mPluginRegistry.plugins().isEmpty())
+            mPluginRegistry.reload();                       // the Plugins pages are generated from it
         if(mainDock)
-            prefDialog = new PrefDialog(this,doc->nbOfchannels());  // create dialog on demand
+            prefDialog = new PrefDialog(this,doc->nbOfchannels(), &mPluginRegistry);  // create dialog on demand
         else
-            prefDialog = new PrefDialog(this);
+            prefDialog = new PrefDialog(this, 0, &mPluginRegistry);
         // connect to the "settingsChanged" signal
         connect(prefDialog,&PrefDialog::settingsChanged,this,&KlustersApp::applyPreferences);
     }
@@ -8585,6 +8588,8 @@ void KlustersApp::populatePluginsMenu()
                 PluginDialog dlg(info, pluginContext(), this);
                 if (dlg.exec() != QDialog::Accepted)
                     return;
+                if (dlg.rememberAsDefaults())
+                    PluginSettings::store(info, dlg.values());
                 runPlugin(info, dlg.values());
             });
         }
@@ -8597,6 +8602,12 @@ void KlustersApp::populatePluginsMenu()
 void KlustersApp::slotReloadPlugins()
 {
     populatePluginsMenu();
+    // The Preferences > Plugins pages are generated from the registry when the dialog is built:
+    // drop the cached dialog so the next Preferences shows the reloaded set.
+    if (prefDialog) {
+        prefDialog->deleteLater();
+        prefDialog = nullptr;
+    }
     const int n = mPluginRegistry.plugins().size();
     statusBar()->showMessage(tr("Reloaded plugins: %1 descriptor(s) found.").arg(n), 4000);
 }
@@ -8669,6 +8680,13 @@ void KlustersApp::runPlugin(const KlustersPlugin& plugin, const QMap<QString, QS
     if (doc->url().isEmpty()) {
         QMessageBox::information(this, tr("Plugins"),
             tr("Open a clustering before running a plugin."));
+        return;
+    }
+
+    // A `recluster` plugin runs on the selection's sub-session: the recluster path (its own checks,
+    // the sub-session export, the integration of the final .clu as a recluster).
+    if (plugin.runsOnSubsession()) {
+        startSubsessionRecluster(plugin, params);
         return;
     }
 

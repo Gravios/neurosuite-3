@@ -1,15 +1,16 @@
 #include "plugindialog.h"
+#include "pluginparamform.h"
+#include "pluginsettings.h"
 
-#include <QFormLayout>
 #include <QVBoxLayout>
-#include <QLineEdit>
 #include <QLabel>
+#include <QCheckBox>
 #include <QPushButton>
 #include <QDialogButtonBox>
 
 PluginDialog::PluginDialog(const KlustersPlugin& plugin,
                            const QMap<QString, QString>& context, QWidget* parent)
-    : QDialog(parent)
+    : QDialog(parent), mPlugin(plugin)
 {
     setWindowTitle(tr("Run plugin: %1").arg(plugin.name));
 
@@ -21,21 +22,27 @@ PluginDialog::PluginDialog(const KlustersPlugin& plugin,
         help->setStyleSheet(QStringLiteral("color: palette(mid);"));
         top->addWidget(help);
     }
-
-    QFormLayout* form = new QFormLayout();
-    for (const PluginParameter& p : plugin.parameters) {
-        // A value Klusters resolved from the open document (keyed by the parameter
-        // name) wins over the descriptor's static default, so geometry-dependent
-        // fields (nsamp / nchan) come in correct and editable.
-        const QString ctxVal = context.value(p.name);
-        QLineEdit* edit = new QLineEdit(ctxVal.isEmpty() ? p.value : ctxVal, this);
-        const bool mandatory =
-            (p.status.compare(QStringLiteral("Mandatory"), Qt::CaseInsensitive) == 0);
-        edit->setToolTip(mandatory ? tr("required") : tr("optional"));
-        mEdits.insert(p.name, edit);
-        form->addRow(mandatory ? (p.name + QStringLiteral(" *")) : p.name, edit);
+    if (plugin.runsOnSubsession()) {
+        QLabel* note = new QLabel(tr("Runs on the selected clusters' spikes (a sub-session); its clusters "
+                                     "replace the selection, as a recluster does."), this);
+        note->setWordWrap(true);
+        top->addWidget(note);
     }
-    top->addLayout(form);
+
+    // Prefill: the document's resolved value (keyed by the parameter name) wins over
+    // the stored default, which wins over the descriptor's static default, so
+    // geometry-dependent fields (nsamp / nchan) come in correct and editable.
+    QMap<QString, QString> init = PluginSettings::values(plugin);
+    for (const PluginParameter& p : plugin.parameters) {
+        const QString ctxVal = context.value(p.name);
+        if (!ctxVal.isEmpty()) init.insert(p.name, ctxVal);
+    }
+    mForm = new PluginParamForm(plugin, this);
+    mForm->setValues(init);
+    top->addWidget(mForm);
+
+    mRemember = new QCheckBox(tr("Remember these values as the plugin's defaults (Preferences → Plugins)"), this);
+    top->addWidget(mRemember);
 
     QDialogButtonBox* buttons =
         new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
@@ -48,8 +55,10 @@ PluginDialog::PluginDialog(const KlustersPlugin& plugin,
 
 QMap<QString, QString> PluginDialog::values() const
 {
-    QMap<QString, QString> out;
-    for (auto it = mEdits.constBegin(); it != mEdits.constEnd(); ++it)
-        out.insert(it.key(), it.value()->text());
-    return out;
+    return mForm->values();
+}
+
+bool PluginDialog::rememberAsDefaults() const
+{
+    return mRemember && mRemember->isChecked();
 }

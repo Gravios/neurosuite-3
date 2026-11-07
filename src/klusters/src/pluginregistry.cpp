@@ -6,6 +6,7 @@
 #include <QProcess>
 #include <QStandardPaths>
 #include <QXmlStreamReader>
+#include <QRegularExpression>
 #include <algorithm>
 
 QStringList PluginRegistry::discoveryDirs()
@@ -61,8 +62,25 @@ KlustersPlugin PluginRegistry::parseDescriptor(const QString& path)
                 cur.value = xml.readElementText();
             } else if (nm == u"status" && inParam) {
                 cur.status = xml.readElementText();
+            } else if (nm == u"type" && inParam) {
+                cur.type = xml.readElementText().trimmed().toLower();
+            } else if (nm == u"min" && inParam) {
+                cur.min = xml.readElementText().trimmed();
+            } else if (nm == u"max" && inParam) {
+                cur.max = xml.readElementText().trimmed();
+            } else if (nm == u"step" && inParam) {
+                cur.step = xml.readElementText().trimmed();
+            } else if (nm == u"choices" && inParam) {
+                cur.choices = xml.readElementText().split(QLatin1Char('|'));
+                for (QString& c : cur.choices) c = c.trimmed();
+            } else if (nm == u"help" && inParam) {
+                cur.help = xml.readElementText().trimmed();
             } else if (nm == u"help") {
                 p.help = xml.readElementText().trimmed();
+            } else if (nm == u"input") {
+                p.input = xml.readElementText().trimmed().toLower();
+            } else if (nm == u"command") {
+                p.command = xml.readElementText().simplified();
             } else if (nm == u"kind") {
                 p.kind = xml.readElementText().trimmed();
             } else if (nm == u"consumes") {
@@ -90,31 +108,60 @@ KlustersPlugin PluginRegistry::parseDescriptor(const QString& path)
     return p;
 }
 
-QStringList PluginRegistry::buildArgv(const KlustersPlugin& plugin,
-                                     const QMap<QString, QString>& params,
-                                     const QMap<QString, QString>& context,
-                                     const QList<int>& selection)
+PluginParameter::Type PluginParameter::effectiveType() const
+{
+    const QString t = type.trimmed().toLower();
+    if (t == QLatin1String("bool"))   return Type::Bool;
+    if (t == QLatin1String("int"))    return Type::Int;
+    if (t == QLatin1String("real") || t == QLatin1String("float") || t == QLatin1String("double")) return Type::Real;
+    if (t == QLatin1String("path") || t == QLatin1String("file") || t == QLatin1String("dir")) return Type::Path;
+    if (t == QLatin1String("choice") || t == QLatin1String("enum") || !choices.isEmpty()) return Type::Choice;
+    if (t == QLatin1String("text") || t == QLatin1String("string")) return Type::Text;
+    // inferred from the default
+    const QString v = value.trimmed();
+    const QString lv = v.toLower();
+    const QString ln = name.toLower();
+    if (lv == QLatin1String("true") || lv == QLatin1String("false") || lv == QLatin1String("on")
+        || lv == QLatin1String("off") || lv == QLatin1String("yes") || lv == QLatin1String("no"))
+        return Type::Bool;
+    if (ln.endsWith(QLatin1String("path")) || ln.endsWith(QLatin1String("file")) || ln.endsWith(QLatin1String("dir"))
+        || ln.endsWith(QLatin1String("directory")) || ln.endsWith(QLatin1String("folder")))
+        return Type::Path;
+    static const QRegularExpression reInt(QStringLiteral("^[+-]?\\d+$"));
+    static const QRegularExpression reReal(QStringLiteral("^[+-]?(\\d+\\.\\d*|\\.\\d+|\\d+)([eE][+-]?\\d+)?$"));
+    if (reInt.match(v).hasMatch()) return Type::Int;
+    if (!v.isEmpty() && reReal.match(v).hasMatch()) return Type::Real;
+    if (v.contains(QLatin1Char('/')) && v.contains(QLatin1Char('.'))) return Type::Path;
+    return Type::Text;
+}
+
+int PluginParameter::decimals() const
+{
+    const int dot = value.indexOf(QLatin1Char('.'));
+    if (dot < 0) return 1;
+    int n = 0;
+    for (int i = dot + 1; i < value.size() && value[i].isDigit(); ++i) ++n;
+    return qMax(1, n);
+}
+
+static bool isTrue(const QString& v)
+{
+    const QString l = v.trimmed().toLower();
+    return l == QLatin1String("true") || l == QLatin1String("on") || l == QLatin1String("yes") || l == QLatin1String("1");
+}
+
+QStringList PluginRegistry::paramArgs(const KlustersPlugin& plugin, const QMap<QString, QString>& params)
 {
     QStringList argv;
-    argv << plugin.name;
-
-    // Resolved <consumes> tokens, positional, in declared order.
-    for (const QString& tok : plugin.consumes) {
-        if (tok == QLatin1String("selection") || tok == QLatin1String("children")) {
-            for (int c : selection)
-                argv << QString::number(c);
-        } else {
-            argv << context.value(tok);     // base / group / variant / tag
-        }
-    }
-
     // Descriptor parameters as "--name value".  An Optional parameter left empty
-    // is omitted; a value-less parameter becomes a bare flag.
+    // is omitted; a Bool is the bare flag when true and nothing when false.
     for (const PluginParameter& p : plugin.parameters) {
         const QString v = params.value(p.name, p.value).trimmed();
-        const bool mandatory =
-            (p.status.compare(QStringLiteral("Mandatory"), Qt::CaseInsensitive) == 0);
-        if (v.isEmpty() && !mandatory)
+        if (p.effectiveType() == PluginParameter::Type::Bool) {
+            if (isTrue(v)) argv << (QStringLiteral("--") + p.name);
+            continue;
+        }
+        if (v.isEmpty() && !p.mandatory())
             continue;
         argv << (QStringLiteral("--") + p.name);
         // A field may hold several whitespace-separated tokens (a list option, e.g.
@@ -124,6 +171,48 @@ QStringList PluginRegistry::buildArgv(const KlustersPlugin& plugin,
         if (!v.isEmpty())
             argv << QProcess::splitCommand(v);
     }
+    return argv;
+}
+
+QStringList PluginRegistry::buildArgv(const KlustersPlugin& plugin,
+                                     const QMap<QString, QString>& params,
+                                     const QMap<QString, QString>& context,
+                                     const QList<int>& selection)
+{
+    QStringList argv;
+    const QStringList pargs = paramArgs(plugin, params);
+
+    if (!plugin.command.isEmpty()) {
+        // The <command> template: %tokens from the context, %selection/%children as one argument per
+        // id, %params where the parameters go (appended when the template has none).
+        bool placedParams = false;
+        for (const QString& word : QProcess::splitCommand(plugin.command)) {
+            if (word == QLatin1String("%selection") || word == QLatin1String("%children")) {
+                for (int c : selection) argv << QString::number(c);
+            } else if (word == QLatin1String("%params")) {
+                argv << pargs; placedParams = true;
+            } else {
+                QString w = word;
+                for (auto it = context.constBegin(); it != context.constEnd(); ++it)
+                    w.replace(QLatin1Char('%') + it.key(), it.value());
+                argv << w;
+            }
+        }
+        if (!placedParams) argv << pargs;
+        return argv;
+    }
+
+    argv << plugin.name;
+    // Resolved <consumes> tokens, positional, in declared order.
+    for (const QString& tok : plugin.consumes) {
+        if (tok == QLatin1String("selection") || tok == QLatin1String("children")) {
+            for (int c : selection)
+                argv << QString::number(c);
+        } else {
+            argv << context.value(tok);     // base / group / variant / tag
+        }
+    }
+    argv << pargs;
     return argv;
 }
 

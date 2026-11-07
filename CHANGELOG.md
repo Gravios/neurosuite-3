@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: recluster plugins on the sub-session, typed descriptors, Preferences → Plugins](#2026-11-07--klusters-recluster-plugins-on-the-sub-session-typed-descriptors-preferences--plugins) |
 | 2026-11-07 | [Klusters: Recluster with fiber-kit -- a plan on the selected clusters](#2026-11-07--klusters-recluster-with-fiber-kit--a-plan-on-the-selected-clusters) |
 | 2026-11-07 | [Klusters: leaving the child palette for the parent palette clears the atom selection](#2026-11-07--klusters-leaving-the-child-palette-for-the-parent-palette-clears-the-atom-selection) |
 | 2026-11-07 | [Klusters: the child palette follows a parent-level landing](#2026-11-07--klusters-the-child-palette-follows-a-parent-level-landing) |
@@ -166,6 +167,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: recluster plugins on the sub-session, typed descriptors, Preferences → Plugins
+
+<details>
+<summary>Details</summary>
+
+The sub-session (the temp-file method of the previous entry) becomes the plugin
+contract for any sorter, and plugin configuration moves into Preferences.
+
+- **`recluster-integrate` is wired** (PLUGIN_API phase 3): a descriptor of kind
+  `recluster` (or `<input>subsession</input>`) runs on the selection's sub-session
+  through the recluster path and its `%final` `.clu` is integrated as a KlustaKwik
+  result (`KlustersApp::startSubsessionRecluster`).  Descriptors gain a
+  **`<command>` template** (`%base %group %final %selection %params …`) beside the
+  positional `<consumes>`, and **typed parameters** (`<type>` bool / int / real /
+  path / choice / text, `<min>` `<max>` `<step>` `<choices>` `<help>`; inferred from
+  the default otherwise).  A bool is passed as a bare flag.
+- **Preferences → Plugins**: a group with one page per installed descriptor,
+  generated from it — kind, what it runs on, command, path, and the parameter
+  defaults the run dialog opens with (`PluginSettings`, stored per plugin as
+  `Plugins/<name>/<parameter>`, only values that differ from the descriptor;
+  *Reset to descriptor defaults*).  The run dialog uses the same typed editors
+  (`PluginParamForm`), prefilled document value > stored default > descriptor, with
+  *Remember these values as the plugin's defaults*.  *Reload Plugins* rebuilds the
+  pages.
+- `Shift+Q` runs the `fiber-kit-recluster` descriptor (fiber-kit 0.64.0,
+  `fk install klusters-plugin`) with the Preferences defaults when it is installed,
+  else the `fiberKitReclusterCommand` setting as before.
+- `klusters_test_pluginregistry`: 21 checks (typed parse, inference, template
+  argv, the defaults store).  Not run in the GUI.
+
+</details>
 
 ## 2026-11-07 — Klusters: Recluster with fiber-kit — a plan on the selected clusters
 

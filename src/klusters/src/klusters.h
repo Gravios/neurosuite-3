@@ -654,6 +654,10 @@ private Q_SLOTS:
      *  `fk run ... --session ... --final-clu ...`: the plan of the session folder's fiber-kit.yaml) runs
      *  on it; the final .clu replaces the selection as a recluster does, one undo step. */
     void slotReclusterFiberKit();
+    /** Run a `recluster` plugin (one whose <input> is the sub-session) on the selection: the
+     *  sub-session is written, the plugin's command runs on it, and its final .clu replaces the
+     *  selection as a recluster does.  The Plugins menu and Shift+Q come here. */
+    void startSubsessionRecluster(const KlustersPlugin& plugin, const QMap<QString, QString>& params);
 
     /** Splits the currently selected single cluster into N new clusters
      *  using a K-nearest-neighbour majority vote against a reference
@@ -1405,8 +1409,13 @@ private:
     /** One-shot recluster mode requested via a keyboard shortcut (Shift+M /
      *  Shift+C); consumed by the next slotRecluster() that proceeds past the
      *  busy-retry guard, so a retry preserves the request. */
-    enum class ReclusterOnce { None, MedianResidual, ChannelVariance, FiberKit };
+    enum class ReclusterOnce { None, MedianResidual, ChannelVariance, Subsession };
     ReclusterOnce reclusterOnce = ReclusterOnce::None;
+    /** The plugin a Subsession recluster runs (a `recluster` descriptor), with its parameters; unset
+     *  (reclusterPluginSet false) = the preferences' fiber-kit command. */
+    KlustersPlugin reclusterPlugin;
+    QMap<QString, QString> reclusterPluginParams;
+    bool reclusterPluginSet = false;
     /** The recluster sub-session's base (dir + name) while a Recluster with fiber-kit runs; empty
      *  otherwise.  Everything `<base>.*` is removed when the run ends (removeReclusterTempFiles /
      *  slotProcessExited). */

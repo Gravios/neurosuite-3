@@ -1,7 +1,9 @@
 # Klusters Plugin / Extension API
 
-Status: **phases 1–2 implemented** (discovery + dialog + runner + `none`/
-`hierarchy-reload` integration); phase 3 (`recluster-integrate`) pending — see §6.
+Status: **phases 1–3 implemented** (discovery + typed dialog + runner + `none` /
+`hierarchy-reload` / `decollide-apply` integration, and `recluster-integrate` through the
+**sub-session** — the temp-file method, §3b); Preferences → Plugins (§3c) holds each
+plugin's parameter defaults.  See §6.
 Formalizes how external engines (recluster backends, re-fibering tools, analyses,
 exporters) are registered with and invoked from Klusters, modeled on the existing
 **ndmanager-plugins** mechanism already in this repository (`src/ndmanager-plugins`,
@@ -88,6 +90,21 @@ arguments and what it does with the result:
 </parameter>
 ```
 
+### Parameter types (optional, under `<parameter>`)
+
+A parameter may declare how it is edited; Klusters infers it from the default otherwise:
+
+| element | meaning |
+| --- | --- |
+| `<type>` | `bool` (a check box; passed as the bare `--name` flag when true, nothing when false), `int` / `real` (spin boxes; `<min>`, `<max>`, `<step>` bound them; a real's decimals follow its default, "0.125" → 3), `path` (a line with Browse…; a name ending in `dir`/`directory`/`folder` browses for a directory), `choice` (a combo box over `<choices>`), `text` |
+| `<choices>` | `a|b|c` — an empty entry (`|base|exp`) is "unset" (the parameter is omitted from the argv) |
+| `<help>` | shown as the editor's tooltip |
+
+Inference without `<type>`: `true`/`false`/`on`/`off`/`yes`/`no` → bool; an integer literal → int; a real
+literal → real; a name ending in `path`/`file`/`dir`… or a value with a slash and a dot → path; else
+text.  `PluginParameter::effectiveType()` is the single implementation (tested in
+`klusters_test_pluginregistry`).
+
 ### `<kind>` taxonomy
 
 | kind | meaning | typical produces / integration |
@@ -116,11 +133,33 @@ So the actual argv is: `program  <resolved consumes...>  --param value ...`,
 which is exactly how `fiber-refiber <base> <group> --min-cos 0.85` is already
 shaped — the CLI and the descriptor are the same contract.
 
+**`<command>` template (alternative to `<consumes>`).**  An engine whose CLI is not
+"program, positional context, then options" declares the invocation as a template;
+the first word is the program and the rest is substituted:
+
+```xml
+<command>fk run %group --session %base --final-clu %final %params</command>
+```
+
+| token | value |
+| --- | --- |
+| `%base` `%group` `%variant` `%tag` `%nsamp` `%nchan` `%dir` | the context (as the `<consumes>` tokens); for a sub-session plugin `%base` is the SUB-SESSION's base name |
+| `%final` | sub-session plugins: the `.clu` Klusters reads back (`<sub>.clu.klusters.<group>`) |
+| `%selection` / `%children` | the selected ids, one argument each |
+| `%params` | where the `--name value` parameters go (appended when the template has none) |
+
+### `<input>`: session or sub-session (§3b)
+
+| value | the engine runs on |
+| --- | --- |
+| `session` (default) | the session files on disk (`%base` = the session base); the document must be saved |
+| `subsession` (default for kind `recluster`) | the selected clusters' (or atoms') spikes exported as a session of their own — see §3b |
+
 ### Result integration (`<integration>`)
 
 | value | Klusters action on success |
 | --- | --- |
-| `recluster-integrate` | feed the engine's `.clu` through the existing recluster integration (`integrateReclusteredClusters` / `reclusteringUpdate`) |
+| `recluster-integrate` | the engine ran on the sub-session (§3b); its `.clu` named by `%final` is fed through the existing recluster integration (`integrateReclusteredClusters` / `reclusteringUpdate`): one undo step, in the layer the selection came from; a `.clc` beside it installs the atoms in a hierarchical session |
 | `hierarchy-reload` | reload the `.clu/.clc/.clp` triple (the detection + `buildHierarchyMaps` path), refreshing both palettes |
 | `decollide-apply` | apply the collision sidecar (`<base>.col.<method>.<group>[.<tag>]`) the engine wrote, through the same code as the lasso decollide |
 | `none` | just report exit status; offer to open any produced file |
@@ -128,6 +167,42 @@ shaped — the CLI and the descriptor are the same contract.
 `hierarchy-reload` is the hook the re-fibering workflow needs: `fiber-refiber`
 writes the triple, Klusters reloads it, the atoms reappear as children of the new
 fibers — no manual file juggling.
+
+### 3b. The sub-session: the temp-file method for any sorter
+
+A `recluster` plugin never touches the session files.  Klusters writes the selection as a
+**sub-session** in the session directory under a temporary base (`<base>--<ids>--<date>`,
+`KlustersDoc::createReclusterSubsession`, `subsessionfiles.{h,cpp}`):
+
+| file | what |
+| --- | --- |
+| `<sub>.res[.<v>].<g>` | the selected spikes' times — row subsets of every `.res` of the group, ABSOLUTE (the real recording stays valid) |
+| `<sub>.spk.<v>.<g>`, `<sub>.fet.<v>.<g>` | row subsets of every waveform / feature variant on disk |
+| `<sub>.fet.klusters.<g>` | the open clustering's features (the built-in recluster's file; `%final` is its `.clu` twin) |
+| `<sub>.clu.<v>.<g>[.<tag>]` | the SEED: the selection's current ids from the active layer |
+| `<sub>.yaml` / `.xml` | copies of the parameter files |
+| `<sub>.fil`, `.dat`, `.nst.*`, `.pca.*`, `.eap.*`, `.tcl.*` | symlinks to the session's |
+
+Rows are in time order, identical in every file, so the engine's final `.clu` (one id per sub-session
+spike — relabel, never drop) maps back to the selection by position, exactly as a KlustaKwik result does.
+Everything `<sub>.*` is removed when the run ends, whatever the outcome.  The same layout is what
+fiber-kit's `fk subsession export` writes (its `docs/pipeline.md`, "Reclustering a selection"), so a
+sorter can be developed against the CLI and plugged into Klusters by a descriptor alone.  Shipped:
+fiber-kit's `fiber-kit-recluster` (`fk install klusters-plugin`); *Actions → Recluster → Recluster with
+fiber-kit* (`Shift+Q`) runs it with the Preferences defaults (no dialog), falling back to the
+`fiberKitReclusterCommand` setting when the descriptor is not installed.
+
+### 3c. Preferences → Plugins
+
+Preferences has a **Plugins** group with one page per installed descriptor, generated from it
+(`PrefPluginPage` / `PluginParamForm`): the descriptor's facts (kind, what it runs on, command, path)
+and the **parameter defaults** the run dialog opens with, stored per plugin in the settings
+(`Plugins/<name>/<parameter>`, `PluginSettings`; only values that differ from the descriptor are
+stored, so a descriptor's new default shows through).  *Reset to descriptor defaults* per page;
+*Default* resets every page.  The run dialog shows the same typed editors, prefilled with the
+document's resolved value (nsamp / nchan) > the stored default > the descriptor's, and its
+*Remember these values as the plugin's defaults* stores them.  *Plugins → Reload Plugins* rebuilds the
+dialog's pages.
 
 ---
 
@@ -185,18 +260,12 @@ to `share/klusters/plugins/descriptions`:
    `slotFileClose()` + `openDocumentFile()` path (a full reopen — heavier than an
    in-place triple refresh, but it reuses one well-tested code path).  Starter
    descriptors are installed to `share/klusters/plugins/descriptions`.
-3. ⏳ **`recluster` kind:** route a plugin's `.clu` through
-   `integrateReclusteredClusters` / `reclusteringUpdate`; migrate the built-in
-   KlustaKwik action onto the plugin path so there is a single recluster code
-   path.  Until then the runner executes a `recluster-integrate` engine but leaves
-   integration to the built-in Recluster action.  **Running a fiber-kit plan on the
-   selection does not wait for this**: *Actions → Recluster → Recluster with
-   fiber-kit* (`Shift+Q`) goes through the built-in recluster path with a
-   **sub-session** export (`KlustersDoc::createReclusterSubsession`: the selected
-   spikes' rows of every `.res`/`.spk`/`.fet`, a seed `.clu`, parameter copies,
-   symlinks to the recording) and the configured `fk run … --session … --final-clu`
-   command, and integrates the final `.clu` as a KlustaKwik result.  A descriptor
-   of kind `recluster` would plug into the same export once phase 3 lands.
+3. ✅ **`recluster` kind** (0939): a `recluster` plugin (or any `<input>subsession</input>`
+   descriptor) runs on the sub-session (§3b) through the built-in recluster path
+   (`KlustersApp::startSubsessionRecluster` → `slotRecluster`), and its `%final`
+   `.clu` is integrated as a KlustaKwik result.  Still open: moving the built-in
+   KlustaKwik action itself onto a descriptor so there is a single recluster code path.
+4. ✅ **Preferences → Plugins** (0939, §3c): typed parameters, per-plugin defaults.
 
 The runner's `selection` is the palette the descriptor names: `<selection>children</selection>`
 receives the child palette's atoms (it received the parent palette's clusters before 0938).

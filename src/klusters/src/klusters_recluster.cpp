@@ -25,6 +25,7 @@
 #include "config-klusters.h"
 // application specific includes
 #include "klusters.h"
+#include "pluginsettings.h"
 #include "channelmask.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
@@ -132,7 +133,31 @@ void KlustersApp::slotReclusterChannelVariance(){
 
 void KlustersApp::slotReclusterFiberKit(){
     if(!mReCluster->isEnabled()) return;
-    reclusterOnce = ReclusterOnce::FiberKit;
+    // The shipped fiber-kit descriptor (fiber-kit-recluster, installed by `fk install klusters-plugin`)
+    // when present -- its parameters are the Preferences > Plugins defaults -- else the preferences'
+    // fiber-kit command.
+    if (mPluginRegistry.plugins().isEmpty()) mPluginRegistry.reload();
+    for (const KlustersPlugin& p : mPluginRegistry.plugins()) {
+        if (p.name == QLatin1String("fiber-kit-recluster") && p.runsOnSubsession()) {
+            startSubsessionRecluster(p, PluginSettings::values(p));
+            return;
+        }
+    }
+    reclusterPluginSet = false;
+    reclusterOnce = ReclusterOnce::Subsession;
+    slotRecluster();
+}
+
+void KlustersApp::startSubsessionRecluster(const KlustersPlugin& plugin, const QMap<QString, QString>& params){
+    if(!mReCluster->isEnabled()) {
+        QMessageBox::information(this, tr("Plugins"),
+                                 tr("Select the cluster(s) to recluster first (a recluster plugin runs on the selection)."));
+        return;
+    }
+    reclusterPlugin = plugin;
+    reclusterPluginParams = params;
+    reclusterPluginSet = true;
+    reclusterOnce = ReclusterOnce::Subsession;
     slotRecluster();
 }
 
@@ -286,7 +311,7 @@ void KlustersApp::slotRecluster(){
     fileBaseName.append(date);
     fileBaseName.append(time);
 
-    const bool fiberKit = (reclusterOnceMode == ReclusterOnce::FiberKit);   // Recluster with fiber-kit
+    const bool fiberKit = (reclusterOnceMode == ReclusterOnce::Subsession);   // an engine on the sub-session
 
     // Build the argument list by substituting tokens in reclusteringArgs.
     // We operate on individual QStringList tokens (not a flat string) so that:
@@ -511,19 +536,35 @@ void KlustersApp::slotRecluster(){
     // default `fk run %electrodeGroupID --session %fileBaseName --final-clu ...`) on the sub-session
     // instead of the KlustaKwik executable + args.
     QString runExecutable = reclusteringExecutable;
-    QStringList argList = QProcess::splitCommand(fiberKit ? configuration().getFiberKitReclusterCommand()
-                                                          : reclusteringArgs);
-    if (fiberKit) {
+    QStringList argList;
+    if (fiberKit && reclusterPluginSet) {
+        // A `recluster` plugin: its <command> (or positional form) with the sub-session as the context --
+        // %base is the sub-session's base name (relative: the job runs in the session directory), %final
+        // the .clu Klusters reads back, %group the group; %selection the ids it was asked to recluster.
+        QMap<QString, QString> ctx = pluginContext();
+        ctx.insert(QStringLiteral("base"), fileBaseName);
+        ctx.insert(QStringLiteral("dir"), doc->documentDirectory());
+        ctx.insert(QStringLiteral("final"), fileBaseName + QLatin1String(".clu.klusters.") + electrodeGroupID);
+        argList = PluginRegistry::buildArgv(reclusterPlugin, reclusterPluginParams, ctx, clustersToRecluster);
         if (argList.isEmpty()) {
-            QMessageBox::critical(this, tr("Recluster with fiber-kit"),
-                                  tr("The fiber-kit recluster command (preferences: fiberKitReclusterCommand) is empty."));
+            QMessageBox::critical(this, tr("Plugins"), tr("\"%1\" has no command.").arg(reclusterPlugin.name));
             return;
         }
         runExecutable = argList.takeFirst();
-    }
-    for(QString &arg : argList){
-        arg.replace(QLatin1String("%fileBaseName"),     fileBaseName);
-        arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
+    } else {
+        argList = QProcess::splitCommand(fiberKit ? configuration().getFiberKitReclusterCommand() : reclusteringArgs);
+        if (fiberKit) {
+            if (argList.isEmpty()) {
+                QMessageBox::critical(this, tr("Recluster with fiber-kit"),
+                                      tr("The fiber-kit recluster command (preferences: fiberKitReclusterCommand) is empty."));
+                return;
+            }
+            runExecutable = argList.takeFirst();
+        }
+        for(QString &arg : argList){
+            arg.replace(QLatin1String("%fileBaseName"),     fileBaseName);
+            arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
+        }
     }
 
     // The temporary feature file goes where the reclustering program reads it.

@@ -117,6 +117,9 @@ set(klusters_SRCS
     processwidget.cpp
     pluginregistry.cpp
     plugindialog.cpp
+    pluginsettings.cpp          # per-plugin parameter defaults (Preferences > Plugins)
+    pluginparamform.cpp         # typed parameter form generated from a descriptor
+    prefplugins.cpp             # Preferences > Plugins pages
     spinbox.cpp
     savethread.cpp
     sortabletable.cpp

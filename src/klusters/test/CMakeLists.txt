@@ -99,6 +99,17 @@ target_link_libraries(klusters_test_curationlogger PRIVATE Qt6::Core)
 add_test(NAME klusters_test_curationlogger COMMAND klusters_test_curationlogger)
 endif()
 
+# pluginregistry + pluginsettings -- the plugin descriptor contract (typed parameters, the
+# <command> template, buildArgv) and the per-plugin defaults store.  QtCore only.
+if (Qt6_FOUND)
+add_executable(klusters_test_pluginregistry pluginregistry_test.cpp
+    "${_klu_src}/pluginregistry.cpp" "${_klu_src}/pluginsettings.cpp")
+target_compile_features(klusters_test_pluginregistry PRIVATE cxx_std_20)
+target_include_directories(klusters_test_pluginregistry PRIVATE "${_klu_src}")
+target_link_libraries(klusters_test_pluginregistry PRIVATE Qt6::Core)
+add_test(NAME klusters_test_pluginregistry COMMAND klusters_test_pluginregistry)
+endif()
+
 # subsessionfiles -- the recluster sub-session's file operations (row subsets of the group's
 # .res/.spk/.fet, the seed .clu, names, removal).  QtCore only.
 if (Qt6_FOUND)

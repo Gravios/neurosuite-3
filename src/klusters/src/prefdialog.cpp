@@ -23,6 +23,8 @@
 #include "prefdisplay.h"
 #include "prefsession.h"
 #include "prefreclustering.h"
+#include "prefplugins.h"
+#include "pluginregistry.h"
 #include "prefrealignment.h"
 #include "prefsplitting.h"
 #include "prefmerging.h"
@@ -39,7 +41,7 @@
 
 #include <klustersshared/theme.h>
 
-PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
+PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* plugins)
  : QPageDialog(parent)
 {
     setButtons(Help | Default | Ok | Apply | Cancel);
@@ -158,6 +160,22 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels)
     prefReclustering = new PrefReclustering(this);
     subPage(curation, prefReclustering, tr("Reclustering"), tr("Reclustering Configuration"),
             ":/icons/reclustering");
+
+    // ── Plugins: generated from the installed descriptors ──────────
+    if (plugins) {
+        const QList<KlustersPlugin>& list = plugins->plugins();
+        QPageWidgetItem* pluginsGroup = new QPageWidgetItem(makePluginsOverviewPage(list, this), tr("Plugins"));
+        pluginsGroup->setHeader(tr("Plugins"));
+        pluginsGroup->setIcon(QIcon(":/shared-icons/folder-open"));
+        addPage(pluginsGroup);
+        for (const KlustersPlugin& p : list) {
+            PrefPluginPage* page = new PrefPluginPage(p, this);
+            const QString header = p.kind.isEmpty() ? p.name : tr("%1  [%2]").arg(p.name, p.kind);
+            subPage(pluginsGroup, page, p.name, header, ":/icons/reclustering");
+            connect(page, &PrefPluginPage::changed, this, &PrefDialog::enableApply);
+            prefPlugins.append(page);
+        }
+    }
 
     // ── Wire enableApply on every interactive widget ───────────────
     // Session
@@ -400,6 +418,7 @@ void PrefDialog::updateDialog()
 
     // Input bindings: load the effective chords from the registry into the editors.
     prefInput->updateFromRegistry();
+    for (PrefPluginPage* page : prefPlugins) page->updateFromSettings();
 
     enableButtonApply(false);
     applyEnable = false;
@@ -512,6 +531,7 @@ void PrefDialog::updateConfiguration()
     // Input bindings: editors -> registry overrides + the persisted Configuration map.
     // KlustersApp::applyPreferences() then pushes the QAction shortcuts.
     prefInput->commitToRegistry();
+    for (PrefPluginPage* page : prefPlugins) page->commitToSettings();
 
     // Radial menu: store the edited layout; the shipped one is stored as "" so a
     // later change to the default reaches users who never edited theirs.
@@ -622,6 +642,7 @@ void PrefDialog::slotDefault()
 
     // Input bindings: every editor back to its command's shipped default.
     prefInput->restoreDefaults();
+    for (PrefPluginPage* page : prefPlugins) page->restoreDescriptorDefaults();
 
     // Radial menu: the shipped wheel.
     prefRadialMenu->restoreDefaults();

@@ -33,13 +33,17 @@ class PrefWaveformView;
 class PrefClusterView;
 class PrefInput;
 class PrefRadialMenu;
+class PrefPluginPage;
+class PluginRegistry;
 struct ActionCatalogEntry;
 class QComboBox;
 
 class PrefDialog : public QPageDialog {
     Q_OBJECT
   public:
-    explicit PrefDialog(QWidget *parent, int nbChannels = 0);
+    /** @p plugins: the installed plugin descriptors (KlustersApp's registry); one Preferences page
+     *  per plugin is generated from them (Plugins group).  Null = no Plugins group. */
+    explicit PrefDialog(QWidget *parent, int nbChannels = 0, const PluginRegistry* plugins = nullptr);
 
     void updateDialog();
     void updateConfiguration();
@@ -81,6 +85,7 @@ class PrefDialog : public QPageDialog {
     PrefClusterView*  prefclusterView;
     PrefInput*        prefInput;        // generated input-binding page (input-remapping plan §5)
     PrefRadialMenu*   prefRadialMenu;   // the right-click wheel's layout editor
+    QList<PrefPluginPage*> prefPlugins; // Plugins: one generated page per installed descriptor
     QComboBox*        themeCombo;
     bool applyEnable;
 };
