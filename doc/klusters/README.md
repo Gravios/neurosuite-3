@@ -278,6 +278,7 @@ The defaults for the most-used actions:
 | `E` | Next matrix tab |
 | `Shift+D` / `Shift+W` | DipSplit / Watershed split |
 | `Shift+R` | Recluster with KiloKlustaKwik |
+| `Shift+Q` | Recluster with fiber-kit (the plan of `fiber-kit.yaml` on the selection) |
 | `Shift+L` / `Page Up` / `Page Down` | Realign / nudge the selected cluster +1 / −1 sample |
 | `A` / `F` | Auto-scale / t-SNE presentation in the Cluster Display |
 | `O` / `M` / `I` / `D` | Waveforms: overlay / mean and SD / amplitude up / down |
@@ -1217,9 +1218,41 @@ The **Actions → Recluster** submenu also holds:
 |---|---|---|
 | Recluster (median-waveform residual) | `Shift+M` | Reclusters the selected cluster(s) on the residuals of their pooled median waveform |
 | Recluster (channel-variance features) | `Shift+C` | Reclusters using the features of the highest-variance channels |
+| Recluster with fiber-kit (plan on the selection) | `Shift+Q` | Runs the fiber-kit plan of the session folder's `fiber-kit.yaml` on the selected clusters' (or atoms') spikes and replaces them with its clusters; see [below](#recluster-with-fiber-kit) |
 | Split by KNN voting… | `Shift+K` | Splits the selected cluster by a K-nearest-neighbour vote against well-isolated reference clusters |
 | Strip by Template… | `Shift+J` | Uses one selected cluster as a waveform template and pulls matching spikes out of the other selected clusters (current channel selection) |
 | DipSplit Selected Cluster | `Shift+D` | See [DipSplit](#dipsplit--automatic-bimodal-split) |
+
+### Recluster with fiber-kit
+
+**Actions → Recluster → Recluster with fiber-kit** (`Shift+Q`) runs a whole fiber-kit
+pipeline on the selected clusters only -- in the child palette, on the selected
+atoms -- and replaces them with the clusters it finds, as a recluster does (one
+undo step, the result in the parent or the atom layer the selection came from).
+
+Klusters writes the selection as a **sub-session** in the session folder, under
+the same temporary base the recluster uses (`<base>--<ids>--<date>`): the
+selected spikes' rows of every `.res`, `.spk` and `.fet` of the group (every
+waveform and feature variant, in time order), a seed `.clu` with their current
+ids, copies of the session's `.yaml`/`.xml`, and symlinks to the `.fil`, `.dat`
+and the group's `.nst`/`.pca`/`.eap`/`.tcl`, so the stages that read the
+recording (realign `--reextract`, deconvolution, the consensus envelope) read
+the real one.  It then runs the fiber-kit command (settings key
+`fiberKitReclusterCommand`; the default is
+`fk run %electrodeGroupID --session %fileBaseName --final-clu %fileBaseName.clu.klusters.%electrodeGroupID`),
+so **the plan and knobs are the session folder's `fiber-kit.yaml`** --
+`fk set config --profile best` in that folder chooses them, for whole-group
+runs and selections alike.  The final `.clu` is read back by spike order; every
+temporary file, including what the stages wrote, is removed.  The engine reads
+the spikes on disk, so the spike set must be the saved one (any clustering edit
+is fine: the selection and the seed are taken from the live document).  In a
+hierarchical session a plan that ends on a hierarchy (`.clu`/`.clc`/`.clp`)
+installs its atoms too: a parent-scope recluster takes the `.clu` as the new
+fibers and the `.clc` as their atoms (renumbered above the atom layer's
+highest id); an atom-scope recluster takes the `.clu`'s units as the new atoms.
+The sub-session's realigned spike times are not written back -- the new
+clusters are queued for Klusters' own post-recluster realign, as any recluster's
+are.  See fiber-kit's `docs/pipeline.md`, "Reclustering a selection".
 
 KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Curation → Reclustering**. The program is
 `KiloKlustaKwik_cpu` (KiloKlustaKwik's CPU build, installed by every build;

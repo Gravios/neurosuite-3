@@ -120,6 +120,7 @@ child palette is shown.
 | Merge Orphan Parents (by template)… | `Ctrl+Shift+B` | Gathers the tiny fibers: each is matched to the template (mean waveform) of the fiber it resembles most among those not being merged; those matching the same fiber are merged into one new fiber beside it, those matching none stay as they are. See [Merge Orphan Parents](#merge-orphan-parents) below. |
 | Repair Nesting (re-cut atoms onto parents) | `Shift+N` | See [Repair Nesting](#repair-nesting) below. |
 | Merge Selected Children (atom) | — | Merges the selected atoms of one fiber into one atom. |
+| *Actions → Recluster → Recluster with fiber-kit* | `Shift+Q` | With atoms selected, runs the fiber-kit plan on those atoms' spikes and replaces them with the atoms it finds (see the README, "Recluster with fiber-kit"). |
 | Flatten Hierarchy to Flat Clustering | — | Merges every fiber's atoms into one atom with the fiber's id, so the atom layer becomes a copy of the fiber layer. |
 | Undo Child-Layer Edit / Redo Child-Layer Edit | `Ctrl+Shift+Z` / `Ctrl+Shift+Y` | Undo or redo in the atom layer's own history. |
 

@@ -173,6 +173,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mReclusterMedian->setEnabled(false);
+        if(mReclusterFiberKit) mReclusterFiberKit->setEnabled(false);
         mReclusterChannelVar->setEnabled(false);
         mSplitByKnn->setEnabled(false);	
         mStripByTemplate->setEnabled(false);
@@ -245,6 +246,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
         mReclusterMedian->setEnabled(true);
+        if(mReclusterFiberKit) mReclusterFiberKit->setEnabled(true);
         mReclusterChannelVar->setEnabled(true);
         mSplitByKnn->setEnabled(true);	
         mStripByTemplate->setEnabled(true);
@@ -432,6 +434,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mReclusterMedian->setEnabled(false);
+        if(mReclusterFiberKit) mReclusterFiberKit->setEnabled(false);
         mReclusterChannelVar->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
@@ -486,6 +489,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mReclusterMedian->setEnabled(false);
+        if(mReclusterFiberKit) mReclusterFiberKit->setEnabled(false);
         mReclusterChannelVar->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
@@ -499,6 +503,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         if (featureSpaceCombo) featureSpaceCombo->setEnabled(true);
         mReCluster->setEnabled(true);
         mReclusterMedian->setEnabled(true);
+        if(mReclusterFiberKit) mReclusterFiberKit->setEnabled(true);
         mReclusterChannelVar->setEnabled(true);
         mRealignSpikes->setEnabled(true);
         mPcaAlignAllClusters->setEnabled(true);
@@ -528,6 +533,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(false);
         mReCluster->setEnabled(false);
         mReclusterMedian->setEnabled(false);
+        if(mReclusterFiberKit) mReclusterFiberKit->setEnabled(false);
         mReclusterChannelVar->setEnabled(false);
         mRealignSpikes->setEnabled(false);
         mPcaAlignAllClusters->setEnabled(false);
@@ -592,6 +598,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDeleteArtifactSpikes->setEnabled(true);
         mReCluster->setEnabled(true);
         mReclusterMedian->setEnabled(true);
+        if(mReclusterFiberKit) mReclusterFiberKit->setEnabled(true);
         mReclusterChannelVar->setEnabled(true);
         mRenumberClusters->setEnabled(true);
         mDeleteNoisy->setEnabled(true);

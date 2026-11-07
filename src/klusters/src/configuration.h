@@ -82,6 +82,9 @@ public:
     /**Sets the arguments for the reclustering.*/
     void setReclusteringArguments(const QString& arguments) {reclusteringArgs = arguments;}
 
+    /**Sets the command Recluster with fiber-kit runs on the sub-session (%fileBaseName, %electrodeGroupID).*/
+    void setFiberKitReclusterCommand(const QString& command) {fiberKitReclusterCommand = command;}
+
     /**Sets the realignment executable.*/
     void setRealignExecutable(const QString& executable) {realignExecutable = executable;}
 
@@ -259,6 +262,11 @@ public:
 
     /**Returns the arguments for the reclustering.*/
     QString getReclusteringArguments() const{return reclusteringArgs;}
+
+    /**Returns the command Recluster with fiber-kit runs on the sub-session (settings key
+     * fiberKitReclusterCommand; %fileBaseName = the sub-session's base name, %electrodeGroupID = the group).*/
+    QString getFiberKitReclusterCommand() const{return fiberKitReclusterCommand.isEmpty() ? fiberKitReclusterCommandDefault : fiberKitReclusterCommand;}
+    QString getFiberKitReclusterCommandDefault() const{return fiberKitReclusterCommandDefault;}
 
     /**Returns the realignment executable.*/
     QString getRealignExecutable() const{return realignExecutable;}
@@ -589,6 +597,8 @@ private:
     QString reclusteringExecutable;
     /**Arguments for the reclustering executable.*/
     QString reclusteringArgs;
+    /**The Recluster with fiber-kit command.*/
+    QString fiberKitReclusterCommand;
     /**Path to the realignment executable.*/
     QString realignExecutable;
     /**Arguments for the realignment executable.*/
@@ -718,6 +728,7 @@ private:
     static const QColor backgroundColorDefault;
     static const QString reclusteringExecutableDefault;
     static const QString reclusteringArgsDefault;
+    static const QString fiberKitReclusterCommandDefault;
     static const QString realignExecutableDefault;
     static const QString realignArgsDefault;
     static const int  markerSizeDefault;

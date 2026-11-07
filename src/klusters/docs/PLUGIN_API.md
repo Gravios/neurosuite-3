@@ -189,7 +189,17 @@ to `share/klusters/plugins/descriptions`:
    `integrateReclusteredClusters` / `reclusteringUpdate`; migrate the built-in
    KlustaKwik action onto the plugin path so there is a single recluster code
    path.  Until then the runner executes a `recluster-integrate` engine but leaves
-   integration to the built-in Recluster action.
+   integration to the built-in Recluster action.  **Running a fiber-kit plan on the
+   selection does not wait for this**: *Actions → Recluster → Recluster with
+   fiber-kit* (`Shift+Q`) goes through the built-in recluster path with a
+   **sub-session** export (`KlustersDoc::createReclusterSubsession`: the selected
+   spikes' rows of every `.res`/`.spk`/`.fet`, a seed `.clu`, parameter copies,
+   symlinks to the recording) and the configured `fk run … --session … --final-clu`
+   command, and integrates the final `.clu` as a KlustaKwik result.  A descriptor
+   of kind `recluster` would plug into the same export once phase 3 lands.
+
+The runner's `selection` is the palette the descriptor names: `<selection>children</selection>`
+receives the child palette's atoms (it received the parent palette's clusters before 0938).
 
 A future refinement of phase 2's `hierarchy-reload` is an in-place triple refresh
 (re-read `.clu/.clc/.clp` + `buildHierarchyMaps`) to avoid the full reopen.

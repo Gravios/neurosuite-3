@@ -1335,6 +1335,15 @@ public:
   */
     void createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile);
 
+    /** The recluster table in TIME order.  Fills reclusteringSpikesByCluster with the
+     *  spikes of @p clustersToRecluster -- as createFeatureFile does, but sorted by
+     *  feature row (ascending spike index), so a sub-session written from it has a
+     *  time-sorted .res with every file in the same order -- and writes their
+     *  features to @p fetPath in the binary .fet layout.  integrateReclusteredClusters
+     *  then maps the engine's .clu back through the same table.  Returns the 1-based
+     *  feature rows in table order (empty on a desync, as createFeatureFile aborts). */
+    QVector<dataType> createFeatureFileSorted(QList<int>& clustersToRecluster, const QString& fetPath);
+
     /** patch76 — Build a mean-subtracted sub-dimensional feature file for
      *  ONE cluster.  For each spike, subtract the cluster's mean feature
      *  vector to get the residual, then project the residuals onto the

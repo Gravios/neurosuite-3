@@ -130,6 +130,12 @@ void KlustersApp::slotReclusterChannelVariance(){
     slotRecluster();
 }
 
+void KlustersApp::slotReclusterFiberKit(){
+    if(!mReCluster->isEnabled()) return;
+    reclusterOnce = ReclusterOnce::FiberKit;
+    slotRecluster();
+}
+
 void KlustersApp::slotRecluster(){
     // If a recluster job is still in flight, schedule a retry and return.
     // We use a single stoppable QTimer rather than repeated QTimer::singleShot,
@@ -279,6 +285,8 @@ void KlustersApp::slotRecluster(){
     QString time = QTime::currentTime().toString("hh.mm");
     fileBaseName.append(date);
     fileBaseName.append(time);
+
+    const bool fiberKit = (reclusterOnceMode == ReclusterOnce::FiberKit);   // Recluster with fiber-kit
 
     // Build the argument list by substituting tokens in reclusteringArgs.
     // We operate on individual QStringList tokens (not a flat string) so that:
@@ -499,7 +507,20 @@ void KlustersApp::slotRecluster(){
     // launch with a long UseFeatures against a short .fet → nDims=0 →
     // "Array::SetSize: n < 1 (n=0, tag=Data (nPoints*nDims))" abort.
     // The single deferred replacement happens at the unified site below.
-    QStringList argList = QProcess::splitCommand(reclusteringArgs);
+    // Recluster with fiber-kit runs the preferences' fiber-kit command (program + args in one string,
+    // default `fk run %electrodeGroupID --session %fileBaseName --final-clu ...`) on the sub-session
+    // instead of the KlustaKwik executable + args.
+    QString runExecutable = reclusteringExecutable;
+    QStringList argList = QProcess::splitCommand(fiberKit ? configuration().getFiberKitReclusterCommand()
+                                                          : reclusteringArgs);
+    if (fiberKit) {
+        if (argList.isEmpty()) {
+            QMessageBox::critical(this, tr("Recluster with fiber-kit"),
+                                  tr("The fiber-kit recluster command (preferences: fiberKitReclusterCommand) is empty."));
+            return;
+        }
+        runExecutable = argList.takeFirst();
+    }
     for(QString &arg : argList){
         arg.replace(QLatin1String("%fileBaseName"),     fileBaseName);
         arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
@@ -510,13 +531,18 @@ void KlustersApp::slotRecluster(){
     // (chain of custody; Method is "standard" unless -Method is passed); the
     // original KlustaKwik reads <base>.fet.N and writes <base>.clu.N.  The .clu
     // is found by replacing ".fet." with ".clu." in this name, so both work.
+    reclusterSubsessionBase.clear();
     {
         const QString dirBase = doc->documentDirectory() + QLatin1Char('/') + fileBaseName;
         const bool kilo = QFileInfo(reclusteringExecutable).completeBaseName()
                               .startsWith(QLatin1String("KiloKlustaKwik"), Qt::CaseInsensitive);
+        // Recluster with fiber-kit: the .fet carries the variant token `klusters` (no stage reads a
+        // variant of that name, so the engine never mistakes it for one of the session's feature
+        // files), and its clu twin <tmp>.clu.klusters.N is what --final-clu asks the engine to deliver.
         reclusteringFetFileName = dirBase + QLatin1String(".fet.")
-            + (kilo ? QLatin1String(neurosuite::custody::kDefaultMethod()) + QLatin1Char('.')
-                    : QString())
+            + (fiberKit ? QLatin1String("klusters.")
+                        : kilo ? QLatin1String(neurosuite::custody::kDefaultMethod()) + QLatin1Char('.')
+                               : QString())
             + electrodeGroupID;
     }
 
@@ -713,9 +739,28 @@ void KlustersApp::slotRecluster(){
     }
 
     //Create the feature file for the selected clusters and get its name.
-    int returnStatus = usedSubdim
-        ? KlustersDoc::OK
-        : doc->createFeatureFile(clustersToRecluster,reclusteringFetFileName);
+    int returnStatus = KlustersDoc::OK;
+    if (fiberKit) {
+        // The whole sub-session: the selection's rows of every .res/.spk/.fet variant, the seed .clu,
+        // the parameter files, the links -- and the .fet above.  The engine reads the files ON DISK,
+        // so the spike set must be the saved one; the clustering (which spikes are selected, the seed
+        // ids) is the live one, as for any recluster.
+        const QMap<QString, QString> ctx = pluginContext();
+        QStringList written; QString why;
+        reclusterSubsessionBase = doc->documentDirectory() + QLatin1Char('/') + fileBaseName;
+        returnStatus = doc->createReclusterSubsession(clustersToRecluster, reclusterSubsessionBase,
+                                                      reclusteringFetFileName, ctx.value(QStringLiteral("variant")),
+                                                      ctx.value(QStringLiteral("tag")), &written, &why);
+        if (returnStatus != KlustersDoc::OK) {
+            QMessageBox::critical(this, tr("Recluster with fiber-kit"),
+                                  tr("The sub-session could not be written: %1").arg(why));
+            removeReclusterTempFiles();
+            return;
+        }
+        NS3_DIAG() << "[recluster] fiber-kit sub-session" << fileBaseName << ":" << written.size() << "files";
+    } else if (!usedSubdim) {
+        returnStatus = doc->createFeatureFile(clustersToRecluster,reclusteringFetFileName);
+    }
     if(returnStatus == KlustersDoc::OPEN_ERROR){
         QMessageBox::critical (this,tr("Error !"),tr("The reclustering feature file cannot be created (possibly because of insufficient file access permissions).\n Reclustering can not be done."));
         removeReclusterTempFiles();
@@ -767,7 +812,7 @@ void KlustersApp::slotRecluster(){
 
     //Start the process
     bool status;
-    status = processWidget->startJob(doc->documentDirectory(), reclusteringExecutable, argList);
+    status = processWidget->startJob(doc->documentDirectory(), runExecutable, argList);
 
     if(!status){
         removeReclusterTempFiles();
@@ -789,6 +834,10 @@ void KlustersApp::slotRecluster(){
 // base name (patch81).  Once the program has ended normally,
 // KlustersDoc::integrateReclusteredClusters removes them instead.
 void KlustersApp::removeReclusterTempFiles(){
+    if (!reclusterSubsessionBase.isEmpty()) {       // the sub-session and whatever the engine wrote under it
+        KlustersDoc::removeReclusterSubsession(reclusterSubsessionBase);
+        reclusterSubsessionBase.clear();
+    }
     if(QFileInfo(reclusteringFetFileName).isFile() && !QFile::remove(reclusteringFetFileName))
         QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program."));
     const int dotFet = reclusteringFetFileName.lastIndexOf(QLatin1String(".fet."));
@@ -843,6 +892,24 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     }
 
     int returnStatus = doc->integrateReclusteredClusters(clustersToRecluster,clustersFromReclustering,reclusteringFetFileName);
+    // A hierarchical plan's atoms: --final-clu copied the final .clc beside the .clu; in a hierarchical
+    // session's parent-scope recluster they become the new parents' atoms (child scope: the .clu's units
+    // are the atoms, the .clc is not used).
+    if (returnStatus == KlustersDoc::OK && !reclusterSubsessionBase.isEmpty()) {
+        QString clc = reclusteringFetFileName;
+        clc.replace(QLatin1String(".fet."), QLatin1String(".clc."));
+        QString why;
+        const int nAtoms = doc->integrateReclusteredChildren(clc, &why);
+        if (nAtoms > 0) { NS3_DIAG() << "[recluster] fiber-kit: installed" << nAtoms << "atoms from" << QFileInfo(clc).fileName(); }
+        else if (nAtoms < 0) { NS3_DIAG() << "[recluster] fiber-kit: the final .clc was not used:" << why; }
+    }
+    // integrateReclusteredClusters removed its three temp files (fet, clu, yaml); a fiber-kit run left
+    // the rest of the sub-session and its stage outputs under the same base -- remove them whatever the
+    // outcome, the result (if any) is in memory now.
+    if (!reclusterSubsessionBase.isEmpty()) {
+        KlustersDoc::removeReclusterSubsession(reclusterSubsessionBase);
+        reclusterSubsessionBase.clear();
+    }
 
     switch(returnStatus){
     case KlustersDoc::DOWNLOAD_ERROR:

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: Recluster with fiber-kit -- a plan on the selected clusters](#2026-11-07--klusters-recluster-with-fiber-kit--a-plan-on-the-selected-clusters) |
 | 2026-11-07 | [Klusters: leaving the child palette for the parent palette clears the atom selection](#2026-11-07--klusters-leaving-the-child-palette-for-the-parent-palette-clears-the-atom-selection) |
 | 2026-11-07 | [Klusters: the child palette follows a parent-level landing](#2026-11-07--klusters-the-child-palette-follows-a-parent-level-landing) |
 | 2026-11-07 | [Klusters: child-level delete and watershed, and where the selection lands after a split](#2026-11-07--klusters-child-level-delete-and-watershed-and-where-the-selection-lands-after-a-split) |
@@ -165,6 +166,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: Recluster with fiber-kit — a plan on the selected clusters
+
+<details>
+<summary>Details</summary>
+
+**Actions → Recluster → Recluster with fiber-kit** (`Shift+Q`) runs a whole
+fiber-kit pipeline on the selected clusters -- or, from the child palette, on
+the selected atoms -- and replaces them with the clusters it finds, as a
+recluster does (one undo step, in the layer the selection came from).
+
+- Klusters writes the selection as a **sub-session** (`KlustersDoc::
+  createReclusterSubsession`, `subsessionfiles.{h,cpp}`): the selected spikes'
+  rows of every `.res`/`.spk`/`.fet` of the group in time order, a seed `.clu`
+  with their current ids, copies of `.yaml`/`.xml`, symlinks to `.fil`/`.dat`
+  and the group's `.nst`/`.pca`/`.eap`/`.tcl`.  `Data::createFeatureFileSorted`
+  fills the recluster table in the same order, so the engine's final `.clu`
+  maps back by position through the existing `integrateReclusteredClusters`.
+- It runs the command of the new setting `fiberKitReclusterCommand` (default
+  `fk run %electrodeGroupID --session %fileBaseName --final-clu
+  %fileBaseName.clu.klusters.%electrodeGroupID`, fiber-kit 0.63.0), so the plan
+  and knobs are the session folder's `fiber-kit.yaml`.  Every temporary file,
+  including the stages' outputs, is removed when the run ends.
+- A hierarchical plan's atoms come back too (`integrateReclusteredChildren`):
+  in a parent-scope recluster the final `.clc` (copied beside the `.clu` by
+  `--final-clu`) becomes the new parents' atoms, renumbered above the atom
+  layer's highest id; an atom-scope recluster takes the `.clu`'s units as atoms.
+  The sub-session's realigned times are not written back -- the new clusters go
+  through Klusters' own post-recluster realign.
+- The plugin runner passes the child palette's atoms to a descriptor with
+  `<selection>children</selection>` (it passed the parent palette's clusters).
+- `klusters_test_subsessionfiles`: 19 checks (group files, record subsets, the
+  seed .clu written and read back, removal).  The fiber-kit side (`fk subsession`, `--session`,
+  `--final-clu`) is tested there on a synthetic session.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-07 — Klusters: leaving the child palette for the parent palette clears the atom selection
 

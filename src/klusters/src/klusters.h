@@ -649,6 +649,11 @@ private Q_SLOTS:
     /** Recluster the selection forcing channel-level high-variance feature
      *  selection for this run only (Shift+C). */
     void slotReclusterChannelVariance();
+    /** Recluster with fiber-kit: the selected clusters (or atoms) are written as a SUB-SESSION
+     *  (KlustersDoc::createReclusterSubsession) and the fiber-kit command of the preferences (default
+     *  `fk run ... --session ... --final-clu ...`: the plan of the session folder's fiber-kit.yaml) runs
+     *  on it; the final .clu replaces the selection as a recluster does, one undo step. */
+    void slotReclusterFiberKit();
 
     /** Splits the currently selected single cluster into N new clusters
      *  using a K-nearest-neighbour majority vote against a reference
@@ -1394,13 +1399,18 @@ private:
     QAction *mRenumberClusters;
     QAction *mReCluster;
     QAction *mReclusterMedian;
+    QAction *mReclusterFiberKit = nullptr;   // Recluster with fiber-kit (a plan on the selection's sub-session)
     QAction *mReclusterChannelVar;
 
     /** One-shot recluster mode requested via a keyboard shortcut (Shift+M /
      *  Shift+C); consumed by the next slotRecluster() that proceeds past the
      *  busy-retry guard, so a retry preserves the request. */
-    enum class ReclusterOnce { None, MedianResidual, ChannelVariance };
+    enum class ReclusterOnce { None, MedianResidual, ChannelVariance, FiberKit };
     ReclusterOnce reclusterOnce = ReclusterOnce::None;
+    /** The recluster sub-session's base (dir + name) while a Recluster with fiber-kit runs; empty
+     *  otherwise.  Everything `<base>.*` is removed when the run ends (removeReclusterTempFiles /
+     *  slotProcessExited). */
+    QString reclusterSubsessionBase;
 
     QAction *mSplitByKnn;
     QAction *mStripByTemplate = nullptr;   // Recluster: template strip (both scopes)

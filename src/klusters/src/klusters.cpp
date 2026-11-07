@@ -746,6 +746,12 @@ void KlustersApp::createMenus()
     mReclusterChannelVar->setToolTip(tr("Recluster using the highest-variance channels' features"));
     connect(mReclusterChannelVar,&QAction::triggered, this,&KlustersApp::slotReclusterChannelVariance);
 
+    mReclusterFiberKit = reclusterMenu->addAction(tr("Recluster with &fiber-kit (plan on the selection)"));
+    mReclusterFiberKit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Q));
+    mReclusterFiberKit->setToolTip(tr("Run the fiber-kit plan of this folder's fiber-kit.yaml on the selected "
+                                      "clusters' spikes (a sub-session) and replace them with its clusters"));
+    connect(mReclusterFiberKit,&QAction::triggered, this,&KlustersApp::slotReclusterFiberKit);
+
     reclusterMenu->addSeparator();
 
     mSplitByKnn = reclusterMenu->addAction(tr("Split by &KNN voting…"));
@@ -2535,6 +2541,7 @@ void KlustersApp::registerInputBindings()
 
     registerActionCommand(QStringLiteral("recluster.recluster"),    QStringLiteral("Recluster"), mReCluster);
     registerActionCommand(QStringLiteral("recluster.median"),       QStringLiteral("Recluster"), mReclusterMedian);
+    registerActionCommand(QStringLiteral("recluster.fiberkit"),     QStringLiteral("Recluster"), mReclusterFiberKit);
     registerActionCommand(QStringLiteral("recluster.channelVar"),   QStringLiteral("Recluster"), mReclusterChannelVar);
     registerActionCommand(QStringLiteral("recluster.splitByKnn"),   QStringLiteral("Recluster"), mSplitByKnn);
     registerActionCommand(QStringLiteral("recluster.stripByTemplate"), QStringLiteral("Recluster"), mStripByTemplate);
@@ -8717,7 +8724,13 @@ bool KlustersApp::launchPlugin(const KlustersPlugin& plugin, const QMap<QString,
         return false;
 
     const QMap<QString, QString> ctx = pluginContext();
-    const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
+    // The selection the descriptor asked for: <selection>children</selection> is the child palette's
+    // atoms (it was always the parent palette's clusters, so a `children` engine got parent ids).
+    QList<int> sel;
+    if (plugin.selection == QLatin1String("children") && childPanel && childPanel->isVisible() && childPalette)
+        sel = childPalette->selectedClusters();
+    else if (clusterPalette)
+        sel = clusterPalette->selectedClusters();
     const QStringList argv = PluginRegistry::buildArgv(plugin, params, ctx, sel);
     if (argv.isEmpty())
         return false;

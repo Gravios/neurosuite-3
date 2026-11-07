@@ -81,6 +81,8 @@ set(klusters_SRCS
     klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)
     klustersdoc.cpp
     klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
+    klustersdoc_subsession.cpp  # KlustersDoc recluster sub-session (a fiber-kit plan on the selection)
+    subsessionfiles.cpp         # its file operations (QtCore only; klusters_test_subsessionfiles)
     klustersdoc_undo.cpp        # KlustersDoc undo/redo subsystem (split from klustersdoc.cpp)
     klustersdoc_hierarchy.cpp   # KlustersDoc hierarchical (.clc child) clustering (split from klustersdoc.cpp)
     klustersdoc_edit.cpp        # KlustersDoc cluster-editing operations (split from klustersdoc.cpp)

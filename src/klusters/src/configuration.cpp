@@ -53,6 +53,12 @@ const QColor Configuration::backgroundColorDefault = QColor(Qt::black);
 const QString Configuration::reclusteringExecutableDefault = QLatin1String("KiloKlustaKwik_cpu");
 const QString Configuration::reclusteringArgsDefault =
         "%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features";
+// Recluster with fiber-kit: the command run on the recluster SUB-SESSION (the selected clusters'
+// spikes as a session of their own, see KlustersDoc::createReclusterSubsession).  %fileBaseName is the
+// sub-session's base name, %electrodeGroupID the group; `fk run` runs the plan of the session folder's
+// fiber-kit.yaml and --final-clu names the .clu Klusters reads back (the clu of the .fet it wrote).
+const QString Configuration::fiberKitReclusterCommandDefault =
+        "fk run %electrodeGroupID --session %fileBaseName --final-clu %fileBaseName.clu.klusters.%electrodeGroupID";
 const QString Configuration::realignExecutableDefault = QLatin1String("");
 const QString Configuration::realignArgsDefault = QLatin1String("--threshold 0.70 --iterations 2");
 const int  Configuration::markerSizeDefault = 2;
@@ -83,6 +89,7 @@ void Configuration::read() {
         && QStandardPaths::findExecutable(reclusteringExecutable).isEmpty())
         reclusteringExecutable = reclusteringExecutableDefault;
     reclusteringArgs = settings.value("reclusteringArgs",reclusteringArgsDefault).toString();
+    fiberKitReclusterCommand = settings.value("fiberKitReclusterCommand", fiberKitReclusterCommandDefault).toString();
     realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
     realignArgs = settings.value("realignArgs",realignArgsDefault).toString();
     realignThreshold  = settings.value("realignThreshold",  0.70).toDouble();
@@ -256,6 +263,7 @@ void Configuration::write() const {
     settings.setValue("backgroundColor",backgroundColor);
     settings.setValue("reclusteringExecutable",reclusteringExecutable);
     settings.setValue("reclusteringArgs",reclusteringArgs);
+    settings.setValue("fiberKitReclusterCommand", fiberKitReclusterCommand);
     settings.setValue("realignExecutable",realignExecutable);
     settings.setValue("realignArgs",realignArgs);
     settings.setValue("realignThreshold",  realignThreshold);

@@ -99,6 +99,16 @@ target_link_libraries(klusters_test_curationlogger PRIVATE Qt6::Core)
 add_test(NAME klusters_test_curationlogger COMMAND klusters_test_curationlogger)
 endif()
 
+# subsessionfiles -- the recluster sub-session's file operations (row subsets of the group's
+# .res/.spk/.fet, the seed .clu, names, removal).  QtCore only.
+if (Qt6_FOUND)
+add_executable(klusters_test_subsessionfiles subsessionfiles_test.cpp "${_klu_src}/subsessionfiles.cpp")
+target_compile_features(klusters_test_subsessionfiles PRIVATE cxx_std_20)
+target_include_directories(klusters_test_subsessionfiles PRIVATE "${_klu_src}")
+target_link_libraries(klusters_test_subsessionfiles PRIVATE Qt6::Core)
+add_test(NAME klusters_test_subsessionfiles COMMAND klusters_test_subsessionfiles)
+endif()
+
 if(Qt6_FOUND)
     add_executable(klusters_test_matrixtemplatestrip matrixtemplatestrip_test.cpp)
     target_compile_features(klusters_test_matrixtemplatestrip PRIVATE cxx_std_20)

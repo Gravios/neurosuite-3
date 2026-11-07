@@ -6961,6 +6961,47 @@ void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
     }
 }
 
+QVector<dataType> Data::createFeatureFileSorted(QList<int>& clustersToRecluster, const QString& fetPath){
+    QVector<dataType> rows;
+    for (int cid : clustersToRecluster)
+        if (!clusterInfoMap->contains(static_cast<dataType>(cid))) {
+            qWarning("createFeatureFileSorted: cluster %d absent from clusterInfoMap -- aborting", cid);
+            return rows;
+        }
+    // (feature row, cluster id) of every spike of the selection, then time order.
+    QVector<QPair<dataType, dataType>> spk;
+    for (int cid : clustersToRecluster) {
+        const ClusterInfo info = clusterInfoMap->value(static_cast<dataType>(cid));
+        const dataType f = info.firstSpikePosition();
+        for (dataType i = f; i < f + info.nbSpikes(); ++i)
+            spk.append(qMakePair((*spikesByCluster)(1, i), (*spikesByCluster)(2, i)));
+    }
+    std::sort(spk.begin(), spk.end(),
+              [](const QPair<dataType, dataType>& a, const QPair<dataType, dataType>& b){ return a.first < b.first; });
+    const dataType n = static_cast<dataType>(spk.size());
+    reclusteringSpikesByCluster.setSize(n);            // erases any previous data
+    rows.reserve(spk.size());
+    for (dataType i = 1; i <= n; ++i) {
+        reclusteringSpikesByCluster(1, i) = spk[static_cast<int>(i - 1)].first;
+        reclusteringSpikesByCluster(2, i) = spk[static_cast<int>(i - 1)].second;
+        rows.append(spk[static_cast<int>(i - 1)].first);
+    }
+    // the open clustering's features, binary .fet: int32 nDimensions, then rows of int64
+    FILE* ff = fopen(fetPath.toLocal8Bit().constData(), "wb");
+    if (!ff) { rows.clear(); return rows; }
+    const int32_t nDim32 = static_cast<int32_t>(nbDimensions);
+    fwrite(&nDim32, sizeof(int32_t), 1, ff);
+    for (dataType i = 1; i <= n; ++i) {
+        const dataType r = reclusteringSpikesByCluster(1, i);
+        for (int j = 1; j <= nbDimensions; ++j) {
+            const int64_t v = static_cast<int64_t>(features(r, j));
+            fwrite(&v, sizeof(int64_t), 1, ff);
+        }
+    }
+    fclose(ff);
+    return rows;
+}
+
 bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList, QFile& clusterFile){
     //Replace the cluster ids in reclusteringSpikesByCluster by the new ones.
     if(!loadReclusteredClusters(clusterFile)) return 0;

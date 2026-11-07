@@ -1523,6 +1523,29 @@ public:
   */
     int createFeatureFile(QList<int>& clustersToRecluster, const QString &reclusteringFetFileName);
 
+    /** The recluster SUB-SESSION (klustersdoc_subsession.cpp): the selected clusters' spikes of the
+     *  ACTIVE layer written as a session of their own under @p tmpBase (dir + base name), so that a
+     *  fiber-kit plan runs on them unmodified -- row subsets of every .res/.spk/.fet of the group in
+     *  time order, a seed .clu (@p variant / @p tag name it), copies of the parameter files, symlinks to
+     *  the recording and the per-group models -- plus the open clustering's features at @p fetPath
+     *  (the built-in recluster's file, whose name the finish path turns into the final .clu's).  Fills
+     *  the recluster table in the same (time) order, so integrateReclusteredClusters maps the engine's
+     *  .clu back by position.  Returns OK / CREATION_ERROR (with @p error). */
+    int createReclusterSubsession(QList<int>& clustersToRecluster, const QString& tmpBase, const QString& fetPath,
+                                  const QString& variant, const QString& tag, QStringList* written = nullptr,
+                                  QString* error = nullptr);
+    /** Removes every file / link `<tmpBase>.*` -- the sub-session and whatever the engine wrote under it.
+     *  Returns how many. */
+    static int removeReclusterSubsession(const QString& tmpBase);
+    /** A hierarchical plan's atoms, after integrateReclusteredClusters took its .clu as the new parents:
+     *  reads the final .clc at @p clcPath (one id per sub-session spike, the rows of the last
+     *  createReclusterSubsession) and writes them, renumbered above the atom layer's highest id, as the
+     *  atoms of those spikes -- each nests in the parent the .clu gave the same spike, so the maps the
+     *  following reclusteringUpdate derives are consistent.  Parent-scope reclusters of a hierarchical
+     *  session only (a child-scope recluster takes the .clu as its atoms).  Returns the number of atoms
+     *  installed, 0 when skipped, -1 on a bad file (with @p error). */
+    int integrateReclusteredChildren(const QString& clcPath, QString* error = nullptr);
+
     /** patch76 — build a mean-subtracted sub-dimensional feature file
      *  for a single cluster.  Each spike's feature vector is centered
      *  on the cluster mean, projected onto the top K eigenvectors of
@@ -2667,6 +2690,7 @@ private:
     QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
+    QVector<dataType>    reclusterSubsessionRows;   // the last sub-session's feature rows, in its spike order
     bool                 childLandingParked = false; // a child landing was parked since the last post-edit settle
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
