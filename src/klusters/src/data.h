@@ -911,6 +911,19 @@ public:
                                     const QMap<int, QVector<double>>* allCentroids = nullptr,
                                     bool liteIsolation = false) const;
 
+    /** Pair evidence for the curation log's GROUP entry: what a merge decision
+     *  rests on and what two single-cluster snapshots cannot give back.
+     *    cross_refrac_ratio    pairs (one spike of a, one of b) 0.6-1.5 ms apart,
+     *                          over the number expected if the trains were
+     *                          independent over the span both cover: ~0 one cell,
+     *                          ~1 two cells; NaN when < 3 are expected
+     *    cross_refrac_expected that expected count (the test's power)
+     *    template_cos          cosine of the two cached mean waveforms, max over
+     *                          +-4 sample shifts, channel means removed; NaN
+     *                          when either mean is not cached
+     *    time_overlap          overlap of the two spans / the shorter span */
+    QMap<QString, QVariant> pairEvidence(int a, int b) const;
+
     /** Compute the feature-space centroid for every cluster currently in memory.
      *  Returns a map: clusterId → centroid vector of length (nbDimensions-1).
      *  Used by callers that snapshot multiple clusters so centroid computation

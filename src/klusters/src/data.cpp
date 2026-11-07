@@ -1522,6 +1522,35 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
             const double varIsi = sumSqIsi / nPairs - meanIsi * meanIsi;
             snap.isiCv = (varIsi > 0.0) ? (std::sqrt(varIsi) / meanIsi) : 0.0;
         }
+
+        // Refractory ratio with power, and the burst index: both count pairs of
+        // ANY two spikes at a lag, not consecutive ones -- one forward sweep over
+        // the sorted times per window (O(n) with a moving lower bound).
+        const double span = spikes.last().ts - spikes.first().ts;
+        auto pairsIn = [&](double loS, double hiS) -> qint64 {   // pairs with lag in (lo, hi]
+            qint64 cnt = 0;
+            int lo = 0, hi = 0;
+            for (int i = 0; i < n; ++i) {
+                while (lo < n && spikes[lo].ts - spikes[i].ts <= loS) ++lo;
+                if (hi < lo) hi = lo;
+                while (hi < n && spikes[hi].ts - spikes[i].ts <= hiS) ++hi;
+                cnt += hi - lo;
+            }
+            return cnt;
+        };
+        if (span > 0.0) {
+            const double loR = 0.6e-3, hiR = 1.5e-3;
+            const double expected = static_cast<double>(n) * static_cast<double>(n - 1) * (hiR - loR) / span;
+            snap.refracExpected = expected;
+            snap.refracRatio = (expected >= 3.0)
+                ? static_cast<double>(pairsIn(loR, hiR)) / expected
+                : std::numeric_limits<double>::quiet_NaN();
+            const double burst = static_cast<double>(pairsIn(3e-3, 10e-3)) / 7.0;      // per ms
+            const double base  = static_cast<double>(pairsIn(40e-3, 50e-3)) / 10.0;    // per ms
+            snap.burstIndex = (base > 0.0) ? (burst / base) : std::numeric_limits<double>::quiet_NaN();
+        } else {
+            snap.refracRatio = snap.burstIndex = std::numeric_limits<double>::quiet_NaN();
+        }
     }
 
     // ── E-prep. Temporal rate CV (10 equal-time bins) ─────────────────────
@@ -1547,6 +1576,14 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
                 const double varC = sumSqC / kBins - meanC * meanC;
                 snap.temporalRateCv = (varC > 0.0) ? (std::sqrt(varC) / meanC) : 0.0;
             }
+            // Rate over the bins the cluster occupies (>= 2% of its spikes each).
+            int occ = 0; double occSpikes = 0.0;
+            for (int b = 0; b < kBins; ++b)
+                if (counts[b] >= std::max(1.0, 0.02 * n)) { ++occ; occSpikes += counts[b]; }
+            const double binS = span / kBins;
+            snap.occupiedRateHz = (occ > 0 && binS > 0.0) ? occSpikes / (occ * binS) : snap.firingRateHz;
+        } else {
+            snap.occupiedRateHz = snap.firingRateHz;
         }
     }
 
@@ -1756,6 +1793,28 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
 
             // Trough-to-repolarisation width on best channel
             snap.waveformWidthSamp = std::abs(chanPeakIdx[bestCh] - chanTroughIdx[bestCh]);
+            snap.waveformDomChan   = bestCh;
+            snap.waveformChanAmp   = chanAmp;
+
+            // Polarity-aware trough-to-peak width in ms on the dominant channel:
+            // the median-referenced trace is inverted when its peak outweighs its
+            // trough, the trough is its minimum, the peak the maximum AFTER it.
+            {
+                QVector<double> tr(nSamp);
+                for (int s = 0; s < nSamp; ++s)
+                    tr[s] = static_cast<double>(wf->getSampleMean(s * nChan + bestCh));
+                QVector<double> srt = tr; std::sort(srt.begin(), srt.end());
+                const double med = srt[nSamp / 2];
+                double mx = -std::numeric_limits<double>::max(), mn = std::numeric_limits<double>::max();
+                for (double& v : tr) { v -= med; mx = std::max(mx, v); mn = std::min(mn, v); }
+                if (mx > -mn) for (double& v : tr) v = -v;          // positive-going: flip
+                int trough = 0;
+                for (int s = 1; s < nSamp; ++s) if (tr[s] < tr[trough]) trough = s;
+                int peak = trough;
+                for (int s = trough; s < nSamp; ++s) if (tr[s] > tr[peak]) peak = s;
+                snap.waveformWidthMs = (samplingRate > 0.0)
+                    ? static_cast<double>(peak - trough) / samplingRate * 1000.0 : 0.0;
+            }
 
             // Asymmetry: (posPeak + negTrough) / (posPeak − negTrough)
             // Extract actual signed peak and trough for the best channel.
@@ -1875,6 +1934,103 @@ ClusterSnapshot Data::computeSnapshot(int clusterId,
     return snap;
 }
 
+
+
+QMap<QString, QVariant> Data::pairEvidence(int a, int b) const
+{
+    QMap<QString, QVariant> out;
+    out.insert(QStringLiteral("cluster_a"), a);
+    out.insert(QStringLiteral("cluster_b"), b);
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    // ── spike times of each cluster, sorted ──
+    const long featRows = features.nbOfRows();
+    const long tsCol    = std::min<long>(nbDimensions, features.nbOfColumns());
+    const double invFs  = (samplingRate > 0.0) ? (1.0 / samplingRate) : 0.0;
+    std::vector<double> ta, tb;
+    for (int s = 1; s <= static_cast<int>(nbSpikes); ++s) {
+        const int c = static_cast<int>((*spikesByCluster)(2, s));
+        if (c != a && c != b) continue;
+        const int row = static_cast<int>((*spikesByCluster)(1, s));
+        if (row < 1 || row > featRows || tsCol < 1) continue;
+        (c == a ? ta : tb).push_back(static_cast<double>(features(row, tsCol)) * invFs);
+    }
+    std::sort(ta.begin(), ta.end()); std::sort(tb.begin(), tb.end());
+    out.insert(QStringLiteral("n_a"), static_cast<qlonglong>(ta.size()));
+    out.insert(QStringLiteral("n_b"), static_cast<qlonglong>(tb.size()));
+    double ratio = nan, expected = 0.0, overlap = 0.0;
+    if (!ta.empty() && !tb.empty()) {
+        const double t0 = std::max(ta.front(), tb.front()), t1 = std::min(ta.back(), tb.back());
+        const double shorter = std::min(ta.back() - ta.front(), tb.back() - tb.front());
+        overlap = (shorter > 0.0) ? std::max(0.0, t1 - t0) / shorter : 0.0;
+        if (t1 > t0) {
+            const double lo = 0.6e-3, hi = 1.5e-3;
+            // pairs with |ta - tb| in (lo, hi]: sweep b for each a in both directions
+            qint64 obs = 0; std::size_t na = 0, nb = 0;
+            for (double x : ta) if (x >= t0 && x <= t1) ++na;
+            for (double x : tb) if (x >= t0 && x <= t1) ++nb;
+            for (double x : ta) {
+                if (x < t0 || x > t1) continue;
+                obs += std::upper_bound(tb.begin(), tb.end(), x + hi) - std::upper_bound(tb.begin(), tb.end(), x + lo);
+                obs += std::lower_bound(tb.begin(), tb.end(), x - lo) - std::lower_bound(tb.begin(), tb.end(), x - hi);
+            }
+            expected = static_cast<double>(na) * static_cast<double>(nb) * 2.0 * (hi - lo) / (t1 - t0);
+            ratio = (expected >= 3.0) ? static_cast<double>(obs) / expected : nan;
+        }
+    }
+    out.insert(QStringLiteral("cross_refrac_ratio"), ratio);
+    out.insert(QStringLiteral("cross_refrac_expected"), expected);
+    out.insert(QStringLiteral("time_overlap"), overlap);
+    // ── template cosine from the cached means (NaN when either is cold) ──
+    double cosv = nan;
+    {
+        const std::shared_ptr<const ClusteringSnapshot> snap = currentSnapshot();
+        std::shared_ptr<Waveforms> wa, wb;
+        {
+            QMutexLocker lk(&snap->waveforms->m);
+            auto ready = [&](int c) {
+                return snap->waveforms->status.contains(c) &&
+                       snap->waveforms->status.value(c).sampleMeanStatus() == READY;
+            };
+            if (ready(a) && ready(b)) {
+                wa = snap->waveforms->byCluster.value(a);
+                wb = snap->waveforms->byCluster.value(b);
+            }
+        }
+        if (wa && wb) {
+            const int nS = nbSamplesInWaveform, nC = nbChannels;
+            std::vector<double> A(nS * nC), B(nS * nC);
+            for (int s = 0; s < nS; ++s)
+                for (int c = 0; c < nC; ++c) {
+                    A[s * nC + c] = static_cast<double>(wa->getSampleMean(s * nC + c));
+                    B[s * nC + c] = static_cast<double>(wb->getSampleMean(s * nC + c));
+                }
+            auto demean = [&](std::vector<double>& W) {
+                for (int c = 0; c < nC; ++c) {
+                    double m = 0; for (int s = 0; s < nS; ++s) m += W[s * nC + c];
+                    m /= nS;     for (int s = 0; s < nS; ++s) W[s * nC + c] -= m;
+                }
+            };
+            demean(A); demean(B);
+            double nA = 0; for (double v : A) nA += v * v; nA = std::sqrt(nA);
+            double best = -1.0;
+            for (int sh = -4; sh <= 4; ++sh) {
+                double dot = 0, nB = 0;
+                for (int s = 0; s < nS; ++s) {
+                    const int sb = ((s + sh) % nS + nS) % nS;      // circular, as Klusters' roll-cosine
+                    for (int c = 0; c < nC; ++c) {
+                        dot += A[s * nC + c] * B[sb * nC + c];
+                        nB  += B[sb * nC + c] * B[sb * nC + c];
+                    }
+                }
+                const double den = nA * std::sqrt(nB);
+                if (den > 1e-12) best = std::max(best, dot / den);
+            }
+            if (best > -1.0) cosv = best;
+        }
+    }
+    out.insert(QStringLiteral("template_cos"), cosv);
+    return out;
+}
 
 
 bool Data::initialize(QFile& featureFile,QFile& clusterFile,long spkFileLength,QString& errorInformation){

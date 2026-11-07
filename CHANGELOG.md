@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters curation log: checkpoint on save, refractory and cell-type statistics, pair evidence](#2026-11-07--klusters-curation-log-checkpoint-on-save-refractory-and-cell-type-statistics-pair-evidence) |
 | 2026-11-06 | [ndm_extractspikes reads the .res ndm_detectspikes writes](#2026-11-06--ndm_extractspikes-reads-the-res-ndm_detectspikes-writes) |
 | 2026-11-06 | [ndm: tab completion of options, their values and spike groups](#2026-11-06--ndm-tab-completion-of-options-their-values-and-spike-groups) |
 | 2026-11-05 | [Man pages for every ndm step, generated from the command reference](#2026-11-05--man-pages-for-every-ndm-step-generated-from-the-command-reference) |
@@ -160,6 +161,56 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters curation log: checkpoint on save, refractory and cell-type statistics, pair evidence
+
+<details>
+<summary>Details</summary>
+
+An audit of the curation log (`CurationLogger`, `Data::computeSnapshot`, every
+mutation path in `KlustersDoc`) found three holes and a set of missing
+statistics.  Fixed here:
+
+- **Nothing was written before close.**  The log is a ring flushed at overflow
+  or document close, so a crash lost the whole session's decisions (and realign
+  has crashed).  Every Save now writes a *checkpoint*: each buffered entry with
+  its current status and `"final": false`, then a `CHECKPOINT` event; the ring is
+  kept so a later undo still flips the entry, which is then written again with
+  `"final": true` when it leaves the ring.  Readers keep the last line per
+  (`action_idx`, `phase`, `cluster`).
+- **Two paths opened a log entry and never closed it.**  `createNewCluster` and
+  `createNewClusters` with a selection that yields no cluster ran `logBefore`
+  and returned; the open entry then swallowed the NEXT action's after-snapshots
+  (the `logActionOpen` guard).  Both now close the entry as not undoable.
+- **`SESSION_OPEN` could not be tied to a `.clu`.**  It now records `method`,
+  `stage`, `clu_file`, `n_spikes`, `n_clusters`, `hierarchical` and
+  `klusters_version`.
+- **A `QVariantList` detail was written as `""`** (`toString()` of a list);
+  it is a JSON array now.
+- **Statistics the decision needs that the snapshot lacked:**
+  `refrac_ratio` / `refrac_expected` (pairs 0.6–1.5 ms apart over chance, with
+  power -- a violation percent means nothing alike for a 10 Hz and a 0.5 Hz
+  cell), `burst_index` (ACG 3–10 ms over 40–50 ms), `occupied_hz` (rate over the
+  bins the cluster occupies, not first-to-last), `waveform_dom_chan`,
+  `waveform_width_ms` (trough-to-peak, polarity-aware; `waveform_width_samp`
+  was sign-blind) and `waveform_chan_amp` (the per-channel profile fiber-cpos
+  localises from).
+- **GROUP gets pair evidence.**  One `{"detail": "pair"}` record per pair of
+  sources, before the merge: `cross_refrac_ratio` / `_expected`,
+  `template_cos` (cached means, ±4 samples) and `time_overlap` -- the decision
+  variables two single-cluster snapshots cannot give back.
+
+Documented as not logged (doc/klusters/README.md, "What is not logged"): every
+child-scope edit, the hierarchy commands as gestures (they appear as their
+parent-layer primitives), the waveform section of realign entries when the
+cache is cold, and the full time sort.
+
+New `klusters_test_curationlogger` (QtCore; 24 checks; fails to compile
+against the previous logger).  `data.cpp`, `klustersdoc_edit.cpp`,
+`klustersdoc_io.cpp`, `curationlogger.cpp` compile warning-free under
+`-Wall -O2` against Qt 6.4.
+
+</details>
 
 ## 2026-11-06 — ndm_extractspikes reads the .res ndm_detectspikes writes
 

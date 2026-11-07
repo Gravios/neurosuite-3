@@ -32,10 +32,15 @@
  *  remaining entry is flushed.  This means:
  *    - The on-disk log only contains finalised (no-longer-undoable)
  *      records — every line carries its definitive good/bad status.
- *    - If Klusters crashes before close(), buffered entries are lost.
- *      Persistence happens at save+quit, not at save.
- *    - The log size equals exactly the user's curatorial decisions,
- *      not their tentative explorations.
+ *    - Every Save calls checkpoint(): the buffered entries are written with
+ *      their status at that moment and "final":false, and stay in the ring.
+ *      When an entry later leaves the ring (overflow or close) it is written
+ *      again with "final":true.  So a crash loses only the actions since
+ *      the last Save, and a reader keeps the LAST line per (action_idx,
+ *      phase, cluster) -- or filters on final.  (Before 2026-11-07 nothing
+ *      was written until close: a crash lost the whole session's log.)
+ *    - The log size equals the user's curatorial decisions, not their
+ *      tentative explorations (an undone action is one "bad" entry).
  ***************************************************************************/
 
 #pragma once
@@ -87,6 +92,24 @@ struct ClusterSnapshot
     /// Coefficient of variation of ISI.
     /// ~1 = Poisson; >2 = bursty; <0.5 = pacemaker / interneuron
     double  isiCv          = 0.0;
+    /// Refractory ratio WITH POWER: spike pairs of this cluster (0.6, 1.5] ms
+    /// apart (any two spikes, not only consecutive) over the number expected if
+    /// the train were Poisson at its own rate over its span.  ~0 = one cell;
+    /// 1 - 1/k = k equal independent cells; ~2f(1-f) = a share f of foreign
+    /// spikes.  A violation PERCENT cannot say this: 1% means nothing alike for
+    /// a 10 Hz and a 0.5 Hz cell.  NaN when fewer than 3 pairs are expected.
+    double  refracRatio    = 0.0;
+    /// The expected pair count the ratio is over (its statistical power).
+    double  refracExpected = 0.0;
+    /// Burst index: autocorrelogram counts at 3-10 ms over the 40-50 ms
+    /// baseline (per-ms).  >> 1 = complex-spike bursting (pyramidal); ~1 = none.
+    /// NaN when the baseline is empty.
+    double  burstIndex     = 0.0;
+    /// Firing rate over the time the cluster OCCUPIES: spikes / the summed
+    /// width of the 10 equal time bins (of its own span) that hold >= 2% of
+    /// its spikes.  A cell active in two bouts reads its rate while active,
+    /// where firingRateHz (first-to-last span) reads far too low.
+    double  occupiedRateHz = 0.0;
 
     // ── C. Feature-space spread (2nd moment) ──────────────────────────────
     /// Mean of per-feature sample variances; proxy for overall compactness.
@@ -147,6 +170,18 @@ struct ClusterSnapshot
     double  waveformAsymmetry  = 0.0;
     /// Number of channels with peak-to-trough > 25 % of the best channel.
     int     waveformChanSpread = 0;
+    /// Dominant channel (0-based within the group).
+    int     waveformDomChan    = -1;
+    /// Trough-to-peak width in ms on the dominant channel, polarity-aware: the
+    /// trough is the extremum of the dominant deflection (the mean waveform is
+    /// inverted first when its peak outweighs its trough), the peak the maximum
+    /// AFTER it.  waveformWidthSamp is |argmax - argmin| in samples and
+    /// sign-blind.  The cell-type axis: ~0.28 ms narrow interneuron vs ~0.6 ms
+    /// pyramidal on g5 (fiber_geometry.classify_celltype).
+    double  waveformWidthMs    = 0.0;
+    /// Per-channel peak-to-trough amplitude (ADC units), the position proxy
+    /// fiber-cpos localises from; joinable to its tables.
+    QVector<double> waveformChanAmp;
 
     // ── I. Session context ────────────────────────────────────────────────
     int     nChannels      = 0;
@@ -224,7 +259,14 @@ public:
               const QString& groupId,
               double         samplingRateHz,
               int            nChannels,
-              int            nPcaDims);
+              int            nPcaDims,
+              const QMap<QString, QVariant>& context = {});
+
+    /** Write every buffered entry now, with its current status and
+     *  "final":false, keeping the ring as it is.  Called on every Save so a
+     *  crash loses at most the actions since.  Entries without an after
+     *  snapshot yet (mid begin/commit) are written as they are. */
+    void checkpoint();
 
     /** Flush every remaining buffered entry to disk and close the file.
      *  Called at document-close (= save + quit).  Pending entries are
@@ -339,7 +381,7 @@ private:
     /** Emit all of the entry's accumulated lines to the file.  Each line
      *  carries the entry's final status so downstream tooling sees one
      *  uniform field per record. */
-    void flushEntry(const PendingEntry& e);
+    void flushEntry(const PendingEntry& e, bool final = true);
 
     /** Pop the front of pending and flush it.  Called during overflow
      *  and during close(). */
@@ -360,7 +402,8 @@ private:
                    const ClusterSnapshot& snap,
                    int aidx,
                    ActionType action,
-                   const QString& status);
+                   const QString& status,
+                   bool final);
 
     QString jsonEscape(const QString& s) const;
     /** Write one ACTION_DETAIL value as JSON (number, bool, string, or an

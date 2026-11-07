@@ -94,6 +94,17 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
 
     //Call data to group the clusters
     logBefore(CurationLogger::ActionType::GROUP, clustersToGroup);
+    // The decision variables of a merge are PAIR statistics (cross-refractory
+    // ratio, template cosine, time overlap); two single-cluster snapshots cannot
+    // give them back.  One detail per pair, measured before the merge.
+    if (curationLogger && curationLogger->isOpen() && logActionOpen) {
+        for (int i = 0; i < clustersToGroup.size(); ++i)
+            for (int j = i + 1; j < clustersToGroup.size(); ++j) {
+                QMap<QString, QVariant> d = parentData().pairEvidence(clustersToGroup[i], clustersToGroup[j]);
+                d.insert(QStringLiteral("detail"), QStringLiteral("pair"));
+                curationLogger->recordActionDetails(d);
+            }
+    }
 
     // Supersede in-flight view jobs, without waiting (epoch-snapshot
     // step 6b).  Jobs read the epoch snapshot they captured, so the
@@ -1221,6 +1232,11 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
     if(newClusterId == 0){
         activeView->selectionIsEmpty();
         activeView->showAllWidgets();
+        // Nothing moved and nothing was pushed on the undo stack: close the log
+        // entry logBefore opened (before-only, not undo-paired) -- left open, the
+        // guard swallowed the NEXT action's after-snapshots.
+        if (!onChild)
+            logAfterNotUndoable(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     }
     else if(onChild){
         // Child split: the drawn spikes are a subset of one child atom, so the new
@@ -1378,6 +1394,8 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
     if(newClusters.size() == 0){
         activeView->selectionIsEmpty();
         activeView->showAllWidgets();
+        if (!onChild)   // as createNewCluster: close the entry, not undo-paired
+            logAfterNotUndoable(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     }
     else if(onChild){
         // Child split: the new atoms are siblings under the same parent(s).

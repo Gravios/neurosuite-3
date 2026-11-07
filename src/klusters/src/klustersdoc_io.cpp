@@ -684,7 +684,16 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
                 electrodeGroupID,
                 clusteringData->getSamplingRate(),
                 clusteringData->nbOfchannels(),
-                clusteringData->totalNbOfPCAs()
+                clusteringData->totalNbOfPCAs(),
+                QMap<QString, QVariant>{
+                    { QStringLiteral("method"),      sessionMethod },
+                    { QStringLiteral("stage"),       stage },
+                    { QStringLiteral("clu_file"),    cluFileName },
+                    { QStringLiteral("n_spikes"),    static_cast<qlonglong>(clusteringData->totalNbOfSpikes()) },
+                    { QStringLiteral("n_clusters"),  static_cast<int>(clusteringData->clusterIds().size()) },
+                    { QStringLiteral("hierarchical"), childData != nullptr },
+                    { QStringLiteral("klusters_version"), QApplication::applicationVersion() },
+                }
             );
             // Pair the in-memory ring buffer with the user's max-undo
             // preference so every still-undoable action retains a tentative
@@ -942,6 +951,10 @@ void KlustersDoc::finishSave(bool ok){
     if (ok) {
         unitsInfoModified = false;
         removeRescueFiles();               // the real files now hold what they protected
+        // The files on disk now hold these decisions; let the log hold them too,
+        // so a crash before close loses only the actions since this save.
+        if (curationLogger && curationLogger->isOpen())
+            curationLogger->checkpoint();
     } else {
         modified = true;
     }

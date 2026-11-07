@@ -88,6 +88,17 @@ add_test(NAME klusters_test_templateclassstore COMMAND klusters_test_templatecla
 # so a Qt-less configure just skips it.  The per-cell shade (computeShade) needs
 # a live KlustersDoc and is not covered here.
 find_package(Qt6 COMPONENTS Core Gui QUIET)
+# CurationLogger -- the JSON-Lines curation log: deferred flush, checkpoint
+# on Save (final:false, ring kept) and the final rewrite at close; the JSON
+# writer (NaN -> null, lists); SESSION_OPEN's context.  QtCore only.
+if (Qt6_FOUND)
+add_executable(klusters_test_curationlogger curationlogger_test.cpp "${_klu_src}/curationlogger.cpp")
+target_compile_features(klusters_test_curationlogger PRIVATE cxx_std_20)
+target_include_directories(klusters_test_curationlogger PRIVATE "${_klu_src}")
+target_link_libraries(klusters_test_curationlogger PRIVATE Qt6::Core)
+add_test(NAME klusters_test_curationlogger COMMAND klusters_test_curationlogger)
+endif()
+
 if(Qt6_FOUND)
     add_executable(klusters_test_matrixtemplatestrip matrixtemplatestrip_test.cpp)
     target_compile_features(klusters_test_matrixtemplatestrip PRIVATE cxx_std_20)

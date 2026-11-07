@@ -939,9 +939,24 @@ ring's behavior:
   flushed to disk with whatever status it currently has.
 - **Ctrl+Z (undo)** flips the topmost still-`good` entry to `"bad"`.
 - **Ctrl+Y (redo)** flips the topmost `bad` entry back to `"good"`.
+- **Save** (`Ctrl+S`) writes a *checkpoint*: every entry still in the
+  ring is written with its status at that moment and `"final": false`,
+  then a `CHECKPOINT` event, and the ring is kept, so a later undo still
+  flips the entry.
 - **Document close** (= save followed by quit) flushes every
-  remaining entry with its current status, then writes the
-  `SESSION_CLOSE` sentinel.
+  remaining entry with its current status and `"final": true`, then
+  writes the `SESSION_CLOSE` sentinel.  An entry that leaves the ring by
+  overflow is written the same way.
+
+So an action saved and later undone appears twice: a checkpoint copy
+(`good`, `final: false`) and the final copy (`bad`, `final: true`).  A
+reader keeps the **last line per (`action_idx`, `phase`, `cluster`)**, or
+filters on `final` when only closed sessions matter:
+
+```python
+df = pd.read_json("session.cur.stderiv.6.final", lines=True)
+snaps = df[df.phase.notna()].drop_duplicates(["session_id", "action_idx", "phase", "cluster"], keep="last")
+```
 
 Consequences worth knowing:
 
@@ -949,8 +964,9 @@ Consequences worth knowing:
   tentative explorations. An action explored and then reverted is
   written out as `"bad"`; one kept past the buffer boundary is
   `"good"`.
-- If Klusters crashes before close, in-memory entries are lost. To
-  guarantee persistence of recent decisions, save and quit cleanly.
+- If Klusters crashes, the actions since the last Save are lost (before
+  2026-11-07 nothing was written until close, and a crash lost the whole
+  session's log).
 - Undoing past the ring's bottom (i.e. undoing 51+ actions in a row
   with default capacity 50) reverts the data state but cannot
   retroactively re-status the corresponding on-disk records — they
@@ -962,7 +978,8 @@ Consequences worth knowing:
 
 | Field | Description |
 |---|---|
-| `event` | `SESSION_OPEN`, `SESSION_CLOSE`, `ACTION_DETAIL`, or empty for action snapshots |
+| `event` | `SESSION_OPEN`, `CHECKPOINT`, `SESSION_CLOSE`, `ACTION_DETAIL`, or empty for action snapshots |
+| `final` | `false` on a checkpoint copy (the action was still undoable), `true` once it left the ring |
 | `action` | The operation kind — see action type table below |
 | `status` | `good` (kept) or `bad` (reverted via Ctrl+Z) — present on every action / detail record |
 | `phase` | `before`, `after`, or empty (for events / details) |
@@ -975,14 +992,22 @@ Consequences worth knowing:
 | `feat_var_frobenius`, `feat_var_top3_mean`, `feat_var_mean` | Aggregate variance stats |
 | `l_ratio`, `isolation_dist` | Isolation metrics |
 | `nearest_centroid_dist_norm` | Mahalanobis distance to nearest neighboring cluster |
-| `waveform_snr`, `waveform_chan_spread`, `waveform_width_samp` | Waveform morphology |
+| `waveform_snr`, `waveform_chan_spread`, `waveform_width_samp` | Waveform morphology (from the cached mean; `waveform_available` says whether it was) |
+| `waveform_dom_chan`, `waveform_width_ms`, `waveform_chan_amp` | Dominant channel; trough-to-peak width in ms on it, polarity-aware (the cell-type axis: ~0.28 ms narrow vs ~0.6 ms pyramidal); the per-channel peak-to-trough profile |
 | `isi_cv` | Inter-spike interval coefficient of variation |
+| `refrac_ratio`, `refrac_expected` | Spike pairs 0.6–1.5 ms apart over the number expected from a Poisson train at the cluster's rate (~0 one cell, 1 − 1/k for k cells, ~2f(1−f) for a foreign share f); `null` when fewer than 3 pairs are expected. A violation percent cannot say this |
+| `burst_index` | Autocorrelogram at 3–10 ms over the 40–50 ms baseline, per ms (complex-spike bursting ≫ 1) |
+| `occupied_hz` | Rate over the time bins the cluster occupies (≥ 2% of its spikes), where `firing_hz` spans first to last spike |
+
+`SESSION_OPEN` also records `method`, `stage`, `clu_file`, `n_spikes`,
+`n_clusters`, `hierarchical` and `klusters_version`, so a log can be tied to
+the pipeline output it curated.
 
 ### Action types
 
 | `action` value | User-facing operation | Source clusters | Result clusters | Emits `ACTION_DETAIL`? |
 |---|---|---|---|---|
-| `GROUP` | Merge selected clusters (`G`) | N | 1 | No |
+| `GROUP` | Merge selected clusters (`G`) | N | 1 | Yes: one `pair` record per source pair |
 | `SPLIT` | Single new cluster from polygon, lasso, or DipSplit | 1 | 1 (new) + 1 (residual src) | DipSplit only |
 | `SPLIT_N` | Multiple new clusters from polygon (one per source) | N | N (new) + N (residual srcs) | No |
 | `RECLUSTER` | KiloKlustaKwik re-run on selected clusters (`Shift+R`) | M | K | No |
@@ -998,12 +1023,36 @@ Consequences worth knowing:
 | `SORT_ALL` | Any renumbering sort: **Actions → Sort Clusters**, `Shift+S` | — | — | Yes (the id map) |
 | `UNDO`, `REDO` | Reverts/replays a previous action | — | — | No |
 
+### What is not logged
+
+The log records the **parent layer**.  Edits made in child (atom) scope --
+a child split, watershed, delete or recluster, `mergeChildren`, collapse to
+self-children, flatten, compact ids, and promotion to a hierarchical
+session -- write no entry: child ids collide with parent numerals, so a
+snapshot keyed by id would describe the wrong cluster.  The hierarchy
+commands that move whole atoms between parents (promote, drop to noise,
+break up, merge orphan parents, dissolve) do reach the log, but as the
+parent-layer primitives they are built from: one `MOVE_SPIKES` per atom,
+one `GROUP` per merge, with nothing tying the fragments to the gesture or
+recording the template scores the gesture used.  Realign and nudge entries
+carry no waveform section unless the mean-waveform cache was warm.  A full
+time sort (`applyTimeSort`) permutes every row-indexed file and is not
+logged; it runs on saved files and the document is reopened.
+
 ### `ACTION_DETAIL` records
 
 These carry algorithm-internal state for actions that benefit from
 per-decision metadata. Every `ACTION_DETAIL` record shares an
 `action_idx` with the parent action's `before` / `after` records, so
 joining is trivial in pandas.
+
+**GROUP** logs what a merge decision rests on, which two single-cluster
+snapshots cannot give back: one `{"detail": "pair"}` record per pair of
+sources, measured before the merge, with `cross_refrac_ratio` /
+`cross_refrac_expected` (pairs of one spike from each 0.6–1.5 ms apart over
+chance: ~0 one cell, ~1 two cells; `null` without power), `template_cos`
+(cosine of the cached mean waveforms, max over ±4 samples; `null` when a mean
+was not cached) and `time_overlap` (of the two spans, over the shorter).
 
 **DipSplit** logs the inputs it was called with and the metrics that
 drove the accept/reject decision:

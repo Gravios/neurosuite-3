@@ -34,7 +34,8 @@ void CurationLogger::open(const QString& logPath,
                            const QString& groupId,
                            double         samplingRateHz,
                            int            nChannels,
-                           int            nPcaDims)
+                           int            nPcaDims,
+                           const QMap<QString, QVariant>& context)
 {
     close();
 
@@ -65,7 +66,28 @@ void CurationLogger::open(const QString& logPath,
           << "\"group\":\"" << jsonEscape(groupId) << "\","
           << "\"sample_rate\":" << samplingRateHz << ","
           << "\"n_channels\":" << nChannels << ","
-          << "\"n_pca_dims\":" << nPcaDims
+          << "\"n_pca_dims\":" << nPcaDims;
+    // Which .clu this log records (stage, method), and which build wrote it:
+    // without them a log cannot be tied to the pipeline output it curated.
+    for (auto it = context.constBegin(); it != context.constEnd(); ++it) {
+        out << ",\"" << jsonEscape(it.key()) << "\":";
+        writeJsonValue(it.value());
+    }
+    out << "}\n";
+    out.flush();
+}
+
+void CurationLogger::checkpoint()
+{
+    if (!file.isOpen() || pending.isEmpty())
+        return;
+    for (const PendingEntry& e : pending)
+        flushEntry(e, /*final=*/false);
+    out << "{"
+          << "\"event\":\"CHECKPOINT\","
+          << "\"session_id\":\"" << sessionId << "\","
+          << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
+          << "\"n_pending\":" << pending.size()
           << "}\n";
     out.flush();
 }
@@ -283,15 +305,15 @@ void CurationLogger::flushOldest()
 // Putting the "before"+"after" lines together (rather than chronological
 // begin/details/commit) is fine for ML loaders that join by action_idx,
 // and lets us emit everything in one tight burst per entry.
-void CurationLogger::flushEntry(const PendingEntry& e)
+void CurationLogger::flushEntry(const PendingEntry& e, bool final)
 {
     if (!file.isOpen()) return;
     if (e.placeholder) return;   // hidden undo-stack twin: nothing to emit
 
     for (const ClusterSnapshot& s : e.before)
-        writeLine("before", "source", s, e.actionIdx, e.type, e.status);
+        writeLine("before", "source", s, e.actionIdx, e.type, e.status, final);
     for (const ClusterSnapshot& s : e.after)
-        writeLine("after",  "result", s, e.actionIdx, e.type, e.status);
+        writeLine("after",  "result", s, e.actionIdx, e.type, e.status, final);
 
     // Detail lines: ACTION_DETAIL records keyed by the same action_idx
     // and carrying the same status field.
@@ -303,7 +325,8 @@ void CurationLogger::flushEntry(const PendingEntry& e)
               << "\"ts_begin\":\"" << e.tsBegin << "\","
               << "\"action\":\"" << actionStr << "\","
               << "\"action_idx\":" << e.actionIdx << ","
-              << "\"status\":\"" << e.status << "\"";
+              << "\"status\":\"" << e.status << "\","
+              << "\"final\":" << (final ? "true" : "false");
 
         for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
             out << ",\"" << jsonEscape(it.key()) << "\":";
@@ -320,7 +343,8 @@ void CurationLogger::writeLine(const QString& phase,
                                 const ClusterSnapshot& s,
                                 int aidx,
                                 ActionType action,
-                                const QString& status)
+                                const QString& status,
+                                bool final)
 {
     // JSON has no NaN/Infinity: QTextStream prints "nan"/"inf" for them,
     // which poisons the whole line for any strict parser (pandas included).
@@ -341,6 +365,7 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"action\":\"" << actionName(action) << "\","
           << "\"action_idx\":" << aidx << ","
           << "\"status\":\"" << status << "\","
+          << "\"final\":" << (final ? "true" : "false") << ","
           << "\"phase\":\"" << phase << "\","
           << "\"role\":\"" << role << "\","
           << "\"cluster\":" << s.clusterId << ","
@@ -356,6 +381,10 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"isi_mean_ms\":" << num(s.isiMeanMs) << ","
           << "\"isi_median_ms\":" << num(s.isiMedianMs) << ","
           << "\"isi_cv\":" << num(s.isiCv) << ","
+          << "\"refrac_ratio\":" << num(s.refracRatio) << ","
+          << "\"refrac_expected\":" << num(s.refracExpected) << ","
+          << "\"burst_index\":" << num(s.burstIndex) << ","
+          << "\"occupied_hz\":" << num(s.occupiedRateHz) << ","
           // ── C. Feature-space spread ───────────────────────────────────────
           << "\"feat_var_mean\":" << num(s.featVarMean) << ","
           << "\"feat_var_frobenius\":" << num(s.featVarFrobenius) << ","
@@ -382,6 +411,14 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"waveform_width_samp\":" << s.waveformWidthSamp << ","
           << "\"waveform_asymmetry\":" << num(s.waveformAsymmetry) << ","
           << "\"waveform_chan_spread\":" << s.waveformChanSpread << ","
+          << "\"waveform_dom_chan\":" << s.waveformDomChan << ","
+          << "\"waveform_width_ms\":" << num(s.waveformWidthMs) << ","
+          << "\"waveform_chan_amp\":[";
+    for (int i = 0; i < s.waveformChanAmp.size(); ++i) {
+        if (i) out << ",";
+        out << num(s.waveformChanAmp[i]);
+    }
+    out << "],"
           // ── per-dimension detail ──────────────────────────────────────────
           << "\"n_feat_dims\":" << s.featVarDims.size() << ","
           << "\"feat_var_dims\":[";
@@ -426,6 +463,17 @@ void CurationLogger::writeJsonValue(const QVariant& v)
         case QMetaType::Bool:
             out << (v.toBool() ? "true" : "false");
             break;
+        case QMetaType::QVariantList: {
+            // Was printed through toString(), which is empty for a list.
+            const QVariantList l = v.toList();
+            out << "[";
+            for (int i = 0; i < l.size(); ++i) {
+                if (i) out << ",";
+                writeJsonValue(l.at(i));
+            }
+            out << "]";
+            break;
+        }
         case QMetaType::QVariantMap: {
             const QVariantMap m = v.toMap();
             out << "{";
