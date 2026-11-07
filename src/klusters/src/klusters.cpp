@@ -450,11 +450,11 @@ void KlustersApp::createMenus()
     QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
     mDeleteArtifact = actionMenu->addAction(tr("Delete &Artifact Cluster(s)"));
     mDeleteArtifact->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Delete));
-    connect(mDeleteArtifact, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::moveClustersToArtefact));
+    connect(mDeleteArtifact, &QAction::triggered, this, [this]{ slotDeleteSelected(0); });
 
     mDeleteNoisy = actionMenu->addAction(tr("Delete &Noisy Cluster(s)"));
     mDeleteNoisy->setShortcut(Qt::Key_Delete);
-    connect(mDeleteNoisy, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::moveClustersToNoise));
+    connect(mDeleteNoisy, &QAction::triggered, this, [this]{ slotDeleteSelected(1); });
 
     mGroupeClusters = actionMenu->addAction(tr("&Group Clusters"));
     mGroupeClusters->setShortcut(Qt::Key_G);
@@ -5045,35 +5045,14 @@ bool KlustersApp::wsEnter()
         (activeClusterView() && activeClusterView()->isTsneShowing())
             ? activeClusterView() : nullptr;
 
-    // Embedding + atoms is refused for now: the embedding commit carves
-    // through createNewCluster with sources read from data(), a path this
-    // change deliberately does not touch.  Its rows are spike rows and would
-    // likely survive the atom layer, but "likely" is not a verified commit
-    // path -- refuse and say why rather than commit a split nobody checked.
-    if (onChild && tsneView) {
-        statusBar()->showMessage(
-            tr("Watershed: the embedding path does not support atoms yet — "
-               "leave the embedding (or the children view) first."), 5000);
-        return false;
-    }
-
-    // Refuse while the feature view is showing the t-SNE embedding.
-    //
-    // Watershed reads the scatter's two FEATURE dimensions, and both its
-    // preview and its commit are computed there -- neither knows the embedding
-    // exists.  Left ungated the combination is quietly dangerous rather than
-    // merely useless: paintEvent returns early in embedding mode, so the
-    // preview image and its HUD are never drawn, while the preview's key block
-    // still owns Up/Down and Enter -- and sits earlier in the filter than the
-    // perplexity intercept, so it takes them.  The user sees nothing, presses
-    // Enter, and commits a split computed from a projection they are not
-    // looking at.  Watershed ON the embedding is a real and attractive feature
-    // -- t-SNE produces exactly the separated density basins it wants -- but it
-    // needs the commit to use the basin labels the preview already computed,
-    // which today it does not: wsExit throws the preview away and calls
-    // watershedSelectedClusters(), a second computation from the feature
-    // dimensions.  Until that is addressed, refuse and say why.
-
+    // Embedding + atoms is allowed.  The embedding commit (wsExit) carves each
+    // basin through createNewCluster with its sources read from data(), which in
+    // children view is the atom layer: the rows are spike rows, Data::createNewCluster
+    // tests them against its own clusters, and the doc's child branch makes the new
+    // atom a sibling under the same parent -- the path the embedding's own lasso
+    // already takes on atoms.  The commit keeps only the rows of the SELECTED atoms
+    // (same-parent, checked above), so a basin cannot gather spikes of another
+    // parent's atom into one straddling atom.
 
     // Locate the ClusterView widget.  It is the active KlustersView's
     // currentViewWidget when containsClusterView() is true; cast through
@@ -5247,14 +5226,30 @@ void KlustersApp::wsExit(bool commit)
         // must survive.
         QMap<int, QSet<dataType>> byBasin;
         const int n = qMin(static_cast<int>(result.pointLabels.size()), rows.size());
+        // In children view only the SELECTED atoms are split: the embedding
+        // holds the shown clustering, which is those atoms, but a point of any
+        // other atom that reached it must stay put -- a basin gathering spikes of
+        // two parents' atoms would make one atom straddling both.
+        const QVector<dataType> labelAtEntry = doc->data().labelByFeatureRow();
         for (int i = 0; i < n; ++i) {
             const int lab = result.pointLabels[static_cast<size_t>(i)];
-            if (lab >= 1)                       // 0 = unassigned: leave it put
-                byBasin[lab].insert(static_cast<dataType>(rows.at(i)) + 1);
+            if (lab < 1) continue;              // 0 = unassigned: leave it put
+            const dataType r = static_cast<dataType>(rows.at(i)) + 1;
+            if (onChild) {
+                if (r <= 0 || r >= labelAtEntry.size()) continue;
+                if (!sel.contains(static_cast<int>(labelAtEntry.at(static_cast<int>(r))))) continue;
+            }
+            byBasin[lab].insert(r);
         }
         int keep = -1, keepSize = -1;
         for (auto it = byBasin.constBegin(); it != byBasin.constEnd(); ++it)
             if (it.value().size() > keepSize) { keepSize = it.value().size(); keep = it.key(); }
+        // The embedding survives its own commit: membership changes, positions do
+        // not, so the scatter recolours in place instead of dropping the embedding
+        // on the first carve (as it did), which lost the picture the split was
+        // judged in.
+        if (onEmbedding && scatter) scatter->setApplyingOwnEdit(true);
+        QList<int> created, allSources;
         for (auto it = byBasin.constBegin(); it != byBasin.constEnd(); ++it) {
             if (it.key() == keep || it.value().isEmpty()) continue;
             // Sources read live, per basin: the previous carve renumbered
@@ -5268,11 +5263,27 @@ void KlustersApp::wsExit(bool commit)
                 if (!sources.contains(cid)) sources.append(cid);
             }
             if (sources.isEmpty()) continue;
-            doc->createNewCluster(SpikeSelection(it.value(),
+            const int id = doc->createNewCluster(SpikeSelection(it.value(),
                                                  onEmbedding ? QStringLiteral("watershed_tsne")
                                                              : QStringLiteral("watershed_noise")),
                                   sources);
+            if (id > 0) created.append(id);
+            for (int src : sources) if (!allSources.contains(src)) allSources.append(src);
             ++nNew;
+        }
+        if (onEmbedding && scatter) scatter->setApplyingOwnEdit(false);
+        // Land on every piece.  Each createNewCluster parks its own result (its
+        // new cluster plus the surviving source), so the last basin's would win and
+        // hide the others: park the whole split once -- the new clusters first,
+        // then what is left of the sources (the noise bin, which must survive its
+        // split, is not a landing).  The park is applied after the post-edit
+        // automation, in whichever palette the split ran.
+        if (!created.isEmpty()) {
+            QList<int> landing = created;
+            for (int src : allSources)
+                if (src > 1 && !landing.contains(src)) landing.append(src);
+            if (onChild) doc->setPendingChildSelection(landing);
+            else         doc->setPendingParentSelection(landing);
         }
     } else if (onChild) {
         // Atom layer, explicitly: wsEnter collected these ids from the child
@@ -6482,6 +6493,14 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
     slotStatusMsg(busyMessage);
     KlustersView* view = activeView();
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    // The ids come from the PARENT palette (ClusterPalette::moveClustersToNoise /
+    // ToArtefact), so the delete runs on the parent layer whatever is shown.  With
+    // atoms selected in the child palette the child clustering is the active one,
+    // and deleteClusters works on data(): left in that scope it looked these
+    // parent numerals up in the ATOM id space and reclassified whichever atoms
+    // happened to carry them.  Atom deletes have their own path (slotDeleteSelected
+    // -> dropChildrenToBin).
+    doc->setActiveClustering(false);
     doc->deleteClusters(selectedClusters, *view, reservedId);
 
     // Update the browsing possibility of the traceView
@@ -6501,6 +6520,35 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
     // would steal that focus and silently break arrow-key nav after a
     // delete operation.
     if (clusterPalette) clusterPalette->setFocusToList();
+}
+
+void KlustersApp::slotDeleteSelected(int reservedId)
+{
+    if (!doc || !activeView()) return;
+    // Child palette focused: delete at the child level.  The atoms are
+    // reclassified onto the bin (their spikes leave the parent, their atom ids
+    // stay), the selection lands on the next sibling -- or, when the last atom
+    // went and the parent emptied with it, on the next parent.
+    if (focusedChildPalette() && childPanel && childPanel->isVisible()) {
+        const QList<int> kids = childPalette ? childPalette->selectedClusters() : QList<int>();
+        if (kids.isEmpty()) {
+            statusBar()->showMessage(tr("Select the child(ren) to delete."), 4000);
+            return;
+        }
+        slotStatusMsg(reservedId == 1 ? tr("Delete noisy child(ren)…") : tr("Delete artifact child(ren)…"));
+        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        const bool moved = doc->dropChildrenToBin(kids, reservedId, *activeView());
+        QApplication::restoreOverrideCursor();
+        slotStatusMsg(tr("Ready."));
+        if (!moved)
+            statusBar()->showMessage(tr("Nothing deleted: the selected children are already in that "
+                                        "bin or belong to a reserved chunk cluster."), 5000);
+        return;
+    }
+    // Parent palette (or anything else) focused: the parent selection, as before.
+    if (!clusterPalette) return;
+    if (reservedId == 1) clusterPalette->moveClustersToNoise();
+    else                 clusterPalette->moveClustersToArtefact();
 }
 
 void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters)

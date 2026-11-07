@@ -399,6 +399,13 @@ private Q_SLOTS:
     * @param selectedClusters list of clusters which have been selected to be moved
     */
     void slotMoveClustersToNoise(QList<int> selectedClusters);
+    /** Delete / Shift+Delete, routed by which palette holds the keyboard: with the
+     *  child palette focused the selected ATOMS are dropped onto the bin
+     *  (KlustersDoc::dropChildrenToBin -- their spikes leave the parent, the
+     *  selection lands on the next sibling, or on the next parent when the last
+     *  atom went); otherwise the parent palette's selection is deleted as before.
+     *  @p reservedId is 1 (noise) or 0 (artefact). */
+    void slotDeleteSelected(int reservedId);
     /** Move every cluster with fewer than N spikes into the noise cluster (1),
      *  after asking for N and a Yes/No confirmation (default Yes). */
     void slotPurgeSmallClusters();

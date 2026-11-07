@@ -762,6 +762,15 @@ bool ClusterView::tsneEmbeddingPoints(QVector<double>& xs, QVector<double>& ys,
     return true;
 }
 
+void ClusterView::setApplyingOwnEdit(bool on)
+{
+    tsneApplyingLasso = on;
+    if (on || !tsneMode) return;
+    tsneRelabelFromDoc();                     // positions unchanged: recolour in place
+    invalidate(REDRAW);
+    update();
+}
+
 QPoint ClusterView::tsneViewportPosFor(double x, double y) const
 {
     // The visible window (tsneView_) of the full bounds fills the viewport.
@@ -1331,14 +1340,35 @@ void ClusterView::applyMultiLasso()
         if (id > 0) created.append(id);
         for (int src : sources) if (!allSources.contains(src)) allSources.append(src);
     }
+    // The remainder is a new cluster too.  A multi-lasso split is the curator
+    // saying "these are the pieces": what the lassos left behind in a source is
+    // one more piece, not the source continuing -- so it is carved out under a new
+    // id as well, and the original id goes away with its last spike.  That puts
+    // the remainder through the same new-cluster path as the lassoed pieces
+    // (realign, colour, log), and the selection ends on ALL the new clusters.  The
+    // noise and artefact bins and the reserved chunk clusters survive their lassos
+    // as before: a bin has no remainder to promote.
+    if (!created.isEmpty()) {
+        const QVector<dataType> after = doc.data().labelByFeatureRow();
+        for (int src : allSources) {
+            if (src <= 1 || isReservedClusterId(static_cast<dataType>(src))) continue;
+            QSet<dataType> rest;
+            for (int r = 1; r < after.size(); ++r)
+                if (static_cast<int>(after.at(r)) == src) rest.insert(static_cast<dataType>(r));
+            if (rest.isEmpty()) continue;                 // the lassos consumed it
+            const int id = doc.createNewCluster(
+                SpikeSelection(rest, QStringLiteral("manual_multi_lasso_rest")), QList<int>{ src });
+            if (id > 0) created.append(id);
+        }
+    }
     // Land on every piece: each createNewCluster parks its own result as the
     // selection, so the last region's would win and hide the others.  The landing is
     // applied once, after the post-edit automation, which has not run yet: park the
-    // whole split -- the new clusters first, then what is left of their sources (the
-    // landing drops any source the split emptied).
+    // whole split -- every new cluster, then any source that still exists (a bin or
+    // a reserved cluster that was lassoed; the landing drops anything emptied).
     if (!created.isEmpty()) {
         QList<int> landing = created;
-        for (int src : allSources) if (!landing.contains(src)) landing.append(src);
+        for (int src : allSources) if (src > 1 && !landing.contains(src)) landing.append(src);
         if (doc.isChildClusteringActive()) doc.setPendingChildSelection(landing);
         else                               doc.setPendingParentSelection(landing);
     }

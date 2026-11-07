@@ -90,6 +90,7 @@ with `Tab` (`Shift+Tab` reverses) while the hierarchical view is open.
 | `Ctrl+Up` | **New fiber** from the selected atoms (or from all atoms of 2+ selected fibers). |
 | `Ctrl+Down` | **Group** the selected fibers into one. |
 | `Ctrl+Shift+Down` | **Dissolve** the selected fiber into its atoms. |
+| `Delete` / `Shift+Delete` | With the **child palette** focused: the selected atoms go to noise / artefact (their spikes leave the fiber; the atoms keep their ids). The selection lands on the next atom of the fiber, or, when the last atom went, on the next fiber. With the main palette focused: the selected fibers go to noise / artefact, as in a flat session. |
 
 These keys can be rebound in **Preferences → Input**.
 
@@ -106,7 +107,7 @@ child palette is shown.
 | Group Selected Children into New Parent | — | Takes the selected atoms out of their fiber(s) and makes one new fiber of them. |
 | Dissolve Parent into Children | — | Each atom of the selected fiber becomes its own fiber (one keeps the fiber's id). |
 | Break Up Parent by Template… | — | Each atom of the selected fiber(s) moves, whole and keeping its id, to the fiber whose template it matches best among those with more than a given number of spikes (default 100); the atoms matching none become fibers of their own. See [Break Up Parent by Template](#break-up-parent-by-template) below. |
-| Drop Child to Noise | — | Moves the selected atoms' spikes to the noise cluster (1). |
+| Drop Child to Noise | — | Moves the selected atoms' spikes to the noise cluster (1). The same as `Delete` in the child palette (`dropChildrenToBin`); the selection lands on the next atom, or on the next fiber when the fiber emptied. |
 | Compact Cluster IDs (parents and children) | — | Renumbers both layers into the low integers without gaps (0 and 1 stay). Clears the atom undo history. |
 | Merge Orphan Children (by median waveform)… | `Shift+B` | Gathers the selected fiber's tiny leftover atoms (below a spike count): those that match the median waveform of the fiber's other atoms, the ones not being merged, are merged into one atom; the rest stay as they are. Nothing is deleted; *Undo Child-Layer Edit* (`Ctrl+Shift+Z`) takes the merge back. |
 | Merge Orphan Parents (by template)… | `Ctrl+Shift+B` | Gathers the tiny fibers: each is matched to the template (mean waveform) of the fiber it resembles most among those not being merged; those matching the same fiber are merged into one new fiber beside it, those matching none stay as they are. See [Merge Orphan Parents](#merge-orphan-parents) below. |
@@ -116,7 +117,7 @@ child palette is shown.
 | Undo Child-Layer Edit / Redo Child-Layer Edit | `Ctrl+Shift+Z` / `Ctrl+Shift+Y` | Undo or redo in the atom layer's own history. |
 
 The corresponding document methods are `mergeParents`, `promoteChildren`,
-`dissolveParent`, `dropChildToNoise`, `mergeChildren`,
+`dissolveParent`, `dropChildToNoise` / `dropChildrenToBin`, `mergeChildren`,
 `mergeOrphanChildren`, `planOrphanParents` / `mergeOrphanParents`,
 `planBreakUpParents` / `breakUpParents`, `flattenHierarchyToClu` and
 `repairNesting`;

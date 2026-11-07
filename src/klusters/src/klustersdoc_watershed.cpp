@@ -222,6 +222,15 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
 
     // ── Doc-level undo: same shape as recluster.
     prepareReclusteringUndo(newClusterList, inputs);
+    // Same landing as recluster, too: the selection ends on ALL the new parents,
+    // applied at the settled point (applyPendingParentSelection, after the deferred
+    // realign/renumber, which translates the ids through any renumber).  Until now
+    // the palette refresh below selected "what was shown plus the new ones" and
+    // the auto-renumber then renamed them under that selection.  The new parents
+    // carry new templates, so they are queued for the post-op realign as the
+    // recluster's are.
+    for (int nf : newClusterList) noteModifiedParent(nf);
+    setPendingParentSelection(newClusterList);
 
     // Hierarchical mode: the watershed relabels every spike of the selected parents
     // into basins found in a 2-D projection, a criterion with no knowledge of the

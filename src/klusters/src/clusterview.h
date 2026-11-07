@@ -309,6 +309,12 @@ public:
      *  going back through feature space.  False when no embedding is showing.*/
     bool tsneEmbeddingPoints(QVector<double>& xs, QVector<double>& ys,
                              QVector<int>& spikeRows) const;
+    /** Brackets a membership edit the caller makes FROM the embedding (the
+     *  watershed commit on it): while on, the embedding is not dropped by the
+     *  cluster-change notifications the edit emits; turning it off recolours the
+     *  points from the document in place -- positions are untouched by a
+     *  membership edit -- as the embedding's own lasso does. */
+    void setApplyingOwnEdit(bool on);
 
     // ── DipSplit post-commit HUD ─────────────────────────────────────────
     // Used by KlustersApp after a Shift+D dipsplit commits.  Draws a

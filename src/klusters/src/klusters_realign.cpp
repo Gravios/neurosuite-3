@@ -477,9 +477,13 @@ void KlustersApp::applyPendingParentSelection()
 
     if (!activeView()) return;
     const QList<int> pending = doc->takePendingParentSelection();
+    // Consumed whether or not a parent landing follows: the flag describes THIS
+    // operation, and a child-only edit (no parent pending) must not leave it set
+    // for the next parent edit to read.
+    const bool childLanding = doc->takeChildLandingParked();
     if (KlustersDoc::scopeTraceEnabled() && !pending.isEmpty())
-        qDebug().noquote() << QStringLiteral("[scope] applyPendingParentSelection pending=%1")
-                              .arg(doc->layerTagsFor(pending));
+        qDebug().noquote() << QStringLiteral("[scope] applyPendingParentSelection pending=%1 childLanding=%2")
+                              .arg(doc->layerTagsFor(pending)).arg(childLanding ? "true" : "false");
     if (pending.isEmpty()) return;
     QList<int> parents;
     for (int f : pending)
@@ -487,10 +491,28 @@ void KlustersApp::applyPendingParentSelection()
             parents.append(f);
     if (parents.isEmpty()) return;
     doc->setActiveClustering(false);                 // parent scope
-    if (clusterPalette) {
+    if (clusterPalette)
         clusterPalette->selectItems(parents);         // first id is the primary
-        clusterPalette->setFocusToList();
+    // An operation that landed in the CHILD palette (a child delete onto its
+    // surviving sibling, a child-scope move) also parks the parent it stays under,
+    // so the parent palette follows.  That parent selection must not then pull the
+    // shown clustering and the keyboard focus back up to the parent: the atoms the
+    // landing selected are what the curator is looking at, and taking focus here
+    // was what broke arrow-key navigation in the child palette after every child
+    // delete.  Keep the child scope when the drained landing is still selected
+    // under one of these parents.
+    if (childLanding && childPanel && childPanel->isVisible() && childPaletteA) {
+        QList<int> kids;
+        for (int c : childPaletteA->selectedClusters())
+            if (c > 1 && parents.contains(doc->parentOfChild(c))) kids.append(c);
+        if (!kids.isEmpty()) {
+            doc->setActiveClustering(true);
+            doc->shownClustersUpdate(kids, *activeView());
+            childPaletteA->setFocusToList();
+            return;
+        }
     }
+    if (clusterPalette) clusterPalette->setFocusToList();
     doc->shownClustersUpdate(parents, *activeView());
 }
 

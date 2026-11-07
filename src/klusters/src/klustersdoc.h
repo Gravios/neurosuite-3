@@ -709,6 +709,11 @@ public:
      */
     void setPendingChildSelection(const QList<int>& children);
     QList<int> takePendingChildSelection();
+    /** True once per operation that parked a child landing: consumed by
+     *  KlustersApp::applyPendingParentSelection, whose parent selection must then
+     *  not pull the views and the focus up to the parent -- the atoms the landing
+     *  selected in the child palette stay the shown clustering. */
+    bool takeChildLandingParked();
     /// Translate the pending parent selection through a renumber map (old->new), so a
     /// selection recorded before renumber still points at the produced parents after.
     void renumberPendingParentSelection(const QMap<int,int>& oldNew);
@@ -749,8 +754,18 @@ public:
      *  parent (one keeps @p parent's id).  Inverse of mergeParents. */
     bool dissolveParent(int parent, KlustersView& activeView);
     /** Eject child @p childCluster from its parent onto the noise cluster (1)
-     *  without deleting its spikes. */
+     *  without deleting its spikes.  Equivalent to dropChildrenToBin({child}, 1). */
     bool dropChildToNoise(int childCluster, KlustersView& activeView);
+    /** Delete at the child level: the atoms @p children are RECLASSIFIED onto the
+     *  reserve bin @p binId (1 = noise, 0 = artefact) -- their spikes leave their
+     *  parent in the parent layer and keep their atom id, as dropChildToNoise does
+     *  -- in one gesture.  Then the selection lands where the curator works next:
+     *  on the nearest surviving SIBLING (the one above the lowest dropped id, else
+     *  the one below) in the child palette; when the last atom went and the parent
+     *  emptied with it, on the parent's neighbour in the parent palette, which the
+     *  curated parent follows.  Atoms of a reserved chunk cluster, and atoms already
+     *  in the bin, are left out.  Returns false when nothing moved. */
+    bool dropChildrenToBin(const QList<int>& children, int binId, KlustersView& activeView);
     // ── atom-layer edit (rewrites .clc; separate child-undo timeline) ────────
     /** Collapse @p children (which MUST share a parent) into one microfiber.
      *  Mutates childData, pushes a child-undo entry.  Returns the new child id,
@@ -2652,6 +2667,7 @@ private:
     QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
+    bool                 childLandingParked = false; // a child landing was parked since the last post-edit settle
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 
     /** Set by buildHierarchyMaps() when the per-spike .clu/.clc scan finds a child

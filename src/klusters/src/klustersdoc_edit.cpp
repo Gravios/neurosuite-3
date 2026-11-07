@@ -335,13 +335,17 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 
     QList<int> updatedClusters = {fromCluster, toCluster};
 
-    // Ensure cluster 1 (noise) has its grey colour when first receiving spikes.
+    // Ensure cluster 1 (noise) has its grey colour when first receiving spikes,
+    // and cluster 0 (artefact) its red -- dropChildrenToBin reaches here with
+    // either bin, and a bin without a colour entry is missing from the palette.
     if (toCluster == 1 && !clusterColorList->contains(1)) {
         QColor grey;
         grey.setHsv(0, 0, 220);
         if (clusterColorList->contains(0)) clusterColorList->insert(1, grey, 1);
         else                               clusterColorList->insert(1, grey, 0);
     }
+    if (toCluster == 0 && !clusterColorList->contains(0))
+        clusterColorList->insert(0, QColor(Qt::red), 0);     // cluster 0 is always red
 
     prepareUndo(updatedClusters, emptiedClusters, true);
 

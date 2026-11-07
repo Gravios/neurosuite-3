@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: child-level delete and watershed, and where the selection lands after a split](#2026-11-07--klusters-child-level-delete-and-watershed-and-where-the-selection-lands-after-a-split) |
 | 2026-11-07 | [Klusters curation log: the hierarchy commands and the atom layer](#2026-11-07--klusters-curation-log-the-hierarchy-commands-and-the-atom-layer) |
 | 2026-11-07 | [Klusters curation log: checkpoint on save, refractory and cell-type statistics, pair evidence](#2026-11-07--klusters-curation-log-checkpoint-on-save-refractory-and-cell-type-statistics-pair-evidence) |
 | 2026-11-06 | [ndm_extractspikes reads the .res ndm_detectspikes writes](#2026-11-06--ndm_extractspikes-reads-the-res-ndm_detectspikes-writes) |
@@ -162,6 +163,56 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: child-level delete and watershed, and where the selection lands after a split
+
+<details>
+<summary>Details</summary>
+
+Curating the atom layer, the five gestures a curator makes most, made to
+land where the next gesture starts.
+
+- **Delete at the child level.** `Delete` / `Shift+Delete` with the child
+  palette focused now drop the selected atoms to noise / artefact
+  (`KlustersDoc::dropChildrenToBin`, one gesture; *Drop Child to Noise* is
+  the same operation).  The atoms are reclassified: their spikes leave the
+  parent in the parent layer and keep their atom id, as a child-primary
+  session defines a delete.  The selection lands on the next sibling (the
+  one above the lowest deleted id, else the one below); when the last atom
+  went, the parent is gone with it and the selection lands on the next
+  parent, which the curated parent follows.  Before, `Delete` with the child
+  palette focused deleted the PARENT palette's selection, and did so in the
+  child scope, where `deleteClusters` looked those parent numerals up in the
+  atom id space; the parent delete now forces the parent scope.
+- **The deferred parent landing no longer steals the child palette.**
+  `applyPendingParentSelection` -- the settled point after the automatic
+  realign / renumber -- pulled the views and the keyboard focus up to the
+  parent after every child drop, so arrow-key navigation in the child
+  palette was broken after each one.  An operation that parked a child
+  landing now keeps the child scope there.
+- **Watershed on the t-SNE embedding works on atoms.**  The refusal is
+  lifted: the basins are committed through the atom layer's own split path,
+  restricted to the selected atoms' spikes so no basin can straddle parents.
+  The embedding survives its own commit (recoloured in place instead of
+  dropped on the first carve), and the selection lands on every new piece --
+  each basin's split used to park only its own result, so the last one won.
+- **Child recluster lands on the new atoms.**  The landing is parked for the
+  child palette (the same fix the child split needed), and the palette is
+  rebuilt for the restored parent after the recluster-output tab deselected
+  it.  Parent watershed lands on all its new clusters, applied at the settled
+  point like the recluster's, and its new clusters are queued for the post-op
+  realign.
+- **Split by Lassos makes the remainder a new cluster too.**  What the lassos
+  left in a source is one more piece: it is carved out under a new id (log
+  algorithm `manual_multi_lasso_rest`) and the original id goes away, so
+  every piece goes through the same new-cluster path and the selection ends
+  on all of them.  The noise and artefact bins and the reserved chunk
+  clusters survive their lassos as before.
+
+Nine translation units compile warning-free under `-Wall` against Qt 6.4.
+Not run in the GUI.
+
+</details>
 
 ## 2026-11-07 — Klusters curation log: the hierarchy commands and the atom layer
 

@@ -938,6 +938,23 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // correctly overrides this.
     if (childRecluster && reclusteredParent > 1 && clusterPalette)
         clusterPalette->selectItems({reclusteredParent});
+    // slotTabChange's deselect above may have emptied the child palette (no
+    // parent selected -> no children listed); the parked landing then had nothing
+    // to land on.  Rebuild it for the restored parent: repopulateChildPalette
+    // reads the curated parent from the doc and drains the parked landing, so the
+    // new atoms end up selected and focused however many rebuilds ran before.
+    if (childRecluster && childPanel && childPanel->isVisible()) {
+        repopulateChildPalette(clusterPalette ? clusterPalette->selectedClusters() : QList<int>());
+        if (childPalette && !clustersFromReclustering.isEmpty()) {
+            QList<int> live;
+            for (int c : clustersFromReclustering)
+                if (doc->parentOfChild(c) >= 0) live.append(c);
+            if (!live.isEmpty()) {
+                childPalette->selectItems(live);
+                childPalette->setFocusToList();
+            }
+        }
+    }
     // Recluster emits no renumber() (so the renumber() view-refresh hook does not
     // cover it) and the selectItems calls above are silent (no updateShownClusters),
     // so in hierarchical mode the dependent views (waveform / feature / ...) would

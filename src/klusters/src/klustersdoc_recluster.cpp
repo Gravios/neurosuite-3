@@ -284,6 +284,14 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
         // keeps an atom that lands wholly inside one parent and collapses any straddling portion
         // into that parent's self child.  No new parent, and every parent keeps a covering child.
         collapseToSelfChildren();
+        // PARK the landing as well as emitting it (the same fix the child split
+        // needed): the emit selects the new atoms now, but the automation that
+        // hierarchyChanged schedules repopulates the child palette again afterwards
+        // and the last rebuild wins -- so the recluster's output was selected and
+        // then dropped, and focus went nowhere.  repopulateChildPalette drains the
+        // park after whichever rebuild turns out to be last, keeping the atoms that
+        // still exist (collapseToSelfChildren may have folded a straddler away).
+        setPendingChildSelection(reclusteredClusterList);
         emit hierarchyChildrenCreated(reclusteredClusterList);   // select the new atoms after the rebuild
         modified = true;
         return;

@@ -822,14 +822,21 @@ whole watershed in one step.
 t-SNE embedding instead of the feature scatter; `F` again returns. While it
 shows, `Up` / `Down` raise or lower the perplexity and recompute. The
 embedding settings are in **Preferences → Views → Cluster view**. Lassos work in the
-embedding as in the scatter.
+embedding as in the scatter, and so does Watershed (`Shift+W`): the basins
+are found in the embedding's own coordinates and the split applies exactly
+the basins previewed, on fibers or on the atoms selected in the child
+palette; the embedding stays up after the split.
 
 ### Multi-Lasso
 
 **Tools → Multi-Lasso** (`Ctrl+5`): a closed lasso is kept instead of cutting.
 Draw several, then **Tools → Split by Lassos** (`Enter`): each overlap
-pattern becomes a cluster, so two overlapping lassos give three.
-`Backspace` removes the last kept lasso and `Esc` discards them all.
+pattern becomes a cluster, so two overlapping lassos give three. What the
+lassos leave behind in a source cluster is a new cluster as well, and the
+original id goes away with it, so every piece of the split is a new cluster
+and the selection lands on all of them (the noise and artefact bins and the
+reserved chunk clusters keep their ids). `Backspace` removes the last kept
+lasso and `Esc` discards them all.
 
 ### Oblique projection and decollide
 

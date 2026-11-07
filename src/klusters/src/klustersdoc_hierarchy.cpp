@@ -580,7 +580,14 @@ void KlustersDoc::setMatrixScopeEnabled(bool enabled)
 
 void KlustersDoc::setPendingChildSelection(const QList<int>& children)
 {
-    if (!children.isEmpty()) pendingChildSelection = children;
+    if (!children.isEmpty()) { pendingChildSelection = children; childLandingParked = true; }
+}
+
+bool KlustersDoc::takeChildLandingParked()
+{
+    const bool was = childLandingParked;
+    childLandingParked = false;
+    return was;
 }
 
 QList<int> KlustersDoc::takePendingChildSelection()
@@ -1242,49 +1249,130 @@ bool KlustersDoc::dissolveParent(int parentId, KlustersView& activeView){
 }
 
 bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
-    if (!childData || !childToParent.contains(childCluster)) return false;
-    const int parentId = childToParent.value(childCluster);
-    if (parentId == 1) return false;                    // already noise
-    QList<int> parentOfDropped{ parentId };
-    if (leaveOutReserved(parentOfDropped, tr("Drop child to noise")) > 0) return false;
-    const QVector<int> spk = childData->clusterSpkIndices(childCluster);
-    if (spk.isEmpty()) return false;
-    // Siblings that will survive, captured before the move: the landing is one of
-    // them, and after the move the atom is gone from the parent's list.
+    return dropChildrenToBin(QList<int>{ childCluster }, 1, activeView);
+}
+
+bool KlustersDoc::dropChildrenToBin(const QList<int>& childrenIn, int binId, KlustersView& activeView){
+    if (!childData || (binId != 0 && binId != 1)) return false;
+    const QString opName = (binId == 1) ? tr("Drop child to noise") : tr("Drop child to artefact");
+
+    // Group the atoms by parent.  The reserve atoms (0, 1) are the self children
+    // of the bins and never move; an atom whose parent IS the bin is already there.
+    QMap<int, QList<int>> byParent;
+    for (int c : childrenIn) {
+        if (c <= 1) continue;
+        const int p = childToParent.value(c, -1);
+        if (p < 0 || p == binId) continue;
+        if (!byParent[p].contains(c)) byParent[p].append(c);
+    }
+    {
+        QList<int> parents = byParent.keys();
+        leaveOutReserved(parents, opName);               // a reserved chunk cluster keeps its atoms
+        for (int p : byParent.keys())
+            if (!parents.contains(p)) byParent.remove(p);
+    }
+    if (byParent.isEmpty()) return false;
+
+    // The landing is computed BEFORE the move, from the maps as they stand: the
+    // anchor is the parent of the lowest dropped atom; its surviving siblings are
+    // the candidates in the child palette; its neighbour among the parents that
+    // are not themselves being emptied is the fallback when it goes away.
+    QList<int> dropped;
+    for (const QList<int>& kids : byParent) dropped += kids;
+    std::sort(dropped.begin(), dropped.end());
+    const int anchorAtom   = dropped.first();
+    const int anchorParent = childToParent.value(anchorAtom);
     QList<int> siblings;
-    for (int kid : parentToChildren.value(parentId))
-        if (kid > 1 && kid != childCluster) siblings.append(kid);
+    for (int kid : parentToChildren.value(anchorParent))
+        if (kid > 1 && !dropped.contains(kid)) siblings.append(kid);
+    std::sort(siblings.begin(), siblings.end());
+    int siblingLanding = -1;
+    if (!siblings.isEmpty()) {
+        siblingLanding = siblings.last();                // nothing above: nearest below
+        for (int kid : siblings)
+            if (kid > anchorAtom) { siblingLanding = kid; break; }
+    }
+    // Parent neighbour: nearest above anchorParent, else nearest below, among the
+    // parents that keep at least one atom after this drop.
+    int parentLanding = -1;
+    {
+        QList<int> survivors;
+        for (dataType f : clusteringData->clusterIds()) {
+            const int id = static_cast<int>(f);
+            if (id <= 1 || id == anchorParent) continue;
+            if (byParent.contains(id)) {                 // emptied if every atom of it goes
+                bool keeps = false;
+                for (int kid : parentToChildren.value(id))
+                    if (!dropped.contains(kid)) { keeps = true; break; }
+                if (!keeps) continue;
+            }
+            survivors.append(id);
+        }
+        if (!survivors.isEmpty()) {
+            std::sort(survivors.begin(), survivors.end());
+            parentLanding = survivors.last();
+            for (int id : survivors)
+                if (id > anchorParent) { parentLanding = id; break; }
+        }
+    }
 
-    setActiveClustering(false);
-    beginGesture(QStringLiteral("dropChildToNoise"), {{ QStringLiteral("child"), childCluster },
-                                                       { QStringLiteral("parent"), parentId },
-                                                       { QStringLiteral("n_spikes"), static_cast<int>(spk.size()) }});
-    moveSpikeSubsetToCluster(parentId, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
-    endGesture();
+    setActiveClustering(false);                          // the move is a PARENT-layer edit
+    QVariantMap parentsDetail;
+    for (auto it = byParent.constBegin(); it != byParent.constEnd(); ++it)
+        parentsDetail.insert(QString::number(it.key()), idList(it.value()));
+    beginGesture(QStringLiteral("dropChildrenToBin"), {{ QStringLiteral("children"), idList(dropped) },
+                                                        { QStringLiteral("bin"), binId },
+                                                        { QStringLiteral("parents"), parentsDetail }});
+    int nMoved = 0;
+    for (auto it = byParent.constBegin(); it != byParent.constEnd(); ++it) {
+        QVector<int> spk;
+        for (int c : it.value()) spk += childData->clusterSpkIndices(c);
+        if (spk.isEmpty()) continue;
+        // Child-primary: the atoms are RECLASSIFIED, not relabelled.  Noise and
+        // artefact are parent-layer classifications -- an atom is a sub-cluster of
+        // a unit and has no signal/noise character of its own -- so dropping it is
+        // exactly "its parent is now the bin".  moveSpikeSubsetToCluster changes the
+        // .clu of those rows and leaves the .clc alone, which says the same thing.
+        moveSpikeSubsetToCluster(it.key(), spk, binId, activeView);
+        nMoved += spk.size();
+    }
+    endGesture({{ QStringLiteral("n_spikes"), nMoved },
+                { QStringLiteral("sibling_landing"), siblingLanding },
+                { QStringLiteral("parent_landing"), parentLanding }});
+    if (nMoved == 0) return false;
 
-    // Child-primary: the child is RECLASSIFIED, not relabelled.
-    //
-    // Noise and artefact are parent-layer classifications -- a child is a
-    // sub-cluster of a unit and has no signal/noise character of its own -- so
-    // dropping a child to noise is exactly "its parent is now 1".  Its spikes keep
-    // their child id, which is what the moveSpikeSubsetToCluster above already
-    // does: it changes the .clu of those rows and leaves the .clc alone.  So the
-    // map edit is one entry, and it says the same thing the relabel does.
-
-    setPendingParentSelection({parentId});   // land on the source parent (noise isn't selectable)
     rebuildHierarchyFromData();
 
-    // Parked before the emit, for the reason given in mergeChildren: the palette
-    // is repopulated inside hierarchyChanged and drains the park there.  Siblings
-    // were captured before the move, so this is the surviving list.
+    // Land.  The parent palette's landing is parked for applyPendingParentSelection
+    // (the settled point after the deferred realign/renumber), the child palette's
+    // for repopulateChildPalette, which drains it on whichever rebuild turns out
+    // to be last.  A parked child landing also tells applyPendingParentSelection
+    // to leave the shown clustering and the focus with the child palette.
+    bool parentAlive = false;
+    for (dataType f : clusteringData->clusterIds())
+        if (static_cast<int>(f) == anchorParent) { parentAlive = true; break; }
     QList<int> land;
-    if (!siblings.isEmpty()) {
-        std::sort(siblings.begin(), siblings.end());
-        int pick = siblings.last();                 // nothing above: nearest below
-        for (int kid : siblings)
-            if (kid > childCluster) { pick = kid; break; }
-        land = QList<int>{ pick };
-        setPendingChildSelection(land);
+    if (parentAlive) {
+        setPendingParentSelection({anchorParent});       // stay on the source parent
+        if (siblingLanding > 1) {
+            land = QList<int>{ siblingLanding };
+            setPendingChildSelection(land);
+        }
+    } else if (parentLanding > 1) {
+        // The last atom went and the parent with it: one level up, to the parent's
+        // neighbour.  The curated parent has just ceased to exist -- the one
+        // situation besides a user selection in which it may move -- so it follows,
+        // and the child palette and the matrices land there together instead of
+        // pointing at a dead parent.  A joint scope drops the dead parent instead:
+        // nextFreeClusterId() can hand its number to a future parent, which a held
+        // stale entry would silently adopt.
+        setPendingParentSelection({parentLanding});
+        if (curatedParent() == anchorParent) setCuratedParent(parentLanding);
+        if (curatedParents.contains(anchorParent)) {
+            QList<int> held = curatedParents;
+            held.removeAll(anchorParent);
+            setCuratedParents(held);
+        }
     }
 
     emit hierarchyChanged();
