@@ -513,6 +513,16 @@ void KlustersApp::applyPendingParentSelection()
         }
     }
     if (clusterPalette) clusterPalette->setFocusToList();
+    // selectItems is silent -- it never reaches slotUpdateShownClusters, the
+    // only place a parent selection adopted the curated parent -- so the child
+    // palette kept listing the PREVIOUS parent's children after every parent
+    // split, recluster or watershed (or nothing, when the operation had
+    // consumed that parent).  The landing is the curator's own output: adopt it
+    // as a click would, and rebuild the child palette for it.
+    if (childPanel && childPanel->isVisible()) {
+        adoptCuratedParents(parents);
+        repopulateChildPalette(parents);
+    }
     doc->shownClustersUpdate(parents, *activeView());
 }
 

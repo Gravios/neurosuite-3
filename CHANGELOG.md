@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: the child palette follows a parent-level landing](#2026-11-07--klusters-the-child-palette-follows-a-parent-level-landing) |
 | 2026-11-07 | [Klusters: child-level delete and watershed, and where the selection lands after a split](#2026-11-07--klusters-child-level-delete-and-watershed-and-where-the-selection-lands-after-a-split) |
 | 2026-11-07 | [Klusters curation log: the hierarchy commands and the atom layer](#2026-11-07--klusters-curation-log-the-hierarchy-commands-and-the-atom-layer) |
 | 2026-11-07 | [Klusters curation log: checkpoint on save, refractory and cell-type statistics, pair evidence](#2026-11-07--klusters-curation-log-checkpoint-on-save-refractory-and-cell-type-statistics-pair-evidence) |
@@ -163,6 +164,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: the child palette follows a parent-level landing
+
+<details>
+<summary>Details</summary>
+
+Found while reading for the previous entry; confirmed in the code, not run in
+the GUI.
+
+- **The child palette follows the landing.** After a parent split, recluster,
+  watershed or merge the parent palette landed on the new clusters, but the
+  child palette kept listing the children of the *previous* curated parent --
+  or nothing, when the operation had consumed it.  The landing is applied
+  with the palette's silent `selectItems`, which never reaches
+  `slotUpdateShownClusters`, the only place a parent selection adopted the
+  curated parent.  That adoption is now a helper (`adoptCuratedParents`)
+  called from both; when the curated slot names a parent that no longer
+  exists, the first landed parent takes it even under a joint selection.
+- **`deleteClusters` in child scope delegates to `dropChildrenToBin`.**  Its
+  own child branch relabelled the atoms to atom id 1 *inside* their parent and
+  moved no spike in the parent layer -- a delete in neither layer.  The UI no
+  longer reached it; the branch is gone.
+- **Drop Child to Noise is one gesture** for all the selected atoms (one undo
+  step per parent), not one per atom.
+- **Multi-basin watershed and Split by Lassos pin the layer** they were
+  approved on for every carve, instead of reading it from the child palette
+  mid-loop while the rebuilds of each carve repopulate that palette.
+- An unused variable in `decollideLassoAgainstBasis` (the one `-Wall` warning).
+
+</details>
 
 ## 2026-11-07 — Klusters: child-level delete and watershed, and where the selection lands after a split
 

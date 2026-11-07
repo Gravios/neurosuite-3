@@ -365,6 +365,9 @@ private Q_SLOTS:
     /** Rebuild the child palette with the children of @p parents (no-op unless
      *  hierarchical view is visible). */
     void repopulateChildPalette(const QList<int>& parents);
+    /** Adopt the curated parent(s) from a parent selection -- the user's click or
+     *  an operation's landing (see the definition). */
+    void adoptCuratedParents(const QList<int>& selectedClusters);
     /** Enables the Hierarchy menu's edits in a hierarchical session with its atom
      *  layer loaded while the child palette is shown, disables them otherwise. */
     void updateHierarchyEditActions();

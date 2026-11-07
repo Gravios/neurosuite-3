@@ -277,8 +277,9 @@ void KlustersApp::slotDropChildToNoise(){
         statusBar()->showMessage(tr("Select the child(ren) to drop to noise."), 4000);
         return;
     }
-    for(int c : kids)
-        doc->dropChildToNoise(c, *activeView());
+    // One call, one gesture, one landing (and one undo step per parent): the
+    // per-atom calls each parked a landing and recomputed it between drops.
+    doc->dropChildrenToBin(kids, 1, *activeView());
 }
 
 void KlustersApp::slotMergeParents(){

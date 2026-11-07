@@ -444,25 +444,32 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 
 
 void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId){
-    // A reserved chunk cluster is not deleted, nor, in the child scope, an atom of
-    // one: only reclustering and the feature-space selections take spikes out of it.
-    if (childScopeActive) leaveOutChildrenOfReserved(clustersToDelete, tr("Delete"));
-    else                  leaveOutReserved(clustersToDelete, tr("Delete"));
+    // Child scope: the ids are ATOMS, and a delete is a RECLASSIFICATION -- the
+    // atoms' spikes leave their parent for the bin and keep their atom id
+    // (hierarchical-clustering.md).  dropChildrenToBin is that operation, with its
+    // gesture, its parent-layer undo and its sibling / next-parent landing.  This
+    // function used to carry its own child branch, which ran
+    // childData->moveClustersToNoise on the atom ids: that relabelled the atoms to
+    // atom id 1 INSIDE their real parent -- an "atom 1" that is not the noise bin
+    // -- and left every spike where it was in the parent layer, which is not a
+    // delete in either layer.  The UI no longer reaches it (slotDeleteSelected
+    // routes child deletes to dropChildrenToBin directly, and the parent delete
+    // forces the parent scope), so a caller landing here in child scope is a
+    // programming slip; delegating keeps it a correct one.
+    if (childScopeActive && childData) {
+        dropChildrenToBin(clustersToDelete, clusterId, activeView);
+        return;
+    }
+
+    // A reserved chunk cluster is not deleted: only reclustering and the
+    // feature-space selections take spikes out of it.
+    leaveOutReserved(clustersToDelete, tr("Delete"));
     if (clustersToDelete.isEmpty()) return;
 
     // Log before the spikes move so we capture the source cluster characteristics.
-    // Parent scope only: in child scope this reclassifies ATOMS (data() ==
-    // childData below) whose undo lives on the atom timeline -- it never
-    // notifies the logger -- and whose ids collide with parent numerals, so
-    // the snapshots would describe unrelated parent clusters.
-    if (!childScopeActive)
-        logBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
-                                  : CurationLogger::ActionType::DELETE_ARTEFACT,
-                  clustersToDelete);
-    else   // atom layer: snapshots on childData, layer=child, not undo-paired
-        logChildBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
-                                       : CurationLogger::ActionType::DELETE_ARTEFACT,
-                       clustersToDelete);
+    logBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
+                              : CurationLogger::ActionType::DELETE_ARTEFACT,
+              clustersToDelete);
 
     // Supersede in-flight view jobs, without waiting: they read their
     // captured epoch snapshot, so the swap cannot tear under them (see
@@ -471,14 +478,8 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         view->supersedeAllViewThreads();
 
 
-    // Child-primary: a delete is a RECLASSIFICATION, in either scope.
-    //
-    //   child scope  the deleted atoms are reparented onto the destination bin;
-    //                their spikes keep their child ids.
-    //   parent scope the parent goes to the bin and every child of it goes with it.
-    //
-    // Captured before the mutation, since afterwards parentToChildren no longer
-    // lists them.
+    // Child-primary: a delete is a RECLASSIFICATION -- the parent goes to the bin
+    // and every atom of it goes with it (the child scope's form is dropChildrenToBin).
     QList<int> modifiedcluster;
     modifiedcluster.append(clusterId);
 
@@ -503,13 +504,8 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
     //case where the clusters are moved to the cluster 0 (artefact)
     if(clusterId == 0){
-        // data(), not clusteringData: this function serves BOTH scopes -- the same
-        // delete runs on parents from the cluster palette and on atoms from the child
-        // palette.  Naming clusteringData unconditionally meant a child delete moved
-        // the FIBER carrying that number to artefact, which is a different cluster
-        // in a different layer, so deleting a child did nothing to the child and
-        // silently reclassified an unrelated unit.  Everything else in this function
-        // already works on the active layer.
+        // Parent scope by construction (the child scope delegated above), so
+        // data() is clusteringData.
         data().moveClustersToArtefact(clustersToDelete);
         //Update clusterColors, add cluster 0 if need it
         if(!clusterColorList->contains(0)){
@@ -524,7 +520,6 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     }
     //case where the clusters are moved to the cluster 1 (noise)
     if(clusterId == 1){
-        // data(), not clusteringData -- see the artefact branch above.
         data().moveClustersToNoise(clustersToDelete);
         //Update clusterColors, add cluster 1 if need it
         if(!clusterColorList->contains(1)){
@@ -557,12 +552,8 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
     //Notify the errorMatrixView of the modification
     emit clustersDeleted(clustersToDelete,clusterId);
-    // Parent-scope delete: the destination parent that absorbed the spikes changed
-    // membership (child scope deletes atoms, so guard on the scope).
-    if (!childScopeActive) noteModifiedParent(clusterId);
-    // Computed here but emitted AFTER the hierarchy rebuild below -- see the
-    // deferred emit at the end of this function for why.
-    int childLanding = -1;
+    // The destination parent that absorbed the spikes changed membership.
+    noteModifiedParent(clusterId);
 
     // Land the selection on a NEIGHBOUR of what was deleted, not on the
     // destination bin.
@@ -578,71 +569,11 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // to the nearest below when the deletion was at the end of the list, since the
     // palette is id-ordered.  Reserve ids are never a neighbour: landing on 0 or 1
     // is the same problem as landing on the destination.
-    if (!childScopeActive) {
+    {
         const int land = neighbourAfterRemoval(clustersToDelete);
         if (land > 1) setPendingParentSelection({land});
         // No survivor above 1 means everything real is gone; leave the selection
         // alone rather than forcing it into a reserve bin.
-    } else {
-        // Child scope: land on a SIBLING of the deleted atom -- a neighbour among
-        // the children of the same parent, not among every atom in the session,
-        // because the child palette only shows that parent's children and landing
-        // outside them would select something the user cannot see.
-        //
-        // When the parent has no children left, the parent itself has just lost
-        // every spike and goes away with them, so there is no sibling to land on
-        // and the right answer is one level up: the parent's neighbour in the
-        // parent palette, which setPendingParentSelection delivers.
-        int parentOfDeleted = -1;
-        for (int c : clustersToDelete) {
-            const auto it = childToParent.constFind(c);
-            if (it != childToParent.constEnd()) { parentOfDeleted = it.value(); break; }
-        }
-        QList<int> siblings;
-        if (parentOfDeleted >= 0)
-            for (int kid : parentToChildren.value(parentOfDeleted))
-                if (kid > 1 && !clustersToDelete.contains(kid)) siblings.append(kid);
-
-        if (!siblings.isEmpty()) {
-            int anchorId = -1;
-            for (int r : clustersToDelete)
-                if (anchorId < 0 || r < anchorId) anchorId = r;
-            std::sort(siblings.begin(), siblings.end());
-            int land = siblings.last();                 // nothing above: nearest below
-            for (int kid : siblings)
-                if (kid > anchorId) { land = kid; break; }
-            childLanding = land;   // emitted after the rebuild, not here
-        } else if (parentOfDeleted > 1) {
-            // neighbourAfterRemoval() reads data(), which in child scope is the ATOM
-            // layer -- it would answer with an atom id here.  The parent's neighbour
-            // is a FIBER, so walk clusteringData directly.
-            QList<int> parents;
-            for (dataType f : clusteringData->clusterIds()) {
-                const int id = static_cast<int>(f);
-                if (id > 1 && id != parentOfDeleted) parents.append(id);
-            }
-            if (!parents.isEmpty()) {
-                std::sort(parents.begin(), parents.end());
-                int up = parents.last();
-                for (int id : parents)
-                    if (id > parentOfDeleted) { up = id; break; }
-                setPendingParentSelection({up});
-                // The curated parent has just ceased to exist -- the one situation
-                // besides a user selection in which it may move.  Follow it to the
-                // neighbour so the child palette and the matrices land there
-                // together, rather than being left pointing at a dead parent.
-                if (curatedParent() == parentOfDeleted) setCuratedParent(up);
-                // A JOINT scope drops the dead parent rather than following it:
-                // the surviving parents are still the comparison the user chose,
-                // and nextFreeClusterId() can hand the dead NUMBER to a future
-                // parent, which a held stale entry would silently adopt.
-                if (curatedParents.contains(parentOfDeleted)) {
-                    QList<int> held = curatedParents;
-                    held.removeAll(parentOfDeleted);
-                    setCuratedParents(held);
-                }
-            }
-        }
     }
     updateSimilarityMatrices();   // recompute open error/template/residual matrices
 
@@ -652,14 +583,11 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     //Ask the active view to take the modification into account immediately
     activeView.showAllWidgets();
 
-    //Update the palette of cluster.  Parent palette only: in child scope the landing
-    //below owns the selection, and refreshing the parent list here would change which
-    //parent is selected -- which then drives repopulateChildPalette and swaps the
-    //displayed children out from under the user.
-    if (!childScopeActive) clusterPalette.updateClusterList();
+    //Update the palette of cluster
+    clusterPalette.updateClusterList();
 
     //If only one cluster has been deleted, select the following cluster on the list if any.
-    if(existNextCluster && !childScopeActive){
+    if(existNextCluster){
         QList<int> clusters;
         clusters.append(clusterToSelect);
 
@@ -671,12 +599,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         activeView.updateTraceView(electrodeGroupID,clusterColorList,true);
     }
     // Log the resulting state of the destination cluster (noise=1, artefact=0).
-    // Gated like the logBefore above; the bracket guard would no-op this in
-    // child scope anyway, but the intent reads better stated.
-    if (!childScopeActive)
-        logAfter(QList<int>{ clusterId });
-    else
-        logChildAfter(QList<int>{ clusterId });
+    logAfter(QList<int>{ clusterId });
 
     // Hierarchical mode: deleting WHOLE parents cannot break the nesting invariant --
     // every atom inside a deleted parent moves with it, so each still has exactly one
@@ -691,21 +614,6 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         rebuildHierarchyFromData();
         emit hierarchyChanged();
     }
-
-    // Land the child selection LAST.  hierarchyChanged above makes the app
-    // repopulate the child palette, so a landing emitted earlier -- as this one was
-    // when the sibling rule was added, sitting next to the neighbour computation
-    // 58 lines further up -- is applied and then thrown away by the rebuild that
-    // follows it.  Same shape as the parent palette pulling focus back after a child
-    // split: a later handler undoing an earlier landing.
-    //
-    // refreshActivePalette() gets this right by construction, emitting refresh then
-    // land; this is the one edit path that does not route through it, because its
-    // selection is branch-dependent.  The neighbour has to be COMPUTED where it is,
-    // before rebuildHierarchyFromData() re-derives the maps the sibling list comes
-    // from -- only the emit moves.
-    if (childLanding > 1)
-        emit hierarchyChildSelectionRequested({childLanding});
 }
 
 void KlustersDoc::deleteArtifact(const SpikeSelection& selection,const QList <int>& clustersOfOrigin){

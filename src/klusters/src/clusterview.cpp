@@ -1326,8 +1326,13 @@ void ClusterView::applyMultiLasso()
     // the live clustering, as the embedding lasso does.
     const bool inEmbedding = tsneMode;
     if (inEmbedding) tsneApplyingLasso = true;   // our own edit: do not self-drop
+    // The layer the lassos were drawn on, pinned for every carve below: each
+    // createNewCluster edits data(), which follows the child palette's selection,
+    // and each carve's hierarchyChanged repopulates that palette mid-loop.
+    const bool onChild = doc.isChildClusteringActive();
     QList<int> created, allSources;
     for (auto it = regions.cbegin(); it != regions.cend(); ++it) {
+        doc.setActiveClustering(onChild);
         QList<int> sources;
         for (dataType r : it.value()) {
             if (r <= 0 || r >= labelByRow.size()) continue;
@@ -1356,6 +1361,7 @@ void ClusterView::applyMultiLasso()
             for (int r = 1; r < after.size(); ++r)
                 if (static_cast<int>(after.at(r)) == src) rest.insert(static_cast<dataType>(r));
             if (rest.isEmpty()) continue;                 // the lassos consumed it
+            doc.setActiveClustering(onChild);
             const int id = doc.createNewCluster(
                 SpikeSelection(rest, QStringLiteral("manual_multi_lasso_rest")), QList<int>{ src });
             if (id > 0) created.append(id);
@@ -1369,8 +1375,8 @@ void ClusterView::applyMultiLasso()
     if (!created.isEmpty()) {
         QList<int> landing = created;
         for (int src : allSources) if (src > 1 && !landing.contains(src)) landing.append(src);
-        if (doc.isChildClusteringActive()) doc.setPendingChildSelection(landing);
-        else                               doc.setPendingParentSelection(landing);
+        if (onChild) doc.setPendingChildSelection(landing);
+        else         doc.setPendingParentSelection(landing);
     }
     if (inEmbedding) {
         tsneApplyingLasso = false;

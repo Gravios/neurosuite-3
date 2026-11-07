@@ -5252,6 +5252,12 @@ void KlustersApp::wsExit(bool commit)
         QList<int> created, allSources;
         for (auto it = byBasin.constBegin(); it != byBasin.constEnd(); ++it) {
             if (it.key() == keep || it.value().isEmpty()) continue;
+            // Pin the layer per carve.  createNewCluster edits data(), which
+            // follows the child palette's selection, and each carve's
+            // hierarchyChanged repopulates that palette; the rebuild guard keeps
+            // the selection, but the layer this split was approved on is a fact
+            // of the preview, not of whatever the palette holds mid-loop.
+            doc->setActiveClustering(onChild);
             // Sources read live, per basin: the previous carve renumbered
             // nothing, but the id a row sits in is still the layer's business
             // and not this function's to assume.
@@ -5502,6 +5508,69 @@ void KlustersApp::slotSingleColorUpdate(int clusterId){
     }
 }
 
+// The one place a new curated parent is adopted from a parent selection.  Reached
+// from slotUpdateShownClusters (the user selecting in the parent palette) and
+// from applyPendingParentSelection (an operation landing on its output parents,
+// which selects programmatically and so never reaches the slot) -- the output of
+// the curator's own gesture is as much their choice of parent as a click, and
+// without this the child palette kept listing the children of the PREVIOUS
+// parent after every parent split, recluster or watershed, or nothing when the
+// operation had consumed it.  An empty selection adopts nothing (see the slot).
+void KlustersApp::adoptCuratedParents(const QList<int>& selectedClusters){
+    if(doc && !selectedClusters.isEmpty()){
+        // Child view is ONE parent's children being compared with each
+        // other.  Two selections make that meaningless, and so does moving
+        // to a different parent mid-curation: in both cases the curation
+        // matrices fall back to the parent view (all parent clusters), and
+        // V has to be pressed again to re-enter child view.  Leaving the
+        // mode armed would silently re-scope to whatever parent happened
+        // to be first, which is how a comparison of the wrong unit's atoms
+        // reaches the screen looking entirely plausible.
+        //
+        // A reserved chunk cluster (a chunk a fiber-kit chunk run left unsorted)
+        // takes no part in the curation matrices, so it does not make a selection
+        // joint: [P, R] is P's child view.  Selected on its own it is still adopted,
+        // and the scope resolves to nothing (resolveMatrixScope).
+        const QList<int> curatable = reservedclusters::withoutReserved(selectedClusters);
+        const bool multipleParents = (curatable.size() > 1);
+        const int  firstParent     = curatable.isEmpty() ? selectedClusters.first()
+                                                         : curatable.first();
+        const bool parentMoved     = (doc->curatedParent() >= 0 &&
+                                      doc->curatedParent() != firstParent);
+        if(doc->matrixScopeEnabled() && !multipleParents && parentMoved){
+            doc->setMatrixScopeEnabled(false);
+            statusBar()->showMessage(
+                tr("Curation matrices: parent view (curated parent changed) — V for child view."),
+                4000);
+        }
+        // Several parents selected = the JOINT child view: children of every
+        // selected parent compared in one parent-banded matrix (this used to
+        // drop the scope; the joint matrix is what a multi-parent selection
+        // means now).  The child palette starts EMPTY under a joint scope --
+        // picking children is the matrices' job (repopulateChildPalette's
+        // joint branch) -- and the single curated parent (the palette's
+        // slot) keeps its previous value rather than adopting the first,
+        // so narrowing back to one selection is unambiguous.
+        //
+        // Order matters: update the single parent BEFORE the joint list, so
+        // narrowing from joint to single resolves the scope exactly once.
+        // ... unless that previous value names a parent that no longer exists
+        // (a recluster or watershed consumed it and landed on several new
+        // parents): a dead slot lists nothing when the selection narrows, so
+        // the first landed parent takes it, as the delete cascade's neighbour
+        // does.
+        const bool slotDead = doc->curatedParent() > 1 && !doc->clusterHasMembers(doc->curatedParent());
+        if(!multipleParents || slotDead)
+            doc->setCuratedParent(firstParent);
+        doc->setCuratedParents(multipleParents ? curatable : QList<int>());
+        if(multipleParents && doc->matrixScopeEnabled() && doc->matrixScopeActive())
+            statusBar()->showMessage(
+                tr("Curation matrices: joint child view — children of %1 parents; "
+                   "click matrix cells to pick children.")
+                    .arg(doc->matrixScopeParents().size()), 4000);
+    }
+}
+
 void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
     // This forces the parent clustering unconditionally two lines down, so it is
     // the other candidate for the flip: if it runs during the automation after a
@@ -5550,52 +5619,7 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
         // The parent moves when the user picks a DIFFERENT one, or when it ceases
         // to exist and the delete cascade points it at the neighbour.  Nothing
         // else, which is what "the mode should be independent of action" means.
-        if(doc && !selectedClusters.isEmpty()){
-            // Child view is ONE parent's children being compared with each
-            // other.  Two selections make that meaningless, and so does moving
-            // to a different parent mid-curation: in both cases the curation
-            // matrices fall back to the parent view (all parent clusters), and
-            // V has to be pressed again to re-enter child view.  Leaving the
-            // mode armed would silently re-scope to whatever parent happened
-            // to be first, which is how a comparison of the wrong unit's atoms
-            // reaches the screen looking entirely plausible.
-            //
-            // A reserved chunk cluster (a chunk a fiber-kit chunk run left unsorted)
-            // takes no part in the curation matrices, so it does not make a selection
-            // joint: [P, R] is P's child view.  Selected on its own it is still adopted,
-            // and the scope resolves to nothing (resolveMatrixScope).
-            const QList<int> curatable = reservedclusters::withoutReserved(selectedClusters);
-            const bool multipleParents = (curatable.size() > 1);
-            const int  firstParent     = curatable.isEmpty() ? selectedClusters.first()
-                                                             : curatable.first();
-            const bool parentMoved     = (doc->curatedParent() >= 0 &&
-                                          doc->curatedParent() != firstParent);
-            if(doc->matrixScopeEnabled() && !multipleParents && parentMoved){
-                doc->setMatrixScopeEnabled(false);
-                statusBar()->showMessage(
-                    tr("Curation matrices: parent view (curated parent changed) — V for child view."),
-                    4000);
-            }
-            // Several parents selected = the JOINT child view: children of every
-            // selected parent compared in one parent-banded matrix (this used to
-            // drop the scope; the joint matrix is what a multi-parent selection
-            // means now).  The child palette starts EMPTY under a joint scope --
-            // picking children is the matrices' job (repopulateChildPalette's
-            // joint branch) -- and the single curated parent (the palette's
-            // slot) keeps its previous value rather than adopting the first,
-            // so narrowing back to one selection is unambiguous.
-            //
-            // Order matters: update the single parent BEFORE the joint list, so
-            // narrowing from joint to single resolves the scope exactly once.
-            if(!multipleParents)
-                doc->setCuratedParent(firstParent);
-            doc->setCuratedParents(multipleParents ? curatable : QList<int>());
-            if(multipleParents && doc->matrixScopeEnabled() && doc->matrixScopeActive())
-                statusBar()->showMessage(
-                    tr("Curation matrices: joint child view — children of %1 parents; "
-                       "click matrix cells to pick children.")
-                        .arg(doc->matrixScopeParents().size()), 4000);
-        }
+        adoptCuratedParents(selectedClusters);
         repopulateChildPalette(selectedClusters);
     }
 }
@@ -9327,7 +9351,6 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
     }
     const QString  dir  = QFileInfo(cluPath).absolutePath() + QDir::separator();
     const std::string base = (dir + QString::fromStdString(aClu.base)).toStdString();
-    const int grp = aClu.group;
     const QString outTag = aClu.suffix.empty() ? QStringLiteral("dc")
                                : (QString::fromStdString(aClu.suffix) + QStringLiteral("_dc"));
     const std::string outTagS = outTag.toStdString();
