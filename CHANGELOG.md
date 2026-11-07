@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: leaving the child palette for the parent palette clears the atom selection](#2026-11-07--klusters-leaving-the-child-palette-for-the-parent-palette-clears-the-atom-selection) |
 | 2026-11-07 | [Klusters: the child palette follows a parent-level landing](#2026-11-07--klusters-the-child-palette-follows-a-parent-level-landing) |
 | 2026-11-07 | [Klusters: child-level delete and watershed, and where the selection lands after a split](#2026-11-07--klusters-child-level-delete-and-watershed-and-where-the-selection-lands-after-a-split) |
 | 2026-11-07 | [Klusters curation log: the hierarchy commands and the atom layer](#2026-11-07--klusters-curation-log-the-hierarchy-commands-and-the-atom-layer) |
@@ -164,6 +165,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: leaving the child palette for the parent palette clears the atom selection
+
+<details>
+<summary>Details</summary>
+
+`Shift+Tab` from the child palette to the main palette (or `Tab` wrapping
+round) used to move only the keyboard focus: the selected atoms stayed
+selected, so the views kept showing them (a child selection *is* the shown
+clustering), the curation matrices stayed child-scoped, and the parent
+palette's arrow keys drove a selection the views were not showing.  The
+focus move now deselects the atoms and re-drives the views from the fiber
+selection, takes the matrices back to the parent level as `V` does (with the
+status-bar note), and gives the main palette the list focus.  The template
+palette is no longer a stop in the `Tab` ring (parent palette, child palette,
+toolbar fields); click it to focus it.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-07 — Klusters: the child palette follows a parent-level landing
 

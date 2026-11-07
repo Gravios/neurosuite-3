@@ -80,7 +80,12 @@ Only **one** child palette is shown; selecting a different fiber replaces
 its contents, and so does an operation that lands on other fibers (a split,
 recluster, watershed or merge): the child palette then lists the atoms of
 the first fiber the selection landed on. Keyboard focus cycles **parent → child → toolbar fields**
-with `Tab` (`Shift+Tab` reverses) while the hierarchical view is open.
+with `Tab` (`Shift+Tab` reverses) while the hierarchical view is open. Moving the
+focus from the child palette back to the main palette (`Shift+Tab`, or `Tab`
+wrapping round) deselects the atoms, so the views show the fiber whole again,
+and takes the curation matrices back to the parent level (as `V` does); the
+fiber keeps its selection. The template palette is not in the `Tab` ring
+(click it to focus it).
 
 ## Hierarchy operations
 

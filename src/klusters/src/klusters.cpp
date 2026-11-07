@@ -3220,9 +3220,10 @@ void KlustersApp::buildFocusZones()
     if(childPanel && childPanel->isVisible() && childPaletteA)
         focusZones.append(childPaletteA);
 
-    // 1c. Template palette, while Templates mode shows it.
-    if(templatePanel && templatePanel->isVisible() && templatePalette)
-        focusZones.append(templatePalette);
+    // (The template palette is NOT in the ring: Tab is for moving between the
+    // parent and child palettes while curating, and a stop in the template list
+    // on the way put the arrow keys on templates the curator did not mean to
+    // browse.  Click it to focus it.)
 
     // 2. Toolbar fields only
     if(paramBar){

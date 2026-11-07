@@ -413,6 +413,34 @@ void KlustersApp::cycleHierarchyFocus(bool forward){
     const int n = focusZones.size();
     const int nextI = (cur < 0) ? (forward ? 0 : n - 1)
                                 : (forward ? (cur + 1) % n : (cur - 1 + n) % n);
+
+    // Child palette -> parent palette (Shift+Tab, or Tab wrapping round): the
+    // curator is done with the atoms and wants the PARENT whole.  Leaving the
+    // child selection standing kept the views on the selected atoms (a child
+    // selection IS the shown clustering, slotChildSelectionChanged), kept the
+    // matrices child-scoped, and made the parent palette's arrow keys drive a
+    // palette whose selection the views were not showing.  So: drop the child
+    // selection (silently -- selectItems emits nothing -- then re-drive the views
+    // from the parent selection), take the matrices back to the parent level as
+    // V does, and give the parent palette the list focus.
+    if (cur >= 0 && focusZones[cur] == childPaletteA && focusZones[nextI] == clusterPalette
+            && childPaletteA && doc) {
+        const bool hadChildren = !childPaletteA->selectedClusters().isEmpty();
+        if (hadChildren) {
+            childPaletteA->selectItems(QList<int>());
+            slotChildSelectionChanged(QList<int>());        // no child selected -> the parent view
+        }
+        if (doc->matrixScopeEnabled()) {
+            doc->setMatrixScopeEnabled(false);
+            statusBar()->showMessage(tr("Curation matrices: parent view (focus left the child palette) "
+                                        "— V for child view."), 4000);
+        }
+        if (KlustersDoc::scopeTraceEnabled())
+            qDebug().noquote() << QStringLiteral("[scope] cycleHierarchyFocus child -> parent: children cleared=%1")
+                                  .arg(hadChildren ? "true" : "false");
+        clusterPalette->setFocusToList();
+        return;
+    }
     focusZones[nextI]->setFocus(Qt::TabFocusReason);
 }
 
