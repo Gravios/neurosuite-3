@@ -148,6 +148,9 @@ the first word is the program and the rest is substituted:
 | `%selection` / `%children` | the selected ids, one argument each |
 | `%params` | where the `--name value` parameters go (appended when the template has none) |
 
+A `%token` inside a parameter VALUE is substituted too, so a descriptor default of `%variant` means
+"the open clustering's variant" (fiber-kit's `method` parameter).
+
 ### `<input>`: session or sub-session (§3b)
 
 | value | the engine runs on |
@@ -188,9 +191,12 @@ spike — relabel, never drop) maps back to the selection by position, exactly a
 Everything `<sub>.*` is removed when the run ends, whatever the outcome.  The same layout is what
 fiber-kit's `fk subsession export` writes (its `docs/pipeline.md`, "Reclustering a selection"), so a
 sorter can be developed against the CLI and plugged into Klusters by a descriptor alone.  Shipped:
-fiber-kit's `fiber-kit-recluster` (`fk install klusters-plugin`); *Actions → Recluster → Recluster with
-fiber-kit* (`Shift+Q`) runs it with the Preferences defaults (no dialog), falling back to the
-`fiberKitReclusterCommand` setting when the descriptor is not installed.
+fiber-kit's `fiber-kit-recluster` (`fk install klusters-plugin`, which also installs
+`fiber-kit-klusters.yaml` beside the descriptor -- the tuned profile made session-agnostic for a
+sub-session -- and points the descriptor's `config` parameter at it, so the plugin runs the same
+configuration whatever session is open; edit that file to change what a recluster runs).  *Actions →
+Recluster → Recluster with fiber-kit* (`Shift+Q`) runs it with the Preferences defaults (no dialog),
+falling back to the `fiberKitReclusterCommand` setting when the descriptor is not installed.
 
 ### 3c. Preferences → Plugins
 

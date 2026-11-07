@@ -1250,13 +1250,17 @@ recording (realign `--reextract`, deconvolution, the consensus envelope) read
 the real one.  It then runs the fiber-kit command (settings key
 `fiberKitReclusterCommand`; the default is
 `fk run %electrodeGroupID --session %fileBaseName --final-clu %fileBaseName.clu.klusters.%electrodeGroupID`),
-so **the plan and knobs are the session folder's `fiber-kit.yaml`** --
-`fk set config --profile best` in that folder chooses them, for whole-group
-runs and selections alike.  With fiber-kit's plugin descriptor installed
-(`fk install klusters-plugin`), `Shift+Q` runs the `fiber-kit-recluster`
-plugin instead, with the parameter defaults set in **Preferences → Plugins**
-(`profile`, `config`, `plan`, `method`); the Plugins menu runs it with a
-dialog.  Any other sorter plugs in the same way (a `recluster` descriptor;
+so, without the plugin, **the plan and knobs are the session folder's
+`fiber-kit.yaml`**.  With fiber-kit's plugin installed (`fk install
+klusters-plugin`) the recluster runs the `fiber-kit-recluster` plugin instead,
+and its configuration is **`fiber-kit-klusters.yaml` beside the descriptor** in
+Klusters' plugin directory: the tuned profile made session-agnostic for a
+sub-session (every chunk, no resume, the open clustering's variant, no QC
+report), passed at run time by the plugin's `config` parameter whatever
+session is open -- edit that file to change what a recluster runs.  The
+plugin's parameter defaults (`profile`, `config`, `plan`, `method`) are in
+**Preferences → Plugins**; the Plugins menu runs it with a dialog.  Any other
+sorter plugs in the same way (a `recluster` descriptor;
 `src/klusters/docs/PLUGIN_API.md` §3b).  The final `.clu` is read back by spike order; every
 temporary file, including what the stages wrote, is removed.  The engine reads
 the spikes on disk, so the spike set must be the saved one (any clustering edit

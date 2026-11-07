@@ -150,13 +150,18 @@ static bool isTrue(const QString& v)
     return l == QLatin1String("true") || l == QLatin1String("on") || l == QLatin1String("yes") || l == QLatin1String("1");
 }
 
-QStringList PluginRegistry::paramArgs(const KlustersPlugin& plugin, const QMap<QString, QString>& params)
+QStringList PluginRegistry::paramArgs(const KlustersPlugin& plugin, const QMap<QString, QString>& params,
+                                      const QMap<QString, QString>& context)
 {
     QStringList argv;
     // Descriptor parameters as "--name value".  An Optional parameter left empty
-    // is omitted; a Bool is the bare flag when true and nothing when false.
+    // is omitted; a Bool is the bare flag when true and nothing when false.  A
+    // %token in the value is the context's (so `%variant` follows the open clustering).
     for (const PluginParameter& p : plugin.parameters) {
-        const QString v = params.value(p.name, p.value).trimmed();
+        QString v = params.value(p.name, p.value).trimmed();
+        if (v.contains(QLatin1Char('%')))
+            for (auto it = context.constBegin(); it != context.constEnd(); ++it)
+                v.replace(QLatin1Char('%') + it.key(), it.value());
         if (p.effectiveType() == PluginParameter::Type::Bool) {
             if (isTrue(v)) argv << (QStringLiteral("--") + p.name);
             continue;
@@ -180,7 +185,7 @@ QStringList PluginRegistry::buildArgv(const KlustersPlugin& plugin,
                                      const QList<int>& selection)
 {
     QStringList argv;
-    const QStringList pargs = paramArgs(plugin, params);
+    const QStringList pargs = paramArgs(plugin, params, context);
 
     if (!plugin.command.isEmpty()) {
         // The <command> template: %tokens from the context, %selection/%children as one argument per

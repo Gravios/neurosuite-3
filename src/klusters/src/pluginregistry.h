@@ -86,8 +86,11 @@ public:
                                  const QMap<QString, QString>& params,
                                  const QMap<QString, QString>& context,
                                  const QList<int>& selection);
-    /** The "--name value" arguments alone (as buildArgv appends them). */
-    static QStringList paramArgs(const KlustersPlugin& plugin, const QMap<QString, QString>& params);
+    /** The "--name value" arguments alone (as buildArgv appends them).  A %token in a VALUE is
+     *  substituted from @p context too (a descriptor default of `%variant` means "the open
+     *  clustering's variant"). */
+    static QStringList paramArgs(const KlustersPlugin& plugin, const QMap<QString, QString>& params,
+                                 const QMap<QString, QString>& context = {});
 
 private:
     QList<KlustersPlugin> mPlugins;

@@ -7,7 +7,7 @@
 //     3 decimals, *_path / a/b.c -> Path, choices -> Choice, else Text);
 //   * buildArgv with a template: %tokens substituted, %selection one argument per id, %params where
 //     placed (appended when absent), a Bool true = bare flag / false = nothing, an empty Optional
-//     omitted, a list value split; without a template: the positional form as before;
+//     omitted, a list value split, %tokens in a value substituted; without a template: the positional form;
 //   * PluginSettings: values() overlays stored on descriptor defaults, store() keeps only what differs
 //     and drops stale keys, reset(), overridden(); the group name escapes '/'.
 // QtCore only, own main, run via ctest.
@@ -92,6 +92,9 @@ int main(int argc, char** argv)
     params["verbose"] = "false";
     argv1 = PluginRegistry::buildArgv(p, params, ctx, {});
     check(!argv1.contains("--verbose"), "a false Bool adds nothing");
+    params["chunks"] = "%variant-%tag";
+    argv1 = PluginRegistry::buildArgv(p, params, ctx, {});
+    check(argv1.contains("stderiv-cur"), "%tokens in a parameter VALUE are substituted from the context: " + S(argv1));
     KlustersPlugin q = p; q.command = "engine %selection --n %nchan";
     ctx.insert("nchan", "8");
     QStringList argv2 = PluginRegistry::buildArgv(q, {}, ctx, QList<int>{3, 4});

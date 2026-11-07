@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: %tokens in plugin parameter values](#2026-11-07--klusters-tokens-in-plugin-parameter-values) |
 | 2026-11-07 | [Klusters: the active recluster engine, and the radial menu's Recluster ▸ Plugin ring](#2026-11-07--klusters-the-active-recluster-engine-and-the-radial-menus-recluster--plugin-ring) |
 | 2026-11-07 | [Klusters: recluster plugins on the sub-session, typed descriptors, Preferences → Plugins](#2026-11-07--klusters-recluster-plugins-on-the-sub-session-typed-descriptors-preferences--plugins) |
 | 2026-11-07 | [Klusters: Recluster with fiber-kit -- a plan on the selected clusters](#2026-11-07--klusters-recluster-with-fiber-kit--a-plan-on-the-selected-clusters) |
@@ -168,6 +169,20 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: %tokens in plugin parameter values
+
+<details>
+<summary>Details</summary>
+
+A `%token` inside a plugin parameter's value is substituted from the run's
+context like the `<command>` template's (`PluginRegistry::paramArgs`), so a
+descriptor default of `%variant` means "the open clustering's variant" --
+fiber-kit's `method` parameter (fiber-kit 0.65.0), whose plugin now runs with
+the session-agnostic `fiber-kit-klusters.yaml` installed beside its descriptor
+(README "Recluster with fiber-kit", PLUGIN_API §3b).  pluginregistry test: 22.
+
+</details>
 
 ## 2026-11-07 — Klusters: the active recluster engine, and the radial menu's Recluster ▸ Plugin ring
 
