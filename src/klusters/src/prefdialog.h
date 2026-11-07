@@ -19,6 +19,7 @@
 #define PREFDIALOG_H
 
 #include <QWidget>
+#include <QMap>
 #include <qpagedialog.h>
 
 class PrefDisplay;
@@ -86,6 +87,7 @@ class PrefDialog : public QPageDialog {
     PrefInput*        prefInput;        // generated input-binding page (input-remapping plan §5)
     PrefRadialMenu*   prefRadialMenu;   // the right-click wheel's layout editor
     QList<PrefPluginPage*> prefPlugins; // Plugins: one generated page per installed descriptor
+    QMap<QString, QPageWidgetItem*> pluginPageItems;   // plugin name -> its page (Reclustering's "Parameters…")
     QComboBox*        themeCombo;
     bool applyEnable;
 };

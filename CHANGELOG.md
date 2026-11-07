@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters: the Reclustering preferences page around the engine](#2026-11-07--klusters-the-reclustering-preferences-page-around-the-engine) |
 | 2026-11-07 | [Klusters: %tokens in plugin parameter values](#2026-11-07--klusters-tokens-in-plugin-parameter-values) |
 | 2026-11-07 | [Klusters: the active recluster engine, and the radial menu's Recluster ▸ Plugin ring](#2026-11-07--klusters-the-active-recluster-engine-and-the-radial-menus-recluster--plugin-ring) |
 | 2026-11-07 | [Klusters: recluster plugins on the sub-session, typed descriptors, Preferences → Plugins](#2026-11-07--klusters-recluster-plugins-on-the-sub-session-typed-descriptors-preferences--plugins) |
@@ -169,6 +170,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters: the Reclustering preferences page around the engine
+
+<details>
+<summary>Details</summary>
+
+*Preferences → Curation → Reclustering* now opens with the **engine** --
+KlustaKwik, fiber-kit, or any installed `recluster` plugin (the same setting as
+*Actions → Recluster → Engine* and the wheel's Plugin ring; Apply re-checks the
+menu action) -- a summary of what the chosen engine runs (a plugin's command
+and its current parameter values, stored or descriptor defaults), and
+*Parameters…*, which jumps to the plugin's page under *Preferences → Plugins*.
+The KlustaKwik settings follow as that engine's group, marked inactive when
+another engine is active; a fiber-kit group holds the fallback command only
+while fiber-kit's descriptor is not installed (with it, a note names the
+installed `fiber-kit-klusters.yaml` the plugin runs).  *Default* returns the
+engine to KlustaKwik.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-07 — Klusters: %tokens in plugin parameter values
 

@@ -158,8 +158,10 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
             ":/icons/refinement");
 
     prefReclustering = new PrefReclustering(this);
-    subPage(curation, prefReclustering, tr("Reclustering"), tr("Reclustering Configuration"),
+    subPage(curation, prefReclustering, tr("Reclustering"), tr("Reclustering: the engine and its configuration"),
             ":/icons/reclustering");
+    if (plugins) prefReclustering->setPlugins(plugins->plugins());
+    connect(prefReclustering, &PrefReclustering::changed, this, &PrefDialog::enableApply);
 
     // ── Plugins: generated from the installed descriptors ──────────
     if (plugins) {
@@ -171,11 +173,19 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
         for (const KlustersPlugin& p : list) {
             PrefPluginPage* page = new PrefPluginPage(p, this);
             const QString header = p.kind.isEmpty() ? p.name : tr("%1  [%2]").arg(p.name, p.kind);
-            subPage(pluginsGroup, page, p.name, header, ":/icons/reclustering");
+            QPageWidgetItem* it = new QPageWidgetItem(page, p.name);
+            it->setHeader(header);
+            it->setIcon(QIcon(":/icons/reclustering"));
+            addSubPage(pluginsGroup, it);
+            pluginPageItems.insert(p.name, it);
             connect(page, &PrefPluginPage::changed, this, &PrefDialog::enableApply);
             prefPlugins.append(page);
         }
     }
+    // Reclustering's "Parameters…" jumps to the engine's plugin page.
+    connect(prefReclustering, &PrefReclustering::openPluginPage, this, [this](const QString& name) {
+        if (QPageWidgetItem* it = pluginPageItems.value(name)) setCurrentPage(it);
+    });
 
     // ── Wire enableApply on every interactive widget ───────────────
     // Session
@@ -323,6 +333,8 @@ void PrefDialog::updateDialog()
     prefSession->setNbUndo(configuration().getNbUndo());
 
     // Reclustering
+    prefReclustering->setReclusterEngine(configuration().getReclusterEngine());
+    prefReclustering->setFiberKitReclusterCommand(configuration().getFiberKitReclusterCommand());
     prefReclustering->setReclusteringExecutable(configuration().getReclusteringExecutable());
     prefReclustering->setReclusteringArguments(configuration().getReclusteringArguments());
     prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
@@ -419,6 +431,7 @@ void PrefDialog::updateDialog()
     // Input bindings: load the effective chords from the registry into the editors.
     prefInput->updateFromRegistry();
     for (PrefPluginPage* page : prefPlugins) page->updateFromSettings();
+    prefReclustering->setReclusterEngine(configuration().getReclusterEngine());   // re-reads the plugins' stored defaults for its summary
 
     enableButtonApply(false);
     applyEnable = false;
@@ -432,6 +445,8 @@ void PrefDialog::updateConfiguration()
     configuration().setNbUndo(prefSession->getNbUndo());
 
     // Reclustering
+    configuration().setReclusterEngine(prefReclustering->getReclusterEngine());
+    configuration().setFiberKitReclusterCommand(prefReclustering->getFiberKitReclusterCommand());
     configuration().setReclusteringExecutable(prefReclustering->getReclusteringExecutable());
     configuration().setReclusteringArguments(prefReclustering->getReclusteringArguments());
     configuration().setAutoSelectFeatures(prefReclustering->getAutoSelectFeatures());
@@ -556,6 +571,8 @@ void PrefDialog::slotDefault()
     prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndexDefault());
     prefSession->setNbUndo(configuration().getNbUndoDefault());
 
+    prefReclustering->setReclusterEngine(QStringLiteral("klustakwik"));
+    prefReclustering->setFiberKitReclusterCommand(configuration().getFiberKitReclusterCommandDefault());
     prefReclustering->setReclusteringExecutable(configuration().getReclusteringExecutableDefault());
     prefReclustering->setReclusteringArguments(configuration().getReclusteringArgumentsDefault());
     prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());

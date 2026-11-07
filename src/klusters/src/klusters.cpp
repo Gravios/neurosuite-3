@@ -1895,6 +1895,9 @@ void KlustersApp::executePreferencesDlg(){
 
 void KlustersApp::applyPreferences() {
     configuration().write();
+    // The recluster engine may have been changed on the Reclustering page: re-check the Engine
+    // action (the menu, the wheel's dot) and refresh the Recluster action's status tip.
+    populateReclusterEngineMenu();
     // "Realign and nudge from any feature space" decides which actions a
     // borrowed space locks.
     applyFeatureSpaceLocks();

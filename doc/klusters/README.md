@@ -1273,7 +1273,15 @@ The sub-session's realigned spike times are not written back -- the new
 clusters are queued for Klusters' own post-recluster realign, as any recluster's
 are.  See fiber-kit's `docs/pipeline.md`, "Reclustering a selection".
 
-KiloKlustaKwik parameters (executable path, UseFeatures, MaxClusters, etc.) are configured in **Settings → Preferences → Curation → Reclustering**. The program is
+**Preferences → Curation → Reclustering** is built around the engine: the
+choice at the top (KlustaKwik, fiber-kit, or any installed `recluster` plugin
+-- the same choice as *Actions → Recluster → Engine* and the wheel's Plugin
+ring) with a summary of what the chosen engine runs and *Parameters…*, which
+jumps to its page under *Preferences → Plugins*; below it the KlustaKwik
+engine's own settings (executable path, arguments, UseFeatures and the
+feature-selection options), marked inactive when another engine is active
+(`Shift+M`/`Shift+C` still use them); and, when fiber-kit's descriptor is not
+installed, its fallback command. The program is
 `KiloKlustaKwik_cpu` (KiloKlustaKwik's CPU build, installed by every build;
 set `KiloKlustaKwik` for a GPU build) by default, with the arguments
 `%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features`.
