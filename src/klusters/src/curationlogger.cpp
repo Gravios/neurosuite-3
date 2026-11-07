@@ -43,6 +43,7 @@ void CurationLogger::open(const QString& logPath,
     electrodeGroup  = groupId;
     nextActionIdx       = 0;
     revokeEpochCounter  = 0;
+    gestureIdx = -1; gestureStack.clear();
     pending.clear();
 
     // Generate a short session token (first 8 hex chars of a UUID)
@@ -133,13 +134,29 @@ void CurationLogger::trimBuffer()
             if (e.undoable) ++n;
         return n;
     };
+    // An OPEN gesture is never flushed by either loop: its outcome is still to
+    // come (endGesture), and flushing it would write a plan with no end.  Both
+    // loops pop the oldest entry that is not an open gesture.
+    auto isOpenGesture = [this](const PendingEntry& e) {
+        return e.type == ActionType::GESTURE && gestureStack.contains(e.actionIdx);
+    };
+    auto flushOldestClosed = [&]() -> bool {
+        for (int i = 0; i < pending.size(); ++i)
+            if (!isOpenGesture(pending[i])) {
+                flushEntry(pending[i]);
+                pending.removeAt(i);
+                return true;
+            }
+        return false;
+    };
     while (!pending.isEmpty() && undoPaired() > maxBuffer)
-        flushOldest();
+        if (!flushOldestClosed()) break;
     // Completed not-undoable entries at the front are final the moment a
     // newer entry exists (their status can never flip); shed them so long
     // realign/nudge runs do not grow the ring without bound.  The newest
-    // entry is never shed here -- it may still be mid begin/commit.
-    while (pending.size() > 1 && !pending.first().undoable)
+    // entry is never shed here -- it may still be mid begin/commit.  An open
+    // gesture at the front blocks this shedding until it ends.
+    while (pending.size() > 1 && !pending.first().undoable && !isOpenGesture(pending.first()))
         flushOldest();
 }
 
@@ -168,6 +185,7 @@ int CurationLogger::beginAction(ActionType type,
     e.before    = before;
     e.status    = QStringLiteral("good");
     e.tsBegin   = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
+    e.gestureIdx = gestureIdx;
     pending.append(e);
 
     // Overflow: an entry pushed beyond the undo-paired capacity can no
@@ -175,6 +193,41 @@ int CurationLogger::beginAction(ActionType type,
     trimBuffer();
 
     return e.actionIdx;
+}
+
+int CurationLogger::beginGesture(const QString& kind, const QMap<QString, QVariant>& plan)
+{
+    if (!file.isOpen())
+        return -1;
+    PendingEntry e;
+    e.actionIdx   = nextActionIdx++;
+    e.type        = ActionType::GESTURE;
+    e.undoable    = false;                    // its primitives are the undo-paired entries
+    e.tsBegin     = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
+    e.gestureIdx  = gestureIdx;               // the enclosing gesture, -1 at top level
+    QMap<QString, QVariant> d = plan;
+    d.insert(QStringLiteral("gesture"), kind);
+    e.details.append(d);
+    pending.append(e);
+    gestureStack.append(e.actionIdx);
+    gestureIdx = e.actionIdx;
+    return gestureIdx;
+}
+
+void CurationLogger::endGesture(const QMap<QString, QVariant>& outcome)
+{
+    if (gestureIdx < 0)
+        return;
+    for (PendingEntry& e : pending)
+        if (e.type == ActionType::GESTURE && e.actionIdx == gestureIdx) {
+            QMap<QString, QVariant> d = outcome;
+            d.insert(QStringLiteral("gesture_end"), true);
+            e.details.append(d);
+            break;
+        }
+    gestureStack.removeLast();
+    gestureIdx = gestureStack.isEmpty() ? -1 : gestureStack.last();
+    trimBuffer();
 }
 
 void CurationLogger::markCurrentActionNotUndoable()
@@ -311,9 +364,9 @@ void CurationLogger::flushEntry(const PendingEntry& e, bool final)
     if (e.placeholder) return;   // hidden undo-stack twin: nothing to emit
 
     for (const ClusterSnapshot& s : e.before)
-        writeLine("before", "source", s, e.actionIdx, e.type, e.status, final);
+        writeLine("before", "source", s, e.actionIdx, e.type, e.status, final, e.gestureIdx);
     for (const ClusterSnapshot& s : e.after)
-        writeLine("after",  "result", s, e.actionIdx, e.type, e.status, final);
+        writeLine("after",  "result", s, e.actionIdx, e.type, e.status, final, e.gestureIdx);
 
     // Detail lines: ACTION_DETAIL records keyed by the same action_idx
     // and carrying the same status field.
@@ -326,7 +379,8 @@ void CurationLogger::flushEntry(const PendingEntry& e, bool final)
               << "\"action\":\"" << actionStr << "\","
               << "\"action_idx\":" << e.actionIdx << ","
               << "\"status\":\"" << e.status << "\","
-              << "\"final\":" << (final ? "true" : "false");
+              << "\"final\":" << (final ? "true" : "false") << ","
+              << "\"gesture_idx\":" << e.gestureIdx;
 
         for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
             out << ",\"" << jsonEscape(it.key()) << "\":";
@@ -344,7 +398,8 @@ void CurationLogger::writeLine(const QString& phase,
                                 int aidx,
                                 ActionType action,
                                 const QString& status,
-                                bool final)
+                                bool final,
+                                int gestureIdx)
 {
     // JSON has no NaN/Infinity: QTextStream prints "nan"/"inf" for them,
     // which poisons the whole line for any strict parser (pandas included).
@@ -366,8 +421,10 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"action_idx\":" << aidx << ","
           << "\"status\":\"" << status << "\","
           << "\"final\":" << (final ? "true" : "false") << ","
+          << "\"gesture_idx\":" << gestureIdx << ","
           << "\"phase\":\"" << phase << "\","
           << "\"role\":\"" << role << "\","
+          << "\"layer\":\"" << s.layer << "\","
           << "\"cluster\":" << s.clusterId << ","
           // ── A. count / rate ───────────────────────────────────────────────
           << "\"n_spikes\":" << s.nSpikes << ","
@@ -527,6 +584,8 @@ QString CurationLogger::actionName(ActionType t)
     case ActionType::RENUMBER_PARTIAL:       return QStringLiteral("RENUMBER_PARTIAL");
     case ActionType::WATERSHED:              return QStringLiteral("WATERSHED");
     case ActionType::SORT_ALL:               return QStringLiteral("SORT_ALL");
+    case ActionType::GESTURE:                return QStringLiteral("GESTURE");
+    case ActionType::HIERARCHY_EDIT:         return QStringLiteral("HIERARCHY_EDIT");
     }
     return QStringLiteral("UNKNOWN");
 }

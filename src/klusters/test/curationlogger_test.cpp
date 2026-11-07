@@ -9,7 +9,11 @@
 //     decision, and a crash after a Save keeps everything saved before it;
 //   * every line is valid JSON (QJsonDocument parses it), NaN becomes null,
 //     and a QVariantList detail is written as a JSON array (it was "");
-//   * SESSION_OPEN carries the context map (method, stage, versions).
+//   * SESSION_OPEN carries the context map (method, stage, versions);
+//   * gestures: a GESTURE entry per hierarchy command, nested (Break Up runs
+//     promoteChildren), every primitive begun inside carries gesture_idx, the
+//     open gesture is not flushed by a trim, and an undo after the gesture flips
+//     the primitive (undo-paired), never the gesture; the layer field.
 // QtCore only, own main, run via ctest.
 
 #include "curationlogger.h"
@@ -140,6 +144,59 @@ int main(int argc, char** argv)
     for (const QJsonObject& o : L) if (o["event"] == "ACTION_DETAIL" && o["final"] == true) ++finalDetails;
     check(finalDetails == 1, "the detail is rewritten once as final");
     check(L.last()["event"] == "SESSION_CLOSE" && L.last()["n_actions"] == 2, "SESSION_CLOSE");
+
+    // ── gestures and the layer field ──
+    const QString path2 = dir.filePath("rat.cur.stderiv.6.g");
+    {
+        CurationLogger log;
+        log.open(path2, "rat.clu.stderiv.6.g", "6", 32552.0, 8, 32);
+        log.setMaxBufferEntries(2);                 // tiny ring: the trim must spare the open gesture
+        const int gOuter = log.beginGesture("breakUpParents", {{"parents", QVariantList{5}}});
+        log.beginAction(CurationLogger::ActionType::MOVE_SPIKES, QList<ClusterSnapshot>{snap(5), snap(9)});
+        log.commitAction(QList<ClusterSnapshot>{snap(5), snap(9)});
+        log.beginGesture("promoteChildren", {{"children", QVariantList{41}}});
+        log.beginAction(CurationLogger::ActionType::MOVE_SPIKES, QList<ClusterSnapshot>{snap(5), snap(12)});
+        log.commitAction(QList<ClusterSnapshot>{snap(5), snap(12)});
+        log.endGesture({{"produced", 12}});
+        log.beginAction(CurationLogger::ActionType::MOVE_SPIKES, QList<ClusterSnapshot>{snap(5), snap(13)});   // overflows the ring of 2
+        log.commitAction(QList<ClusterSnapshot>{snap(5), snap(13)});
+        check(log.currentGestureIdx() == gOuter, "after the inner endGesture the outer is current again");
+        log.endGesture({{"landed", QVariantList{9, 12, 13}}});
+        // a child-layer entry, then an undo: the undo must flip the last undo-paired primitive
+        ClusterSnapshot c = snap(7); c.layer = "child";
+        log.beginAction(CurationLogger::ActionType::HIERARCHY_EDIT, c);
+        log.commitAction(c);
+        log.markCurrentActionNotUndoable();
+        log.notifyUndo();
+        log.close();
+    }
+    const QList<QJsonObject> G = readLines(path2);
+    QMap<int, QJsonObject> gest; QList<QJsonObject> prims; QJsonObject childLine;
+    for (const QJsonObject& o : G) {
+        if (o["action"] == "GESTURE" && o["event"] == "ACTION_DETAIL" && o.contains("gesture")) gest[o["action_idx"].toInt()] = o;
+        if (o["action"] == "MOVE_SPIKES" && o["phase"] == "after") prims.append(o);
+        if (o["layer"] == "child") childLine = o;
+    }
+    check(gest.size() == 2, "two GESTURE entries (outer breakUpParents, inner promoteChildren)");
+    int outerIdx = -1, innerIdx = -1;
+    for (auto it = gest.constBegin(); it != gest.constEnd(); ++it)
+        (it.value()["gesture"] == "breakUpParents" ? outerIdx : innerIdx) = it.key();
+    check(gest[innerIdx]["gesture_idx"].toInt() == outerIdx, "the inner gesture's own lines carry the outer's index");
+    check(gest[outerIdx]["gesture_idx"].toInt() == -1, "the outer gesture is top level (gesture_idx -1)");
+    int inOuter = 0, inInner = 0;
+    for (const QJsonObject& o : prims) {
+        if (o["gesture_idx"].toInt() == outerIdx) ++inOuter;
+        if (o["gesture_idx"].toInt() == innerIdx) ++inInner;
+    }
+    check(inOuter == 4 && inInner == 2, "primitives carry the gesture they ran in (2 outer moves x2 clusters, 1 inner)");
+    bool endSeen = false;
+    for (const QJsonObject& o : G) if (o["action"] == "GESTURE" && o["gesture_end"] == true && o.contains("landed")) endSeen = true;
+    check(endSeen, "endGesture's outcome is recorded on the gesture entry (the trim did not flush it while open)");
+    check(childLine["layer"] == "child" && childLine["action"] == "HIERARCHY_EDIT" && childLine["status"] == "good",
+          "a child-layer line carries layer=child and, not undo-paired, stays good");
+    bool lastMoveBad = false;
+    for (const QJsonObject& o : prims) if (o["cluster"] == 13 && o["status"] == "bad") lastMoveBad = true;
+    check(lastMoveBad, "the undo flipped the last undo-paired primitive, not the child entry or a gesture");
 
     std::printf("%s (%d checks, %d failed)\n", g_fail ? "FAILED" : "OK", g_ran, g_fail);
     return g_fail ? 1 : 0;

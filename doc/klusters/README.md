@@ -980,6 +980,8 @@ Consequences worth knowing:
 |---|---|
 | `event` | `SESSION_OPEN`, `CHECKPOINT`, `SESSION_CLOSE`, `ACTION_DETAIL`, or empty for action snapshots |
 | `final` | `false` on a checkpoint copy (the action was still undoable), `true` once it left the ring |
+| `layer` | `parent` or `child`: which labelling the snapshot's `cluster` id belongs to |
+| `gesture_idx` | `action_idx` of the hierarchy command this primitive ran inside; -1 outside one |
 | `action` | The operation kind — see action type table below |
 | `status` | `good` (kept) or `bad` (reverted via Ctrl+Z) — present on every action / detail record |
 | `phase` | `before`, `after`, or empty (for events / details) |
@@ -1021,23 +1023,54 @@ the pipeline output it curated.
 | `MOVE_SPIKES` | Manual subset reassignment | 1 | 1 | No |
 | `RENUMBER_PARTIAL` | Renumber selected to end (`T`) | renamed | renamed | No |
 | `SORT_ALL` | Any renumbering sort: **Actions → Sort Clusters**, `Shift+S` | — | — | Yes (the id map) |
+| `GESTURE` | A hierarchy command (see Layers, gestures) | — | — | Yes (plan, outcome) |
+| `HIERARCHY_EDIT` | `mergeChildren` (atom layer) | N atoms | 1 atom | Yes |
 | `UNDO`, `REDO` | Reverts/replays a previous action | — | — | No |
+
+### Layers, gestures and the hierarchy commands
+
+Every snapshot line carries `layer`: `parent` (the `.clu` units) or `child`
+(the `.clc` atoms).  Child ids collide with parent numerals, so readers key on
+(`layer`, `cluster`).  A child-scope edit -- a split, watershed, delete or
+recluster of atoms, `mergeChildren` -- writes its snapshots from the atom
+layer with `layer: child`.  Child edits live on the atom undo stack, which the
+logger's status walk cannot see, so these entries are not undo-paired: their
+`status` stays `good`, and an atom-layer `Ctrl+Shift+Z` / redo is logged as its
+own `UNDO` / `REDO` detail (`layer: child`, with the `added` / `modified` /
+`deleted` atom ids of the edit reverted).
+
+A hierarchy **command** is logged as a `GESTURE` entry -- one per command,
+no snapshots, not undo-paired -- whose first `ACTION_DETAIL` holds the plan
+and whose last (`gesture_end: true`) the outcome.  Every primitive the
+command ran (`MOVE_SPIKES`, `GROUP`, a nested gesture) carries the command's
+`action_idx` in `gesture_idx` (-1 outside any gesture), so the per-atom
+entries fold back into the command:
+
+| `gesture` | plan details | outcome |
+|---|---|---|
+| `promoteChildren` | `children`, `new_parent` | `produced` |
+| `dropChildToNoise` | `child`, `parent`, `n_spikes` | |
+| `dissolveParent` | `parent`, `children`; one nested `promoteChildren` per child | `produced` |
+| `breakUpParents` | `parents`, `moves` (per child: `parent`, `spikes`, `best`, `r`, `target`, `keeps_parent_id`) | `landed` |
+| `mergeOrphanParents` | `groups` (per template parent: `members` with `orphan`, `best`, `r`); one `GROUP` per group | `made` |
+| `mergeOrphanChildren` | `parent`, `min_spikes`, `min_correlation`, `established`, `orphans` (with `r`), `matched`, `stray` | `merged` |
+| `collapseToSelfChildren`, `flattenHierarchyToClu`, `compactAllClusterIds`, `promoteToHierarchy` | counts / id maps | |
+
+Gestures nest (Break Up Parent runs `promoteChildren`): the inner gesture's
+own lines carry the outer's index.
+
+```python
+g = df[(df.action == "GESTURE") & df.gesture.notna()].set_index("action_idx")
+moves = df[(df.action == "MOVE_SPIKES") & (df.gesture_idx >= 0)]
+moves.join(g[["gesture"]], on="gesture_idx")      # each atom move with the command it served
+```
 
 ### What is not logged
 
-The log records the **parent layer**.  Edits made in child (atom) scope --
-a child split, watershed, delete or recluster, `mergeChildren`, collapse to
-self-children, flatten, compact ids, and promotion to a hierarchical
-session -- write no entry: child ids collide with parent numerals, so a
-snapshot keyed by id would describe the wrong cluster.  The hierarchy
-commands that move whole atoms between parents (promote, drop to noise,
-break up, merge orphan parents, dissolve) do reach the log, but as the
-parent-layer primitives they are built from: one `MOVE_SPIKES` per atom,
-one `GROUP` per merge, with nothing tying the fragments to the gesture or
-recording the template scores the gesture used.  Realign and nudge entries
-carry no waveform section unless the mean-waveform cache was warm.  A full
-time sort (`applyTimeSort`) permutes every row-indexed file and is not
-logged; it runs on saved files and the document is reopened.
+Realign and nudge entries carry no waveform section unless the mean-waveform
+cache was warm (`waveform_available`).  A full time sort (`applyTimeSort`)
+permutes every row-indexed file and is not logged; it runs on saved files and
+the document is reopened.
 
 ### `ACTION_DETAIL` records
 

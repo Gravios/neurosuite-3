@@ -1901,11 +1901,25 @@ public:
      *  batch-scoped cache (computed once for the whole run) instead of a fresh
      *  full-dataset pass per call — see beginRealignBatchLog(). */
     QList<ClusterSnapshot> snapshotClusters(const QList<int>& clusterIds,
-                                             double isiThreshMs = 3.0) const {
+                                             double isiThreshMs = 3.0,
+                                             bool childLayer = false) const {
         QList<ClusterSnapshot> snaps;
         if (clusterIds.isEmpty())
             return snaps;
         snaps.reserve(clusterIds.size());
+        if (childLayer) {
+            // Atom-layer snapshots: computed on childData, stamped layer=child so
+            // the ids (which collide with parent numerals) are not misread.  No
+            // centroid cache (it is the parent layer's); nearest-cluster fields
+            // stay unset.
+            if (!childData) return snaps;
+            for (int id : clusterIds) {
+                ClusterSnapshot s = childData->computeSnapshot(id, isiThreshMs, nullptr, /*liteIsolation=*/true);
+                s.layer = QStringLiteral("child");
+                snaps.append(s);
+            }
+            return snaps;
+        }
         if (centroidCacheEnabled) {
             // Batch (PCA-Center Align All): skip the O(nSpikes) L-ratio /
             // isolation-distance pass, the dominant per-cluster cost — see
@@ -2734,6 +2748,22 @@ private:
     /** Snapshot @p clusterIds and open a "before" log block for @p action.
      *  No-op if the logger is not open.  Returns quietly on empty id list. */
     void logBefore(CurationLogger::ActionType action, const QList<int>& clusterIds);
+
+    /** logBefore / logAfterNotUndoable for an ATOM-layer edit: snapshots are
+     *  taken on childData and carry layer=child.  Child edits live on the atom
+     *  undo stack, which the logger's status walk does not see, so the entry is
+     *  not undo-paired (status stays "good"; an atom undo is logged as its own
+     *  CHILD_UNDO detail by logChildUndo). */
+    void logChildBefore(CurationLogger::ActionType action, const QList<int>& atomIds);
+    void logChildAfter(const QList<int>& atomIds);
+    /** One not-undoable entry recording an atom-layer undo / redo (which the
+     *  parent walk cannot pair): the ChildEdit's added / modified / deleted. */
+    void logChildUndoRedo(bool redo, const QList<int>& added, const QList<int>& modified, const QList<int>& deleted);
+
+    /** Bracket a hierarchy command: every primitive logged until endGesture
+     *  carries this gesture's index.  No-ops without an open logger. */
+    void beginGesture(const QString& kind, const QMap<QString, QVariant>& plan);
+    void endGesture(const QMap<QString, QVariant>& outcome = {});
 
     /** Snapshot @p clusterIds and write "after" records for the current block.
      *  Must follow a matching logBefore() call for the same action; if that

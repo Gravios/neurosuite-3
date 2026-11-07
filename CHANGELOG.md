@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-07 | [Klusters curation log: the hierarchy commands and the atom layer](#2026-11-07--klusters-curation-log-the-hierarchy-commands-and-the-atom-layer) |
 | 2026-11-07 | [Klusters curation log: checkpoint on save, refractory and cell-type statistics, pair evidence](#2026-11-07--klusters-curation-log-checkpoint-on-save-refractory-and-cell-type-statistics-pair-evidence) |
 | 2026-11-06 | [ndm_extractspikes reads the .res ndm_detectspikes writes](#2026-11-06--ndm_extractspikes-reads-the-res-ndm_detectspikes-writes) |
 | 2026-11-06 | [ndm: tab completion of options, their values and spike groups](#2026-11-06--ndm-tab-completion-of-options-their-values-and-spike-groups) |
@@ -161,6 +162,39 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-07 — Klusters curation log: the hierarchy commands and the atom layer
+
+<details>
+<summary>Details</summary>
+
+The second half of the curation-log audit.  The log recorded the parent layer
+only: every child-scope edit wrote nothing, and the hierarchy commands
+appeared as the parent primitives they are built from (one `MOVE_SPIKES` per
+atom, one `GROUP` per merge) with nothing tying the fragments to the command
+or recording the template scores it used.
+
+- **`layer` on every snapshot line** (`parent` / `child`).  Child ids collide
+  with parent numerals; readers key on (`layer`, `cluster`).
+- **Child-scope edits are logged**: split, `SPLIT_N`, watershed, delete and
+  recluster of atoms, and `mergeChildren` (`HIERARCHY_EDIT`), with snapshots
+  computed on the atom layer.  They are not undo-paired (the atom stack is
+  invisible to the logger's walk), so their status stays `good`; an atom-layer
+  undo / redo is logged as its own `UNDO` / `REDO` detail with the edit's ids.
+- **`GESTURE` entries** for `promoteChildren`, `dropChildToNoise`,
+  `dissolveParent`, `breakUpParents`, `mergeOrphanParents`,
+  `mergeOrphanChildren`, `collapseToSelfChildren`, `flattenHierarchyToClu`,
+  `compactAllClusterIds` and `promoteToHierarchy`: the plan (for the template
+  commands, every candidate with its correlation and target) as the first
+  detail, the outcome as the last; every primitive run inside carries the
+  gesture's index in `gesture_idx`.  Gestures nest.
+- The ring trim never flushes an open gesture (found by the new test: with a
+  small ring the outer gesture of a Break Up was written before its end).
+
+`klusters_test_curationlogger`: 32 checks.  Eight translation units compile
+warning-free under `-Wall -O2` against Qt 6.4.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-07 — Klusters curation log: checkpoint on save, refractory and cell-type statistics, pair evidence
 

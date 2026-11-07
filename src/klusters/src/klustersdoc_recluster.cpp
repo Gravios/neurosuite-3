@@ -183,8 +183,17 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     // are child ids -- same three reasons the split/delete sites gate.  The
     // bracket guard turns the error-path and success logAfter calls into
     // no-ops when this begin is skipped.
-    if (!reclusterTargetIsChild())
+    const bool onChild = reclusterTargetIsChild();
+    if (!onChild)
         logBefore(CurationLogger::ActionType::RECLUSTER, clustersToRecluster);
+    else   // atom layer: snapshots on childData with layer=child, not undo-paired
+        logChildBefore(CurationLogger::ActionType::RECLUSTER, clustersToRecluster);
+    // Close the entry by the scope it was opened in.
+    auto closeLog = [&](const QList<int>& ids, bool mutated) {
+        if (onChild)        logChildAfter(ids);
+        else if (mutated)   logAfter(ids);
+        else                logAfterNotUndoable(ids);
+    };
 
     QString cluFileName(reclusteringFetFileName);
     NS3_DIAG()<<"reclusteringFetFileName "<<reclusteringFetFileName;
@@ -199,7 +208,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
         patch81_cleanupTempYaml(reclusteringFetFileName);
         // Aborted before any mutation: close the log block (no undo twin).
-        logAfterNotUndoable(clustersToRecluster);
+        closeLog(clustersToRecluster, false);
         return DOWNLOAD_ERROR;
     }
 
@@ -212,7 +221,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         if(!QFile::remove(cluFileName))
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         patch81_cleanupTempYaml(reclusteringFetFileName);
-        logAfterNotUndoable(clustersToRecluster);   // aborted, nothing mutated
+        closeLog(clustersToRecluster, false);       // aborted, nothing mutated
         return OPEN_ERROR;
     }
 
@@ -230,7 +239,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         if(!QFile::remove(cluFileName))
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
         patch81_cleanupTempYaml(reclusteringFetFileName);
-        logAfterNotUndoable(clustersToRecluster);   // aborted, nothing mutated
+        closeLog(clustersToRecluster, false);       // aborted, nothing mutated
         return INCORRECT_CONTENT;
     }
     cluFile.close();
@@ -244,7 +253,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
 
     // Log the newly created clusters — reclusteredClusterList is populated by
     // integrateReclusteredClusters() above and contains the KlustaKwik outputs.
-    logAfter(reclusteredClusterList);
+    closeLog(reclusteredClusterList, true);
 
     return OK;
 }

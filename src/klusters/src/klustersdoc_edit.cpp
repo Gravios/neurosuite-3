@@ -455,6 +455,10 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         logBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
                                   : CurationLogger::ActionType::DELETE_ARTEFACT,
                   clustersToDelete);
+    else   // atom layer: snapshots on childData, layer=child, not undo-paired
+        logChildBefore(clusterId == 1 ? CurationLogger::ActionType::DELETE_NOISE
+                                       : CurationLogger::ActionType::DELETE_ARTEFACT,
+                       clustersToDelete);
 
     // Supersede in-flight view jobs, without waiting: they read their
     // captured epoch snapshot, so the swap cannot tear under them (see
@@ -667,6 +671,8 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     // child scope anyway, but the intent reads better stated.
     if (!childScopeActive)
         logAfter(QList<int>{ clusterId });
+    else
+        logChildAfter(QList<int>{ clusterId });
 
     // Hierarchical mode: deleting WHOLE parents cannot break the nesting invariant --
     // every atom inside a deleted parent moves with it, so each still has exactly one
@@ -1220,6 +1226,9 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
     if (!onChild)
         logBefore(CurationLogger::ActionType::SPLIT,
                   QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+    else   // atom layer: snapshots on childData with layer=child; not undo-paired (atom stack)
+        logChildBefore(CurationLogger::ActionType::SPLIT,
+                       QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
     // Supersede in-flight view jobs, without waiting: they read their
     // captured epoch snapshot, so the swap cannot tear under them (see
@@ -1237,12 +1246,18 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
         // guard swallowed the NEXT action's after-snapshots.
         if (!onChild)
             logAfterNotUndoable(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+        else
+            logChildAfter(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     }
     else if(onChild){
         // Child split: the drawn spikes are a subset of one child atom, so the new
         // atom is a sibling under the SAME parent.  Refresh the child layer and let
         // the child palette select + focus the new sibling.
         const int newAtom = static_cast<int>(newClusterId);
+        {
+            QList<int> res = fromClusters; res.append(newAtom);
+            logChildAfter(res);
+        }
         // Child split is one self-snapshotting childData edit (Data::createNewCluster
         // calls prepareUndo once) -> one ChildEdit on the atom-undo timeline, so
         // Ctrl+Shift+Z reverts it: 'added' is removed and the sources restored.
@@ -1380,6 +1395,9 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
     if (!onChild)
         logBefore(CurationLogger::ActionType::SPLIT_N,
                   QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+    else
+        logChildBefore(CurationLogger::ActionType::SPLIT_N,
+                       QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
     // Supersede in-flight view jobs, without waiting: they read their
     // captured epoch snapshot, so the swap cannot tear under them (see
@@ -1396,11 +1414,17 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
         activeView->showAllWidgets();
         if (!onChild)   // as createNewCluster: close the entry, not undo-paired
             logAfterNotUndoable(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
+        else
+            logChildAfter(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     }
     else if(onChild){
         // Child split: the new atoms are siblings under the same parent(s).
         // Refresh the child layer and let the child palette select + focus them.
         std::sort(newClusters.begin(), newClusters.end());
+        {
+            QList<int> res = fromClusters; res += newClusters;
+            logChildAfter(res);
+        }
         // Child split: one self-snapshotting childData edit (Data::createNewClusters
         // calls prepareUndo once, even for several new atoms) -> one ChildEdit, so
         // Ctrl+Shift+Z reverts the whole split in a single step.

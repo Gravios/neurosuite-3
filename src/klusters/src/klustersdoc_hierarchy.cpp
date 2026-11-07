@@ -92,6 +92,11 @@
 
 // ── hierarchical (.clc child) clustering ─────────────────────────────────────
 
+
+namespace {
+QVariantList idList(const QList<int>& l) { QVariantList v; for (int x : l) v << x; return v; }
+}
+
 void KlustersDoc::setActiveClustering(bool child){
     // Every layer flip, in order, so the log shows which step moved the view.
     if (scopeTraceEnabled() && child != childScopeActive)
@@ -432,6 +437,17 @@ bool KlustersDoc::compactAllClusterIds(){
     QMap<int,int> atomOldNew, atomNewOld;
     childData->renumber(atomOldNew, atomNewOld);
     const bool atomsMoved = !atomOldNew.isEmpty();
+    if (parentsMoved || atomsMoved) {
+        // The parent half already placed its undo placeholder (renumberClusters);
+        // this names the command and the atom map.
+        QVariantMap atomMap;
+        for (auto it = atomOldNew.constBegin(); it != atomOldNew.constEnd(); ++it)
+            atomMap.insert(QString::number(it.key()), it.value());
+        beginGesture(QStringLiteral("compactAllClusterIds"),
+                     {{ QStringLiteral("parents_moved"), parentsMoved }, { QStringLiteral("atoms_moved"), atomsMoved },
+                      { QStringLiteral("atom_old_to_new"), atomMap }});
+        endGesture();
+    }
 
     if (atomsMoved) {
         // The parent<->child maps are a DERIVED cache: re-deriving them from
@@ -1078,6 +1094,10 @@ void KlustersDoc::collapseToSelfChildren(){
         }
         if (!safe.isEmpty()) childData->renumberPartial(safe);
     }
+    if (changed) {
+        beginGesture(QStringLiteral("collapseToSelfChildren"), {{ QStringLiteral("rows"), n }});
+        endGesture();
+    }
 
     syncChildColors();
     rebuildHierarchyFromData();
@@ -1166,6 +1186,8 @@ int KlustersDoc::promoteChildren(const QList<int>& childrenIn, KlustersView& act
 
     setActiveClustering(false);
     const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
+    beginGesture(QStringLiteral("promoteChildren"), {{ QStringLiteral("children"), idList(children) },
+                                                      { QStringLiteral("new_parent"), newId }});
     int target = -1;
     for (int c : children){
         if (!childToParent.contains(c)) continue;
@@ -1191,11 +1213,12 @@ int KlustersDoc::promoteChildren(const QList<int>& childrenIn, KlustersView& act
             }
         }
     }
-    if (target < 0) return -1;
+    if (target < 0) { endGesture({{ QStringLiteral("outcome"), QStringLiteral("nothing moved") }}); return -1; }
     clusterPalette.updateClusterList();
     rebuildHierarchyFromData();
     setPendingParentSelection({target});   // the output is a FIBER; land there
     emit hierarchyChanged();
+    endGesture({{ QStringLiteral("produced"), target }});
     return target;
 }
 
@@ -1208,10 +1231,13 @@ bool KlustersDoc::dissolveParent(int parentId, KlustersView& activeView){
     // Each child becomes its own parent: promoteChildren with a single-element
     // list per child, not one call with all of them, which would pool them into
     // one parent and be the opposite operation.
+    beginGesture(QStringLiteral("dissolveParent"), {{ QStringLiteral("parent"), parentId },
+                                                     { QStringLiteral("children"), idList(kids) }});
     QList<int> produced;
     for (int c : kids)
-        produced.append(promoteChildren(QList<int>{c}, activeView));
+        produced.append(promoteChildren(QList<int>{c}, activeView));   // each a nested gesture
     setPendingParentSelection(produced);               // select all the exploded parents
+    endGesture({{ QStringLiteral("produced"), idList(produced) }});
     return true;
 }
 
@@ -1230,7 +1256,11 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
         if (kid > 1 && kid != childCluster) siblings.append(kid);
 
     setActiveClustering(false);
+    beginGesture(QStringLiteral("dropChildToNoise"), {{ QStringLiteral("child"), childCluster },
+                                                       { QStringLiteral("parent"), parentId },
+                                                       { QStringLiteral("n_spikes"), static_cast<int>(spk.size()) }});
     moveSpikeSubsetToCluster(parentId, spk, 1, activeView);   // 1 = noise (coloured by the wrapper)
+    endGesture();
 
     // Child-primary: the child is RECLASSIFIED, not relabelled.
     //
@@ -1366,6 +1396,7 @@ int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
     // counts: no waveform, no opinion.
     QList<int> matched;
     int stray = 0;
+    QVariantList scored;
     for (int c : orphans) {
         std::vector<double> mean;
         if (!childData->clusterTemplateFor(c, mean, sd) || mean.size() != len)
@@ -1374,9 +1405,16 @@ int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
         if (r <= -2.0) continue;
         if (r >= minCorrelation) matched.append(c);
         else                     ++stray;
+        scored << QVariantMap{{ QStringLiteral("orphan"), c }, { QStringLiteral("r"), r },
+                              { QStringLiteral("spikes"), static_cast<int>(childData->nbSpikesInCluster(c)) }};
     }
     if (matchedOut) *matchedOut = static_cast<int>(matched.size());
     if (strayOut)   *strayOut   = stray;
+    beginGesture(QStringLiteral("mergeOrphanChildren"),
+                 {{ QStringLiteral("parent"), parentId }, { QStringLiteral("min_spikes"), minSpikes },
+                  { QStringLiteral("min_correlation"), minCorrelation },
+                  { QStringLiteral("established"), idList(established) }, { QStringLiteral("orphans"), scored },
+                  { QStringLiteral("matched"), idList(matched) }, { QStringLiteral("stray"), stray }});
 
     // The matching orphans are merged into ONE atom (mergeChildren: one atom
     // undo step); a group of one is already its own child, so merging it would
@@ -1384,8 +1422,11 @@ int KlustersDoc::mergeOrphanChildren(int parentId, int minSpikes,
     // each stays its own atom for the curator to judge.  Merging them together
     // would make one atom of every shape that failed the test, and the stricter
     // the threshold, the more of them -- at r 0.99 nearly all the orphans.
-    if (matched.size() < 2 || mergeChildren(matched, activeView) < 0)
+    if (matched.size() < 2 || mergeChildren(matched, activeView) < 0) {
+        endGesture({{ QStringLiteral("outcome"), QStringLiteral("nothing merged") }});
         return 0;
+    }
+    endGesture({{ QStringLiteral("merged"), static_cast<int>(matched.size()) }});
     return static_cast<int>(matched.size());
 }
 
@@ -1469,6 +1510,18 @@ QList<int> KlustersDoc::breakUpParents(const QList<BreakUpMove>& plan, KlustersV
     QList<int> order;                                    // parents, in plan order
     for (const BreakUpMove& m : plan)
         if (!order.contains(m.parent)) order.append(m.parent);
+    {   // the plan, move by move: child, its parent, the best-matching parent, the
+        // correlation, and where it goes -- the template decision the log would
+        // otherwise only show as unexplained MOVE_SPIKES
+        QVariantList moves;
+        for (const BreakUpMove& m : plan)
+            moves << QVariantMap{{ QStringLiteral("child"), m.child }, { QStringLiteral("parent"), m.parent },
+                                 { QStringLiteral("spikes"), m.spikes }, { QStringLiteral("best"), m.best },
+                                 { QStringLiteral("r"), m.r }, { QStringLiteral("target"), m.target },
+                                 { QStringLiteral("keeps_parent_id"), m.keepsParentId }};
+        beginGesture(QStringLiteral("breakUpParents"), {{ QStringLiteral("parents"), idList(order) },
+                                                         { QStringLiteral("moves"), moves }});
+    }
     for (int p : order) {
         QList<int> asked{ p };
         if (leaveOutReserved(asked, tr("Break up parent")) > 0) continue;
@@ -1501,6 +1554,7 @@ QList<int> KlustersDoc::breakUpParents(const QList<BreakUpMove>& plan, KlustersV
     rebuildHierarchyFromData();
     setPendingParentSelection(landed);
     emit hierarchyChanged();
+    endGesture({{ QStringLiteral("landed"), idList(landed) }});
     return landed;
 }
 
@@ -1601,6 +1655,18 @@ QList<int> KlustersDoc::mergeOrphanParents(const QList<OrphanParentGroup>& plan,
                                            KlustersView& activeView)
 {
     QList<int> made;
+    {
+        QVariantList groups;
+        for (const OrphanParentGroup& g : plan) {
+            QVariantList mem;
+            for (const OrphanMatch& m : g.members)
+                mem << QVariantMap{{ QStringLiteral("orphan"), m.orphan }, { QStringLiteral("best"), m.best },
+                                   { QStringLiteral("r"), m.r }};
+            groups << QVariantMap{{ QStringLiteral("template_parent"), g.templateParent },
+                                  { QStringLiteral("members"), mem }};
+        }
+        beginGesture(QStringLiteral("mergeOrphanParents"), {{ QStringLiteral("groups"), groups }});
+    }
     for (const OrphanParentGroup& g : plan) {
         // A group of one is already its own parent: merging it would only give
         // it a new id.  A group without a template is no group to merge.
@@ -1612,6 +1678,7 @@ QList<int> KlustersDoc::mergeOrphanParents(const QList<OrphanParentGroup>& plan,
     }
     // mergeParents parks each merge's own parent; land on all of them instead.
     if (!made.isEmpty()) setPendingParentSelection(made);
+    endGesture({{ QStringLiteral("made"), idList(made) }});
     return made;
 }
 
@@ -1625,7 +1692,14 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
         if (childToParent.value(c, -2) != parentId) return -1;
 
     QList<int> grp = children;                         // groupClusters takes a non-const ref
+    logChildBefore(CurationLogger::ActionType::HIERARCHY_EDIT, children);
     const int newId = static_cast<int>(childData->groupClusters(grp));   // mutates childData, self-snapshots
+    if (curationLogger && curationLogger->isOpen() && logActionOpen)
+        curationLogger->recordActionDetails({{ QStringLiteral("edit"), QStringLiteral("mergeChildren") },
+                                             { QStringLiteral("parent"), parentId },
+                                             { QStringLiteral("children"), idList(children) },
+                                             { QStringLiteral("new_atom"), newId }});
+    logChildAfter(QList<int>{ newId });
 
     // Refresh the views, exactly as the parent-layer merge does.
     //
@@ -1750,6 +1824,10 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     for (dataType id : after) survivors.append(static_cast<int>(id));
     ChildEdit e; e.modified = survivors;
     recordChildEdit(e);
+    beginGesture(QStringLiteral("flattenHierarchyToClu"),
+                 {{ QStringLiteral("atoms_before"), atomsBefore }, { QStringLiteral("atoms_after"), static_cast<int>(after.size()) },
+                  { QStringLiteral("parents_collapsed"), static_cast<int>(collapsedParents.size()) }});
+    endGesture();
 
     syncChildColors();
     // Child-primary: a flatten rewrites the whole relation -- every parent ends up
@@ -1768,6 +1846,7 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     ChildEdit e = childUndoStack.takeFirst();
     childData->undo();                                 // reverts childData's tables
     childRedoStack.prepend(e);
+    logChildUndoRedo(/*redo=*/false, e.added, e.modified, e.deleted);
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
     // with it is not recoverable from the ChildEdit -- it records id SETS, not the
@@ -1788,6 +1867,7 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     ChildEdit e = childRedoStack.takeFirst();
     childData->redo();                                // re-applies the atom edit
     childUndoStack.prepend(e);
+    logChildUndoRedo(/*redo=*/true, e.added, e.modified, e.deleted);
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
     // with it is not recoverable from the ChildEdit -- it records id SETS, not the
@@ -1950,5 +2030,9 @@ bool KlustersDoc::promoteToHierarchy(QString* message){
     }
     *message = tr("Wrote %1 and %2: each of the %n unit(s) of %3 is now one atom with the same id.",
                   "", p.clcCount).arg(clcName, clpName, cluName);
+    beginGesture(QStringLiteral("promoteToHierarchy"),
+                 {{ QStringLiteral("atoms"), static_cast<int>(p.clcCount) }, { QStringLiteral("clc"), clcName },
+                  { QStringLiteral("clp"), clpName }});
+    endGesture();
     return true;
 }

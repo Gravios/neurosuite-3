@@ -452,17 +452,23 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
 
-    // NO curation log: the parent-stage logger's ids collide with atom
-    // numerals -- the atom layer is out of its scope by design (see
-    // createNewCluster's child branch).
+    // Atom-layer log entry: snapshots on childData with layer=child, not
+    // undo-paired (the atom stack is invisible to the logger's status walk).
+    logChildBefore(CurationLogger::ActionType::WATERSHED, inputs);
     QList<int> newAtomList;
     if (!childData->integrateBasinLabeling(inputs, rowToBasin, newAtomList)
             || newAtomList.isEmpty()) {
         // Nothing was mutated, but the threads are quiesced: relaunch them,
         // as createNewCluster's empty-selection path does.
         activeView->showAllWidgets();
+        logChildAfter(inputs);
         return 0;
     }
+    if (curationLogger && curationLogger->isOpen() && logActionOpen)
+        curationLogger->recordActionDetails({{ QStringLiteral("n_basins"), res.numBasins },
+                                             { QStringLiteral("n_points"), static_cast<int>(xs.size()) },
+                                             { QStringLiteral("parent"), owner }});
+    logChildAfter(newAtomList);
 
     // One self-snapshotting childData edit (integrateBasinLabeling calls
     // prepareUndo internally) -> one ChildEdit on the atom-undo timeline, so

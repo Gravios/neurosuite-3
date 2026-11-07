@@ -208,6 +208,12 @@ struct ClusterSnapshot
     /// Number of prior curation actions that touched this cluster in the
     /// current session.  0 = untouched since document open.
     int     actionHistoryDepth = 0;
+
+    // ── M. Layer ──────────────────────────────────────────────────────────
+    /// "parent" (the .clu units) or "child" (the .clc atoms).  Child ids collide
+    /// with parent numerals, so without this field a child snapshot would read
+    /// as a parent cluster; readers must key on (layer, cluster).
+    QString layer = QStringLiteral("parent");
 };
 
 // ---------------------------------------------------------------------------
@@ -235,6 +241,13 @@ public:
         WATERSHED       = 14, ///< 2D density-watershed split: M source → N basin clusters + residual
         SORT_ALL        = 15, ///< A cluster sort renumbered the clusters; one ACTION_DETAIL with the
                               ///< old → new id map, no cluster snapshots (no spike moves)
+        GESTURE         = 16, ///< A hierarchy command (promote, drop to noise, break up, merge orphan
+                              ///< parents/children, dissolve, collapse, flatten, compact, promote to
+                              ///< hierarchy): one entry per command, with the plan as details; the
+                              ///< primitives it ran carry its index in gesture_idx.  Not undo-paired.
+        HIERARCHY_EDIT  = 17, ///< A child-layer edit that is one atom-undo step but no parent primitive
+                              ///< (mergeChildren, collapseToSelfChildren, flattenHierarchyToClu,
+                              ///< compactAllClusterIds, promoteToHierarchy): snapshots carry layer=child.
     };
 
     CurationLogger();
@@ -341,6 +354,21 @@ public:
      *  status walk and from the undo-paired buffer capacity. */
     void markCurrentActionNotUndoable();
 
+    /** Open a GESTURE: a hierarchy command made of several primitives.  Every
+     *  beginAction until endGesture() is stamped with this gesture's index
+     *  (written as gesture_idx on its lines), so a reader can fold the per-atom
+     *  MOVE_SPIKES / GROUP entries back into the command that ran them.  The
+     *  gesture entry itself takes no snapshots and is not undo-paired; its
+     *  details hold the plan.  Returns the gesture's action index.  Gestures
+     *  nest (Break Up Parent runs promoteChildren): an inner gesture's own
+     *  lines carry the outer's index in gesture_idx, so the tree folds up. */
+    int  beginGesture(const QString& kind, const QMap<QString, QVariant>& plan);
+
+    /** Close the open gesture, recording its outcome (counts, produced ids). */
+    void endGesture(const QMap<QString, QVariant>& outcome);
+
+    int  currentGestureIdx() const { return gestureIdx; }
+
     /** Append a hidden placeholder for a Data-undo entry that has no logged
      *  action (the full renumber).  It participates in the undo/redo walk
      *  exactly like a logged entry -- keeping the ring aligned with the undo
@@ -376,6 +404,8 @@ private:
         /// redo stack while this entry was "bad" -- its redo can never
         /// arrive, so notifyRedo must not flip it.  Zero: still redoable.
         int                                  revokedEpoch = 0;
+        /// The gesture this primitive ran inside (-1: none).
+        int                                  gestureIdx  = -1;
     };
 
     /** Emit all of the entry's accumulated lines to the file.  Each line
@@ -403,7 +433,8 @@ private:
                    int aidx,
                    ActionType action,
                    const QString& status,
-                   bool final);
+                   bool final,
+                   int gestureIdx);
 
     QString jsonEscape(const QString& s) const;
     /** Write one ACTION_DETAIL value as JSON (number, bool, string, or an
@@ -419,5 +450,7 @@ private:
     int     nextActionIdx     = 0;     ///< monotonic counter, never reset within a session
     int     maxBuffer     = 50;    ///< capacity of pending; tracks Settings.MaxUndo
     int     revokeEpochCounter = 0;   ///< monotonic begin counter for redo revocation
+    int     gestureIdx        = -1;   ///< the innermost open gesture's action index (-1: none)
+    QList<int> gestureStack;          ///< open gestures, outermost first
     QList<PendingEntry> pending;
 };

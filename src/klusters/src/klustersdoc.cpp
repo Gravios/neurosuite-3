@@ -866,6 +866,54 @@ void KlustersDoc::logAfterNotUndoable(const QList<int>& clusterIds)
     curationLogger->markCurrentActionNotUndoable();
 }
 
+void KlustersDoc::logChildBefore(CurationLogger::ActionType action, const QList<int>& atomIds)
+{
+    if (!curationLogger || !curationLogger->isOpen() || atomIds.isEmpty() || !childData)
+        return;
+    QList<ClusterSnapshot> snaps = snapshotClusters(atomIds, 3.0, /*childLayer=*/true);
+    lastLoggedActionIdx = curationLogger->beginAction(action, snaps);
+    logActionOpen = true;
+}
+
+void KlustersDoc::logChildAfter(const QList<int>& atomIds)
+{
+    if (!curationLogger || !curationLogger->isOpen() || !logActionOpen)
+        return;
+    logActionOpen = false;
+    if (!atomIds.isEmpty() && childData)
+        curationLogger->commitAction(snapshotClusters(atomIds, 3.0, /*childLayer=*/true));
+    curationLogger->markCurrentActionNotUndoable();     // atom stack, not Data's: no twin to pair with
+}
+
+void KlustersDoc::logChildUndoRedo(bool redo, const QList<int>& added, const QList<int>& modified,
+                                   const QList<int>& deleted)
+{
+    if (!curationLogger || !curationLogger->isOpen())
+        return;
+    auto lst = [](const QList<int>& l) { QVariantList v; for (int x : l) v << x; return v; };
+    curationLogger->beginAction(redo ? CurationLogger::ActionType::REDO : CurationLogger::ActionType::UNDO,
+                                QList<ClusterSnapshot>());
+    curationLogger->recordActionDetails({
+        { QStringLiteral("layer"),    QStringLiteral("child") },
+        { QStringLiteral("added"),    lst(added) },
+        { QStringLiteral("modified"), lst(modified) },
+        { QStringLiteral("deleted"),  lst(deleted) },
+    });
+    curationLogger->markCurrentActionNotUndoable();
+}
+
+void KlustersDoc::beginGesture(const QString& kind, const QMap<QString, QVariant>& plan)
+{
+    if (curationLogger && curationLogger->isOpen())
+        curationLogger->beginGesture(kind, plan);
+}
+
+void KlustersDoc::endGesture(const QMap<QString, QVariant>& outcome)
+{
+    if (curationLogger && curationLogger->isOpen())
+        curationLogger->endGesture(outcome);
+}
+
 void KlustersDoc::beginRealignBatchLog(const QList<int>& /*clusterIds*/)
 {
     // Enable the batch-scoped centroid cache.  Per-cluster realign logging stays
