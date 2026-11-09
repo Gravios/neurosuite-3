@@ -23,6 +23,7 @@
 #include <QTimer>
 #include "errormatrixview.h"
 #include "matrixgrid.h"
+#include "matrixdisplayorder.h"
 #include "matrixbadge.h"
 #include "matrixtemplatecols.h"  // drawMatrixTemplateStrip — the shared edge-strip renderer
 #include "featuremask.h"
@@ -104,6 +105,10 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& kdoc,KlustersView& kview,const QCo
         invalidate(REDRAW);
         update();
     });
+
+    // A scoped sort (or the scope's exit) changes the held atom order the
+    // display permutation derives from; the other three matrices listen too.
+    connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &ErrorMatrixView::applyScopeSortOrder);
 
     //Compute the error matrix.
     updateMatrixContents();
@@ -789,34 +794,25 @@ void ErrorMatrixView::resetDisplayOrder()
 void ErrorMatrixView::applyScopeSortOrder()
 {
     // Derive the display permutation from the doc's HELD child-scope sort
-    // order: specials keep the front, held atom ids follow at their row
-    // indices, and rows the order does not name append in natural order, so
-    // the permutation is always complete (setDisplayOrder treats a
-    // wrong-sized one as identity -- completeness is correctness here).
-    // Held atom ids absent from the rows (an atom that died since the sort)
-    // simply do not place; a scope edit therefore keeps the survivors'
-    // order.  With no scope or nothing held, any leftover permutation
-    // clears: the held order is the ONLY thing allowed to survive a
-    // recompute -- the unscoped display reorder stays invalidated by a
-    // fresh compute, exactly as before.
+    // order (MatrixDisplayOrder::derive: specials keep the front, held atom
+    // ids follow at their row indices, unnamed rows append in natural order,
+    // so the permutation is always complete -- setDisplayOrder treats a
+    // wrong-sized one as identity).  Held atom ids absent from the rows (an
+    // atom that died since the sort) simply do not place; a scope edit
+    // therefore keeps the survivors' order.  With no scope or nothing held,
+    // any leftover permutation clears: the held order is the ONLY thing
+    // allowed to survive a recompute -- the unscoped display reorder stays
+    // invalidated by a fresh compute, exactly as before.  The template,
+    // residual and drift matrices derive theirs from the same list, so the
+    // four read in one order.
     const QList<int> held = doc.matrixScopeActive() ? doc.scopeSortOrderList()
                                                     : QList<int>();
-    if(held.isEmpty()){
+    const QList<int> perm = MatrixDisplayOrder::derive(clusterList, held);
+    if(perm.isEmpty()){
         displayOrder.clear();
         update();
         return;
     }
-    QList<int> perm;
-    perm.reserve(clusterList.size());
-    QSet<int> placed;
-    for(int i = 0; i < clusterList.size(); ++i)
-        if(clusterList[i] <= 1){ perm.append(i); placed.insert(i); }
-    for(int cid : held){
-        const int i = clusterList.indexOf(cid);
-        if(i >= 0 && !placed.contains(i)){ perm.append(i); placed.insert(i); }
-    }
-    for(int i = 0; i < clusterList.size(); ++i)
-        if(!placed.contains(i)) perm.append(i);
     setDisplayOrder(perm);
 }
 

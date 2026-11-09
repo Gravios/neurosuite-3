@@ -120,6 +120,16 @@ target_link_libraries(klusters_test_subsessionfiles PRIVATE Qt6::Core)
 add_test(NAME klusters_test_subsessionfiles COMMAND klusters_test_subsessionfiles)
 endif()
 
+# matrixdisplayorder -- the display permutation the four curation matrices derive from the
+# document's held child-scope sort order (header-only, QtCore only).
+if (Qt6_FOUND)
+add_executable(klusters_test_matrixdisplayorder matrixdisplayorder_test.cpp)
+target_compile_features(klusters_test_matrixdisplayorder PRIVATE cxx_std_20)
+target_include_directories(klusters_test_matrixdisplayorder PRIVATE "${_klu_src}")
+target_link_libraries(klusters_test_matrixdisplayorder PRIVATE Qt6::Core)
+add_test(NAME klusters_test_matrixdisplayorder COMMAND klusters_test_matrixdisplayorder)
+endif()
+
 if(Qt6_FOUND)
     add_executable(klusters_test_matrixtemplatestrip matrixtemplatestrip_test.cpp)
     target_compile_features(klusters_test_matrixtemplatestrip PRIVATE cxx_std_20)

@@ -546,8 +546,10 @@ public:
     /** The held CHILD-SCOPE sort order: the scope's atoms in the order the
      *  user last sorted them (Sort Clusters under a child scope).  Held so
      *  the sort SURVIVES matrix recomputes -- after every accepted compute
-     *  the error matrix re-derives its display permutation from this list
-     *  (ErrorMatrixView::applyScopeSortOrder) -- and cleared at exactly the
+     *  each curation matrix (error, template, residual, drift) re-derives
+     *  its display permutation from this list (applyScopeSortOrder, via
+     *  MatrixDisplayOrder) and the child palette relists in it -- and
+     *  cleared (clearScopeSortOrder, signal scopeSortOrderChanged) at the
      *  two exits from the child view: the V toggle turning the scope off,
      *  and the curated parent(s) changing.  Atom ids, not row indices: rows
      *  move on every recompute, ids are what the sort meant.  The atom
@@ -555,6 +557,9 @@ public:
      *  the parent maps are the wrong id space for it. */
     void setScopeSortOrder(const QList<int>& orderedIds);
     QList<int> scopeSortOrderList() const { return scopeSortOrder; }
+    /** Drop the held order (the scope's exits call this); emits
+     *  scopeSortOrderChanged only when something was held. */
+    void clearScopeSortOrder();
 
     /** The layer the matrix views must compute over.
      *
@@ -2027,6 +2032,12 @@ Q_SIGNALS:
     /** The scoped-matrix parent changed: the matrix views should recompute against
      *  matrixScopeClusters(), or clear if matrixScopeActive() has become false. */
     void matrixScopeChanged();
+
+    /** The HELD child-scope sort order changed (set by a scoped sort, cleared
+     *  at the scope's exits): every curation matrix re-derives its display
+     *  permutation from scopeSortOrderList(), and the child palette relists
+     *  in that order.  Display only; no cluster is renumbered. */
+    void scopeSortOrderChanged();
 
     /** Repopulate the child palette for the current parent.  Separate from
      *  hierarchyChanged: that signal also drives the deferred post-edit automation

@@ -1910,14 +1910,12 @@ private:
     Data& sortMetricData() const;
 
     /**Child-scope application of a sort: hold @p orderedIds as the doc's
-     * scope sort order and have the error matrix derive its display
-     * permutation from them (ErrorMatrixView::applyScopeSortOrder), without
-     * renumbering anything.  Because every accepted recompute re-derives
-     * from the held ids, the sort PERSISTS across edits within the child
-     * view and is dropped only at its exits: the V toggle, or a change of
-     * curated parent(s).  The child palette keeps natural id order (its
-     * similarity order is a parent-level feature).  Says so, or says why
-     * not (no error matrix computed).*/
+     * scope sort order; every curation matrix (error, template, residual,
+     * drift) derives its display permutation from them (applyScopeSortOrder,
+     * on scopeSortOrderChanged and after every accepted recompute) and the
+     * child palette relists in the same order, without renumbering anything.
+     * The sort PERSISTS across edits within the child view and is dropped
+     * only at its exits: the V toggle, or a change of curated parent(s).*/
     void applyScopedDisplayOrder(const QList<int>& orderedIds,
                                  const QString& sortName,
                                  const QString& detail);

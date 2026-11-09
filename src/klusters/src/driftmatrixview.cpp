@@ -131,8 +131,21 @@ DriftMatrixView::DriftMatrixView(KlustersDoc& doc_, KlustersView& view_,
     connect(maxUmSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, &DriftMatrixView::driftRangeChanged);
 
+    // A scoped sort (or the scope's exit) changes the held atom order the
+    // display permutation derives from.
+    connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &DriftMatrixView::applyScopeSortOrder);
+
     initializeColorMap();
     updateMatrixContents();
+}
+
+void DriftMatrixView::applyScopeSortOrder()
+{
+    // Display only: the permutation re-derives from the doc's held child-scope
+    // sort order over the rows as computed; identity with no scope or nothing
+    // held.  The error matrix does the same from the same list.
+    order_.apply(clusterList, doc.matrixScopeActive() ? doc.scopeSortOrderList() : QList<int>());
+    update();
 }
 
 DriftMatrixView::~DriftMatrixView()
@@ -376,6 +389,7 @@ void DriftMatrixView::customEvent(QEvent* event)
         if (!ranFor.isEmpty()) cachedSelection = ranFor;
 
         clusterList    = ev->getClusterList();
+        order_.apply(clusterList, doc.matrixScopeActive() ? doc.scopeSortOrderList() : QList<int>());
         nSampCached    = ev->getNbSamples();
         maxShiftCached = ev->getMaxShift();
         activateCache(slot);
@@ -644,7 +658,7 @@ void DriftMatrixView::drawMatrix(QPainter& p)
             for (int col = 0; col < n; ++col) {
                 if (row == col) { line[col] = static_cast<uchar>(blackIdx); continue; }
                 // xcorr is already bounded [0,1]; high (red) = similar.
-                double r = (*scores)(row+1, col+1);
+                double r = (*scores)(dm(row)+1, dm(col)+1);
                 r = std::max(0.0, std::min(1.0, r));
                 int idx = static_cast<int>(r * (NB_COLORS-1) + 0.5);
                 idx = std::max(0, std::min(NB_COLORS-1, idx));
@@ -665,7 +679,7 @@ void DriftMatrixView::drawMatrix(QPainter& p)
             QList<int> parentPerCell;      parentPerCell.reserve(n);
             QList<QColor> colourPerCell;   colourPerCell.reserve(n);
             for (int d = 0; d < n; ++d) {
-                const int par = doc.parentOfChild(clusterList[d]);
+                const int par = doc.parentOfChild(clusterList[dm(d)]);
                 parentPerCell.append(par);
                 colourPerCell.append(par >= 0 ? parentColours.color(par) : QColor());
             }
@@ -694,13 +708,13 @@ void DriftMatrixView::drawClusterIds(QPainter& p)
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         p.drawText(QRect(px, CTRL_H, w, base.y() - CTRL_H),
                    Qt::AlignHCenter | Qt::AlignBottom,
-                   clusterLabel(clusterList[col]));
+                   clusterLabel(clusterList[dm(col)]));
     }
     for (int row = 0; row < n; ++row) {
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   clusterLabel(clusterList[row]));
+                   clusterLabel(clusterList[dm(row)]));
     }
 }
 
@@ -784,8 +798,8 @@ void DriftMatrixView::drawTemplateStrip(QPainter& p)
     // template-col (c>=N) always has r<c -> +Δ on the cluster; a template-row
     // (r>=N) against a cluster-col (c<N) always has r>c -> −Δ on the template.
     auto value = [&](int r, int c, MatrixStripShade& shade)->double{
-        if (r < N && c >= N) { const int t = c - N; shade = strip_.shade(t, r); return tplClusterRow_[t][r]; }
-        if (r >= N && c < N) { const int t = r - N; shade = strip_.shade(t, c); return tplTemplateRow_[t][c]; }
+        if (r < N && c >= N) { const int t = c - N, m = dm(r); shade = strip_.shade(t, m); return tplClusterRow_[t][m]; }
+        if (r >= N && c < N) { const int t = r - N, m = dm(c); shade = strip_.shade(t, m); return tplTemplateRow_[t][m]; }
         shade = MatrixStripValue; return tplCorner_[r - N][c - N];     // template×template corner
     };
     auto colourFor = [&](double v)->QColor{                // same ramp as drawMatrix
@@ -890,7 +904,7 @@ void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
     // Strip-cell / cluster-pair resolution shared with the residual matrix via
     // matrixResolveClick(); this view applies the result (emit / doc / repaint).
     const MatrixPairSelection sel = matrixResolveClick(
-        e->position(), e->modifiers() & Qt::ControlModifier, dataReady, clusterList, strip_,
+        e->position(), e->modifiers() & Qt::ControlModifier, dataReady, order_.displayList(clusterList), strip_,
         effMatrixTopLeft(), effCellSize(),
         [this](int x){ return cellAtX(x); }, [this](int y){ return cellAtY(y); });
     if (!sel.valid)
@@ -916,18 +930,19 @@ void DriftMatrixView::mouseMoveEvent(QMouseEvent* e)
         const int row = cellAtY(e->position().toPoint().y());
         const int col = cellAtX(e->position().toPoint().x());
         if (row >= 0 && col >= 0) {
-            const int a = clusterList[row], b = clusterList[col];
+            const int mr = dm(row), mc = dm(col);          // the matrix's own triangle decides the sign
+            const int a = clusterList[mr], b = clusterList[mc];
             if (row == col) {
                 setInfoText(tr("cluster %1 (diagonal)").arg(clusterLabel(a)));
             } else {
-                const int sign = (row < col) ? +1 : -1;
+                const int sign = (mr < mc) ? +1 : -1;
                 setInfoText(
                     tr("A=%1 shifted %2%3 µm vs B=%4: xcorr %5")
                         .arg(clusterLabel(a))
                         .arg(sign < 0 ? QStringLiteral("−") : QStringLiteral("+"))
                         .arg(currentDriftUm)
                         .arg(clusterLabel(b))
-                        .arg((*scores)(row+1, col+1), 0, 'g', 3));
+                        .arg((*scores)(mr+1, mc+1), 0, 'g', 3));
             }
         }
     }

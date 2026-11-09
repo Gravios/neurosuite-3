@@ -87,6 +87,23 @@ and takes the curation matrices back to the parent level (as `V` does); the
 fiber keeps its selection. The template palette is not in the `Tab` ring
 (click it to focus it).
 
+### Sorting at the atom level
+
+With the curation matrices at the child level (`V`), **Sort Clusters** (by
+spike count, starting time, contamination, SNR, amplitude, feature-space
+similarity) and **Reorder by Similarity** (`Shift+S`, from the error or the
+template matrix, whichever was last used) sort the **fiber's atoms**. The sort
+is a **display order only**: no atom is renumbered, nothing is written. The
+error, template, residual and drift matrices all rearrange their rows and
+columns to the sorted order, and the child palette lists the atoms in the same
+order, so a cell in one matrix is at the same place in the others and in the
+list. The order is held while the child view lasts -- it survives matrix
+recomputes and edits (a merged or split atom lands in place, a new atom
+appends) -- and is dropped when the child view is left (`V`) or another fiber
+is selected: coming back shows the atoms in their natural id order again. The
+two sorts that renumber (*Sort by Error p-value*, the waveform-distance sorts)
+stay at the fiber level and say so under the child scope.
+
 ## Hierarchy operations
 
 ### Keys (while a palette holds focus)

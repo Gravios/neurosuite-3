@@ -76,8 +76,21 @@ ResidualMatrixView::ResidualMatrixView(KlustersDoc& doc_, KlustersView& view_,
                           "merge candidate), blue ≈ 1 (distinct); diagonal = A's within-cluster variance."));
     mainLayout->addWidget(infoLabel, 0);
 
+    // A scoped sort (or the scope's exit) changes the held atom order the
+    // display permutation derives from.
+    connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &ResidualMatrixView::applyScopeSortOrder);
+
     initializeColorMap();
     updateMatrixContents();
+}
+
+void ResidualMatrixView::applyScopeSortOrder()
+{
+    // Display only: the permutation re-derives from the doc's held child-scope
+    // sort order over the rows as computed; identity with no scope or nothing
+    // held.  The error matrix does the same from the same list.
+    order_.apply(clusterList, doc.matrixScopeActive() ? doc.scopeSortOrderList() : QList<int>());
+    update();
 }
 
 ResidualMatrixView::~ResidualMatrixView()
@@ -298,6 +311,7 @@ void ResidualMatrixView::customEvent(QEvent* event)
         nSampFull_  = ev->getNbSamples();
         scores      = newScores;
         clusterList = ev->getClusterList();
+        order_.apply(clusterList, doc.matrixScopeActive() ? doc.scopeSortOrderList() : QList<int>());
         recomputeDisplayMax();
         recomputeTemplateStripCells();   // fresh means/clusters: refresh the strip
     } else {
@@ -416,7 +430,7 @@ void ResidualMatrixView::drawMatrix(QPainter& p)
             for (int col = 0; col < n; ++col) {
                 if (row == col) { line[col] = static_cast<uchar>(blackIdx); continue; }
                 // Normalised residual in [0,1]; warm (high idx) = small residual.
-                double r = (*scores)(row+1, col+1) * inv;
+                double r = (*scores)(dm(row)+1, dm(col)+1) * inv;
                 r = std::max(0.0, std::min(1.0, r));
                 int idx = static_cast<int>((1.0 - r) * (NB_COLORS-1) + 0.5);
                 idx = std::max(0, std::min(NB_COLORS-1, idx));
@@ -440,7 +454,7 @@ void ResidualMatrixView::drawMatrix(QPainter& p)
             QList<int> parentPerCell;      parentPerCell.reserve(n);
             QList<QColor> colourPerCell;   colourPerCell.reserve(n);
             for (int d = 0; d < n; ++d) {
-                const int par = doc.parentOfChild(clusterList[d]);
+                const int par = doc.parentOfChild(clusterList[dm(d)]);
                 parentPerCell.append(par);
                 colourPerCell.append(par >= 0 ? parentColours.color(par) : QColor());
             }
@@ -469,13 +483,13 @@ void ResidualMatrixView::drawClusterIds(QPainter& p)
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         p.drawText(QRect(px, 0, w, base.y()),
                    Qt::AlignHCenter | Qt::AlignBottom,
-                   clusterLabel(clusterList[col]));
+                   clusterLabel(clusterList[dm(col)]));
     }
     for (int row = 0; row < n; ++row) {
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   clusterLabel(clusterList[row]));
+                   clusterLabel(clusterList[dm(row)]));
     }
 }
 
@@ -514,15 +528,16 @@ void ResidualMatrixView::mouseMoveEvent(QMouseEvent* e)
         const int row = cellAtY(e->position().toPoint().y());
         const int col = cellAtX(e->position().toPoint().x());
         if (row >= 0 && col >= 0) {
-            const int a = clusterList[row], b = clusterList[col];
+            const int mr = dm(row), mc = dm(col);
+            const int a = clusterList[mr], b = clusterList[mc];
             if (row == col)
                 setInfoText(tr("cluster %1: within-cluster variance %2")
-                    .arg(clusterLabel(a)).arg((*scores)(row+1, col+1), 0, 'g', 4));
+                    .arg(clusterLabel(a)).arg((*scores)(mr+1, mc+1), 0, 'g', 4));
             else
                 setInfoText(tr("A=%1 vs B=%2: separability %3   (A's noise floor %4)")
                     .arg(clusterLabel(a), clusterLabel(b))
-                    .arg((*scores)(row+1, col+1), 0, 'g', 3)
-                    .arg((*scores)(row+1, row+1), 0, 'g', 4));
+                    .arg((*scores)(mr+1, mc+1), 0, 'g', 3)
+                    .arg((*scores)(mr+1, mr+1), 0, 'g', 4));
         }
     }
 }
@@ -548,7 +563,7 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
     // Strip-cell / cluster-pair resolution shared with the drift matrix via
     // matrixResolveClick(); this view applies the result (emit / doc / repaint).
     const MatrixPairSelection sel = matrixResolveClick(
-        e->position(), e->modifiers() & Qt::ControlModifier, dataReady, clusterList, strip_,
+        e->position(), e->modifiers() & Qt::ControlModifier, dataReady, order_.displayList(clusterList), strip_,
         effMatrixTopLeft(), effCellSize(),
         [this](int x){ return cellAtX(x); }, [this](int y){ return cellAtY(y); });
     if (!sel.valid)
@@ -665,8 +680,8 @@ void ResidualMatrixView::drawTemplateStrip(QPainter& p)
     // ASYMMETRIC: a cluster-row cell normalises by the cluster's noise, a
     // template-row cell by the template's noise, exactly like the matrix body.
     auto value = [&](int r, int c, MatrixStripShade& shade)->double{
-        if (r < N && c >= N) { const int t = c - N; shade = strip_.shade(t, r); return tplClusterRow_[t][r]; }
-        if (r >= N && c < N) { const int t = r - N; shade = strip_.shade(t, c); return tplTemplateRow_[t][c]; }
+        if (r < N && c >= N) { const int t = c - N, m = dm(r); shade = strip_.shade(t, m); return tplClusterRow_[t][m]; }
+        if (r >= N && c < N) { const int t = r - N, m = dm(c); shade = strip_.shade(t, m); return tplTemplateRow_[t][m]; }
         shade = MatrixStripValue; return tplCorner_[r - N][c - N];     // template×template corner
     };
     const double inv = (displayMax > 0.0) ? 1.0 / displayMax : 1.0;

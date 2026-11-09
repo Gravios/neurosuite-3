@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | [Klusters: sorting the curation matrices and the child palette at the atom level](#2026-11-09--klusters-sorting-the-curation-matrices-and-the-child-palette-at-the-atom-level) |
 | 2026-11-07 | [Klusters: the Reclustering preferences page around the engine](#2026-11-07--klusters-the-reclustering-preferences-page-around-the-engine) |
 | 2026-11-07 | [Klusters: %tokens in plugin parameter values](#2026-11-07--klusters-tokens-in-plugin-parameter-values) |
 | 2026-11-07 | [Klusters: the active recluster engine, and the radial menu's Recluster ▸ Plugin ring](#2026-11-07--klusters-the-active-recluster-engine-and-the-radial-menus-recluster--plugin-ring) |
@@ -170,6 +171,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-09 — Klusters: sorting the curation matrices and the child palette at the atom level
+
+<details>
+<summary>Details</summary>
+
+Under the child scope (`V`), a sort -- *Sort Clusters* by any metric, or
+*Reorder by Similarity* (`Shift+S`) from the error OR the template matrix --
+now rearranges **all four curation matrices** (error, template, residual,
+drift) and **the child palette** to the same atom order.  Display only: no
+atom is renumbered.  The document holds the sorted atom ids
+(`KlustersDoc::scopeSortOrderList`, signal `scopeSortOrderChanged`); each
+matrix derives its row/column permutation from them through the shared
+`MatrixDisplayOrder` (`matrixdisplayorder.h`: specials at the front, held ids
+in order, unnamed rows appended) on the signal and after every accepted
+recompute, and the child palette lists in the same order on rebuild.  The
+order lasts while the child view does and is dropped at its exits (`V`, or
+another curated parent), so coming back shows the natural id order.  Before,
+only the error matrix followed a child-scope sort, a `Shift+S` sourced from
+the template matrix was refused there, and the child palette never moved.
+New test: `klusters_test_matrixdisplayorder` (23 checks).  Not run in the GUI.
+
+</details>
 
 ## 2026-11-07 — Klusters: the Reclustering preferences page around the engine
 

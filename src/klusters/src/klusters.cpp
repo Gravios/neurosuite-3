@@ -1468,6 +1468,13 @@ void KlustersApp::createMenus()
         if (childPanel && childPanel->isVisible())
             repopulateChildPalette(clusterPalette->selectedClusters());
     });
+    // A child-scope sort (or its clearing at the scope's exits) relists the
+    // child palette in the held order; the matrices listen for themselves.
+    // A redraw, not an edit: repopulateChildPalette keeps selection and focus.
+    connect(doc, &KlustersDoc::scopeSortOrderChanged, this, [this]{
+        if (childPanel && childPanel->isVisible())
+            repopulateChildPalette(clusterPalette->selectedClusters());
+    });
     connect(doc, &KlustersDoc::hierarchyChildSelectionRequested, this,
             [this](const QList<int>& children){
         if (!childPanel || !childPanel->isVisible() || children.isEmpty()) return;

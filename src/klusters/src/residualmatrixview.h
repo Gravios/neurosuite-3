@@ -13,6 +13,7 @@
 #include "klustersjobpool.h"    // KlustersJobToken (shared with the jobs)
 #include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
 #include "matrixviewport.h"      // MatrixViewport — shared pan/zoom state + per-scope swap
+#include "matrixdisplayorder.h"   // MatrixDisplayOrder — the child-scope display permutation
 #include "matrixnavigator.h"     // MatrixNavigator — shared Ctrl+Left-drag pan state machine
 
 #include <memory>
@@ -120,6 +121,11 @@ Q_SIGNALS:
     void viewChanged(double zoom, double panX, double panY);
 
 public Q_SLOTS:
+    /// Re-derive the display permutation from the doc's held child-scope sort
+    /// order (MatrixDisplayOrder): rows/columns draw and hit-test in that order
+    /// without the matrix or its clusters changing.  Called after every accepted
+    /// compute and on KlustersDoc::scopeSortOrderChanged.
+    void applyScopeSortOrder();
     /**Channel selection committed in the waveform view (empty = all channels).
      * Swaps in a cached matrix when one matches, otherwise recomputes.*/
     void selectedChannelsChanged(const QList<int>& channels);
@@ -149,6 +155,11 @@ private:
     // This view keeps its own matrixTopLeft()/mouse handling; it has no adaptive
     // effZoomMin(), so it clamps to the plain zoomMin.
     MatrixViewport vp_;
+    /// Display permutation (display position -> matrix row); identity unless a
+    /// child-scope sort is held.  Every row/col index a cell is read, drawn,
+    /// labelled or hit-tested with goes through dm().
+    MatrixDisplayOrder order_;
+    int dm(int d) const { return order_.toMatrix(d); }
     void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
     MatrixNavigator nav_;       // Ctrl+Left-drag pan state (shared helper)
     static constexpr double zoomMin{0.5};

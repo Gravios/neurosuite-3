@@ -496,16 +496,26 @@ void ClusterPalette::updateClusterList(){
     // the tail.  Each item still records its own INDEX + CLUSTER_ID below, so
     // selection and colour editing (which resolve by data role, not row) are
     // unaffected by the reordering.
+    //
+    // A CHILD palette follows the document's held child-scope sort order instead
+    // (KlustersDoc::scopeSortOrderList, set by Sort Clusters / Shift+S under the
+    // child scope): the same atom ids the four curation matrices derive their
+    // display order from, so the palette and the matrices read in one order.
+    // Display only -- ids are untouched -- and transient: the doc drops it at the
+    // scope's exits, and this palette is rebuilt then and lists naturally again.
     QList<int> visitOrder;
     visitOrder.reserve(nbClusters);
-    if(!similarityOrder.isEmpty() && !showsChildScope){
+    const QList<int> heldOrder = showsChildScope
+        ? (doc->matrixScopeActive() ? doc->scopeSortOrderList() : QList<int>())
+        : similarityOrder;
+    if(!heldOrder.isEmpty()){
         QSet<int> placed;
         placed.reserve(nbClusters);
         for(int i = 0; i < nbClusters; ++i){                 // specials first
             const int id = clusterColors.itemId(i);
             if(id == 0 || id == 1){ visitOrder.append(i); placed.insert(i); }
         }
-        for(int cid : similarityOrder){                      // then similarity order
+        for(int cid : heldOrder){                            // then the held order
             if(!clusterColors.contains(cid)) continue;
             const int idx = clusterColors.itemIndex(cid);
             if(idx >= 0 && idx < nbClusters && !placed.contains(idx)){

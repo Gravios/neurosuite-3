@@ -165,8 +165,21 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     thresholdSlider->setSpan(colourLow, currentThreshold);
     updateThresholdLabel();
 
+    // A scoped sort (or the scope's exit) changes the held atom order the
+    // display permutation derives from.
+    connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &TemplateMatrixView::applyScopeSortOrder);
+
     initializeColorMap();
     updateMatrixContents();
+}
+
+void TemplateMatrixView::applyScopeSortOrder()
+{
+    // Display only: the permutation re-derives from the doc's held child-scope
+    // sort order over the rows as computed; identity with no scope or nothing
+    // held.  The error matrix does the same from the same list.
+    order_.apply(clusterList, doc.matrixScopeActive() ? doc.scopeSortOrderList() : QList<int>());
+    update();
 }
 
 TemplateMatrixView::~TemplateMatrixView()
@@ -493,6 +506,7 @@ void TemplateMatrixView::customEvent(QEvent* event)
             }
             scores      = newScores;
             clusterList = ev->getClusterList();
+            order_.apply(clusterList, doc.matrixScopeActive() ? doc.scopeSortOrderList() : QList<int>());
             meanWav   = std::move(ev->getMeanWav());
             allFileIdx= std::move(ev->getAllFileIdx());
             noiseWav_ = std::move(ev->getNoiseWav());   // non-empty only under the disattenuated metric
@@ -738,8 +752,8 @@ void TemplateMatrixView::drawTemplateStrip(QPainter& p)
     const double  eff  = effCellSize();
 
     auto value = [&](int r, int c, MatrixStripShade& shade)->double{   // xcorr is symmetric
-        if (r < N && c >= N) { const int t = c - N; shade = strip_.shade(t, r); return tplVal_[t][r]; }
-        if (r >= N && c < N) { const int t = r - N; shade = strip_.shade(t, c); return tplVal_[t][c]; }
+        if (r < N && c >= N) { const int t = c - N, m = dm(r); shade = strip_.shade(t, m); return tplVal_[t][m]; }
+        if (r >= N && c < N) { const int t = r - N, m = dm(c); shade = strip_.shade(t, m); return tplVal_[t][m]; }
         shade = MatrixStripValue; return tplCorner_[r - N][c - N];     // template×template corner
     };
     auto colourFor = [&](double v)->QColor{ return colorMap[colourIndexFor(v, NB_COLORS)]; };
@@ -781,7 +795,7 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
                 if (row == col) { line[col] = static_cast<uchar>(blackIdx); continue; }
                 // Colour axis = the slider's span, so the ramp is stretched
                 // over [colourLow, currentThreshold] rather than a fixed [0,1].
-                const double sc = (*scores)(row+1, col+1);
+                const double sc = (*scores)(dm(row)+1, dm(col)+1);
                 line[col] = static_cast<uchar>(colourIndexFor(sc, NB_COLORS));
             }
         }
@@ -804,7 +818,7 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
             QList<int> parentPerCell;      parentPerCell.reserve(n);
             QList<QColor> colourPerCell;   colourPerCell.reserve(n);
             for (int d = 0; d < n; ++d) {
-                const int par = doc.parentOfChild(clusterList[d]);
+                const int par = doc.parentOfChild(clusterList[dm(d)]);
                 parentPerCell.append(par);
                 colourPerCell.append(par >= 0 ? parentColours.color(par) : QColor());
             }
@@ -819,7 +833,7 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
         for (int row = 0; row < n; ++row) {
             for (int col = 0; col < n; ++col) {
                 if (row == col) continue;
-                if ((*scores)(row+1, col+1) >= currentThreshold) {
+                if ((*scores)(dm(row)+1, dm(col)+1) >= currentThreshold) {
                     const int px = static_cast<int>(std::round(oriF.x() + col * eff));
                     const int py = static_cast<int>(std::round(oriF.y() + row * eff));
                     p.drawRect(px+1, py+1, w-3, w-3);
@@ -841,9 +855,10 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
         p.setPen(yp);
         p.setBrush(Qt::NoBrush);
         for (const Pair& sp : selectedPairs) {
-            const int prow = clusterList.indexOf(sp.first);
-            const int pcol = clusterList.indexOf(sp.second);
-            if (prow < 0 || pcol < 0) continue;
+            const int mrow = clusterList.indexOf(sp.first);
+            const int mcol = clusterList.indexOf(sp.second);
+            if (mrow < 0 || mcol < 0) continue;
+            const int prow = order_.toDisplay(mrow), pcol = order_.toDisplay(mcol);
             const int hx = static_cast<int>(std::round(oriF.x() + pcol * eff));
             const int hy = static_cast<int>(std::round(oriF.y() + prow * eff));
             p.drawRect(hx, hy, w-1, w-1);
@@ -877,14 +892,14 @@ void TemplateMatrixView::drawClusterIds(QPainter& p)
         const int px = static_cast<int>(std::round(oriF.x() + col * eff));
         p.drawText(QRect(px, 0, w, base.y()),
                    Qt::AlignHCenter | Qt::AlignBottom,
-                   clusterLabel(clusterList[col]));
+                   clusterLabel(clusterList[dm(col)]));
     }
 
     for (int row = 0; row < n; ++row) {
         const int py = static_cast<int>(std::round(oriF.y() + row * eff));
         p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
                    Qt::AlignRight | Qt::AlignVCenter,
-                   clusterLabel(clusterList[row]));
+                   clusterLabel(clusterList[dm(row)]));
     }
 }
 
@@ -940,7 +955,7 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
     if (col < 0 || row < 0) return;
-    const int cA = clusterList[col], cB = clusterList[row];
+    const int cA = clusterList[dm(col)], cB = clusterList[dm(row)];
     if (cA == cB)
         statusBar->showMessage(QString("Cluster %1").arg(clusterLabel(cA)));
     else
@@ -954,7 +969,7 @@ void TemplateMatrixView::mouseMoveEvent(QMouseEvent* e)
                              case 4:  return QStringLiteral("fast-AP");
                              case 5:  return QStringLiteral("profile");
                              default: return QStringLiteral("cosine"); } }())
-                .arg((*scores)(row+1, col+1), 0, 'f', 5));
+                .arg((*scores)(dm(row)+1, dm(col)+1), 0, 'f', 5));
 }
 
 void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
@@ -987,15 +1002,15 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
     if (!strip_.empty()) {
         const MatrixStripHit sh = strip_.hitTest(
             e->position().x(), e->position().y(),
-            effMatrixTopLeft(), effCellSize(), clusterList);
+            effMatrixTopLeft(), effCellSize(), order_.displayList(clusterList));
         if (sh.ok) { emit templateCellActivated(sh.clusterId, sh.node); update(); return; }
     }
 
     const int col = cellAtX(e->position().toPoint().x());
     const int row = cellAtY(e->position().toPoint().y());
     if (col < 0 || row < 0) return;
-    const int cA = clusterList[col];  // target (column)
-    const int cB = clusterList[row];  // source (row)
+    const int cA = clusterList[dm(col)];  // target (column)
+    const int cB = clusterList[dm(row)];  // source (row)
     if (cA == cB) return;
 
     // Multi-select for the G-group workflow.  Ctrl-click toggles a pair in or

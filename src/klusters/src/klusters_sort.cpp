@@ -1094,35 +1094,22 @@ void KlustersApp::slotReorderClustersBySimilarity()
     // REGARDLESS of the preference -- the renumber below is the parent
     // layer's, and an atom-derived permutation fed to it renames whichever
     // parents inherited the numerals (after a compaction, most of them).
-    // Only the error matrix carries a display map, so a scoped reorder whose
-    // source is the template matrix has nowhere to land: say so rather than
-    // silently reading one matrix and rearranging another.
-    const bool scopedReorder = doc->matrixScopeActive();
-    if (scopedReorder && chosenMatrixView != emv) {
-        statusBar()->showMessage(
-            tr("Reorder (child scope): display-only, and only the error matrix "
-               "carries a display order — click the error matrix (or press U), "
-               "then Shift+S again."), 5000);
-        return;
-    }
-
-    // Child scope: always display-only, through the HELD order.  The doc holds
-    // the atom ids in similarity order and the view derives its permutation
-    // from them, now and after every recompute, so the sort persists within
-    // this child view and dies only at its exits (V, or another parent).  The
-    // parent palette is never mirrored here: targetOrder is ATOM ids, and
-    // pushing those onto the parent palette reorders whichever parents share
-    // the numerals -- the same cross-layer pollution the renumber guard above
-    // exists for, one layer down.  (The child palette's own similarity order
-    // is a parent-level feature by its own guard.)
-    if (scopedReorder) {
+    // Display-only through the HELD order: the doc holds the atom ids in
+    // similarity order (whichever matrix was the source), and every curation
+    // matrix -- error, template, residual, drift -- and the child palette
+    // derive their display order from them, now and after every recompute,
+    // so the sort persists within this child view and dies only at its exits
+    // (V, or another parent).  The parent palette is never mirrored here:
+    // targetOrder is ATOM ids, and pushing those onto the parent palette
+    // reorders whichever parents share the numerals -- the same cross-layer
+    // pollution the renumber guard above exists for, one layer down.
+    if (doc->matrixScopeActive()) {
         doc->setScopeSortOrder(targetOrder);
-        emv->applyScopeSortOrder();
         statusBar()->showMessage(
-            tr("Reorder (child scope): rearranged the error-matrix display "
-               "(%1 atoms) by similarity — held for this child view; cleared "
-               "on leaving it (V) or curating another parent.")
-                .arg(targetOrder.size()), 4000);
+            tr("Reorder (child scope): rearranged the matrices and the child "
+               "palette (%1 atoms) by %2-matrix similarity — held for this child "
+               "view; cleared on leaving it (V) or curating another parent.")
+                .arg(targetOrder.size()).arg(QString::fromLatin1(matrixLabel)), 4000);
         return;
     }
 
@@ -1429,22 +1416,17 @@ void KlustersApp::applyScopedDisplayOrder(const QList<int>& orderedIds,
                                           const QString& sortName,
                                           const QString& detail)
 {
-    KlustersView* view = activeView();
-    ErrorMatrixView* emv = view ? view->findChild<ErrorMatrixView*>() : nullptr;
-    if (!emv || !emv->hasComputedData()) {
-        slotStatusMsg(tr("Sort by %1 (child scope): needs the error matrix — "
-                         "press U to compute it, then sort again.").arg(sortName));
-        return;
-    }
-    // The doc HOLDS the sorted ids and the view derives its permutation from
-    // them (applyScopeSortOrder) -- the same derivation every accepted
-    // recompute performs, so the sort persists across edits within this
-    // child view and dies only at its exits (V, or another parent).
+    // The doc HOLDS the sorted ids; every curation matrix (error, template,
+    // residual, drift) derives its display permutation from them
+    // (applyScopeSortOrder, on the doc's scopeSortOrderChanged and after every
+    // accepted recompute) and the child palette relists in the same order, so
+    // the sort persists across edits within this child view and dies only at
+    // its exits (V, or another parent).  No matrix needs to be computed for
+    // the palette to follow; a matrix opened later picks the order up.
     doc->setScopeSortOrder(orderedIds);
-    emv->applyScopeSortOrder();
-    slotStatusMsg(tr("Sorted the error-matrix display by %1 (%2) — held for "
-                     "this child view; cleared on leaving it (V) or curating "
-                     "another parent.").arg(sortName, detail));
+    slotStatusMsg(tr("Sorted the matrices and the child palette by %1 (%2) — "
+                     "held for this child view; cleared on leaving it (V) or "
+                     "curating another parent.").arg(sortName, detail));
 }
 
 void KlustersApp::applySortedOrder(const QList<int>& order, const QString& sortName,
