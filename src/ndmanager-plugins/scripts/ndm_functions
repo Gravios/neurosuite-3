@@ -1726,6 +1726,7 @@ ndm_shared_res_missing()
 ndm_extract_preflight()
 {
 	local sess=$1 m=$2 ord=$3 errors=0
+	local only=${4:-}                                        # optional: "N M ..." = check only these groups (--group)
 	local fam kind tokOrd nCh nBits sr nG g chans nChG ns ps pairs pOrd nEnt maxIdx c
 	local withPairs=0 withoutPairs=0
 	_pf_err()  { echo "error: $*"; errors=$((errors + 1)); }
@@ -1747,6 +1748,7 @@ ndm_extract_preflight()
 	nG=$(yaml_count "$sess" "//spikeDetection/channelGroups/group")
 	[ "${nG:-0}" -gt 0 ] 2>/dev/null || { _pf_err "spikeDetection.channelGroups has no group"; return 1; }
 	for g in $(seq 1 "$nG"); do
+		if [ -n "$only" ]; then case " $only " in *" $g "*) : ;; *) continue ;; esac; fi
 		chans=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/channels/channel")
 		xml_read_failed "$chans" && continue                  # empty group: skipped by the run
 		nChG=$(echo $chans | wc -w | tr -d ' ')   # BSD wc pads with blanks
@@ -1794,6 +1796,7 @@ ndm_extract_preflight()
 		_pf_warn "$withPairs group(s) have sdiffPairs and $withoutPairs do not: under the bare token '$m' the latter run order $ord; name the method stderiv_C<n> or stderiv_S<n>"
 	fi
 	for g in $(seq 1 "$nG"); do
+		if [ -n "$only" ]; then case " $only " in *" $g "*) : ;; *) continue ;; esac; fi
 		chans=$(yaml_read "$sess" "//spikeDetection/channelGroups/group[$g]/channels/channel")
 		xml_read_failed "$chans" && continue
 		local _r
@@ -1834,7 +1837,7 @@ ndm_process_spikes()
 	esac
 
 	# ── Parse command-line: <=1 positional (parameter file) + override flags ──
-	local methodOverride= methodOrderOverride= inputExtensionOverride= force= checkOnly=
+	local methodOverride= methodOrderOverride= inputExtensionOverride= force= checkOnly= groupsOverride=
 	local -a positionals=()
 	while [ $# -gt 0 ]; do
 		case "$1" in
@@ -1844,15 +1847,33 @@ ndm_process_spikes()
 			--methodOrder=*)    methodOrderOverride="${1#*=}";    shift ;;
 			--inputExtension)   inputExtensionOverride="$2";     shift 2 ;;
 			--inputExtension=*) inputExtensionOverride="${1#*=}"; shift ;;
+			--group|--groups|-g) groupsOverride="$groupsOverride,$2"; shift 2 ;;
+			--group=*|--groups=*) groupsOverride="$groupsOverride,${1#*=}"; shift ;;
 			--force)            force=1;                         shift ;;
 			--check)            checkOnly=1;                     shift ;;
 			--)                 shift; while [ $# -gt 0 ]; do positionals+=("$1"); shift; done ;;
-			-*)                 echo_error "unknown option: $1"; exit $GENERAL_ERROR ;;
+			-*)                 echo_error "unknown option: $1"
+			                    echo_error "usage: $program [parameter-file] [--method M] [--methodOrder 0-3] [--inputExtension EXT] [--group N[,M...]] [--force] [--check]"
+			                    exit $GENERAL_ERROR ;;
 			*)                  positionals+=("$1");             shift ;;
 		esac
 	done
+	# --group N[,M...] (repeatable; -g): only these spike groups, and these are
+	# (re)processed whether or not their output exists -- a group named by hand
+	# is meant to be redone (re-extraction after a realign, say); the
+	# skip-what-exists rule below is for unattended whole-session runs.
+	local -a onlyGroups=()
+	if [ -n "$groupsOverride" ]; then
+		local _g
+		for _g in $(echo "$groupsOverride" | tr ',' ' '); do
+			case "$_g" in
+				''|*[!0-9]*) echo_error "--group: '$_g' is not a spike group number"; exit $GENERAL_ERROR ;;
+			esac
+			onlyGroups+=("$((10#$_g))")
+		done
+	fi
 	if [ ${#positionals[@]} -gt 1 ]; then
-		echo_error "usage: $program [parameter-file] [--method M] [--methodOrder 0-3] [--inputExtension EXT] [--force]"
+		echo_error "usage: $program [parameter-file] [--method M] [--methodOrder 0-3] [--inputExtension EXT] [--group N[,M...]] [--force]"
 		echo_error "  M = standard | sdiff | stderiv | stderiv_S<order> | stderiv_C<order>"
 		echo_error "      stderiv_S<order>  plain spatial derivative (1-3); any sdiffPairs left unused"
 		echo_error "      stderiv_C<order>  session sdiffPairs applied; order 4 single-partner,"
@@ -1897,7 +1918,7 @@ ndm_process_spikes()
 	# (ndm_extract_preflight).  --check stops after the check.
 	if [ "$mode" = extract ]; then
 		local pfOut pfStatus=0
-		pfOut=$(ndm_extract_preflight "$session" "$method" "$methodOrder") || pfStatus=1
+		pfOut=$(ndm_extract_preflight "$session" "$method" "$methodOrder" "${onlyGroups[*]:-}") || pfStatus=1
 		if [ -n "$pfOut" ]; then
 			while IFS= read -r _l; do
 				case "$_l" in error:*) echo_error "${_l#error: }" ;; *) echo_warning "${_l#warning: }" ;; esac
@@ -1947,19 +1968,33 @@ ndm_process_spikes()
 	[ "$mode" = extract ] && outType=spk
 	electrodeGroups=
 	local nEmptyGroups=0
+	local _og
+	for _og in "${onlyGroups[@]}"; do
+		if [ "$_og" -lt 1 ] || [ "$_og" -gt "$nElectrodeGroups" ]; then
+			echo_error "--group $_og: the session file has spike groups 1-$nElectrodeGroups"
+			exit $GENERAL_ERROR
+		fi
+	done
 	for group in $(seq 1 $nElectrodeGroups); do
+		if [ ${#onlyGroups[@]} -gt 0 ]; then
+			case " ${onlyGroups[*]} " in *" $group "*) : ;; *) continue ;; esac
+		fi
 		# A group with no channels (kept in the file so later groups keep their
 		# numbers, e.g. an empty XML group converted by ndm_xml2yaml) has
 		# nothing to detect: skip it rather than fail the whole run.
 		if xml_read_failed "$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel")"; then
+			if [ ${#onlyGroups[@]} -gt 0 ]; then
+				echo_error "--group $group: that spike group has no channels"; exit $GENERAL_ERROR
+			fi
 			echo_info "Spike group $group has no channels, skipped."
 			nEmptyGroups=$((nEmptyGroups + 1))
 			continue
 		fi
-		if [ -n "$force" ] || ! outputs_exist "$(ndm_method_path "$session" $outType "$group" "$method")"; then
+		if [ -n "$force" ] || [ ${#onlyGroups[@]} -gt 0 ] || ! outputs_exist "$(ndm_method_path "$session" $outType "$group" "$method")"; then
 			electrodeGroups="$electrodeGroups $group"
 		fi
 	done
+	[ ${#onlyGroups[@]} -gt 0 ] && echo_info "Spike group(s) ${onlyGroups[*]} only (--group): ${mode}ed whether or not their output exists."
 	if [ -z "$electrodeGroups" ]; then
 		if [ $nEmptyGroups -eq $nElectrodeGroups ]; then
 			echo_error "no spike group has any channels"

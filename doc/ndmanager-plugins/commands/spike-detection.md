@@ -29,7 +29,7 @@ ndm_extractspikes session.yaml --method standard    # a second waveform variant,
 ### Synopsis
 
 ```bash
-ndm_detectspikes [session.yaml] [--method M] [--methodOrder N] [--inputExtension EXT] [--force]
+ndm_detectspikes [session.yaml] [--method M] [--methodOrder N] [--inputExtension EXT] [--group N[,M...]] [--force]
 ```
 
 **Input:** `session.fil` (or `session.<inputExtension>`); acquisition settings
@@ -268,7 +268,7 @@ Run-time log line:
 ### Synopsis
 
 ```bash
-ndm_extractspikes [session.yaml] [--method M] [--methodOrder N] [--inputExtension EXT] [--force] [--check]
+ndm_extractspikes [session.yaml] [--method M] [--methodOrder N] [--inputExtension EXT] [--group N[,M...]] [--force] [--check]
 ndm_extractspikes [session.yaml] --allMethods [--check] [--inputExtension EXT]
 ```
 
@@ -312,6 +312,23 @@ A group is processed only if `session.spk.<method>.N` does not exist yet;
 `--force` re-extracts and overwrites.  When every group already has its `.spk`,
 the step prints "nothing to do" and exits 0.  A group with no channels is
 skipped, as in detection.
+
+`--group N[,M...]` (also `-g`, repeatable) restricts the run to the named
+groups and re-extracts them whether or not their `.spk` exists -- a group
+named by hand is meant to be redone, typically after its `.res` changed (a
+realign committed from Klusters, a `ndm_spikecleaner` pass):
+
+```bash
+ndm_extractspikes session.yaml --group 6             # group 6 only, overwritten
+ndm_extractspikes session.yaml -g 6,7 --method stderiv
+```
+
+A group number outside the session file, or a group with no channels, is an
+error.  The engines' `-R` is not a user flag: re-extraction at the `.res`
+times is all this step does, so `ndm_extractspikes -R 6` is rejected -- use
+`--group 6`.  `ndm_detectspikes --group` works the same way for detection.
+Features (`ndm_pca` / `ndm_refeaturize`) are not re-projected by this step;
+rerun them for the re-extracted groups afterwards.
 
 One waveform is written per `.res` time, so `.spk` rows line up with `.res`
 and `.clu`.  A time whose window does not lie inside the `.fil` (within

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | [ndm_extractspikes / ndm_detectspikes `--group N[,M...]`](#2026-11-09--ndm_extractspikes--ndm_detectspikes---group-nm) |
 | 2026-11-09 | [Klusters: every sort of the wheel works at the atom level](#2026-11-09--klusters-every-sort-of-the-wheel-works-at-the-atom-level) |
 | 2026-11-09 | [Klusters: sorting the curation matrices and the child palette at the atom level](#2026-11-09--klusters-sorting-the-curation-matrices-and-the-child-palette-at-the-atom-level) |
 | 2026-11-07 | [Klusters: the Reclustering preferences page around the engine](#2026-11-07--klusters-the-reclustering-preferences-page-around-the-engine) |
@@ -172,6 +173,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-09 — ndm_extractspikes / ndm_detectspikes `--group N[,M...]`
+
+<details>
+<summary>Details</summary>
+
+`ndm_extractspikes session.yaml --group 6` (also `-g`, `--group=6,7`,
+repeatable) re-extracts only the named spike groups and does so whether or
+not their `.spk` exists -- a group named by hand is meant to be redone,
+typically after its `.res` changed (a realign committed from Klusters).  The
+other groups' files are untouched, the session-file check (`--check`) covers
+only those groups, and a group number outside the session, a non-number or a
+group with no channels is an error before any engine call.  `ndm_detectspikes
+--group` does the same for detection.  Before, the only way to redo one group
+was `--force` on all of them (or deleting its `.spk`).  The engines' `-R` was
+never a user flag; `ndm_extractspikes -R 6` now fails with a usage line that
+names `--group`.  New test `test_extract_group.sh` (18 checks).
+
+</details>
 
 ## 2026-11-09 — Klusters: every sort of the wheel works at the atom level
 

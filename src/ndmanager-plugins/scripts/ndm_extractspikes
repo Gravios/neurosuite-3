@@ -36,10 +36,14 @@
 #
 #  USAGE
 #    ndm_extractspikes [parameter-file] [--method M] [--methodOrder N]
-#                      [--inputExtension EXT] [--force] [--check]
+#                      [--inputExtension EXT] [--group N[,M...]] [--force] [--check]
 #    ndm_extractspikes [parameter-file] --allMethods [--check] [--inputExtension EXT]
 #    CLI flags override the YAML fields; --force re-extracts even when a .spk
-#    already exists (overwriting it).  Before running, the session file is
+#    already exists (overwriting it); --group N[,M...] (or -g) re-extracts only
+#    the named groups, overwriting theirs (e.g. `ndm_extractspikes --group 6`
+#    after a realign of group 6).  The engine's own -R flag is not a user
+#    option: re-extraction at the .res times is all this step ever does.
+#    Before running, the session file is
 #    checked for everything the method needs (geometry, sdiffPairs matching the
 #    token, a .res per group); --check stops after the check.  --allMethods
 #    re-extracts (overwrites) every group for every waveform method the session

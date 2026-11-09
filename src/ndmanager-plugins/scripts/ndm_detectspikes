@@ -34,9 +34,10 @@
 #
 #  USAGE
 #    ndm_detectspikes [parameter-file] [--method M] [--methodOrder N]
-#                     [--inputExtension EXT] [--force]
+#                     [--inputExtension EXT] [--group N[,M...]] [--force]
 #    CLI flags override the YAML fields; --force re-detects even when a .res
-#    already exists (overwriting it).
+#    already exists (overwriting it); --group N[,M...] (or -g) re-detects only
+#    the named groups, overwriting theirs.
 #////////////////////////////////////////////////////////////////////////////
 
 # Source helper functions
