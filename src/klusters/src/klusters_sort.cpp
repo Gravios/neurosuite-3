@@ -531,17 +531,9 @@ void KlustersApp::slotSortClustersByErrorPval()
     KlustersView* view = activeView();
     if (!view) return;
 
-    // Renumbering sort, parent layer only: not wired for the child scope
-    // (the display-only scoped sorts are similarity and the metric sorts).
-    // Refused rather than fed atom ids -- reorderClustersByPermutation is the
-    // parent renumber, and after a compaction most atom numerals exist as
-    // parents, so the rename would land on unrelated parents, plausibly.
-    if (doc->matrixScopeActive()) {
-        slotStatusMsg(tr("This sort renumbers parents and is not available "
-                         "under the child scope; leave child view (V) first."));
-        return;
-    }
-
+    // Under the child scope the matrix rows are the scope's ATOMS and the sort
+    // is display-only through applySortedOrder (the held order every curation
+    // matrix and the child palette follow); unscoped it is the parent renumber.
     ErrorMatrixView* emv = view->findChild<ErrorMatrixView*>();
     if (!emv || !emv->hasComputedData()) {
         QMessageBox::information(this, tr("Sort by Error p-value"),
@@ -579,16 +571,11 @@ void KlustersApp::slotSortClustersByErrorPval()
         affinity.insert(cids[i], best);
     }
 
-    // Order every non-noise cluster by descending affinity; clusters absent from
-    // the matrix's computed list sort last via a -1 sentinel.
-    QList<int> clusters;
-    const auto ids = doc->parentData().clusterIds();   // parent renumber: parent layer, named outright
-    for (const auto id : ids)
-        if (id >= 2 && !isReservedClusterId(id)) clusters.append(static_cast<int>(id));   // reserved: not sorted
-    if (clusters.size() < 2) {
-        slotStatusMsg(tr("Sort by Error p-value: fewer than 2 non-noise clusters; nothing to sort."));
-        return;
-    }
+    // Order every non-noise cluster of the sortable layer (the scope's atoms,
+    // or the parents) by descending affinity; clusters absent from the matrix's
+    // computed list sort last via a -1 sentinel.
+    QList<int> clusters = clustersToSort(nullptr, tr("Error p-value"));
+    if (clusters.isEmpty()) return;   // clustersToSort said why
     std::stable_sort(clusters.begin(), clusters.end(),
         [&affinity](int a, int b){
             return affinity.value(a, -1.0) > affinity.value(b, -1.0);
@@ -618,17 +605,9 @@ void KlustersApp::slotSortByResidualGated()
     KlustersView* view = activeView();
     if (!view) return;
 
-    // Renumbering sort, parent layer only: not wired for the child scope
-    // (the display-only scoped sorts are similarity and the metric sorts).
-    // Refused rather than fed atom ids -- reorderClustersByPermutation is the
-    // parent renumber, and after a compaction most atom numerals exist as
-    // parents, so the rename would land on unrelated parents, plausibly.
-    if (doc->matrixScopeActive()) {
-        slotStatusMsg(tr("This sort renumbers parents and is not available "
-                         "under the child scope; leave child view (V) first."));
-        return;
-    }
-
+    // Under the child scope the residual matrix's rows are the scope's ATOMS
+    // and the sort is display-only through applySortedOrder; unscoped it is
+    // the parent renumber.
     ResidualMatrixView* rmv = view->findChild<ResidualMatrixView*>();
     if (!rmv || !rmv->hasComputedData()) {
         QMessageBox::information(this, tr("Sort by Residual (gated)"),
@@ -668,7 +647,7 @@ void KlustersApp::slotSortByResidualGated()
     spikeCount.reserve(N);
     QList<qint64> counts;
     for (int cid : cids) {
-        const qint64 c = static_cast<qint64>(doc->parentData().nbOfSpikes(cid));   // parent renumber: parent layer
+        const qint64 c = static_cast<qint64>(sortMetricData().nbOfSpikes(cid));   // the matrix's layer
         spikeCount.insert(cid, c);
         if (cid >= 2) counts.append(c);
     }
@@ -1505,25 +1484,13 @@ bool KlustersApp::computeWaveformDistances(QList<int>& clustersOut,
                                                  std::vector<float>& distOut)
 {
     if (!activeView()) return false;
-    // Feeds the two waveform RENUMBERING sorts, parent layer only: refused
-    // under the child scope for the reason at slotSortClustersByErrorPval.
-    if (doc->matrixScopeActive()) {
-        slotStatusMsg(tr("This sort renumbers parents and is not available "
-                         "under the child scope; leave child view (V) first."));
-        return false;
-    }
-    Data& d = doc->parentData();   // the layer being renumbered, named outright
-
-    // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
-    QList<int> clusters;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids)
-        if (id >= 2 && !isReservedClusterId(id)) clusters.append(static_cast<int>(id));   // reserved: not sorted
+    // Feeds the two waveform sorts: the parent renumber unscoped, the
+    // display-only atom order under the child scope.  The layer and its
+    // sortable clusters are the same facts the metric sorts use.
+    Data& d = sortMetricData();
+    QList<int> clusters = clustersToSort(nullptr, tr("waveform"));
     const int N = clusters.size();
-    if (N < 2) {
-        slotStatusMsg(tr("Sort by waveform: fewer than 2 non-noise clusters; nothing to do."));
-        return false;
-    }
+    if (N < 2) return false;          // clustersToSort said why
 
     const int nChan = d.nbOfChannels();
     const int nSamp = d.nbSamplesPerWaveform();
@@ -1697,6 +1664,11 @@ void KlustersApp::slotSortByWaveformNN()
             if (!visited[static_cast<size_t>(k)]) ordered.append(clusters[k]);
 
     const bool useMean = configuration().getWaveformSortMean();
+    if (doc->matrixScopeActive()) {   // child scope: display-only, held order
+        applyScopedDisplayOrder(ordered, tr("waveform nearest-neighbour"),
+                                useMean ? tr("mean waveform chain") : tr("median waveform chain"));
+        return;
+    }
     const int nRenamed = doc->reorderClustersByPermutation(ordered,
         useMean ? QStringLiteral("waveform nearest-neighbour (mean)")
                 : QStringLiteral("waveform nearest-neighbour (median)"));
@@ -1752,6 +1724,11 @@ void KlustersApp::slotSortByWaveformSpectral()
         ordered = clusters;
 
     const bool useMean = configuration().getWaveformSortMean();
+    if (doc->matrixScopeActive()) {   // child scope: display-only, held order
+        applyScopedDisplayOrder(ordered, tr("waveform spectral"),
+                                useMean ? tr("Fiedler seriation of mean waveforms") : tr("Fiedler seriation of median waveforms"));
+        return;
+    }
     const int nRenamed = doc->reorderClustersByPermutation(ordered,
         useMean ? QStringLiteral("waveform spectral (mean)")
                 : QStringLiteral("waveform spectral (median)"));

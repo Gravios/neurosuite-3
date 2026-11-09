@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | [Klusters: every sort of the wheel works at the atom level](#2026-11-09--klusters-every-sort-of-the-wheel-works-at-the-atom-level) |
 | 2026-11-09 | [Klusters: sorting the curation matrices and the child palette at the atom level](#2026-11-09--klusters-sorting-the-curation-matrices-and-the-child-palette-at-the-atom-level) |
 | 2026-11-07 | [Klusters: the Reclustering preferences page around the engine](#2026-11-07--klusters-the-reclustering-preferences-page-around-the-engine) |
 | 2026-11-07 | [Klusters: %tokens in plugin parameter values](#2026-11-07--klusters-tokens-in-plugin-parameter-values) |
@@ -171,6 +172,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-09 — Klusters: every sort of the wheel works at the atom level
+
+<details>
+<summary>Details</summary>
+
+The four sorts that were refused under the child scope ("this sort renumbers
+parents") -- *Sort by Error p-value*, *Sort by Residual (gated)*, *Waveform
+NN* and *Waveform Spectral*, all in the right-click wheel's *Sort* ring --
+now sort the scope's atoms there like the others: display-only through the
+held order (matrices and child palette), dropped at the scope's exits.  They
+take their cluster set and layer from `clustersToSort` / `sortMetricData`
+(the error and residual matrices' rows are the atoms under the scope); at the
+fiber level they renumber as before.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-09 — Klusters: sorting the curation matrices and the child palette at the atom level
 
