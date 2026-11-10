@@ -7,6 +7,7 @@
 #include <QStandardPaths>
 #include <QXmlStreamReader>
 #include <QRegularExpression>
+#include <QDebug>
 #include <algorithm>
 
 QStringList PluginRegistry::discoveryDirs()
@@ -37,8 +38,10 @@ KlustersPlugin PluginRegistry::parseDescriptor(const QString& path)
     p.descriptorPath = path;
 
     QFile f(path);
-    if (!f.open(QIODevice::ReadOnly | QIODevice::Text))
+    if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        p.error = QObject::tr("cannot read: %1").arg(f.errorString());
         return p;
+    }
 
     QXmlStreamReader xml(&f);
     bool inParameters = false;
@@ -104,7 +107,11 @@ KlustersPlugin PluginRegistry::parseDescriptor(const QString& path)
         }
     }
 
-    p.valid = !xml.hasError() && !p.name.isEmpty();
+    if (xml.hasError())
+        p.error = QObject::tr("line %1, column %2: %3").arg(xml.lineNumber()).arg(xml.columnNumber()).arg(xml.errorString().trimmed());
+    else if (p.name.isEmpty())
+        p.error = QObject::tr("no program name (<n> before <parameters>)");
+    p.valid = p.error.isEmpty();
     return p;
 }
 
@@ -224,6 +231,7 @@ QStringList PluginRegistry::buildArgv(const KlustersPlugin& plugin,
 void PluginRegistry::reload()
 {
     mPlugins.clear();
+    mBroken.clear();
     const QStringList dirs = discoveryDirs();
     for (const QString& d : dirs) {
         QDir dir(d);
@@ -233,8 +241,11 @@ void PluginRegistry::reload()
                                                 QDir::Files, QDir::Name);
         for (const QString& f : files) {
             const KlustersPlugin p = parseDescriptor(dir.filePath(f));
-            if (!p.valid)
+            if (!p.valid) {
+                qWarning().noquote() << "[plugins]" << p.descriptorPath << "not loaded:" << p.error;
+                mBroken.append(p);
                 continue;
+            }
             // Later dir wins on a name collision.
             for (int i = mPlugins.size() - 1; i >= 0; --i)
                 if (mPlugins[i].name == p.name)

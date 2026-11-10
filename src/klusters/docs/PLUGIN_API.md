@@ -90,6 +90,13 @@ arguments and what it does with the result:
 </parameter>
 ```
 
+A descriptor must be **well-formed XML**: a `--` inside a comment, an unescaped `<` or `&` in a help
+text, an unclosed element -- the file does not load.  It is not dropped silently: the *Plugins* menu
+lists it disabled as `<file> — not loaded` (the parser's message with its line and column in the
+tooltip and the status bar), *Preferences → Plugins* lists the broken descriptors with the same message,
+*Reload Plugins* reports them, and the console gets `[plugins] <path> not loaded: ...`
+(`PluginRegistry::broken()`, `KlustersPlugin::error`).
+
 ### Parameter types (optional, under `<parameter>`)
 
 A parameter may declare how it is edited; Klusters infers it from the default otherwise:

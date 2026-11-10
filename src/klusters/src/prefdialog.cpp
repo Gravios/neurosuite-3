@@ -166,7 +166,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     // ── Plugins: generated from the installed descriptors ──────────
     if (plugins) {
         const QList<KlustersPlugin>& list = plugins->plugins();
-        QPageWidgetItem* pluginsGroup = new QPageWidgetItem(makePluginsOverviewPage(list, this), tr("Plugins"));
+        QPageWidgetItem* pluginsGroup = new QPageWidgetItem(makePluginsOverviewPage(list, this, plugins->broken()), tr("Plugins"));
         pluginsGroup->setHeader(tr("Plugins"));
         pluginsGroup->setIcon(QIcon(":/shared-icons/folder-open"));
         addPage(pluginsGroup);

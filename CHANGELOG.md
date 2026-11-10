@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-10 | [Klusters: a plugin descriptor that does not parse says so](#2026-11-10--klusters-a-plugin-descriptor-that-does-not-parse-says-so) |
 | 2026-11-10 | [Klusters: feature spaces an engine writes in the sub-session come back as session-level spaces](#2026-11-10--klusters-feature-spaces-an-engine-writes-in-the-sub-session-come-back-as-session-level-spaces) |
 | 2026-11-09 | [ndm_extractspikes / ndm_detectspikes `--group N[,M...]`](#2026-11-09--ndm_extractspikes--ndm_detectspikes---group-nm) |
 | 2026-11-09 | [Klusters: every sort of the wheel works at the atom level](#2026-11-09--klusters-every-sort-of-the-wheel-works-at-the-atom-level) |
@@ -174,6 +175,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-10 — Klusters: a plugin descriptor that does not parse says so
+
+<details>
+<summary>Details</summary>
+
+A descriptor that is not well-formed XML (fiber-kit's shipped `fiber-kit-recluster.xml` and
+`fiber-kit-manifold.xml` carried a `--` inside their header comment, which XML forbids, so neither
+loaded) used to vanish without a word: *Plugins* showed "(no plugins found)" and nothing said why.
+Now `PluginRegistry::parseDescriptor` records the parser's message with its line and column (or the
+missing program `<n>`) in `KlustersPlugin::error`, `reload()` keeps the failures in `broken()` and
+warns on the console, the *Plugins* menu lists each as a disabled `<file> — not loaded` entry (the
+message in the tooltip and status tip), *Preferences → Plugins* lists them with the message, and
+*Reload Plugins* reports "N loaded, M NOT loaded -- file: message".  `pluginregistry_test` gains 3
+checks (25).  The descriptors themselves are fixed in fiber-kit 0.66.2.
+
+</details>
 
 ## 2026-11-10 — Klusters: feature spaces an engine writes in the sub-session come back as session-level spaces
 

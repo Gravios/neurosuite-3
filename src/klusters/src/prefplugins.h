@@ -34,4 +34,5 @@ private:
 };
 
 /** The group's overview: where descriptors are looked for, how many were found. */
-QWidget* makePluginsOverviewPage(const QList<KlustersPlugin>& plugins, QWidget* parent);
+QWidget* makePluginsOverviewPage(const QList<KlustersPlugin>& plugins, QWidget* parent,
+                                 const QList<KlustersPlugin>& broken = {});

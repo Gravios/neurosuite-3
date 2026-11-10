@@ -8632,6 +8632,14 @@ void KlustersApp::populatePluginsMenu()
             });
         }
     }
+    // A descriptor that did not parse is listed, disabled, with the parser's message: a plugin that
+    // vanished from the menu is a question the menu itself should answer.
+    for (const KlustersPlugin& b : mPluginRegistry.broken()) {
+        QAction* bad = mPluginsMenu->addAction(tr("%1 — not loaded").arg(QFileInfo(b.descriptorPath).fileName()));
+        bad->setEnabled(false);
+        bad->setToolTip(QStringLiteral("%1\n%2").arg(b.descriptorPath, b.error));
+        bad->setStatusTip(b.error);
+    }
     mPluginsMenu->addSeparator();
     QAction* reload = mPluginsMenu->addAction(tr("&Reload Plugins"));
     connect(reload, &QAction::triggered, this, &KlustersApp::slotReloadPlugins);
@@ -8704,7 +8712,14 @@ void KlustersApp::slotReloadPlugins()
     // the wheel is rebuilt on its next use.
     rebuildRadialMenu();
     const int n = mPluginRegistry.plugins().size();
-    statusBar()->showMessage(tr("Reloaded plugins: %1 descriptor(s) found.").arg(n), 4000);
+    const int nb = mPluginRegistry.broken().size();
+    if (nb) {
+        const KlustersPlugin& b = mPluginRegistry.broken().first();
+        statusBar()->showMessage(tr("Reloaded plugins: %1 loaded, %2 NOT loaded -- %3: %4")
+                                     .arg(n).arg(nb).arg(QFileInfo(b.descriptorPath).fileName(), b.error), 10000);
+    } else {
+        statusBar()->showMessage(tr("Reloaded plugins: %1 descriptor(s) found.").arg(n), 4000);
+    }
 }
 
 QMap<QString, QString> KlustersApp::pluginContext() const

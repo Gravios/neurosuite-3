@@ -57,6 +57,9 @@ struct KlustersPlugin {
     QString command;
     QString descriptorPath;
     bool valid = false;
+    /** Why the descriptor did not load (valid == false): the XML parser's message with its line and
+     *  column (a `--` inside a comment, an unclosed element...), or the missing program <n>. */
+    QString error;
 
     bool runsOnSubsession() const {
         return input == QLatin1String("subsession") || (input.isEmpty() && kind == QLatin1String("recluster"));
@@ -69,6 +72,9 @@ public:
      *  later dirs override earlier ones on a name collision. */
     void reload();
     const QList<KlustersPlugin>& plugins() const { return mPlugins; }
+    /** The descriptors the last reload could NOT load (valid == false; descriptorPath and error set),
+     *  so a plugin that is missing from the menu says why instead of vanishing. */
+    const QList<KlustersPlugin>& broken() const { return mBroken; }
 
     /** Discovery dirs, in increasing priority: standard app/data locations,
      *  the app-relative install share, then $KLUSTERS_PLUGIN_PATH entries. */
@@ -94,6 +100,7 @@ public:
 
 private:
     QList<KlustersPlugin> mPlugins;
+    QList<KlustersPlugin> mBroken;
 };
 
 #endif // PLUGINREGISTRY_H

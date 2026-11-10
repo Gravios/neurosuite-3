@@ -63,7 +63,25 @@ int main(int argc, char** argv)
     { QFile f(path); f.open(QIODevice::WriteOnly); f.write(kDescriptor); }
 
     const KlustersPlugin p = PluginRegistry::parseDescriptor(path);
-    check(p.valid && p.name == "fiber-kit-recluster" && p.parameters.size() == 7, "descriptor parsed, 7 parameters");
+    check(p.valid && p.error.isEmpty() && p.name == "fiber-kit-recluster" && p.parameters.size() == 7, "descriptor parsed, 7 parameters");
+    {   // a descriptor that is not well-formed XML (a `--` inside the comment) does not load, and says why
+        const QString bad = td.filePath("broken.xml");
+        QFile f(bad); f.open(QIODevice::WriteOnly);
+        f.write("<?xml version=\"1.0\"?>\n<!-- the profile -- edit it -->\n<program><n>x</n></program>\n"); f.close();
+        const KlustersPlugin b = PluginRegistry::parseDescriptor(bad);
+        check(!b.valid && b.error.startsWith("line 2") && b.descriptorPath == bad, "a malformed descriptor: valid=false, error names the line: " + b.error.toStdString());
+        const QString noname = td.filePath("noname.xml");
+        QFile g(noname); g.open(QIODevice::WriteOnly); g.write("<program><parameters/></program>\n"); g.close();
+        check(!PluginRegistry::parseDescriptor(noname).valid && PluginRegistry::parseDescriptor(noname).error.contains("program name"),
+              "a descriptor without <n> says so");
+        qputenv("KLUSTERS_PLUGIN_PATH", td.path().toLocal8Bit());
+        PluginRegistry reg; reg.reload();
+        bool found = false;
+        for (const KlustersPlugin& k : reg.plugins()) found |= (k.name == "fiber-kit-recluster");
+        check(found && reg.broken().size() == 2 && reg.broken()[0].descriptorPath == bad,
+              "reload loads the good descriptor and keeps the broken ones with their errors (" + std::to_string(reg.broken().size()) + ")");
+        QFile::remove(bad); QFile::remove(noname);
+    }
     check(p.kind == "recluster" && p.input.isEmpty() && p.runsOnSubsession(), "a recluster kind runs on the sub-session by default");
     check(p.command == "fk run %group --session %base --final-clu %final %params", "the <command> template");
     const PluginParameter& prof = p.parameters[0];

@@ -80,7 +80,8 @@ void PrefPluginPage::restoreDescriptorDefaults()
     if (mState) mState->setText(tr("Descriptor defaults (not stored until Apply)."));
 }
 
-QWidget* makePluginsOverviewPage(const QList<KlustersPlugin>& plugins, QWidget* parent)
+QWidget* makePluginsOverviewPage(const QList<KlustersPlugin>& plugins, QWidget* parent,
+                                 const QList<KlustersPlugin>& broken)
 {
     QString text = QObject::tr(
         "Plugins are external programs described by an XML descriptor (src/klusters/docs/PLUGIN_API.md). "
@@ -91,6 +92,12 @@ QWidget* makePluginsOverviewPage(const QList<KlustersPlugin>& plugins, QWidget* 
     for (const QString& d : PluginRegistry::discoveryDirs())
         text += QStringLiteral("&nbsp;&nbsp;%1%2<br>").arg(QDir::toNativeSeparators(d).toHtmlEscaped(),
                                                              QDir(d).exists() ? QString() : QObject::tr(" (absent)"));
+    if (!broken.isEmpty()) {
+        text += QObject::tr("<br><b>%n descriptor(s) NOT loaded</b> (fix the file, then <i>Plugins → Reload Plugins</i>):<br>", "", broken.size());
+        for (const KlustersPlugin& b : broken)
+            text += QStringLiteral("&nbsp;&nbsp;%1 — %2<br>").arg(QDir::toNativeSeparators(b.descriptorPath).toHtmlEscaped(),
+                                                                 b.error.toHtmlEscaped());
+    }
     text += QObject::tr("<br>$KLUSTERS_PLUGIN_PATH adds directories.  <i>Plugins → Reload Plugins</i> rescans; "
                         "reopen Preferences to see new pages.");
     QLabel* label = new QLabel(text, parent);
