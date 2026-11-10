@@ -1550,6 +1550,12 @@ public:
      *  session only (a child-scope recluster takes the .clu as its atoms).  Returns the number of atoms
      *  installed, 0 when skipped, -1 on a bad file (with @p error). */
     int integrateReclusteredChildren(const QString& clcPath, QString* error = nullptr);
+    /** Feature spaces an engine WROTE in the sub-session (`<tmpBase>.fet.<method>.<g>` whose method is
+     *  none the export copied in, nor Klusters' own): each becomes, or updates, the session-level
+     *  `<base>.fet.<method>.<g>` -- the sub-session's rows scattered to their spikes, zeros elsewhere
+     *  (the time column filled on creation), so the Space selector lists it.  Call before the sub-session
+     *  is removed; parent- and child-scope alike.  Returns the number carried back (-1: @p error). */
+    int carryBackSubsessionFeatures(const QString& tmpBase, QStringList* created = nullptr, QString* error = nullptr);
 
     /** patch76 — build a mean-subtracted sub-dimensional feature file
      *  for a single cluster.  Each spike's feature vector is centered
@@ -2702,6 +2708,7 @@ private:
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
     QVector<dataType>    reclusterSubsessionRows;   // the last sub-session's feature rows, in its spike order
+    QStringList          reclusterSubsessionFets;   // the .fet variants the export COPIED in (not an engine's)
     bool                 childLandingParked = false; // a child landing was parked since the last post-edit settle
     void buildHierarchyMaps();               // fill parentToChildren/childToParent from .clu/.clc
 

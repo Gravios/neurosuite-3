@@ -188,6 +188,14 @@ A `recluster` plugin never touches the session files.  Klusters writes the selec
 
 Rows are in time order, identical in every file, so the engine's final `.clu` (one id per sub-session
 spike — relabel, never drop) maps back to the selection by position, exactly as a KlustaKwik result does.
+A feature file the engine WRITES in the sub-session (`<sub>.fet.<method>.<g>`, a method that is
+neither one the export copied in nor `klusters`) is carried back before the sub-session goes:
+`<base>.fet.<method>.<g>` gets the sub-session's rows at their spikes, zeros with the time column
+elsewhere (an existing file of the same shape is kept, so several refinements accumulate in one
+space), and the *Space* selector lists it (`KlustersDoc::carryBackSubsessionFeatures`,
+`subsession::scatterFetRows`).  fiber-kit's `fiber-manifold` stage uses this for its
+`.fet.manifold.<g>` (per-spike field parameters; `fiber-kit-manifold.xml`, profile
+`klusters-manifold`).
 Everything `<sub>.*` is removed when the run ends, whatever the outcome.  The same layout is what
 fiber-kit's `fk subsession export` writes (its `docs/pipeline.md`, "Reclustering a selection"), so a
 sorter can be developed against the CLI and plugged into Klusters by a descriptor alone.  Shipped:

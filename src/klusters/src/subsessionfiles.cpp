@@ -6,6 +6,7 @@
 #include <QObject>
 #include <QSet>
 
+#include <algorithm>
 #include <cstring>
 #include <vector>
 
@@ -72,6 +73,61 @@ bool copyRecords(const QString& src, const QString& dst, qint64 header, qint64 r
     }
     out.close();
     return out.error() == QFile::NoError;
+}
+
+bool scatterFetRows(const QString& src, const QString& dst, qint64 nTotal, const QVector<int64_t>& rows1,
+                    const QVector<int64_t>* times, QString* err)
+{
+    QFile in(src);
+    if (!in.open(QIODevice::ReadOnly)) { if (err) *err = QObject::tr("cannot read %1").arg(src); return false; }
+    int32_t nDims = 0;
+    if (in.read(reinterpret_cast<char*>(&nDims), 4) != 4 || nDims < 1) {
+        if (err) *err = QObject::tr("%1: no .fet header").arg(QFileInfo(src).fileName());
+        return false;
+    }
+    const qint64 rowBytes = 8LL * nDims;
+    const qint64 nSub = (in.size() - 4) / rowBytes;
+    if ((in.size() - 4) % rowBytes || nSub != rows1.size()) {
+        if (err) *err = QObject::tr("%1: %2 rows for %3 sub-session spikes").arg(QFileInfo(src).fileName())
+                            .arg(nSub).arg(rows1.size());
+        return false;
+    }
+    if (times && times->size() != nTotal) { if (err) *err = QObject::tr("time column: %1 values for %2 rows").arg(times->size()).arg(nTotal); return false; }
+    std::vector<int64_t> table(static_cast<size_t>(nTotal * nDims), 0);
+    bool kept = false;
+    {
+        QFile old(dst);
+        if (old.exists() && old.open(QIODevice::ReadOnly)) {
+            int32_t d0 = 0;
+            if (old.read(reinterpret_cast<char*>(&d0), 4) == 4 && d0 == nDims && old.size() == 4 + rowBytes * nTotal) {
+                if (old.read(reinterpret_cast<char*>(table.data()), rowBytes * nTotal) == rowBytes * nTotal) kept = true;
+                else std::fill(table.begin(), table.end(), 0);
+            }
+        }
+    }
+    if (!kept && times) {
+        for (qint64 r = 0; r < nTotal; ++r) table[static_cast<size_t>(r * nDims + nDims - 1)] = (*times)[static_cast<int>(r)];
+    }
+    std::vector<int64_t> row(static_cast<size_t>(nDims));
+    for (int i = 0; i < rows1.size(); ++i) {
+        const qint64 r = static_cast<qint64>(rows1[i]) - 1;
+        if (r < 0 || r >= nTotal) { if (err) *err = QObject::tr("row %1 is beyond the %2 rows").arg(rows1[i]).arg(nTotal); return false; }
+        if (in.read(reinterpret_cast<char*>(row.data()), rowBytes) != rowBytes) {
+            if (err) *err = QObject::tr("%1: cannot read row %2").arg(QFileInfo(src).fileName()).arg(i + 1);
+            return false;
+        }
+        std::memcpy(&table[static_cast<size_t>(r * nDims)], row.data(), static_cast<size_t>(rowBytes));
+    }
+    const QString tmp = dst + QLatin1String(".saving");
+    QFile out(tmp);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) { if (err) *err = QObject::tr("cannot write %1").arg(dst); return false; }
+    out.write(reinterpret_cast<const char*>(&nDims), 4);
+    out.write(reinterpret_cast<const char*>(table.data()), rowBytes * nTotal);
+    out.close();
+    if (out.error() != QFile::NoError) { if (err) *err = QObject::tr("cannot write %1").arg(dst); return false; }
+    QFile::remove(dst);
+    if (!QFile::rename(tmp, dst)) { if (err) *err = QObject::tr("cannot replace %1").arg(dst); return false; }
+    return true;
 }
 
 bool writeClu(const QString& path, const QVector<int32_t>& ids, QString* err)

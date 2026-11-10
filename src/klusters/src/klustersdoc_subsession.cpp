@@ -54,7 +54,8 @@ int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, cons
     if (rowsT.isEmpty())
         return fail(tr("no spikes in the selection (or a cluster-map desync)"));
     w << fetPath;
-    reclusterSubsessionRows = rowsT;                 // for integrateReclusteredChildren
+    reclusterSubsessionRows = rowsT;                 // for integrateReclusteredChildren / carryBackSubsessionFeatures
+    reclusterSubsessionFets.clear();
     QVector<int64_t> rows;
     rows.reserve(rowsT.size());
     for (dataType r : rowsT) rows.append(static_cast<int64_t>(r));
@@ -79,9 +80,11 @@ int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, cons
         if (!f.open(QIODevice::ReadOnly) || f.read(reinterpret_cast<char*>(&nDim), 4) != 4 || nDim <= 0)
             return fail(tr("%1: no .fet header").arg(QFileInfo(p).fileName()));
         f.close();
-        const QString q = withVariant(tmpBase, QStringLiteral("fet"), variantOf(p, baseName, QStringLiteral("fet"), group), group);
+        const QString fv = variantOf(p, baseName, QStringLiteral("fet"), group);
+        const QString q = withVariant(tmpBase, QStringLiteral("fet"), fv, group);
         if (!copyRecords(p, q, 4, 8LL * nDim, nTotal, rows, &err)) return fail(err);
         w << q;
+        reclusterSubsessionFets << fv;
     }
 
     // 3. the seed .clu: the selection's current ids on the ACTIVE layer
@@ -123,6 +126,36 @@ int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, cons
 int KlustersDoc::removeReclusterSubsession(const QString& tmpBase)
 {
     return subsession::removeAll(tmpBase);
+}
+
+int KlustersDoc::carryBackSubsessionFeatures(const QString& tmpBase, QStringList* created, QString* error)
+{
+    using namespace subsession;
+    if (reclusterSubsessionRows.isEmpty() || !clusteringData) return 0;
+    const QString dir = QFileInfo(tmpBase).absolutePath();
+    const QString tmpName = QFileInfo(tmpBase).fileName();
+    const QString group = currentElectrodeGroupID();
+    const QString base = documentDirectory() + QLatin1Char('/') + documentBaseName();
+    const qint64 nTotal = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    QVector<int64_t> rows;
+    rows.reserve(reclusterSubsessionRows.size());
+    for (dataType r : reclusterSubsessionRows) rows.append(static_cast<int64_t>(r));
+    // the time column: the session's spike times, as the open space holds them (the live .res)
+    QVector<int64_t> times(static_cast<int>(nTotal));
+    const int nbDim = clusteringData->nbOfDimensions();
+    for (qint64 r = 1; r <= nTotal; ++r)
+        times[static_cast<int>(r - 1)] = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(r), nbDim));
+    int n = 0;
+    for (const QString& p : groupFiles(dir, tmpName, QStringLiteral("fet"), group)) {
+        const QString v = variantOf(p, tmpName, QStringLiteral("fet"), group);
+        if (v.isEmpty() || v == QLatin1String("klusters") || reclusterSubsessionFets.contains(v)) continue;
+        const QString dst = withVariant(base, QStringLiteral("fet"), v, group);
+        QString err;
+        if (!scatterFetRows(p, dst, nTotal, rows, &times, &err)) { if (error) *error = err; return -1; }
+        if (created) *created << dst;
+        ++n;
+    }
+    return n;
 }
 
 int KlustersDoc::integrateReclusteredChildren(const QString& clcPath, QString* error)

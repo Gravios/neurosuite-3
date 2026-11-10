@@ -5,6 +5,8 @@
 //   * groupFiles finds exactly the group's untagged files; variantOf / withVariant name them;
 //   * copyRecords writes the chosen 1-based rows in the given order, header kept, for each record size
 //     (.res 8, .spk nsamp*nchan*2, .fet 4 + 8*ndim), and refuses a row beyond the file or a wrong size;
+//   * scatterFetRows scatters a sub .fet's rows into a session-level .fet (zeros + time elsewhere; an
+//     existing file of the same shape is kept; a row-count mismatch is refused);
 //   * writeClu writes the int32 distinct count then the ids, readClu reads them back;
 //   * removeAll removes every `<tmp>.*` file and symlink and nothing else.
 #include "subsessionfiles.h"
@@ -86,6 +88,40 @@ int main(int argc, char** argv)
     check(!copyRecords(res[0], S + ".x", 0, 8, 5, QVector<int64_t>{6}, &err) && err.contains("beyond"), "a row beyond the file is refused: " + err.toStdString());
     check(!copyRecords(res[0], S + ".x", 0, 8, 4, rows, &err) && err.contains("not 4 records"), "a wrong record count is refused: " + err.toStdString());
     QFile::remove(S + ".x");
+    {   // scatterFetRows: an engine-written sub .fet (2 dims: value | time) over 3 of the 5 spikes
+        // -> a session-level .fet: rows 2,4,5 carried, the others zero with the time column filled
+        std::vector<int64_t> sub{4, 11, 22, 33, 44, 55};
+        writeRaw<int64_t>(S + ".fet.manifold.6", sub);               // placeholder; header rewritten below
+        {
+            QFile f(S + ".fet.manifold.6"); f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+            const int32_t d = 2; f.write(reinterpret_cast<const char*>(&d), 4);
+            const int64_t v[6] = {11, 22, 33, 44, 55, 66}; f.write(reinterpret_cast<const char*>(v), 48);
+        }
+        const QVector<int64_t> times{100, 200, 300, 400, 500};
+        const QString F = B + ".fet.manifold.6";
+        check(scatterFetRows(S + ".fet.manifold.6", F, 5, rows, &times, &err), "scatterFetRows " + err.toStdString());
+        check(readRaw<int32_t>(F).size() > 0 && readRaw<int32_t>(F)[0] == 2, "the session .fet keeps the sub's nDims");
+        {
+            QFile f(F); f.open(QIODevice::ReadOnly); f.seek(4);
+            std::vector<int64_t> t(10); f.read(reinterpret_cast<char*>(t.data()), 80);
+            check(t == std::vector<int64_t>{0, 100, 11, 22, 0, 300, 33, 44, 55, 66},
+                  "rows 2,4,5 hold the sub's rows; rows 1,3 are zero with the session time");
+        }
+        {   // a second carry-back over the same file keeps what is there
+            QFile f(S + ".fet.manifold.6"); f.open(QIODevice::WriteOnly | QIODevice::Truncate);
+            const int32_t d = 2; f.write(reinterpret_cast<const char*>(&d), 4);
+            const int64_t v[2] = {77, 88}; f.write(reinterpret_cast<const char*>(v), 16);
+            f.close();
+            check(scatterFetRows(S + ".fet.manifold.6", F, 5, QVector<int64_t>{1}, &times, &err), "scatterFetRows again " + err.toStdString());
+            QFile g2(F); g2.open(QIODevice::ReadOnly); g2.seek(4);
+            std::vector<int64_t> t(10); g2.read(reinterpret_cast<char*>(t.data()), 80);
+            check(t == std::vector<int64_t>{77, 88, 11, 22, 0, 300, 33, 44, 55, 66}, "the second carry-back keeps the earlier rows");
+        }
+        check(!scatterFetRows(S + ".fet.manifold.6", F, 5, rows, &times, &err) && err.contains("rows for"),
+              "a sub .fet whose row count is not the sub-session's is refused: " + err.toStdString());
+        QFile::remove(F);
+        QFile::remove(S + ".fet.manifold.6");
+    }
     check(writeClu(S + ".clu.stderiv.6", QVector<int32_t>{2, 3, 3}, &err), "writeClu");
     check(readRaw<int32_t>(S + ".clu.stderiv.6") == std::vector<int32_t>{2, 2, 3, 3}, "the seed .clu: distinct count 2, then the ids");
     {

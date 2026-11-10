@@ -961,6 +961,18 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // session's parent-scope recluster they become the new parents' atoms (child scope: the .clu's units
     // are the atoms, the .clc is not used).
     if (returnStatus == KlustersDoc::OK && !reclusterSubsessionBase.isEmpty()) {
+        // Feature spaces the engine wrote in the sub-session (fiber-manifold's .fet.manifold.<g>, say)
+        // become session-level spaces the Space selector lists.  Before the children: that call drops
+        // the row map both use.
+        {
+            QStringList created; QString why;
+            const int nFet = doc->carryBackSubsessionFeatures(reclusterSubsessionBase, &created, &why);
+            if (nFet > 0) {
+                NS3_DIAG() << "[recluster] engine feature space(s) carried back:" << created;
+                slotStatusMsg(tr("Recluster: %n feature space(s) written by the engine added to the Space list.", "", nFet));
+                populateFeatureSpaceCombo();
+            } else if (nFet < 0) { NS3_DIAG() << "[recluster] engine feature space not carried back:" << why; }
+        }
         QString clc = reclusteringFetFileName;
         clc.replace(QLatin1String(".fet."), QLatin1String(".clc."));
         QString why;

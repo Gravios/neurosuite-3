@@ -34,6 +34,14 @@ bool writeClu(const QString& path, const QVector<int32_t>& ids, QString* err);
 /** Read one back (the same layout: .clu, .clc). */
 bool readClu(const QString& path, QVector<int32_t>* ids, QString* err);
 
+/** Scatter a sub-session .fet (int32 nDims header, int64 rows -- one per sub-session spike) into a
+ *  session-level .fet of `nTotal` rows: row `rows1[i]` (1-BASED) of `dst` takes row i of `src`.  When
+ *  `dst` exists with the same nDims and nTotal rows, its other rows are kept (a second run on another
+ *  selection adds to the same space); otherwise `dst` is created with zeros, the last column (time)
+ *  filled from `times` when given (nTotal values).  False, with `err`, on any failure. */
+bool scatterFetRows(const QString& src, const QString& dst, qint64 nTotal, const QVector<int64_t>& rows1,
+                    const QVector<int64_t>* times, QString* err);
+
 /** Remove every file, link or directory `<tmpBase>.*`; returns how many. */
 int removeAll(const QString& tmpBase);
 

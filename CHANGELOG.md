@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-10 | [Klusters: feature spaces an engine writes in the sub-session come back as session-level spaces](#2026-11-10--klusters-feature-spaces-an-engine-writes-in-the-sub-session-come-back-as-session-level-spaces) |
 | 2026-11-09 | [ndm_extractspikes / ndm_detectspikes `--group N[,M...]`](#2026-11-09--ndm_extractspikes--ndm_detectspikes---group-nm) |
 | 2026-11-09 | [Klusters: every sort of the wheel works at the atom level](#2026-11-09--klusters-every-sort-of-the-wheel-works-at-the-atom-level) |
 | 2026-11-09 | [Klusters: sorting the curation matrices and the child palette at the atom level](#2026-11-09--klusters-sorting-the-curation-matrices-and-the-child-palette-at-the-atom-level) |
@@ -173,6 +174,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-10 — Klusters: feature spaces an engine writes in the sub-session come back as session-level spaces
+
+<details>
+<summary>Details</summary>
+
+A recluster plugin that writes a feature file of its own in the sub-session
+(`<sub>.fet.<method>.<g>` -- fiber-kit's `fiber-manifold` stage writes
+`.fet.manifold.<g>`: per-spike field lag, position, decay, amplitude, SNR,
+window, class, ISI flag) now leaves it in the session: after the engine's
+`.clu` is integrated, every sub-session `.fet` variant that is neither one
+Klusters copied in nor its own `.fet.klusters.<g>` is scattered into
+`<base>.fet.<method>.<g>` -- the sub-session's rows at their spikes, zeros
+(with the time column) elsewhere, an existing file of the same shape kept so
+successive refinements of different units accumulate in one space -- and the
+*Space* selector is refreshed, so the new space can be opened at once.
+Parent- and child-scope runs alike; the children are integrated after, as
+before.  `subsession::scatterFetRows`, `KlustersDoc::carryBackSubsessionFeatures`
+(`PLUGIN_API.md` §3b); `subsessionfiles_test` gains 4 checks (25).
+
+</details>
 
 ## 2026-11-09 — ndm_extractspikes / ndm_detectspikes `--group N[,M...]`
 
