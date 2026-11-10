@@ -30,11 +30,12 @@
 #include <QDebug>
 #include <QMap>
 
+#include <algorithm>
 #include <cstdint>
 
 int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, const QString& tmpBase,
                                            const QString& fetPath, const QString& variant, const QString& tag,
-                                           QStringList* written, QString* error)
+                                           QStringList* written, QString* error, bool refine)
 {
     using namespace subsession;
     QStringList sink;
@@ -49,7 +50,8 @@ int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, cons
 
     // 1. the recluster table in time order + the open clustering's features (the built-in recluster's
     //    .fet, whose name the finish path turns into the final .clu's)
-    reclusterTarget = &data();
+    if (refine && !childData) return fail(tr("a refine plugin needs a hierarchical session (.clc/.clp)"));
+    reclusterTarget = refine ? childData : &data();     // refine: the atom layer, whatever the scope
     const QVector<dataType> rowsT = reclusterTarget->createFeatureFileSorted(clustersToRecluster, fetPath);
     if (rowsT.isEmpty())
         return fail(tr("no spikes in the selection (or a cluster-map desync)"));
@@ -87,9 +89,10 @@ int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, cons
         reclusterSubsessionFets << fv;
     }
 
-    // 3. the seed .clu: the selection's current ids on the ACTIVE layer
+    // 3. the seed .clu: the selection's current ids on the ACTIVE layer (refine: the atoms' PARENTS, so
+    //    the engine sees each unit whole; the atoms go to a seed .clc/.clp beside it)
     {
-        const QVector<dataType> labels = reclusterTarget->labelByFeatureRow();
+        const QVector<dataType> labels = (refine ? clusteringData : reclusterTarget)->labelByFeatureRow();
         QVector<int32_t> ids;
         ids.reserve(rows.size());
         for (dataType r : rowsT)
@@ -100,6 +103,35 @@ int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, cons
             if (q.isEmpty()) continue;
             if (!writeClu(q, ids, &err)) return fail(err);
             w << q;
+        }
+        if (refine) {
+            const QVector<dataType> atoms = childData->labelByFeatureRow();
+            QVector<int32_t> aids;
+            aids.reserve(rows.size());
+            int32_t maxAtom = 0;
+            for (dataType r : rowsT) {
+                const int32_t a = (r >= 1 && r < atoms.size()) ? static_cast<int32_t>(atoms[static_cast<int>(r)]) : 0;
+                aids.append(a);
+                maxAtom = std::max(maxAtom, a);
+            }
+            // the .clp: entry i = atom i+1 -> parent, every atom id up to the highest in the selection
+            // (an atom outside the selection keeps its real parent; the engine only reads the map)
+            QVector<int32_t> clp(maxAtom, 0);
+            for (int32_t a = 1; a <= maxAtom; ++a) clp[a - 1] = static_cast<int32_t>(std::max(0, parentOfChild(a)));
+            for (const QString& q : seeds) {
+                if (q.isEmpty()) continue;
+                QString c = q, pth = q;
+                c.replace(QLatin1String(".clu."), QLatin1String(".clc."));
+                pth.replace(QLatin1String(".clu."), QLatin1String(".clp."));
+                if (!writeClu(c, aids, &err)) return fail(err);
+                w << c;
+                QFile f(pth);
+                if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) return fail(tr("cannot write %1").arg(pth));
+                f.write(reinterpret_cast<const char*>(&maxAtom), 4);
+                f.write(reinterpret_cast<const char*>(clp.constData()), 4LL * maxAtom);
+                f.close();
+                w << pth;
+            }
         }
     }
 
@@ -121,6 +153,26 @@ int KlustersDoc::createReclusterSubsession(QList<int>& clustersToRecluster, cons
         else qWarning() << "[recluster] sub-session: could not link" << dst;
     }
     return OK;
+}
+
+bool KlustersDoc::stageRefinedChildren(const QString& fetPath, QString* error)
+{
+    QString clu = fetPath, clc = fetPath;
+    clu.replace(QLatin1String(".fet."), QLatin1String(".clu."));
+    clc.replace(QLatin1String(".fet."), QLatin1String(".clc."));
+    if (!QFile::exists(clc)) {
+        if (error) *error = tr("the refine plugin delivered no %1 (its children)").arg(QFileInfo(clc).fileName());
+        return false;
+    }
+    QVector<int32_t> ids; QString err;
+    if (!subsession::readClu(clc, &ids, &err)) { if (error) *error = err; return false; }
+    if (ids.size() != reclusterSubsessionRows.size()) {
+        if (error) *error = tr("%1: %2 atoms for %3 spikes").arg(QFileInfo(clc).fileName()).arg(ids.size()).arg(reclusterSubsessionRows.size());
+        return false;
+    }
+    QFile::remove(clu);
+    if (!QFile::copy(clc, clu)) { if (error) *error = tr("cannot stage %1 as %2").arg(clc, clu); return false; }
+    return true;
 }
 
 int KlustersDoc::removeReclusterSubsession(const QString& tmpBase)

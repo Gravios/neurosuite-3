@@ -43,7 +43,7 @@ struct KlustersPlugin {
     QString kind;                       // recluster | repair | analysis | export
     QStringList consumes;               // base group variant tag selection children (positional form)
     QString produces;                   // clu | triple | report | none
-    QString integration;                // recluster-integrate | hierarchy-reload | none
+    QString integration;                // recluster-integrate | hierarchy-reload | refine | none
     QString selection;                  // none | clusters | children
     /** <input>: what the engine runs on.  `session` (default): the session files on disk.
      *  `subsession`: the selected clusters' spikes exported as a session of their own (the temp-file
@@ -64,6 +64,12 @@ struct KlustersPlugin {
     bool runsOnSubsession() const {
         return input == QLatin1String("subsession") || (input.isEmpty() && kind == QLatin1String("recluster"));
     }
+    /** <integration>refine</integration>: a sub-session engine that REFINES the selected unit(s) into
+     *  children and never moves a spike between units.  Klusters sends the atoms of the selection (the
+     *  seed .clu carries the PARENT ids, a seed .clc/.clp the atoms), and reads the final .clc back as
+     *  the new atoms of the same parents -- the parents keep their ids; a plain recluster would renumber
+     *  them.  fiber-kit's fiber-kit-manifold is one. */
+    bool refines() const { return runsOnSubsession() && integration == QLatin1String("refine"); }
 };
 
 class PluginRegistry {

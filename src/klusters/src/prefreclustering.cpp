@@ -98,7 +98,8 @@ void PrefReclustering::setPlugins(const QList<KlustersPlugin>& plugins)
     engineCombo->addItem(tr("fiber-kit  (the plan on the selection's sub-session)"), QLatin1String(kFiberKit));
     for (const KlustersPlugin& p : mPlugins)
         if (p.runsOnSubsession() && p.name != QLatin1String(kFiberKitPlugin))
-            engineCombo->addItem(tr("%1  (plugin)").arg(p.name), QStringLiteral("plugin:") + p.name);
+            engineCombo->addItem(p.refines() ? tr("%1  (refine: children of the selected units, parents kept)").arg(p.name)
+                                             : tr("%1  (plugin)").arg(p.name), QStringLiteral("plugin:") + p.name);
     if (!keep.isEmpty()) setReclusterEngine(keep);
     refreshEngineView();
 }

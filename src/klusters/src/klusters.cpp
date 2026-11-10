@@ -770,6 +770,18 @@ void KlustersApp::createMenus()
     mEngineFiberKit->setToolTip(tr("Recluster runs the fiber-kit plan on the selection's sub-session "
                                    "(the fiber-kit-recluster plugin's defaults, else the preferences' command)"));
     mReclusterEngineGroup->addAction(mEngineFiberKit);
+    // The REFINE mode: fiber-kit's manifold plugin.  A refine engine (descriptor <integration>refine)
+    // runs on the atoms of the selected unit(s) and installs its children under the SAME parents --
+    // nothing moves between units and no id changes -- where a recluster engine replaces the selection
+    // with new clusters.  Built in so the wheel's Plugin ring carries it; enabled when the descriptor is
+    // installed (fk install klusters-plugin).
+    mEngineManifold = mReclusterEngineMenu->addAction(tr("Refine: fiber-kit manifold"));
+    mEngineManifold->setCheckable(true);
+    mEngineManifold->setData(QStringLiteral("plugin:fiber-kit-manifold"));
+    mEngineManifold->setToolTip(tr("Recluster REFINES the selected unit(s): fiber-manifold fits the field manifold of their "
+                                   "off-spike channels in sliding windows and installs the result as their children "
+                                   "(the parents keep their ids; the manifold becomes a feature space under Space)"));
+    mReclusterEngineGroup->addAction(mEngineManifold);
     connect(mReclusterEngineGroup, &QActionGroup::triggered, this, [this](QAction* a) {
         setActiveReclusterEngine(a->data().toString());
     });
@@ -2580,6 +2592,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("recluster.fiberkit"),     QStringLiteral("Recluster"), mReclusterFiberKit);
     registerActionCommand(QStringLiteral("recluster.engine.klustakwik"), QStringLiteral("Recluster"), mEngineKlustaKwik);
     registerActionCommand(QStringLiteral("recluster.engine.fiberkit"),   QStringLiteral("Recluster"), mEngineFiberKit);
+    registerActionCommand(QStringLiteral("recluster.engine.manifold"),   QStringLiteral("Recluster"), mEngineManifold);
     registerActionCommand(QStringLiteral("recluster.channelVar"),   QStringLiteral("Recluster"), mReclusterChannelVar);
     registerActionCommand(QStringLiteral("recluster.splitByKnn"),   QStringLiteral("Recluster"), mSplitByKnn);
     registerActionCommand(QStringLiteral("recluster.stripByTemplate"), QStringLiteral("Recluster"), mStripByTemplate);
@@ -8657,7 +8670,9 @@ void KlustersApp::populateReclusterEngineMenu()
     mEnginePluginActions.clear();
     // One entry per installed `recluster` descriptor other than fiber-kit's (the built-in fiber-kit
     // entry runs that one).  Their catalogue ids are menu:Actions/Recluster/Engine/<name>.
+    bool manifoldInstalled = false;
     for (const KlustersPlugin& p : mPluginRegistry.plugins()) {
+        if (p.name == QLatin1String("fiber-kit-manifold") && p.refines()) { manifoldInstalled = true; continue; }
         if (!p.runsOnSubsession() || p.name == QLatin1String("fiber-kit-recluster")) continue;
         QAction* a = mReclusterEngineMenu->addAction(p.name);
         a->setCheckable(true);
@@ -8665,6 +8680,13 @@ void KlustersApp::populateReclusterEngineMenu()
         a->setToolTip(tr("Recluster runs \"%1\" on the selection's sub-session (Preferences > Plugins holds its defaults)").arg(p.name));
         mReclusterEngineGroup->addAction(a);
         mEnginePluginActions.append(a);
+    }
+    if (mEngineManifold) {
+        mEngineManifold->setEnabled(manifoldInstalled);
+        if (!manifoldInstalled)
+            mEngineManifold->setStatusTip(tr("Not installed: run `fk install klusters-plugin` (fiber-kit 0.66.3+), then Plugins > Reload Plugins"));
+        else
+            mEngineManifold->setStatusTip(tr("Refine the selected unit(s) into manifold children with fiber-kit-manifold (Shift+R)"));
     }
     // Re-check the stored engine (a plugin entry may have just appeared, or gone).
     const QString engine = configuration().getReclusterEngine();
@@ -8676,9 +8698,11 @@ void KlustersApp::populateReclusterEngineMenu()
         configuration().setReclusterEngine(QStringLiteral("klustakwik"));
     }
     if (mReCluster)
-        mReCluster->setStatusTip(tr("Recluster the selected cluster(s) with the active engine: %1")
-                                 .arg(engine == QLatin1String("klustakwik") ? tr("KlustaKwik")
-                                      : engine == QLatin1String("fiber-kit") ? tr("fiber-kit") : engine.mid(7)));
+        mReCluster->setStatusTip(engine == QLatin1String("plugin:fiber-kit-manifold")
+                                 ? tr("Refine the selected unit(s) into manifold children (the active engine: fiber-kit-manifold)")
+                                 : tr("Recluster the selected cluster(s) with the active engine: %1")
+                                   .arg(engine == QLatin1String("klustakwik") ? tr("KlustaKwik")
+                                        : engine == QLatin1String("fiber-kit") ? tr("fiber-kit") : engine.mid(7)));
 }
 
 QString KlustersApp::activeReclusterEngine() const

@@ -1418,6 +1418,7 @@ private:
     QActionGroup* mReclusterEngineGroup = nullptr;
     QAction*      mEngineKlustaKwik = nullptr;
     QAction*      mEngineFiberKit = nullptr;
+    QAction*      mEngineManifold = nullptr;   // the refine engine: fiber-kit-manifold (plugin:fiber-kit-manifold)
     QList<QAction*> mEnginePluginActions;
     QAction *mReclusterChannelVar;
 
@@ -1435,6 +1436,10 @@ private:
      *  otherwise.  Everything `<base>.*` is removed when the run ends (removeReclusterTempFiles /
      *  slotProcessExited). */
     QString reclusterSubsessionBase;
+    /** True while a `refine` plugin runs (KlustersPlugin::refines): the recluster is on the atom layer,
+     *  the selected parents were converted to their atoms, and the finish path stages the engine's
+     *  final .clc as the .clu to integrate (KlustersDoc::stageRefinedChildren). */
+    bool reclusterRefine = false;
 
     QAction *mSplitByKnn;
     QAction *mStripByTemplate = nullptr;   // Recluster: template strip (both scopes)

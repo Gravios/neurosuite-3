@@ -322,13 +322,15 @@ void KlustersApp::slotRecluster(){
     QString fileBaseName = doc->documentBaseName();
     fileBaseName.append("--");
 
-    int max = clustersToRecluster.size() - 1;
-    int i = 0;
-    for(; i < max; ++i){
+    // At most 12 ids in the name (a child-scope selection can be hundreds of atoms, and a file name
+    // is 255 bytes): the first 12, then "-and<N>more".
+    const int shown = std::min(12, static_cast<int>(clustersToRecluster.size()));
+    for (int i = 0; i < shown; ++i) {
+        if (i) fileBaseName.append("-");
         fileBaseName.append(QString::number(clustersToRecluster[i]));
-        fileBaseName.append("-");
     }
-    fileBaseName.append(QString::number(clustersToRecluster[i]));
+    if (clustersToRecluster.size() > shown)
+        fileBaseName.append(QStringLiteral("-and%1more").arg(clustersToRecluster.size() - shown));
 
     QString date = QDate::currentDate().toString("--MM.dd.yyyy-");
     QString time = QTime::currentTime().toString("hh.mm");
@@ -336,6 +338,30 @@ void KlustersApp::slotRecluster(){
     fileBaseName.append(time);
 
     const bool fiberKit = (reclusterOnceMode == ReclusterOnce::Subsession);   // an engine on the sub-session
+    // A REFINE plugin (fiber-kit-manifold): the run is on the atom layer whatever the scope.  From the
+    // parent scope the selected parents become their atoms (the parents themselves are what the engine
+    // sees, through the seed .clu); the finish path installs the engine's .clc as the new atoms of those
+    // parents.  Nothing is renumbered at the parent level.
+    reclusterRefine = fiberKit && reclusterPluginSet && reclusterPlugin.refines();
+    if (reclusterRefine) {
+        if (!doc->hasChildClustering()) {
+            QMessageBox::information(this, tr("Refine"),
+                tr("\"%1\" refines a unit into children, which needs a hierarchical session (.clc/.clp): "
+                   "Hierarchy > Promote to Hierarchical Session first.").arg(reclusterPlugin.name));
+            reclusterRefine = false;
+            return;
+        }
+        if (!doc->isChildClusteringActive()) {
+            const QList<int> atoms = doc->childrenOf(clustersToRecluster);
+            if (atoms.isEmpty()) {
+                QMessageBox::information(this, tr("Refine"), tr("The selected cluster(s) have no atoms to refine."));
+                reclusterRefine = false;
+                return;
+            }
+            NS3_DIAG() << "[recluster] refine: parents" << clustersToRecluster << "->" << atoms.size() << "atoms";
+            clustersToRecluster = atoms;
+        }
+    }
 
     // Build the argument list by substituting tokens in reclusteringArgs.
     // We operate on individual QStringList tokens (not a flat string) so that:
@@ -815,7 +841,7 @@ void KlustersApp::slotRecluster(){
         reclusterSubsessionBase = doc->documentDirectory() + QLatin1Char('/') + fileBaseName;
         returnStatus = doc->createReclusterSubsession(clustersToRecluster, reclusterSubsessionBase,
                                                       reclusteringFetFileName, ctx.value(QStringLiteral("variant")),
-                                                      ctx.value(QStringLiteral("tag")), &written, &why);
+                                                      ctx.value(QStringLiteral("tag")), &written, &why, reclusterRefine);
         if (returnStatus != KlustersDoc::OK) {
             QMessageBox::critical(this, tr("Recluster with fiber-kit"),
                                   tr("The sub-session could not be written: %1").arg(why));
@@ -899,6 +925,7 @@ void KlustersApp::slotRecluster(){
 // base name (patch81).  Once the program has ended normally,
 // KlustersDoc::integrateReclusteredClusters removes them instead.
 void KlustersApp::removeReclusterTempFiles(){
+    reclusterRefine = false;
     if (!reclusterSubsessionBase.isEmpty()) {       // the sub-session and whatever the engine wrote under it
         KlustersDoc::removeReclusterSubsession(reclusterSubsessionBase);
         reclusterSubsessionBase.clear();
@@ -956,7 +983,27 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         reclusterRetryTimer = nullptr;
     }
 
+    // A refine run: the engine's final .clc (its children) is what the atom-layer recluster integrates.
+    if (reclusterRefine && !reclusterSubsessionBase.isEmpty()) {
+        QString why;
+        if (!doc->stageRefinedChildren(reclusteringFetFileName, &why)) {
+            QApplication::restoreOverrideCursor();
+            showHeldReclusterOutput();
+            QMessageBox::critical(this, tr("Refine"), tr("The refine plugin's result could not be used: %1").arg(why));
+            removeReclusterTempFiles();
+            KlustersDoc::removeReclusterSubsession(reclusterSubsessionBase);
+            reclusterSubsessionBase.clear();
+            reclusterRefine = false;
+            processFinished = true;
+            processOutputsFinished = true;
+            processKilled = false;
+            slotTabChange(tabsParent->currentIndex());
+            return;
+        }
+        NS3_DIAG() << "[recluster] refine: the engine's .clc staged as the .clu to integrate (atom layer)";
+    }
     int returnStatus = doc->integrateReclusteredClusters(clustersToRecluster,clustersFromReclustering,reclusteringFetFileName);
+    reclusterRefine = false;
     // A hierarchical plan's atoms: --final-clu copied the final .clc beside the .clu; in a hierarchical
     // session's parent-scope recluster they become the new parents' atoms (child scope: the .clu's units
     // are the atoms, the .clc is not used).

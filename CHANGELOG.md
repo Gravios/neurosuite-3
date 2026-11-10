@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-10 | [Klusters: the Refine mode -- a plugin's children under the same parents](#2026-11-10--klusters-the-refine-mode--a-plugins-children-under-the-same-parents) |
 | 2026-11-10 | [Klusters: a plugin descriptor that does not parse says so](#2026-11-10--klusters-a-plugin-descriptor-that-does-not-parse-says-so) |
 | 2026-11-10 | [Klusters: feature spaces an engine writes in the sub-session come back as session-level spaces](#2026-11-10--klusters-feature-spaces-an-engine-writes-in-the-sub-session-come-back-as-session-level-spaces) |
 | 2026-11-09 | [ndm_extractspikes / ndm_detectspikes `--group N[,M...]`](#2026-11-09--ndm_extractspikes--ndm_detectspikes---group-nm) |
@@ -175,6 +176,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-10 — Klusters: the Refine mode -- a plugin's children under the same parents
+
+<details>
+<summary>Details</summary>
+
+A recluster engine replaces the selection with new clusters, renumbered above the highest id -- the
+right thing for a re-sort, the wrong thing for fiber-kit's `fiber-manifold`, which returns the unit as
+it was with its children redrawn: cluster 5 would have come back as cluster 13717.  A plugin now
+declares `<integration>refine</integration>` and Klusters runs it as a REFINE: on the atom layer
+whatever the scope (from the parent scope the selected parents become their atoms), the seed `.clu`
+carrying the parent ids and a seed `.clc`/`.clp` the atoms, and the engine's final `.clc` staged as the
+`.clu` the atom-layer recluster integrates -- the children land under the parents they belong to,
+one child-layer undo step, the parents' ids untouched, the manifold feature space carried back as
+before.  The wheel's *Recluster ▸ Plugin* ring gains **Refine** beside KlustaKwik and fiber-kit
+(*Actions ▸ Recluster ▸ Engine ▸ Refine: fiber-kit manifold*, `recluster.engine.manifold`; enabled
+once `fk install klusters-plugin` has put the descriptor in place); *Preferences ▸ Reclustering*
+names a refine engine as such.  A refine on a flat session says it needs a hierarchical one.  The
+sub-session's name lists at most 12 ids (`-and<N>more`), since a refine of a large unit selects
+hundreds of atoms.  `KlustersPlugin::refines`, `createReclusterSubsession(..., refine)`,
+`KlustersDoc::stageRefinedChildren`; `PLUGIN_API.md` "Result integration".  Needs fiber-kit 0.66.3
+(the descriptor declares `refine`).  Not run in the GUI.
+
+</details>
 
 ## 2026-11-10 — Klusters: a plugin descriptor that does not parse says so
 

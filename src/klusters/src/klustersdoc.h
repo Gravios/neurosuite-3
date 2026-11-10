@@ -1535,10 +1535,15 @@ public:
      *  the recording and the per-group models -- plus the open clustering's features at @p fetPath
      *  (the built-in recluster's file, whose name the finish path turns into the final .clu's).  Fills
      *  the recluster table in the same (time) order, so integrateReclusteredClusters maps the engine's
-     *  .clu back by position.  Returns OK / CREATION_ERROR (with @p error). */
+     *  .clu back by position.  Returns OK / CREATION_ERROR (with @p error).
+     *  @p refine (a `refine` plugin, KlustersPlugin::refines): @p clustersToRecluster are ATOMS (the
+     *  caller converted the selected parents with childrenOf); the recluster target is the atom layer
+     *  whatever the scope, the seed .clu carries the atoms' PARENT ids and a seed .clc/.clp the atoms, so
+     *  the engine sees the units whole and keeps the atoms it does not examine.  The finish path reads
+     *  the engine's final .clc as the new atoms (installRefinedChildren). */
     int createReclusterSubsession(QList<int>& clustersToRecluster, const QString& tmpBase, const QString& fetPath,
                                   const QString& variant, const QString& tag, QStringList* written = nullptr,
-                                  QString* error = nullptr);
+                                  QString* error = nullptr, bool refine = false);
     /** Removes every file / link `<tmpBase>.*` -- the sub-session and whatever the engine wrote under it.
      *  Returns how many. */
     static int removeReclusterSubsession(const QString& tmpBase);
@@ -1556,6 +1561,11 @@ public:
      *  (the time column filled on creation), so the Space selector lists it.  Call before the sub-session
      *  is removed; parent- and child-scope alike.  Returns the number carried back (-1: @p error). */
     int carryBackSubsessionFeatures(const QString& tmpBase, QStringList* created = nullptr, QString* error = nullptr);
+    /** A `refine` run's result: the engine's final .clc (`<fetPath>` with .fet. -> .clc.) becomes the
+     *  .clu the recluster integrates (copied over `<fetPath>` with .fet. -> .clu.), so the atom-layer
+     *  recluster path installs its children under the parents they belong to.  False (with @p error)
+     *  when the engine delivered no .clc or one of the wrong length. */
+    bool stageRefinedChildren(const QString& fetPath, QString* error = nullptr);
 
     /** patch76 — build a mean-subtracted sub-dimensional feature file
      *  for a single cluster.  Each spike's feature vector is centered
