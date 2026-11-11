@@ -1312,15 +1312,29 @@ bool KlustersDoc::dropChildrenToBin(const QList<int>& childrenIn, int binId, Klu
     std::sort(dropped.begin(), dropped.end());
     const int anchorAtom   = dropped.first();
     const int anchorParent = childToParent.value(anchorAtom);
+    // The surviving siblings in the order the child palette LISTS them: the held
+    // child-scope sort order when one is in force (a sorted list's "next" is the
+    // next row, not the next id), else by id.  The landing is the next survivor
+    // after the anchor in that order; when the anchor was the last row, the one
+    // before it -- so a delete at the end of the list lands on the new last row.
     QList<int> siblings;
     for (int kid : parentToChildren.value(anchorParent))
         if (kid > 1 && !dropped.contains(kid)) siblings.append(kid);
     std::sort(siblings.begin(), siblings.end());
+    auto rowOf = [&](int id) -> int {                    // position in the listed order
+        const int i = scopeSortOrder.indexOf(id);
+        return i >= 0 ? i : scopeSortOrder.size() + id;  // unsorted ids follow, by id
+    };
+    if (!scopeSortOrder.isEmpty())
+        std::sort(siblings.begin(), siblings.end(), [&](int a, int b) { return rowOf(a) < rowOf(b); });
     int siblingLanding = -1;
     if (!siblings.isEmpty()) {
-        siblingLanding = siblings.last();                // nothing above: nearest below
-        for (int kid : siblings)
-            if (kid > anchorAtom) { siblingLanding = kid; break; }
+        const int anchorRow = scopeSortOrder.isEmpty() ? anchorAtom : rowOf(anchorAtom);
+        siblingLanding = siblings.last();                // nothing after: the nearest before
+        for (int kid : siblings) {
+            const int row = scopeSortOrder.isEmpty() ? kid : rowOf(kid);
+            if (row > anchorRow) { siblingLanding = kid; break; }
+        }
     }
     // Parent neighbour: nearest above anchorParent, else nearest below, among the
     // parents that keep at least one atom after this drop.

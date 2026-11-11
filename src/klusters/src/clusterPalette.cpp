@@ -875,9 +875,13 @@ void ClusterPalette::selectItems(const QList<int>& selectedClusters){
             item = *found;
         }
     }
-    //Last item in selection gets focus if it exists
-    if(item)
+    //Last item in selection gets focus if it exists -- and is scrolled into view:
+    //a landing at the end of a long list (a delete of the last atom lands on the
+    //new last one) must be visible, not just current.
+    if(item){
         iconView->setCurrentItem(item);
+        iconView->scrollToItem(item);
+    }
 
     //reset isInSelectItems to false to enable again the the emission of signals due to selectionChange
     isInSelectItems = false;

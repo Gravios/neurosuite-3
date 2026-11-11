@@ -114,6 +114,14 @@ used to trigger (the parent-layer move, the hierarchy rebuild, the deferred
 renumber) collapse into one launch at the release -- so the matrices no longer
 flash from the child view to the fiber view and back.
 
+**Where a delete lands.** Dropping atoms to noise lands on the next surviving
+sibling after the lowest dropped one *in the order the child palette lists
+them* -- the held sort order when a child-scope sort is in force, else id
+order -- and, when the dropped atom was the last row, on the row before it,
+which is now the last; the landing is scrolled into view. When the fiber's
+last atom goes, the landing is the fiber's neighbour (the next fiber above,
+else the nearest below) in the fiber palette.
+
 **Realigning an atom.** *Realign* with the child view showing realigns the
 first shown atom (its spikes only, against their own template). When it
 finishes the landing stays in the child view: the atom is selected in the

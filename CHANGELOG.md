@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: a delete at the end of the child list lands on the new last row, in list order](#2026-11-11--klusters-a-delete-at-the-end-of-the-child-list-lands-on-the-new-last-row-in-list-order) |
 | 2026-11-11 | [Klusters: an atom's realign lands back on the atom](#2026-11-11--klusters-an-atoms-realign-lands-back-on-the-atom) |
 | 2026-11-11 | [Klusters: one curation-matrix refresh per hierarchy gesture (no child -> fiber -> child flash)](#2026-11-11--klusters-one-curation-matrix-refresh-per-hierarchy-gesture-no-child---fiber---child-flash) |
 | 2026-11-11 | [Klusters: a fiber clicked over an atom selection leaves the child view](#2026-11-11--klusters-a-fiber-clicked-over-an-atom-selection-leaves-the-child-view) |
@@ -182,6 +183,21 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-11 — Klusters: a delete at the end of the child list lands on the new last row, in list order
+
+<details>
+<summary>Details</summary>
+
+`dropChildrenToBin` chose the landing sibling by id: the next id above the lowest dropped
+atom, else the highest id.  Under a child-scope sort the palette lists atoms in the held
+order, so "next" by id could be anywhere in the list.  The landing now follows the listed
+order (the held `scopeSortOrder` when there is one, else ids): the next surviving row after
+the anchor, or -- when the dropped atom was the last row -- the row before it, the new last.
+`ClusterPalette::selectItems` scrolls the current item into view, so a landing at the end of
+a long list is visible.  `doc/klusters/hierarchical-clustering.md`.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-11 — Klusters: an atom's realign lands back on the atom
 
