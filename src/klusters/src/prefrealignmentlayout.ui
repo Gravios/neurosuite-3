@@ -267,6 +267,30 @@
        </layout>
       </widget>
    </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox_supersample">
+     <property name="title"><string>Super-sampling (high-end machines)</string></property>
+     <layout class="QGridLayout" name="gridLayout_supersample">
+      <item row="0" column="0" colspan="2">
+       <widget class="QCheckBox" name="supersampleEnabledCheckBox">
+        <property name="text"><string>Enable super-sampled waveform spaces (Space → Super-sample ×2 / ×4)</string></property>
+        <property name="toolTip"><string>Builds a waveform space with 2 or 4 spline-interpolated ticks per acquisition sample (&lt;base&gt;.spk.&lt;token&gt;_U4.N, its own PCA basis and features), listed under Space like any other.  Realign and nudge in such a space work at sub-sample resolution: the .res keeps whole samples, the rest is each spike's phase (the space's last feature column), and the window is re-cut from the recording at the exact fractional time.  The .spk is 2× / 4× the size, every waveform read and PCA 2× / 4× the work: for machines with the memory and cores to spare.</string></property>
+        <property name="checked"><bool>false</bool></property>
+       </widget>
+      </item>
+      <item row="1" column="0">
+       <widget class="QLabel" name="supersampleInterpLabel"><property name="text"><string>Interpolation</string></property></widget>
+      </item>
+      <item row="1" column="1">
+       <widget class="QComboBox" name="supersampleInterpCombo">
+        <property name="toolTip"><string>Natural cubic spline through the samples (local, no ringing; the default) or a windowed sinc (Lanczos-3: the band-limited answer, slightly sharper peaks, mild ringing near clipped samples).  Used by every super-sampled cut: building the space, realign, nudge and sync.</string></property>
+        <item><property name="text"><string>Cubic spline</string></property></item>
+        <item><property name="text"><string>Windowed sinc (Lanczos-3)</string></property></item>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
    <item><spacer name="vSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item>
   </layout>
  </widget>

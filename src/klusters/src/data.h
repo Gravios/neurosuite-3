@@ -382,6 +382,20 @@ public:
      *  was never updated to match the new peak position). */
     void setPeakSampleIndex(int v) { peakPositionInWaveform = v; }
 
+    /** The super-sampling factor of the waveform space in use (custody token _U<factor>
+     *  of the .spk's method: Klusters' super-sample mode): 1 for the recording's own
+     *  sampling.  While such a space is shown nbSamplesPerWaveform() is the group's
+     *  nSamples times this factor and peakSampleIndex() (1-based) is
+     *  (peakSampleIndex - 1) * factor + 1: the peak's 0-based index scales. */
+    int supersampleFactor() const { return supersampleFactorInUse; }
+    /** The group's own geometry (the parameter file's), whatever space is shown. */
+    int baseNbSamplesPerWaveform() const { return baseNbSamplesInWaveform; }
+    int basePeakSampleIndex() const { return basePeakPositionInWaveform; }
+    /** Adopt the waveform geometry of the .spk at @p spkPath: its method token's
+     *  _U<factor> scales the group's nSamples and peak.  Called by configure() and
+     *  replaceFeatureSpace(); harmless for a plain space (factor 1). */
+    void applyWaveformSpaceGeometry(const QString& spkPath);
+
     /**Calculate the minimum and maximum for each dimension and store them in
   *dimensionMinima and dimensionMaxima respectively.
   * @param modifiedClusters list of the clusters which have been modified implying
@@ -1436,6 +1450,9 @@ private:
     int nbChannels = 0;
     int nbSamplesInWaveform = 0;
     int peakPositionInWaveform = 0;
+    int baseNbSamplesInWaveform = 0;        // the parameter file's, before any super-sampling
+    int basePeakPositionInWaveform = 0;
+    int supersampleFactorInUse = 1;
     QList<int> channelIds;
     int nbRefactorySample = 0;
     int RMSIntWindowLength = 0;

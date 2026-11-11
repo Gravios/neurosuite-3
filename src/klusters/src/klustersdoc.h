@@ -1738,6 +1738,33 @@ public:
     const QString& cluMethod() const { return originMethod; }
     /** Method whose .fet/.spk are currently loaded. */
     const QString& activeFeatureMethod() const { return activeMethod; }
+    /** The .spk the shown space reads (a pending copy when there is one). */
+    const QString& activeSpkFilePath() const { return activeSpkPath; }
+    /** The session's recording, for the public callers of the super-sample action. */
+    QString recordingPath() const { return rawRecordingPath(); }
+
+    // ── Super-sampled waveform spaces (custody token _U<factor>) ──────────────
+    /** The factor of the space shown (1: the recording's own sampling). */
+    int  supersampleFactor() const { return clusteringData ? clusteringData->supersampleFactor() : 1; }
+    /** In a super-sampled space the .fet's last feature column (before time) is each
+     *  spike's sub-sample PHASE in ticks (0 .. factor-1): tick k of its waveform stands
+     *  at raw time res + (k - peak + phase) / factor.  A realign in such a space moves
+     *  the .res by whole samples and leaves the rest here; a re-cut reads it back.
+     *  -1 when the space is not super-sampled.  0-based feature column. */
+    int  supersamplePhaseColumn() const;
+    /** The interpolator for every super-sampled cut (Preferences). */
+    neurosuite::core::Interp supersampleInterp = neurosuite::core::Interp::CubicSpline;
+    void setSupersampleInterp(neurosuite::core::Interp i) { supersampleInterp = i; }
+    /** Build the super-sampled space over the shown space's waveforms: writes
+     *  <base>.spk.<waveform token>_U<factor>.<g> (every spike re-cut from the recording
+     *  and interpolated; from the stored windows when there is no recording),
+     *  <base>.pca.<token>.<g> (a basis fitted on them: the shown basis's window and
+     *  component count, scaled) and <base>.fet.<token>.<g> (the projections, a zero
+     *  phase column, time) -- an ordinary space the Space selector lists.  @p token
+     *  receives the new feature-space token.  Returns false with @p error. */
+    bool buildSupersampledSpace(int factor, QString* token, QString& log, QString* error);
+    /** Phases of every spike in the shown super-sampled space (empty when not one). */
+    std::vector<int8_t> supersamplePhases() const;
     /** True while another method's space is loaded.  File writers that belong
      *  to the .clu's own space (realign, nudge, Save As, decollide, template
      *  generation) refuse in this state. */
@@ -2356,8 +2383,12 @@ private:
      *  leaves the .spk unchanged on any error. */
     /** @p fallbackBasis gives the spatial order when the .spk's own token has
      *  no readable basis (a space that exists only as _D: sync passes its own). */
+    /** @p phases: for a super-sampled target, each spike's sub-sample phase in ticks
+     *  (the space's own feature column, supersamplePhaseColumn); null = 0. */
     bool reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut,
-                                   const neurosuite::core::PcaBasis* fallbackBasis = nullptr);
+                                   const neurosuite::core::PcaBasis* fallbackBasis = nullptr,
+                                   const std::vector<int8_t>* phases = nullptr);
+
 
     /** Seed all four .pending files from their originals.
      *  Redirects spkFileName and tmpCluFile to the pending paths.

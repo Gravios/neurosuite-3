@@ -493,6 +493,11 @@ private Q_SLOTS:
     /** Actions > Sync Feature Spaces: re-extract and re-project every other
      *  method space at this session's spike times (KlustersDoc::syncAllFeatureSpaces). */
     void slotSyncFeatureSpaces();
+    /** Build the super-sampled space over the shown one (factor 2 or 4) and show it;
+     *  offers to Save As into it so realign / nudge run there (KlustersDoc::buildSupersampledSpace). */
+    void slotSupersample(int factor);
+    /** The two Super-sample actions follow the Preferences gate and the document state. */
+    void updateSupersampleActions();
     /** Show the next (@p step +1) or previous (-1) usable space of the Space
      *  box, wrapping around; same path as picking it in the box. */
     void slotCycleFeatureSpace(int step);
@@ -1454,6 +1459,8 @@ private:
      *  whole.*/
     QAction *mPcaAlignAllClusters;
     QAction *mSyncFeatureSpaces = nullptr;   ///< Actions > Sync Feature Spaces
+    QAction *mSupersampleX2 = nullptr;       ///< Actions > Super-sample x2 (a super-sampled waveform space; Preferences gate)
+    QAction *mSupersampleX4 = nullptr;       ///< Actions > Super-sample x4
     QAction *mSortSpikesByTime  = nullptr;   ///< Actions > Sort Spikes by Time
     QAction *mNextFeatureSpace     = nullptr;   ///< Actions > Next Feature Space (Ctrl+Tab)
     QAction *mPreviousFeatureSpace = nullptr;   ///< Actions > Previous Feature Space (Ctrl+Shift+Tab)

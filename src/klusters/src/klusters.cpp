@@ -866,6 +866,20 @@ void KlustersApp::createMenus()
     connect(mSyncFeatureSpaces, &QAction::triggered,
             this, &KlustersApp::slotSyncFeatureSpaces);
 
+    // Super-sampled waveform spaces (Preferences > Realignment > Super-sampling gates them).
+    mSupersampleX2 = actionMenu->addAction(tr("Super-sample ×2…"));
+    mSupersampleX4 = actionMenu->addAction(tr("Super-sample ×4…"));
+    for (QAction* a : {mSupersampleX2, mSupersampleX4})
+        a->setToolTip(tr("Build a waveform space with %1 spline-interpolated ticks per acquisition sample over the "
+                         "shown space (its own .spk, PCA basis and features), listed under Space.  Realign and nudge in "
+                         "it work at sub-sample resolution: the .res keeps whole samples, the rest is each spike's phase "
+                         "(the space's last feature column).  %1× the waveform bytes and work: Preferences > Realignment > "
+                         "Super-sampling enables it.").arg(a == mSupersampleX2 ? 2 : 4));
+    connect(mSupersampleX2, &QAction::triggered, this, [this]() { slotSupersample(2); });
+    connect(mSupersampleX4, &QAction::triggered, this, [this]() { slotSupersample(4); });
+    registerActionCommand(QStringLiteral("space.supersample2"), QStringLiteral("Space"), mSupersampleX2);
+    registerActionCommand(QStringLiteral("space.supersample4"), QStringLiteral("Space"), mSupersampleX4);
+
     // Step through the Space box without the mouse.  Ctrl+Tab, because plain
     // Tab / Shift+Tab move keyboard focus around the window.
     mNextFeatureSpace = actionMenu->addAction(tr("Ne&xt Feature Space"));
@@ -1920,6 +1934,10 @@ void KlustersApp::applyPreferences() {
     // "Realign and nudge from any feature space" decides which actions a
     // borrowed space locks.
     applyFeatureSpaceLocks();
+    // Super-sampling: the gate and the interpolator.
+    updateSupersampleActions();
+    if (doc) doc->setSupersampleInterp(configuration().getSupersampleInterp() == 1
+                                       ? neurosuite::core::Interp::Lanczos3 : neurosuite::core::Interp::CubicSpline);
 
     // Input bindings: a rebind in the Input preferences page set the registry overrides
     // (live for resolver-dispatched keys) and the Configuration map (just persisted by

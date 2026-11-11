@@ -1088,6 +1088,20 @@ void WaveformView::clustersRenumbered(bool active){
     //The data have to be collected and everything has to be redrawn.
     //If the widget is in the active view, it is done immediately otherswise it will be done
     //when the view willbecome active (updateDrawing will be called).
+    //A feature-space switch reaches the view through this signal too, and a
+    //super-sampled space has factor x the samples per waveform: take the
+    //geometry from the data layer again, and the world box with it.
+    {
+        Data& clusteringData = doc.data();
+        const int ns = clusteringData.nbOfSampleInWaveform();
+        const int pk = clusteringData.positionOfPeakInWaveform();
+        if(ns != nbSamplesInWaveform || pk != peakPositionInWaveform){
+            nbSamplesInWaveform = ns;
+            peakPositionInWaveform = pk;
+            shift = (nbSamplesInWaveform - 1) * Xstep + Xspace;
+            updateWindow();
+        }
+    }
     invalidate(REDRAW);
 
     if(!view.clusters().isEmpty() && active){

@@ -131,6 +131,8 @@ public:
     void setReextractSpikesOnSave(bool b) {reextractSpikesOnSave = b;}
     void setSyncFeatureSpaceOnSwitch(bool b) {syncFeatureSpaceOnSwitch = b;}
     void setRealignFromAnySpace(bool b)   {realignFromAnySpace = b;}
+    void setSupersampleEnabled(bool b)    {supersampleEnabled = b;}
+    void setSupersampleInterp(int i)      {supersampleInterp = (i == 1) ? 1 : 0;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setTsneSpikeCap(int n) {tsneSpikeCap = (n < 1000) ? 1000 : n;}
@@ -297,6 +299,8 @@ public:
     bool   getReextractSpikesOnSave() const {return reextractSpikesOnSave;}
     bool   getSyncFeatureSpaceOnSwitch() const {return syncFeatureSpaceOnSwitch;}
     bool   getRealignFromAnySpace() const {return realignFromAnySpace;}
+    bool   getSupersampleEnabled() const  {return supersampleEnabled;}
+    int    getSupersampleInterp() const   {return supersampleInterp;}   // 0 cubic spline, 1 Lanczos-3
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     int    getTsneSpikeCap() const {return tsneSpikeCap;}
@@ -415,6 +419,8 @@ public:
     bool   getReextractSpikesOnSaveDefault() const {return false;}
     bool   getSyncFeatureSpaceOnSwitchDefault() const {return false;}
     bool   getRealignFromAnySpaceDefault() const {return true;}
+    bool   getSupersampleEnabledDefault() const  {return false;}
+    int    getSupersampleInterpDefault() const   {return 0;}
     bool   getAutoRealignAfterMergeDefault() const {return true;}
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
     int    getTsneSpikeCapDefault() const {return 32000;}
@@ -631,6 +637,8 @@ private:
     bool    reextractSpikesOnSave;  // re-extract .spk from .fil at save (off)
     bool    syncFeatureSpaceOnSwitch = false;  // re-extract + re-project a feature space when switching to it (off)
     bool    realignFromAnySpace = true;        // realign/nudge from any space; other spaces follow moved spikes (on)
+    bool    supersampleEnabled = false;        // Space > Super-sample x2 / x4 (super-sampled waveform spaces); off: high-end machines only
+    int     supersampleInterp = 0;             // 0 cubic spline, 1 Lanczos-3
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     int     tsneSpikeCap;                  // feature-view t-SNE: max spikes embedded (latency budget)

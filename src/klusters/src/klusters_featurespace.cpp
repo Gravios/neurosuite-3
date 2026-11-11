@@ -26,6 +26,7 @@
 #include <QEventLoop>
 #include <QFileInfo>
 #include <QFont>
+#include <QDir>
 #include <QMessageBox>
 #include <QSignalBlocker>
 #include <QStandardItemModel>
@@ -181,6 +182,91 @@ bool KlustersApp::showFeatureSpace(const QString& method, bool syncFirst)
     // asked for (leaving a borrowed space).
     applyFeatureSpaceLocks();
     return true;
+}
+
+void KlustersApp::updateSupersampleActions()
+{
+    if (!mSupersampleX2 || !mSupersampleX4) return;
+    const bool gate = configuration().getSupersampleEnabled();
+    const bool open = doc && !doc->url().isEmpty() && doc->data().totalNbOfSpikes() > 0;
+    const bool already = open && doc->supersampleFactor() > 1;
+    for (QAction* a : {mSupersampleX2, mSupersampleX4}) {
+        a->setEnabled(gate && open && !already);
+        a->setStatusTip(!gate ? tr("Enable super-sampling in Preferences > Realignment first (high-end machines).")
+                        : already ? tr("The shown space is already super-sampled (x%1).").arg(doc->supersampleFactor())
+                        : tr("Build the super-sampled space over the shown one and show it."));
+    }
+}
+
+void KlustersApp::slotSupersample(int factor)
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if (!configuration().getSupersampleEnabled()) {
+        QMessageBox::information(this, tr("Super-sample"),
+            tr("Super-sampling is off: enable it in Preferences > Realignment > Super-sampling (high-end machines)."));
+        return;
+    }
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish before super-sampling."), 5000);
+        return;
+    }
+    const Data& d = doc->data();
+    const qint64 nSpikes = static_cast<qint64>(d.totalNbOfSpikes());
+    const qint64 spkBytes = nSpikes * d.nbOfChannels() * static_cast<qint64>(d.baseNbSamplesPerWaveform()) * factor * 2;
+    const QString shown = doc->activeFeatureMethod();
+    const QString token = QString::fromStdString(neurosuite::custody::supersampledToken(
+        neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString()), factor));
+    const QString rec = doc->recordingPath();
+    const bool haveRec = QFileInfo::exists(rec);
+    const QString how = haveRec
+        ? tr("every spike re-cut from %1 and interpolated (%2)").arg(QFileInfo(rec).fileName(),
+              configuration().getSupersampleInterp() == 1 ? tr("Lanczos-3") : tr("cubic spline"))
+        : tr("no recording found: the stored windows are interpolated (the last ticks of each window clamp to its final sample)");
+    const auto answer = QMessageBox::question(this, tr("Super-sample ×%1").arg(factor),
+        tr("Build the super-sampled space <b>%1</b> over the shown space (%2)?<br><br>"
+           "%3 spikes × %4 channels × %5 ticks: a new .spk of <b>%6 MB</b>, a PCA basis fitted on it and a "
+           ".fet with %7 columns (PCA, phase, time).  %8.<br><br>"
+           "The space is then listed under <i>Space</i>.  To realign or nudge in it, Save As the .clu under "
+           "that token (offered next) and reopen it.")
+            .arg(token, shown).arg(nSpikes).arg(d.nbOfChannels()).arg(d.baseNbSamplesPerWaveform() * factor)
+            .arg(spkBytes / (1024 * 1024)).arg(d.nbOfChannels() * d.nbOfFeaturesByChannel() + 2).arg(how),
+        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes);
+    if (answer != QMessageBox::Yes) return;
+
+    QString log, err, newToken;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    slotStatusMsg(tr("Super-sampling ×%1…").arg(factor));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const bool ok = doc->buildSupersampledSpace(factor, &newToken, log, &err);
+    QApplication::restoreOverrideCursor();
+    if (!ok) {
+        QMessageBox::warning(this, tr("Super-sample ×%1").arg(factor),
+                             tr("The space was not built: %1\n\n%2").arg(err, log.trimmed()));
+        return;
+    }
+    NS3_DIAG() << "[supersample]" << newToken << ":" << log.trimmed();
+    preloadFeatureSpaces();
+    populateFeatureSpaceCombo();
+    showFeatureSpace(newToken, /*syncFirst*/ false);
+    slotStatusMsg(tr("Super-sampled space %1 built and shown.").arg(newToken));
+
+    // Realign / nudge run in the .clu's own space: offer to make this one that.
+    const QString dir = QFileInfo(doc->url()).absolutePath();
+    const QString newClu = dir + QDir::separator() + doc->documentBaseName() + QStringLiteral(".clu.") + newToken
+                         + QLatin1Char('.') + doc->currentElectrodeGroupID();
+    const auto adopt = QMessageBox::question(this, tr("Super-sample ×%1").arg(factor),
+        tr("%1<br><br>Save the clustering as <b>%2</b> now, so realign and nudge run in the super-sampled space "
+           "once it is reopened?  (The current .clu stays as it is.)").arg(log.trimmed().toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>")),
+                                                                              QFileInfo(newClu).fileName()),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (adopt == QMessageBox::Yes) {
+        if (doc->isBorrowedSpace()) {
+            // Save As is refused in a borrowed space: go back to the .clu's own space for it.
+            QString e;
+            showFeatureSpace(doc->cluMethod(), false);
+        }
+        startSave(newClu, true);
+    }
 }
 
 bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)

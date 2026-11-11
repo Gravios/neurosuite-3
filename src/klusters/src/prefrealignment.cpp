@@ -33,6 +33,10 @@ void   PrefRealignment::setSyncFeatureSpaceOnSwitch(bool b) { syncFeatureSpaceOn
 bool   PrefRealignment::getSyncFeatureSpaceOnSwitch() const { return syncFeatureSpaceOnSwitchCheckBox->isChecked(); }
 void   PrefRealignment::setRealignFromAnySpace(bool b) { realignFromAnySpaceCheckBox->setChecked(b); }
 bool   PrefRealignment::getRealignFromAnySpace() const { return realignFromAnySpaceCheckBox->isChecked(); }
+void   PrefRealignment::setSupersampleEnabled(bool b) { supersampleEnabledCheckBox->setChecked(b); }
+bool   PrefRealignment::getSupersampleEnabled() const { return supersampleEnabledCheckBox->isChecked(); }
+void   PrefRealignment::setSupersampleInterp(int i) { supersampleInterpCombo->setCurrentIndex(i == 1 ? 1 : 0); }
+int    PrefRealignment::getSupersampleInterp() const { return supersampleInterpCombo->currentIndex(); }
 
 void   PrefRealignment::setAutoRealignAfterMerge(bool b) { autoRealignAfterMergeCheckBox->setChecked(b); }
 bool   PrefRealignment::getAutoRealignAfterMerge() const { return autoRealignAfterMergeCheckBox->isChecked(); }

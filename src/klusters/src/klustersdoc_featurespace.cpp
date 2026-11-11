@@ -20,6 +20,8 @@
 #include "klustersview.h"
 #include "data.h"
 #include "pca_row_projection.h"     // klusters::projectSpikeOntoPca — the one projection kernel
+#include <neurosuite/core/pca_fit.hpp>      // fitPca: the basis of a space built here
+#include <neurosuite/core/supersample.hpp>  // the super-sampled space
 #include "spkmemory.h"
 #include "klustersdoc_internal.h"   // featureMethod
 
@@ -74,8 +76,12 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
     const int     group = electrodeGroupID.toInt();
     const qint64  nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
     // The .clu's own .spk was validated at open, so its size is the geometry
-    // every other space's .spk must match.
+    // every other space's .spk must match -- per super-sampling factor: a
+    // _U<factor> .spk holds factor x the samples.
     const qint64  spkBytes = QFileInfo(origSpkPath).size();
+    const int     origFactor = std::max(1, neurosuite::custody::supersampleOf(
+                                               neurosuite::custody::methodOf(origSpkPath.toStdString())));
+    const qint64  spkBytesBase = spkBytes / origFactor;
 
     // Methods with a .fet for this group.  Strict MethodSpecific naming, so the
     // token in the file name IS the space; suffixed (stage-tagged) names are not
@@ -134,7 +140,8 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
         if (rows != nSpikes)
             s.reason = rows < 0 ? tr("unreadable feature file %1").arg(QFileInfo(s.fetPath).fileName())
                                 : tr("%1 spikes in its .fet, the open .clu has %2").arg(rows).arg(nSpikes);
-        else if (QFileInfo(s.spkPath).size() != spkBytes)
+        else if (QFileInfo(s.spkPath).size()
+                 != spkBytesBase * std::max(1, neurosuite::custody::supersampleOf(s.spkMethod.toStdString())))
             s.reason = tr("its .spk (%1) does not match this group's spike count or geometry")
                            .arg(QFileInfo(s.spkPath).fileName());
         else
@@ -229,13 +236,17 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
     const std::string stem = (dir + QDir::separator() + baseName).toStdString();
     const int     group = electrodeGroupID.toInt();
     const int     nChan = clusteringData->nbOfChannels();
-    const int     nSamp = clusteringData->nbSamplesPerWaveform();
     auto committedSpkOf = [&](const QString& m) {
         return QString::fromStdString(
             neurosuite::custody::resolve(stem, "spk", group, m.toStdString()).path);
     };
     const QString spkCommitted = committedSpkOf(method);
     const bool    ownWaveforms = (spkCommitted == origSpkPath);
+    // The target's waveform geometry: the group's, times its super-sampling factor
+    // (a _U<factor> .spk), whatever space is shown.
+    const int     spkFactor = std::max(1, neurosuite::custody::supersampleOf(
+                                              neurosuite::custody::methodOf(spkCommitted.toStdString())));
+    const int     nSamp = clusteringData->baseNbSamplesPerWaveform() * spkFactor;
 
     // ── Who is synced together ───────────────────────────────────────────
     // A re-extracted .spk replaces the committed one at Save for EVERY space
@@ -328,7 +339,18 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
         QString reLog;
         const QString spkStage = spkPending + stage;
         staged.push_back(spkStage);
-        if (!reextractAllSpikesFromFil(spkStage, reLog, &plans.front().pca)) {
+        // A super-sampled target: each spike's phase is the space's own column
+        // (the last feature before time), carried into the re-cut.
+        std::vector<int8_t> phases;
+        if (spkFactor > 1) {
+            const Plan& p0 = plans.front();
+            const int64_t nd = p0.nDims;
+            phases.resize(static_cast<size_t>(p0.oldFet->nSpikes));
+            for (int64_t i = 0; i < p0.oldFet->nSpikes; ++i)
+                phases[static_cast<size_t>(i)] = static_cast<int8_t>(
+                    p0.oldFet->values[static_cast<size_t>(i) * static_cast<size_t>(nd) + static_cast<size_t>(nd - 2)]);
+        }
+        if (!reextractAllSpikesFromFil(spkStage, reLog, &plans.front().pca, phases.empty() ? nullptr : &phases)) {
             log << method << ": waveforms not re-extracted — " << reLog << "\n";
             dropStaged();
             return false;
@@ -773,6 +795,165 @@ bool KlustersDoc::followMovedSpikes(QString& logOut)
     for (const QString& m : fullSync)
         allOk = syncOneSpace(m, done, logOut) && allOk;
     return allOk;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Super-sampled spaces (custody token _U<factor>; supersample.hpp)
+// ─────────────────────────────────────────────────────────────────────────────
+
+int KlustersDoc::supersamplePhaseColumn() const
+{
+    if (!clusteringData || clusteringData->supersampleFactor() <= 1) return -1;
+    const int nFeat = clusteringData->timeDimension() - 1;      // feature columns before time
+    return nFeat >= 1 ? nFeat - 1 : -1;
+}
+
+std::vector<int8_t> KlustersDoc::supersamplePhases() const
+{
+    std::vector<int8_t> ph;
+    const int col = supersamplePhaseColumn();
+    if (col < 0) return ph;
+    const int64_t n = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+    ph.resize(static_cast<size_t>(n));
+    for (int64_t i = 0; i < n; ++i)
+        ph[static_cast<size_t>(i)] = static_cast<int8_t>(
+            clusteringData->featureValue(static_cast<dataType>(i + 1), col + 1));
+    return ph;
+}
+
+bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& logOut, QString* error)
+{
+    QTextStream log(&logOut);
+    auto fail = [&](const QString& why) { if (error) *error = why; return false; };
+    if (!clusteringData) return fail(tr("No document is open."));
+    if (factor < 2 || factor > 9) return fail(tr("The super-sampling factor must be 2 to 9."));
+    const QString dir   = QFileInfo(docUrl).absolutePath();
+    const std::string stem = (dir + QDir::separator() + baseName).toStdString();
+    const int     group = electrodeGroupID.toInt();
+    const int     nChan = clusteringData->nbOfChannels();
+    const int     nSampBase = clusteringData->baseNbSamplesPerWaveform();
+    const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+
+    // The shown space's waveforms are the source; the new tokens carry _U<factor>.
+    const std::string shownSpk = neurosuite::custody::methodOf(activeSpkPath.toStdString());
+    if (neurosuite::custody::supersampleOf(shownSpk) > 1)
+        return fail(tr("The shown space (%1) is already super-sampled.").arg(QString::fromStdString(shownSpk)));
+    const std::string newTok = neurosuite::custody::supersampledToken(shownSpk, factor);
+    if (newTok == shownSpk)
+        return fail(tr("Cannot derive a super-sampled token from %1.").arg(QString::fromStdString(shownSpk)));
+    const QString spkOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", newTok, group));
+    const QString pcaOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "pca", newTok, group));
+    const QString fetOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", newTok, group));
+    if (QFileInfo::exists(fetOut) || QFileInfo::exists(spkOut))
+        return fail(tr("The space %1 already exists (%2).  Remove its files to rebuild it.")
+                        .arg(QString::fromStdString(newTok), QFileInfo(fetOut).fileName()));
+    const int nSampUp = nSampBase * factor;
+    const size_t rowElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSampUp);
+
+    // The shown space's basis: its window and component count scale by the factor.
+    neurosuite::core::PcaBasis shown;
+    {
+        const QString shownPca = QString::fromStdString(neurosuite::custody::methodPath(
+            stem, "pca", neurosuite::custody::waveformToken(activeMethod.toStdString()), group));
+        const QString shownPca2 = QString::fromStdString(neurosuite::custody::methodPath(
+            stem, "pca", activeMethod.toStdString(), group));
+        if (!neurosuite::core::loadPca(shownPca.toStdString(), shown) || !shown.valid())
+            if (!neurosuite::core::loadPca(shownPca2.toStdString(), shown) || !shown.valid())
+                shown = neurosuite::core::PcaBasis{};
+    }
+
+    // ── 1. the waveforms ──────────────────────────────────────────────────
+    const QString raw = rawRecordingPath();
+    if (QFileInfo::exists(raw)) {
+        QString reLog;
+        if (!reextractAllSpikesFromFil(spkOut, reLog, shown.valid() ? &shown : nullptr, nullptr)) {
+            QFile::remove(spkOut);
+            return fail(tr("Re-extracting the waveforms failed: %1").arg(reLog));
+        }
+        log << reLog << "\n";
+    } else {
+        // No recording: interpolate the stored windows (the last factor-1 ticks of
+        // each window clamp to its final sample).
+        const std::shared_ptr<const QByteArray> src = SpkMemoryCache::instance().get(activeSpkPath);
+        const size_t srcElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSampBase);
+        if (!src || static_cast<qint64>(src->size()) != static_cast<qint64>(nSpikes) * static_cast<qint64>(srcElems * sizeof(int16_t)))
+            return fail(tr("No recording (.fil/.dat) and the shown .spk cannot be held in memory."));
+        QFile out(spkOut);
+        if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) return fail(tr("Cannot write %1").arg(spkOut));
+        const int16_t* w = reinterpret_cast<const int16_t*>(src->constData());
+        std::vector<int16_t> cm(srcElems), up(rowElems), row(rowElems);
+        neurosuite::core::SupersampleScratch scratch;
+        for (int64_t i = 0; i < nSpikes; ++i) {
+            const int16_t* r = w + static_cast<size_t>(i) * srcElems;
+            for (int s = 0; s < nSampBase; ++s)
+                for (int ch = 0; ch < nChan; ++ch)
+                    cm[static_cast<size_t>(ch) * nSampBase + s] = r[static_cast<size_t>(s) * nChan + ch];
+            neurosuite::core::supersampleStoredWindow(cm.data(), nChan, nSampBase, factor, supersampleInterp, up.data(), scratch);
+            for (int s = 0; s < nSampUp; ++s)
+                for (int ch = 0; ch < nChan; ++ch)
+                    row[static_cast<size_t>(s) * nChan + ch] = up[static_cast<size_t>(ch) * nSampUp + s];
+            if (out.write(reinterpret_cast<const char*>(row.data()), static_cast<qint64>(rowElems * sizeof(int16_t)))
+                != static_cast<qint64>(rowElems * sizeof(int16_t))) {
+                out.close(); QFile::remove(spkOut);
+                return fail(tr("Writing %1 failed.").arg(spkOut));
+            }
+        }
+        out.close();
+        log << "no recording: " << nSpikes << " stored windows interpolated x" << factor << " ("
+            << QLatin1String(neurosuite::core::interpName(supersampleInterp)) << ")\n";
+    }
+
+    // ── 2. the basis, fitted on the new waveforms ─────────────────────────
+    const std::shared_ptr<const QByteArray> spk = SpkMemoryCache::instance().get(spkOut);
+    if (!spk || static_cast<qint64>(spk->size()) != static_cast<qint64>(nSpikes) * static_cast<qint64>(rowElems * sizeof(int16_t))) {
+        QFile::remove(spkOut);
+        return fail(tr("Cannot hold %1 in memory.").arg(QFileInfo(spkOut).fileName()));
+    }
+    const int16_t* waveforms = reinterpret_cast<const int16_t*>(spk->constData());
+    const int nCh      = shown.valid() ? std::min(shown.nCh, nChan) : nChan;
+    const int recShift = shown.valid() ? shown.recShift * factor : 0;
+    const int data2use = shown.valid() ? std::min(shown.data2use * factor, nSampUp - recShift) : nSampUp;
+    const int nComp    = shown.valid() ? shown.nComp : std::max(1, clusteringData->nbOfFeaturesByChannel());
+    const int64_t fitN = std::min<int64_t>(nSpikes, 20000);
+    const int64_t step = std::max<int64_t>(1, nSpikes / fitN);
+    neurosuite::core::PcaBasis pca;
+    const bool fitted = neurosuite::core::fitPca(
+        static_cast<int>(nSpikes / step), nCh, data2use, recShift, nComp,
+        [&](int i, int ch, int s) {
+            const int16_t* r = waveforms + static_cast<size_t>(static_cast<int64_t>(i) * step) * rowElems;
+            return static_cast<double>(r[static_cast<size_t>(recShift + s) * nChan + ch]);
+        },
+        pca, shown.valid() ? shown.method : neurosuite::core::Method::Standard,
+        shown.valid() ? shown.nInputChannels : 0);
+    if (!fitted || !neurosuite::core::writePca(pcaOut.toStdString(), pca)) {
+        QFile::remove(spkOut); QFile::remove(pcaOut);
+        return fail(tr("Fitting or writing the basis %1 failed.").arg(QFileInfo(pcaOut).fileName()));
+    }
+    log << "basis " << QFileInfo(pcaOut).fileName() << ": " << nCh << " ch x " << nComp
+        << " components over ticks " << recShift << "+" << data2use << " of " << nSampUp
+        << ", fitted on " << (nSpikes / step) << " spikes\n";
+
+    // ── 3. the features: projections, the phase column (0), time ─────────
+    const int nPca  = nCh * nComp;
+    const int nDims = nPca + 2;
+    const int timeDim = clusteringData->timeDimension();
+    std::vector<int64_t> values(static_cast<size_t>(nSpikes) * static_cast<size_t>(nDims), 0);
+    for (int64_t i = 0; i < nSpikes; ++i) {
+        const int16_t* r = waveforms + static_cast<size_t>(i) * rowElems;
+        int64_t* row = values.data() + static_cast<size_t>(i) * static_cast<size_t>(nDims);
+        klusters::projectSpikeOntoPca(
+            pca, [&](int ch, int j) { return static_cast<double>(r[static_cast<size_t>(recShift + j) * nChan + ch]); }, row);
+        row[static_cast<size_t>(nPca)]     = 0;                       // phase: freshly cut at the .res
+        row[static_cast<size_t>(nPca + 1)] = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+    }
+    if (!neurofileio::writeFetBinary(fetOut.toStdString(), nDims, values)) {
+        QFile::remove(spkOut); QFile::remove(pcaOut); QFile::remove(fetOut);
+        return fail(tr("Writing %1 failed.").arg(QFileInfo(fetOut).fileName()));
+    }
+    log << "features " << QFileInfo(fetOut).fileName() << ": " << nSpikes << " rows x " << nDims
+        << " (" << nPca << " PCA + phase + time)\n";
+    if (token) *token = QString::fromStdString(newTok);
+    return true;
 }
 
 std::shared_ptr<const neurofileio::FetBinaryFile> KlustersDoc::featuresInMemory(const QString& path)

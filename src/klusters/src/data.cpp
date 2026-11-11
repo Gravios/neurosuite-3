@@ -1,5 +1,6 @@
 #include "klusters.h"
 #include <algorithm>
+#include <neurosuite/core/custody.hpp>
 #include <neurosuite/core/fileio64.hpp>
 #include <functional>
 #include <limits>
@@ -133,16 +134,22 @@ bool Data::replaceFeatureSpace(const neurofileio::FetBinaryFile& fet, const QStr
         return false;
     }
     const qint64 sampleSize = isTwoBytesRecording ? 2 : 4;
+    // A super-sampled space (.spk token _U<factor>) holds factor x nSamples per waveform.
+    const int newFactor = std::max(1, neurosuite::custody::supersampleOf(
+                                          neurosuite::custody::methodOf(spkPath.toStdString())));
+    const int base = baseNbSamplesInWaveform > 0 ? baseNbSamplesInWaveform : nbSamplesInWaveform;
     const qint64 expectedSpk = static_cast<qint64>(nbSpikes) * nbChannels
-                             * nbSamplesInWaveform * sampleSize;
+                             * (static_cast<qint64>(base) * newFactor) * sampleSize;
     const qint64 spkSize = QFileInfo(spkPath).size();
     if(spkSize != expectedSpk){
         errorInformation = QObject::tr("Waveform file %1 does not match this group: %2 bytes, "
-                                       "expected %3 (%4 spikes x %5 channels x %6 samples).")
+                                       "expected %3 (%4 spikes x %5 channels x %6 samples%7).")
                            .arg(spkPath).arg(spkSize).arg(expectedSpk).arg(nbSpikes)
-                           .arg(nbChannels).arg(nbSamplesInWaveform);
+                           .arg(nbChannels).arg(base * newFactor)
+                           .arg(newFactor > 1 ? QObject::tr(", super-sampled x%1").arg(newFactor) : QString());
         return false;
     }
+    applyWaveformSpaceGeometry(spkPath);
 
     //Validated: from here on the layer changes.  Clear the cluster-0 flag, as
     //restartDimensionExtrema does: a stale value (e.g. left by an empty
@@ -563,7 +570,28 @@ bool Data::configure(QFile& parFile,int electrodeGroupID,QString& errorInformati
     // Sampling rate is in Hz; sampling interval used in Klusters is in microseconds.
     samplingInterval = 1000000.0 / samplingRate;
 
+    // The group's own geometry; a super-sampled .spk (token _U<factor>) scales it.
+    baseNbSamplesInWaveform = nbSamplesInWaveform;
+    basePeakPositionInWaveform = peakPositionInWaveform;
+    applyWaveformSpaceGeometry(spkFileName);
     return true;
+}
+
+void Data::applyWaveformSpaceGeometry(const QString& spkPath){
+    if(baseNbSamplesInWaveform <= 0){            // configure() not run yet (legacy .par path)
+        baseNbSamplesInWaveform = nbSamplesInWaveform;
+        basePeakPositionInWaveform = peakPositionInWaveform;
+    }
+    int factor = 1;
+    if(!spkPath.isEmpty()){
+        const std::string token = neurosuite::custody::methodOf(spkPath.toStdString());
+        factor = neurosuite::custody::supersampleOf(token);
+    }
+    if(factor < 1) factor = 1;
+    supersampleFactorInUse = factor;
+    nbSamplesInWaveform = baseNbSamplesInWaveform * factor;
+    // 1-based: the peak's 0-based index scales, so tick (peak - 1) * factor is the peak
+    peakPositionInWaveform = (basePeakPositionInWaveform - 1) * factor + 1;
 }
 
 bool Data::configure(QFile& parXFile,QFile& parFile,QString& errorInformation){

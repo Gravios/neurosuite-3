@@ -181,6 +181,34 @@ static neurosuite::core::StderivSeeding detectSpkSeeding(
 }
 
 
+// Re-cut ONE window from the recording at raw start sample `startSample` (the
+// window's first sample, timestamp - peak), through the extraction kernel, so a
+// window cut here is byte-identical to one the extractor or a sync cut -- plain or
+// super-sampled (spec.supersample, `phase` the spike's sub-sample phase in ticks),
+// transformed or not.  Output channel-major [ch * nOut + s] (the realign's working
+// layout).  False when the window falls outside the recording.
+static bool recutWindowCM(FILE* filF, int64_t totalSamples, int64_t startSample, int phase,
+                          const neurosuite::core::SpikeWindowSpec& specIn, int16_t* outCM)
+{
+    neurosuite::core::SpikeWindowSpec spec = specIn;
+    if (startSample < 0 || startSample + spec.nSamp > totalSamples) return false;
+    const std::int8_t ph = static_cast<std::int8_t>(phase);
+    spec.phaseTicks = spec.supersample > 1 ? &ph : nullptr;
+    const int nOut = spec.outSamples();
+    bool got = false;
+    std::int64_t bad = 0;
+    neurosuite::core::extractSpikeWindows(
+        filF, 1, spec,
+        [&](int64_t) { return startSample + spec.peakSample; },
+        [&](int64_t, const int16_t* row) {
+            for (int s = 0; s < nOut; ++s)
+                for (int ch = 0; ch < spec.nChan; ++ch)
+                    outCM[static_cast<size_t>(ch) * nOut + s] = row[static_cast<size_t>(s) * spec.nChan + ch];
+            got = true;
+        }, &bad);
+    return got && bad == 0;
+}
+
 // ===========================================================================
 // KlustersDoc::realignSpikes  (normalised cross-correlation template method)
 // ===========================================================================
@@ -627,6 +655,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     const int   peakSamp0 = peakSamp - 1;        // 0-based waveform index
     const int   timeDim   = d.timeDimension();  // = nDimensions from .fet header
     const int   nFeatCols = timeDim - 1;        // feature columns, last col is ts
+    // A super-sampled space: nSamp and peakSamp are factor x the recording's; a
+    // lag found here is in TICKS, the .res moves by whole samples and the rest is
+    // the spike's phase (the .fet's last feature column), which the re-cut honours.
+    const int   upFactor  = d.supersampleFactor();
+    const int   phaseCol  = supersamplePhaseColumn();     // 0-based feature column, -1 when not super-sampled
 
     // -----------------------------------------------------------------------
     // Parse configurable parameters from args string.
@@ -993,7 +1026,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // re-cut stderiv window below follows the file, so rewritten spikes and the
     // PCA basis fit on the file stay consistent.
     bool stderivSeeded = true;
-    if (spkIsTransformed) {
+    if (spkIsTransformed && upFactor == 1) {       // a super-sampled .spk's sample 0 is an interpolated tick
         const auto conv = detectSpkSeeding(
             rawPath, clusteringData->getTotalNbChannels(),
             clusteringData->getCurrentChannels(), nSamp, peakSamp0, stderivOrder,
@@ -1865,10 +1898,22 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // so it is checked below and reported (Sort Spikes by Time repairs it).
     std::vector<int64_t> newTs(static_cast<size_t>(N));   // = extTs (re-extract window + timestamp)
     std::vector<int64_t> resTs(static_cast<size_t>(N));   // current .res value (seeds extTs + verification)
+    std::vector<int>     oldPhase(static_cast<size_t>(N), 0), newPhase(static_cast<size_t>(N), 0);
     for (int64_t i = 0; i < N; ++i) {
         resTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)];
-        newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
-            + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+        if (upFactor > 1 && phaseCol >= 0) {
+            // ticks -> whole samples for the .res, the rest the spike's phase
+            const int ph = static_cast<int>(clusteringData->featureValue(
+                static_cast<dataType>(gidx[static_cast<size_t>(i)] + 1), phaseCol + 1));
+            int whole = 0, phase = 0;
+            neurosuite::core::splitTicks(ph + cumShift[static_cast<size_t>(i)], upFactor, whole, phase);
+            oldPhase[static_cast<size_t>(i)] = ph;
+            newPhase[static_cast<size_t>(i)] = phase;
+            newTs[static_cast<size_t>(i)] = clusterTs[static_cast<size_t>(i)] + whole;
+        } else {
+            newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
+                + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+        }
     }
     {
         // This cluster's spikes in file order: does any now precede the one
@@ -1965,6 +2010,17 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     const int64_t totalSamples =
         static_cast<int64_t>(QFileInfo(filPath).size())
         / (static_cast<int64_t>(sizeof(short)) * totalNbChan);
+
+    // The kernel spec for a super-sampled re-cut: the recording's geometry, this
+    // space's factor, the .spk's transform (same operator and seed as above).
+    std::vector<int> upChans(groupChannels.begin(), groupChannels.end());
+    neurosuite::core::SpikeWindowSpec upCut;
+    upCut.nSamp = d.baseNbSamplesPerWaveform(); upCut.peakSample = d.basePeakSampleIndex() - 1;
+    upCut.totalNbChannels = totalNbChan; upCut.groupChannels = upChans.data(); upCut.nChan = nChan;
+    upCut.supersample = upFactor; upCut.interp = supersampleInterp;
+    upCut.applyTransform = spkIsTransformed; upCut.order = stderivOrder;
+    upCut.partner = stderivPartnerPtr; upCut.setOff = stderivSetOffPtr; upCut.setMem = stderivSetMemPtr; upCut.expr = stderivExprPtr;
+    upCut.seedFromPrevious = stderivSeeded;
 
     // -----------------------------------------------------------------------
     // Write realignment results directly into the persistent .pending files.
@@ -2205,7 +2261,21 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         // cut is impossible (window outside the file, seek or read failure)
         // the spike stays where it was, with its stored window and time.
         bool recut = false;
-        if (cumShift[static_cast<size_t>(csIdx)] != 0) {
+        if (cumShift[static_cast<size_t>(csIdx)] != 0 && upFactor > 1) {
+            // Super-sampled: through the extraction kernel at the new whole-sample
+            // start and the new phase (margins, interpolation, transform in the
+            // super-sampled domain), so the window is what a sync would cut.
+            const int64_t startSample = newTs[static_cast<size_t>(csIdx)]
+                                      - static_cast<int64_t>(upCut.peakSample);
+            recut = recutWindowCM(filF, totalSamples, startSample, newPhase[static_cast<size_t>(csIdx)],
+                                  upCut, w);
+            if (!recut) {
+                cumShift[static_cast<size_t>(csIdx)] = 0;
+                newTs[static_cast<size_t>(csIdx)] = resTs[static_cast<size_t>(csIdx)];
+                newPhase[static_cast<size_t>(csIdx)] = oldPhase[static_cast<size_t>(csIdx)];
+                ++notRecut;
+            }
+        } else if (cumShift[static_cast<size_t>(csIdx)] != 0) {
             const int64_t startSample = newTs[static_cast<size_t>(csIdx)]
                                       - static_cast<int64_t>(peakSamp0);
             if (startSample >= 0 && startSample + nSamp <= totalSamples) {
@@ -2268,6 +2338,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     w[static_cast<size_t>(ch * nSamp + s)];
 
         rec.fetRow = makeFetRow(csIdx, w, ts);
+        if (upFactor > 1 && phaseCol >= 0 && phaseCol < static_cast<int>(rec.fetRow.size()))
+            rec.fetRow[static_cast<size_t>(phaseCol)] = newPhase[static_cast<size_t>(csIdx)];   // the phase column follows the move
 
         // Write into the pending files (random-access, same layout as originals)
         neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(bytesPerSpike), SEEK_SET);
@@ -2806,6 +2878,11 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     Data& d              = *clusteringData;
     const int   nChan    = d.nbOfChannels();
     const int   nSamp    = d.nbSamplesPerWaveform();
+    // A super-sampled space: a nudge of one SAMPLE keeps each spike's phase; the
+    // window is re-cut through the extraction kernel at the new sample and that
+    // phase (the .fet's last feature column).
+    const int   upFactor = d.supersampleFactor();
+    const int   phaseCol = supersamplePhaseColumn();
     const int   peakSamp0 = d.peakSampleIndex() - 1;  // 0-based
     const int   timeDim  = d.timeDimension();
     const int   nFeatCols = timeDim - 1;
@@ -2954,12 +3031,24 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // session's .spk was written that way (nudgeSeeded, below).
     const int64_t bytesPerSpike = static_cast<int64_t>(nChan) * nSamp * 2;
 
-    auto extractWaveform = [&](int64_t ts,
+    // Super-sampled: the kernel spec (filled once the transform's order and seed
+    // are known, below); the window comes back channel-major in the .spk's own
+    // space (transformed when the .spk is), so the write and the projection take
+    // it as it is.
+    neurosuite::core::SpikeWindowSpec upCut;
+    std::vector<int> upChans(groupChannels.begin(), groupChannels.end());
+    bool upCutReady = false;
+    auto extractWaveform = [&](int64_t ts, int phase,
                                 std::vector<int16_t>& wav,
                                 std::vector<int16_t>& prevSample) -> bool {
         wav.assign(static_cast<size_t>(nChan * nSamp), 0);
         prevSample.clear();
         if (!filF) return false;
+        if (upFactor > 1) {
+            if (!upCutReady) return false;
+            return recutWindowCM(filF, totalSamples, ts - static_cast<int64_t>(upCut.peakSample), phase,
+                                 upCut, wav.data());
+        }
         const int64_t startSample = ts - static_cast<int64_t>(peakSamp0);
         if (startSample < 0 || startSample + nSamp > totalSamples) return false;
 
@@ -3085,7 +3174,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // judged from the first spikes of the group's pending .spk / .res, so a
     // nudged spike matches the rest of the file and the basis fit on it.
     bool nudgeSeeded = true;
-    if (spkIsTransformed && filF) {
+    if (spkIsTransformed && filF && upFactor == 1) {   // a super-sampled .spk's sample 0 is an interpolated tick
         std::vector<int64_t> chkTs;
         std::vector<int16_t> chkS0;   // [i * nChan + ci]
         FILE* rs = fopen(pendingResPath.toLocal8Bit().constData(), "rb");
@@ -3120,6 +3209,19 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
                    << (conv == neurosuite::core::StderivSeeding::Previous ? "previous sample"
                        : conv == neurosuite::core::StderivSeeding::Zero   ? "zero (older extractor)"
                                                                           : "undetermined, using previous sample");
+    }
+    if (upFactor > 1) {
+        upCut.nSamp = d.baseNbSamplesPerWaveform(); upCut.peakSample = d.basePeakSampleIndex() - 1;
+        upCut.totalNbChannels = totalNbChan; upCut.groupChannels = upChans.data(); upCut.nChan = nChan;
+        upCut.supersample = upFactor; upCut.interp = supersampleInterp;
+        upCut.applyTransform = isStderivSpk;
+        upCut.order = static_cast<neurosuite::core::SdiffOrder>(kSdiffOrder);
+        upCut.partner = nudgePartner.empty() ? nullptr : nudgePartner.data();
+        upCut.setOff  = nudgeSetOff.empty()  ? nullptr : nudgeSetOff.data();
+        upCut.setMem  = nudgeSetMem.empty()  ? nullptr : nudgeSetMem.data();
+        upCut.expr    = nudgeExpr.empty()    ? nullptr : &nudgeExpr;
+        upCut.seedFromPrevious = nudgeSeeded;
+        upCutReady = true;
     }
 
     auto applyStderivTransform = [&](const std::vector<int16_t>& wavCM,
@@ -3494,7 +3596,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // before the window) seeds the stderiv transform when nudgeSeeded.
         std::vector<int16_t> wav;
         std::vector<int16_t> prevSample;
-        const bool gotWav = extractWaveform(ts64, wav, prevSample);
+        const int spikePhase = (upFactor > 1 && phaseCol >= 0)
+            ? static_cast<int>(clusteringData->featureValue(row, phaseCol + 1)) : 0;
+        const bool gotWav = extractWaveform(ts64, spikePhase, wav, prevSample);
         if (!gotWav) ++boundarySkip;
 
         // Write .spk at new position.  Use spkIsTransformed (via isStderivSpk),
@@ -3504,7 +3608,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             if (neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(pos0) * static_cast<std::int64_t>(bytesPerSpike),
                        SEEK_SET) != 0) {
                 ++spkSeekFail;
-            } else if (isStderivSpk) {
+            } else if (isStderivSpk && upFactor == 1) {
                 // stderiv pipeline: .spk stores transformed waveform
                 // (all nChan channels, sample-major, matching ndm_extractspikes_stderiv)
                 applyStderivTransform(wav, prevSample, spkRowWritten);
@@ -3549,6 +3653,27 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // preserve the existing feature values rather than zeroing them out.
         std::vector<int64_t> fetRowWritten;
         if (gotWav) {
+            if (upFactor > 1) {
+                // The window is already in the .spk's space (the kernel applied
+                // the transform): project it as the realign does; extras and the
+                // phase column keep their in-memory values.
+                fetRowWritten.assign(static_cast<size_t>(timeDim), 0LL);
+                if (pca.valid() && pca.nCh <= nChan) {
+                    klusters::projectSpikeOntoPca(
+                        pca,
+                        [&](int ch, int j) {
+                            return static_cast<double>(wav[static_cast<size_t>(ch * nSamp + pca.recShift + j)]);
+                        },
+                        fetRowWritten.data());
+                    const int nPcaFeats = pca.nCh * pca.nComp;
+                    for (int col = nPcaFeats; col < nFeatCols; ++col)
+                        fetRowWritten[static_cast<size_t>(col)] =
+                            static_cast<int64_t>(clusteringData->featureValue(row, col + 1));
+                    fetRowWritten[static_cast<size_t>(nFeatCols)] = ts64;
+                } else {
+                    fetRowWritten.clear();
+                }
+            } else
             fetRowWritten = makeFetRow(ts64, wav, prevSample, row);
             if (!fetRowWritten.empty()) {
                 // Update on-disk .fetD
@@ -3886,8 +4011,12 @@ void KlustersDoc::spikeCutSpecFor(const QString& spkMethod,
     const QString grpId       = currentElectrodeGroupID();
     cut.groupChannels = clusteringData->getCurrentChannels();
     cut.window = neurosuite::core::SpikeWindowSpec{};
-    cut.window.nSamp           = clusteringData->nbSamplesPerWaveform();
-    cut.window.peakSample      = clusteringData->peakSampleIndex() - 1;   // 0-based
+    // The group's own geometry: a super-sampled target (_U<factor>) is cut at the
+    // recording's sampling and interpolated by the kernel, whatever space is shown.
+    cut.window.nSamp           = clusteringData->baseNbSamplesPerWaveform();
+    cut.window.peakSample      = clusteringData->basePeakSampleIndex() - 1;   // 0-based
+    cut.window.supersample     = std::max(1, neurosuite::custody::supersampleOf(spkMethod.toStdString()));
+    cut.window.interp          = supersampleInterp;
     cut.window.totalNbChannels = totalNbChan;
     cut.window.nChan           = nChan;
     cut.window.applyTransform  = methodIsStderiv(spkMethod);
@@ -3932,7 +4061,10 @@ void KlustersDoc::spikeCutSpecFor(const QString& spkMethod,
     // detectSpkSeeding), judged from its first spikes, so re-cut windows match
     // the file and the basis fit on it.  No file or no decision: the current
     // extractor's convention (seeded from the previous sample).
-    if (cut.window.applyTransform) {
+    // A super-sampled .spk's sample 0 is an interpolated tick: the seed test below
+    // (raw sample 0 recomputed both ways) does not apply; such files are written
+    // by Klusters, seeded from the tick before the window.
+    if (cut.window.applyTransform && cut.window.supersample == 1) {
         const QString spkPath = resolveFeature(documentDirectory() + QLatin1Char('/')
                                                    + documentBaseName(),
                                                QStringLiteral("spk"), grpId, spkMethod);
@@ -3985,14 +4117,15 @@ void KlustersDoc::spikeCutSpecFor(const QString& spkMethod,
 // crash can never leave a half-written .spk.
 // ─────────────────────────────────────────────────────────────────────────────
 bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QString& logOut,
-                                             const neurosuite::core::PcaBasis* fallbackBasis)
+                                             const neurosuite::core::PcaBasis* fallbackBasis,
+                                             const std::vector<int8_t>* phases)
 {
     logOut.clear();
     if (!clusteringData) return false;
     QTextStream log(&logOut);
 
     const int     nChan       = clusteringData->nbOfChannels();
-    const int     nSamp       = clusteringData->nbSamplesPerWaveform();
+    const int     nSamp       = clusteringData->baseNbSamplesPerWaveform();   // the recording's; the target's factor scales it below
     const int     totalNbChan = clusteringData->getTotalNbChannels();
     const int     timeDim     = clusteringData->timeDimension();
     const QList<int>& groupChannels = clusteringData->getCurrentChannels();
@@ -4003,10 +4136,13 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
         return false;
     }
 
-    // Only the two waveform storages we can reproduce byte-for-byte.
+    // Only the two waveform storages we can reproduce byte-for-byte (super-sampled
+    // or not: standard_U4 is the raw cut interpolated, stderiv_C5_U4 the transform
+    // of it).
     const QString spkMethod = featureMethod(targetSpkPath);
     const bool spkIsStderiv  = methodIsStderiv(spkMethod);
-    const bool spkIsStandard = (spkMethod == QLatin1String("standard"));
+    const auto  spkSpec      = neurosuite::custody::parseMethodToken(spkMethod.toStdString());
+    const bool spkIsStandard = (spkSpec.family == "standard" && spkSpec.kind == '\0' && spkSpec.lag == 0);
     if (!spkIsStderiv && !spkIsStandard) {
         log << "re-extract: unsupported .spk method '" << spkMethod
             << "' — .spk left unchanged";
@@ -4020,6 +4156,8 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
     // Window cutting and the .spk's own transform (shared with the follow).
     SpikeCutSpec cut;
     spikeCutSpecFor(spkMethod, fallbackBasis, cut, log);
+    if (cut.window.supersample > 1 && phases && static_cast<int64_t>(phases->size()) == nSpikes)
+        cut.window.phaseTicks = phases->data();      // each spike's sub-sample phase (the space's own column)
 
     const QString tmpPath = targetSpkPath + QStringLiteral(".reextract.tmp");
     FILE* out = std::fopen(tmpPath.toLocal8Bit().constData(), "wb");
@@ -4029,7 +4167,7 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
         return false;
     }
 
-    const int spkElems = nChan * nSamp;
+    const int spkElems = nChan * cut.window.outSamples();
     int64_t written = 0, outOfRange = 0;
     bool writeErr = false;
 
@@ -4078,7 +4216,11 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
     }
 
     log << "re-extracted " << (written - outOfRange) << " / " << nSpikes
-        << " spikes (" << spkMethod << ") from " << filPath;
+        << " spikes (" << spkMethod
+        << (cut.window.supersample > 1 ? QStringLiteral(", super-sampled x%1 by %2").arg(cut.window.supersample)
+                                              .arg(QLatin1String(neurosuite::core::interpName(cut.window.interp)))
+                                       : QString())
+        << ") from " << filPath;
     if (outOfRange)
         log << "; " << outOfRange << " window(s) out of range → zeroed";
     return true;

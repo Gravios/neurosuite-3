@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: super-sample mode -- waveform spaces at 2x / 4x the sampling, realign and nudge at sub-sample resolution](#2026-11-11--klusters-super-sample-mode--waveform-spaces-at-2x--4x-the-sampling-realign-and-nudge-at-sub-sample-resolution) |
 | 2026-11-11 | [core: the `_U<factor>` super-sampled token, `supersample.hpp`, a super-sampled cut, `pca_fit.hpp`](#2026-11-11--core-the-_ufactor-super-sampled-token-supersamplehpp-a-super-sampled-cut-pca_fithpp) |
 | 2026-11-10 | [Klusters: the Refine mode -- a plugin's children under the same parents](#2026-11-10--klusters-the-refine-mode--a-plugins-children-under-the-same-parents) |
 | 2026-11-10 | [Klusters: a plugin descriptor that does not parse says so](#2026-11-10--klusters-a-plugin-descriptor-that-does-not-parse-says-so) |
@@ -177,6 +178,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-11 — Klusters: super-sample mode -- waveform spaces at 2x / 4x the sampling, realign and nudge at sub-sample resolution
+
+<details>
+<summary>Details</summary>
+
+For high-end machines: **Actions → Super-sample ×2 / ×4…** (gated by *Preferences →
+Realignment → Super-sampling*, off by default, with the interpolator: cubic spline or
+Lanczos-3) builds over the shown space `<base>.spk.<token>_U<f>.N` (every spike re-cut
+from the recording and interpolated, `KlustersDoc::buildSupersampledSpace` /
+`reextractAllSpikesFromFil` through the kernel; from the stored windows without a
+recording), a basis fitted on it (`pca_fit.hpp`; the shown basis's window and component
+count scaled) and `.fet.<token>_U<f>.N` (projections, a **phase** column, time), then shows
+it and offers *Save As* under the token so realign and nudge run in it once reopened.
+
+The waveform geometry is now per space: `Data::applyWaveformSpaceGeometry` scales the
+group's `nSamples` / peak by the `.spk` token's `_U<factor>` at open and on every switch
+(`replaceFeatureSpace`, `availableFeatureSpaces` size check), the waveform view takes it
+again on a switch, and `spikeCutSpecFor` / sync cut each target at the recording's sampling
+times its own factor.  In a super-sampled `.clu` space a realignment's lag is in ticks: the
+`.res` moves by whole samples and the rest becomes the spike's phase (the last feature
+column), the window is re-cut through the extraction kernel at that fractional time
+(`recutWindowCM`), the stderiv transform in the super-sampled domain, the phase column
+updated; a nudge keeps the phase; a sync re-cuts at the phases.  `doc/klusters/README.md`
+"Super-sample mode".  Compile-checked; **not run in the GUI**.
+
+</details>
 
 ## 2026-11-11 — core: the `_U<factor>` super-sampled token, `supersample.hpp`, a super-sampled cut, `pca_fit.hpp`
 

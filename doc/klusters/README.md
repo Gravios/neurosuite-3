@@ -157,6 +157,46 @@ trained in the other domain (standard vs stderiv) — is reported and keeps its
 existing files. Spaces that read the same `.spk` are synced together, and if
 any one of them cannot be, none of them is.
 
+### Super-sample mode — a space at 2× or 4× the sampling
+
+For machines with the memory and cores to spare, a feature space can be built
+over **super-sampled** waveforms: each acquisition sample interpolated into 2
+or 4 ticks (a natural cubic spline through the recording's samples, or a
+windowed sinc — **Preferences → Curation → Realignment → Super-sampling**,
+which also gates the actions, off by default). **Actions → Super-sample ×2 /
+×4…** builds, over the shown space, `<base>.spk.<token>_U4.N` (every spike
+re-cut from the `.fil` with a margin of raw samples on either side so the
+edges are exact; from the stored windows when there is no recording), a PCA
+basis fitted on it (`.pca.<token>_U4.N`: the shown basis's window and
+component count, scaled) and `.fet.<token>_U4.N` — the projections, a
+**phase** column and time. The space is then listed under *Space* like any
+other; its waveforms show 4× the points, every matrix and the realign see a
+4× longer window. The `_U<factor>` token belongs to the waveform token
+(`standard_U4`, `stderiv_C5_U4`; a lag space over it keeps it:
+`stderiv_C5_U4_D34`); the group's `nSamples` and `peakSampleIndex` in the
+session file stay those of the recording, Klusters scales them per space.
+
+**Realign and nudge at sub-sample resolution.** They run in the `.clu`'s own
+space, so to use them the clustering is saved under the super-sampled token
+(offered when the space is built: *Save As* `<base>.clu.<token>_U4.N`) and
+reopened. A realignment then finds each spike's lag in **ticks**; the `.res`
+keeps whole acquisition samples (a lag of −5 ticks at ×4 moves the `.res`
+by −2 samples) and the rest is the spike's **phase**, the space's last feature
+column (0 … factor−1): tick `k` of the waveform stands at raw time
+`res + (k − peak + phase) / factor`. The window is re-cut from the recording at
+exactly that fractional time, the stderiv transform applied in the
+super-sampled domain, the features re-projected and the phase column updated;
+the shift cap in the realign dialog is in ticks. A nudge of ±1 sample keeps
+the phase. **Sync Feature Spaces** re-cuts a super-sampled space at its
+spikes' phases. The phase lives in the `.fet`, so every row
+operation (sort by time, sub-sessions, recluster plugins) carries it for free;
+a `.fet` of such a space has `nCh × nComp + 2` columns.
+
+Costs: the `.spk` and every waveform read are ×factor, the PCA basis works on
+a ×factor window (fitted on up to 20 000 spikes), realign's cross-correlation
+on ×factor ticks. fiber-kit reads such a space like any other (`FK_MANIFOLD_SPK
+standard_U4`, say) once it knows the token (fiber-kit 0.66.5).
+
 ### Feature file format (`.fet.<method>.N`)
 
 ```

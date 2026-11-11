@@ -27,6 +27,10 @@ public:
     bool   getSyncFeatureSpaceOnSwitch() const;
     void   setRealignFromAnySpace(bool b);
     bool   getRealignFromAnySpace() const;
+    void   setSupersampleEnabled(bool b);
+    bool   getSupersampleEnabled() const;
+    void   setSupersampleInterp(int i);     // 0 spline, 1 lanczos3
+    int    getSupersampleInterp() const;
 
     // Auto-run spike alignment after each interactive merge
     void   setAutoRealignAfterMerge(bool b);
