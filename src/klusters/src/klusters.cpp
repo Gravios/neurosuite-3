@@ -5715,7 +5715,12 @@ void KlustersApp::adoptCuratedParents(const QList<int>& selectedClusters){
         // view exits (the matrices return to the parent scope), the child selection
         // is dropped by the rebuild that follows (repopulateChildPalette would
         // otherwise restore it), and the clicked parent holds the selection.
-        const bool childSelected = childPaletteA && !childPaletteA->selectedClusters().isEmpty();
+        // Only a GESTURE does that: a selection the program makes in the parent
+        // palette while children are selected (the landing after an atom's
+        // realign selects the atom's parent silently, a rebuild restores the
+        // parent) is not the user leaving the children, and the child view stays.
+        const bool childSelected = childPaletteA && !childPaletteA->selectedClusters().isEmpty()
+                                   && !(clusterPalette && clusterPalette->selectionIsProgrammatic());
         if(childSelected){
             dropChildSelectionOnRebuild = true;
             if(doc->matrixScopeEnabled()){
@@ -5785,11 +5790,11 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
         KlustersView* view = activeView();
         doc->shownClustersUpdate(selectedClusters,*view);
     }
-    // Hierarchical view: this is the USER selecting a parent -- ClusterPalette only
-    // emits updateShownClusters when !isInSelectItems, so a programmatic
-    // selectItems() cannot reach here.  It is therefore the one place a new parent
-    // is adopted; every other path into repopulateChildPalette is a redraw and
-    // must not move the user.
+    // Hierarchical view: the one place a new parent is adopted; every other path
+    // into repopulateChildPalette is a redraw and must not move the user.  A
+    // programmatic selectItems() DOES reach here (it emits once, at its end,
+    // flagged by ClusterPalette::selectionIsProgrammatic), so what is a gesture
+    // and what is a landing is told apart inside adoptCuratedParents.
     if(childPanel && childPanel->isVisible()){
         // An EMPTY selection is not the user choosing to stop curating.
         //

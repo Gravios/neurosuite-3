@@ -892,7 +892,11 @@ void ClusterPalette::selectItems(const QList<int>& selectedClusters){
     isInSelectItems = false;
 
     isUpToDate = true;
+    // The one emission a programmatic selection makes: flagged for its receivers
+    // (selectionIsProgrammatic), who may treat a click and a landing differently.
+    emittingProgrammatic = true;
     slotClickRedraw();
+    emittingProgrammatic = false;
 }
 
 void ClusterPalette::reset(){

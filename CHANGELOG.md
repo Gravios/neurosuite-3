@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: an atom's realign lands on the atom again -- the landing's parent selection no longer counts as a click](#2026-11-11--klusters-an-atoms-realign-lands-on-the-atom-again----the-landings-parent-selection-no-longer-counts-as-a-click) |
 | 2026-11-11 | [Klusters: the curation matrices follow the palette selection; a matrix lost off screen comes back](#2026-11-11--klusters-the-curation-matrices-follow-the-palette-selection-a-matrix-lost-off-screen-comes-back) |
 | 2026-11-11 | [Klusters: a delete at the end of the child list lands on the new last row, in list order](#2026-11-11--klusters-a-delete-at-the-end-of-the-child-list-lands-on-the-new-last-row-in-list-order) |
 | 2026-11-11 | [Klusters: an atom's realign lands back on the atom](#2026-11-11--klusters-an-atoms-realign-lands-back-on-the-atom) |
@@ -182,6 +183,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: an atom's realign lands on the atom again -- the landing's parent selection no longer counts as a click
+
+<details>
+<summary>Details</summary>
+
+Since 0952 (a parent clicked over selected children exits the child view), the landing after an
+atom's realign (0954) was undone by its own first step: it selects the atom's parent in the parent
+palette, and `ClusterPalette::selectItems` emits the same `updateShownClusters` a click does, so
+`adoptCuratedParents` saw "children selected, a parent picked" and dropped the child view -- the
+focus moved to the parent once the realign completed.  The palette now flags the one emission a
+programmatic selection makes (`ClusterPalette::selectionIsProgrammatic`, true while the
+`updateShownClusters` from `selectItems` is delivered), and only a user's selection exits the child
+view; a landing or a rebuild's restore keeps it.  The comment in `slotUpdateShownClusters` claiming a
+programmatic `selectItems` never reaches it was wrong and is corrected.  Not run in the GUI.
+
+</details>
 
 ---
 

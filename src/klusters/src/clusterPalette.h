@@ -186,6 +186,9 @@ public:
     /**The cluster id of the palette's current item (the one last clicked or
      * reached with the keyboard), -1 when there is none.*/
     int currentClusterId() const;
+    /**True while an updateShownClusters emitted by selectItems() (a programmatic
+     * selection) is being delivered -- false for one the user made.*/
+    bool selectionIsProgrammatic() const { return emittingProgrammatic; }
 
     /** Hides the user cluster information, that is show the normal cluster palette.*/
     void hideUserClusterInformation();
@@ -273,6 +276,13 @@ private:
 
     /**Prevent from emitting signal while globaly selecting items*/
     bool isInSelectItems;
+
+    /**True while the updateShownClusters emitted at the end of selectItems()
+     * is being delivered: the selection was made by the program (a landing
+     * after a realign, a restore after a rebuild), not by the user.  Receivers
+     * that react to a GESTURE -- leaving the child view because a parent was
+     * clicked over the children -- read it (selectionIsProgrammatic).*/
+    bool emittingProgrammatic = false;
 
     /**Prevent from emitting a signal of update if the selection had not changed.*/
     bool isUpToDate;
