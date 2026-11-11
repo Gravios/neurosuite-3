@@ -246,7 +246,8 @@ QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)
     if (doc->isBorrowedSpace() && !showFeatureSpace(doc->cluMethod(), /*syncFirst*/ false))
         return QString();
     const Data& d = doc->data();
-    const std::string spkTok = neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString());
+    std::string spkTok = neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString());
+    if (spkTok.empty()) spkTok = neurosuite::custody::kDefaultMethod();   // an untagged legacy .spk is the standard space
     const QString token = QString::fromStdString(neurosuite::custody::supersampledToken(spkTok, factor));
     if (token.isEmpty() || token == QString::fromStdString(spkTok)) return QString();
 

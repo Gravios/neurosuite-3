@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: super-sampling an untagged legacy session built a bare `_U4` token](#2026-11-11--klusters-super-sampling-an-untagged-legacy-session-built-a-bare-_u4-token) |
 | 2026-11-11 | [Super-sampled spike times: `.res.<token>_U<f>.N` in ticks; the shared `.res` is always base-rate; Klusters exports a `_U` session at the recording's sampling](#2026-11-11--super-sampled-spike-times-restoken_ufn-in-ticks-the-shared-res-is-always-base-rate-klusters-exports-a-_u-session-at-the-recordings-sampling) |
 | 2026-11-11 | [Klusters: an atom's realign lands on the atom again -- the landing's parent selection no longer counts as a click](#2026-11-11--klusters-an-atoms-realign-lands-on-the-atom-again----the-landings-parent-selection-no-longer-counts-as-a-click) |
 | 2026-11-11 | [Klusters: the curation matrices follow the palette selection; a matrix lost off screen comes back](#2026-11-11--klusters-the-curation-matrices-follow-the-palette-selection-a-matrix-lost-off-screen-comes-back) |
@@ -184,6 +185,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: super-sampling an untagged legacy session built a bare `_U4` token
+
+<details>
+<summary>Details</summary>
+
+*Actions ▸ Super-sample ×4* on a session whose `.spk` is untagged (`<base>.spk.N`, method
+token "") derived the token `_U4` and the re-extract refused it ("unsupported .spk method
+'_U4'").  `custody::supersampledToken("")` now treats the empty token as the default method
+(`standard_U4`; `core_test_supersample` +4), both Klusters call sites do the same before asking,
+and the basis of an untagged session (`<base>.pca.N`) is found as the last resort when the
+space is built.
+
+</details>
 
 ---
 

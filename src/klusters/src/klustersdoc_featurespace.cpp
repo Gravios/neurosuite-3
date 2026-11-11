@@ -835,7 +835,9 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
 
     // The shown space's waveforms are the source; the new tokens carry _U<factor>.
-    const std::string shownSpk = neurosuite::custody::methodOf(activeSpkPath.toStdString());
+    // An untagged legacy .spk (<base>.spk.<group>) is the standard space.
+    std::string shownSpk = neurosuite::custody::methodOf(activeSpkPath.toStdString());
+    if (shownSpk.empty()) shownSpk = neurosuite::custody::kDefaultMethod();
     if (neurosuite::custody::supersampleOf(shownSpk) > 1)
         return fail(tr("The shown space (%1) is already super-sampled.").arg(QString::fromStdString(shownSpk)));
     const std::string newTok = neurosuite::custody::supersampledToken(shownSpk, factor);
@@ -857,9 +859,12 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
             stem, "pca", neurosuite::custody::waveformToken(activeMethod.toStdString()), group));
         const QString shownPca2 = QString::fromStdString(neurosuite::custody::methodPath(
             stem, "pca", activeMethod.toStdString(), group));
+        // An untagged legacy session (<base>.pca.<group>): its basis is the last resort.
+        const QString shownPca3 = QString::fromStdString(neurosuite::custody::untaggedPath(stem, "pca", group));
         if (!neurosuite::core::loadPca(shownPca.toStdString(), shown) || !shown.valid())
             if (!neurosuite::core::loadPca(shownPca2.toStdString(), shown) || !shown.valid())
-                shown = neurosuite::core::PcaBasis{};
+                if (!neurosuite::core::loadPca(shownPca3.toStdString(), shown) || !shown.valid())
+                    shown = neurosuite::core::PcaBasis{};
     }
 
     // ── 1. the waveforms ──────────────────────────────────────────────────

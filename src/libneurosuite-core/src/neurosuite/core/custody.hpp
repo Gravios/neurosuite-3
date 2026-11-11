@@ -195,9 +195,12 @@ inline int supersampleOf(const std::string& m)
 // The token of the super-sampled space over @p m by @p factor: the _U suffix placed
 // after the family and kind, before any _D lag suffix (stderiv_C5_D34, 4 ->
 // stderiv_C5_U4_D34).  A token already super-sampled, opaque, or a factor outside
-// 2..9 comes back unchanged.
-inline std::string supersampledToken(const std::string& m, int factor)
+// 2..9 comes back unchanged.  The empty token of an untagged legacy file
+// (<base>.spk.<group>, methodOf -> "") is the default method: standard_U4, never
+// a bare "_U4".
+inline std::string supersampledToken(const std::string& mIn, int factor)
 {
+    const std::string m = mIn.empty() ? std::string(kDefaultMethod()) : mIn;
     const MethodSpec s = parseMethodToken(m);
     if (factor < 2 || factor > 9 || s.supersample != 1) return m;
     if (s.kind == '\0' && s.lag == 0 && s.family != m) return m;   // opaque

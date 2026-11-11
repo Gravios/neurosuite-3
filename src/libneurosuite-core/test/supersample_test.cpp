@@ -21,6 +21,7 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
+#include <neurosuite/core/custody.hpp>
 #include <neurosuite/core/pca_fit.hpp>
 #include <neurosuite/core/spike_extract.hpp>
 #include <neurosuite/core/supersample.hpp>
@@ -45,6 +46,15 @@ static double gauss(double t, double mu, double sd) { return -1000.0 * std::exp(
 
 int main()
 {
+    // ── the token of a super-sampled space (custody.hpp) ─────────────────
+    {
+        using neurosuite::custody::supersampledToken;
+        check(supersampledToken("standard", 4) == "standard_U4", "supersampledToken(standard, 4) == standard_U4");
+        check(supersampledToken("stderiv_C5_D34", 2) == "stderiv_C5_U2_D34", "supersampledToken keeps kind and lag: stderiv_C5_U2_D34");
+        check(supersampledToken("", 4) == "standard_U4", "an untagged legacy .spk (empty token) super-samples as standard_U4, never a bare _U4");
+        check(supersampledToken("standard_U4", 4) == "standard_U4", "a token already super-sampled comes back unchanged");
+    }
+
     // ── the interpolators on one channel ─────────────────────────────────
     {
         const int n = 40, mg = 3, F = 4;
