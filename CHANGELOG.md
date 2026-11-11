@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | [Klusters: a renumber-to-end (T) or a sort between an edit and its post-edit chain left the parked landing and the queued realign on the old ids -- a neighbouring cluster joined the selection](#2026-11-12--klusters-a-renumber-to-end-t-or-a-sort-between-an-edit-and-its-post-edit-chain-left-the-parked-landing-and-the-queued-realign-on-the-old-ids----a-neighbouring-cluster-joined-the-selection) |
 | 2026-11-12 | [Klusters: the Space box rescans the session's feature spaces when opened](#2026-11-12--klusters-the-space-box-rescans-the-sessions-feature-spaces-when-opened) |
 | 2026-11-11 | [Klusters: a super-sampled space is re-cut with the interpolator it was built with (detected from its rows), not the preference](#2026-11-11--klusters-a-super-sampled-space-is-re-cut-with-the-interpolator-it-was-built-with-detected-from-its-rows-not-the-preference) |
 | 2026-11-11 | [Klusters: a detached feature space (no basis -- `.fet.manifold`) no longer blocks the realign of the spaces it shares waveforms with; its time column follows, realign in it is refused](#2026-11-11--klusters-a-detached-feature-space-no-basis----fetmanifold-no-longer-blocks-the-realign-of-the-spaces-it-shares-waveforms-with-its-time-column-follows-realign-in-it-is-refused) |
@@ -195,6 +196,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-12 — Klusters: a renumber-to-end (T) or a sort between an edit and its post-edit chain left the parked landing and the queued realign on the old ids -- a neighbouring cluster joined the selection
+
+<details>
+<summary>Details</summary>
+
+Seen in a super-sampled session (`NS3_TRACE_SCOPE`): split 539 → 540, the landing parked as
+{540, 539} and 540 queued for the auto-realign; then T renamed the source 539 → 541; the batch
+ran, the auto-renumber compacted the ids and translated the parked landing through *its* map --
+translating ids that a partial rename had already invalidated (`pending=539 540 539`, and
+after the next split `pending=540 541 482`).  The landing selected whichever clusters held
+those numbers: a neighbour of the old cluster.  `applyClusterRename` (renumber-to-end, the
+sorts) translated the S-pins and the matrix scope through its partial map but not
+`pendingParentSelection` nor `modifiedParents`; `renumberPendingParentSelection` now
+translates both and dedups them (a rename can make two entries equal), and
+`applyClusterRename` calls it.  Not a race: the chain after an edit is long in a `_U` session
+(realign in `_U4`, the follow of every space), so a T lands inside it there.
+
+</details>
 
 ---
 

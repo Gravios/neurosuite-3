@@ -314,6 +314,10 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     // the OLD ids after a partial rename (renumber-to-end, Shift+S reorder)
     // would compare whichever parents inherited those numbers.
     renumberHeldScopeParents(partialOldToNew);
+    // 2d. So do the pending post-edit landing and the parents queued for the
+    // post-edit realign (renumberClusters translates them through its full map;
+    // a partial rename did not, and left them on the old ids).
+    renumberPendingParentSelection(partialOldToNew);
 
     // 3. Each view — rewrites shownClusters; emits its own clustersRenumbered.
     for (KlustersView* v : *viewList) {

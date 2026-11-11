@@ -276,8 +276,25 @@ QList<int> KlustersDoc::takePendingParentSelection()
 
 void KlustersDoc::renumberPendingParentSelection(const QMap<int,int>& oldNew)
 {
+    // The pending landing AND the parents queued for the post-edit realign ride
+    // every rename -- the full compaction and a partial one (renumber-to-end, a
+    // sort) alike.  A partial rename between an edit and its deferred post-op
+    // chain left both on the OLD ids: the realign then aligned whichever parents
+    // had inherited those numbers, and the landing selected them -- "a
+    // neighbouring cluster added to the selection after a split" in a
+    // super-sampled session, where the chain is long enough for a T to land in it.
     for (int& id : pendingParentSelection)
         if (oldNew.contains(id)) id = oldNew.value(id);
+    for (int& id : modifiedParents)
+        if (oldNew.contains(id)) id = oldNew.value(id);
+    // a rename may make two entries equal: keep each once, order kept
+    auto dedup = [](QList<int>& l) {
+        QList<int> out;
+        for (int id : l) if (!out.contains(id)) out.append(id);
+        l = out;
+    };
+    dedup(pendingParentSelection);
+    dedup(modifiedParents);
 }
 
 void KlustersDoc::renumberHeldScopeParents(const QMap<int,int>& oldNew)
