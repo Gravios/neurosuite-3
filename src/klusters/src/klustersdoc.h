@@ -654,6 +654,27 @@ public:
      */
     void resolveMatrixScope();
 
+    /** A MATRIX HOLD: while one is open no curation matrix launches -- not the
+     *  edit-driven updateSimilarityMatrices(), not the app's U-key refresh through
+     *  the views, and resolveMatrixScope() keeps its matrixScopeChanged to itself.
+     *  When the last hold closes, exactly one launch goes out with the scope as it
+     *  finally stands: the held scope change (the app's deferred recompute) when
+     *  there was one, else one updateSimilarityMatrices().
+     *
+     *  Why: a hierarchy gesture (drop a child, merge children, promote...) reaches
+     *  the matrices three times -- the parent-layer move launches them with the
+     *  scope as it was, the hierarchy rebuild re-resolves the scope and launches
+     *  again, and the deferred post-edit consolidation (renumber) launches a third
+     *  time -- and between them the views swap to the parent scope and back, which
+     *  the user sees as a child -> parent -> child flash.  A hold spanning the
+     *  gesture and its deferred consolidation (KlustersApp::holdMatricesForGesture)
+     *  makes it one launch, after the scope has settled. */
+    void beginMatrixHold();
+    void endMatrixHold();
+    bool matrixUpdatesHeld() const { return matrixHoldDepth > 0; }
+    /** A view asked for a launch while held: remember it for the release. */
+    void noteMatrixUpdateDeferred() { matrixUpdateDeferred = true; }
+
     /** Parent unit id owning @p childId, or -1 if @p childId is not a child. */
     int parentOfChild(int childId) const { return childToParent.value(childId,-1); }
     /** Point the VIEW-facing data()/clusterColors() at the child (true) or the
@@ -2747,6 +2768,9 @@ private:
     QList<int>           jointChildren;             // atoms the matrices brought into the joint palette
     QList<int>           scopeSortOrder;            // held child-scope sort order (atom ids)
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
+    int                  matrixHoldDepth = 0;       // beginMatrixHold / endMatrixHold
+    bool                 matrixUpdateDeferred = false;   // a launch was asked for while held
+    bool                 scopeEmitDeferred = false;      // resolveMatrixScope moved while held
     bool                 scopeResolvedActive = false;   // held answer, never derived on demand
     QList<int>           scopeResolvedClusters;         // held children of the scoped parent(s)
     QList<int>           scopeResolvedParents;          // held contributing parents, block order

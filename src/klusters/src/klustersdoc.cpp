@@ -285,6 +285,7 @@ void KlustersDoc::forceClusterRefresh(int clusterId)
 
 void KlustersDoc::updateSimilarityMatrices()
 {
+    if (matrixHoldDepth > 0) { matrixUpdateDeferred = true; return; }   // one launch at the release
     // updateErrorMatrix()/updateTemplateMatrix()/updateResidualMatrix() each emit
     // the view's compute signal; Qt delivers it only when a matrix dock is
     // connected, so this is a no-op when none is open and a full recompute when

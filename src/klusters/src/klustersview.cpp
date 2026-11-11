@@ -2421,3 +2421,23 @@ void KlustersView::disconnectAllChildren()
     for (ViewWidget* w : std::as_const(viewList))
         if (w) w->disconnect();
 }
+
+// The curation-matrix launches.  Under a matrix hold (KlustersDoc::beginMatrixHold,
+// a hierarchy gesture and its deferred consolidation) nothing launches: the hold's
+// release launches once, with the scope as it finally stands.
+void KlustersView::updateErrorMatrix(){
+    if(doc.matrixUpdatesHeld()){ doc.noteMatrixUpdateDeferred(); return; }
+    emit computeProbabilities();
+}
+void KlustersView::updateTemplateMatrix(){
+    if(doc.matrixUpdatesHeld()){ doc.noteMatrixUpdateDeferred(); return; }
+    emit computeTemplateMatrix();
+}
+void KlustersView::updateResidualMatrix(){
+    if(doc.matrixUpdatesHeld()){ doc.noteMatrixUpdateDeferred(); return; }
+    emit computeResidualMatrix();
+}
+void KlustersView::updateDriftMatrix(){
+    if(doc.matrixUpdatesHeld()){ doc.noteMatrixUpdateDeferred(); return; }
+    emit computeDriftMatrix();
+}

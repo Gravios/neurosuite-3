@@ -656,15 +656,15 @@ public:
   */
     void nbUndoChangedCleaning(int newNbUndo);
 
-    /**Updates the probabilitites in the errorMatrix view.*/
-    void updateErrorMatrix(){emit computeProbabilities();}
+    /**Updates the probabilitites in the errorMatrix view.  Under a matrix hold
+     * (KlustersDoc::beginMatrixHold) nothing launches; the release launches once.*/
+    void updateErrorMatrix();
     /**Recomputes the template match matrix.*/
-    void updateTemplateMatrix(){emit computeTemplateMatrix();}
+    void updateTemplateMatrix();
     /**Recomputes the mean-waveform residual matrix.*/
-    void updateResidualMatrix(){emit computeResidualMatrix();}
-
+    void updateResidualMatrix();
     /**Recomputes the drift-shifted correlation matrix.*/
-    void updateDriftMatrix(){emit computeDriftMatrix();}
+    void updateDriftMatrix();
 
     /** Gives keyboard focus to the first ClusterView in this display. */
     void focusClusterView();

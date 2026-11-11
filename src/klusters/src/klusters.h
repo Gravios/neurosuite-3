@@ -508,6 +508,15 @@ private Q_SLOTS:
     QString buildAndShowSupersampledSpace(int factor, bool quiet);
     /** The two Super-sample actions follow the Preferences gate and the document state. */
     void updateSupersampleActions();
+    /** Open a matrix hold for a hierarchy gesture (KlustersDoc::beginMatrixHold) with
+     *  the busy cursor, and close it on a zero-timer queued AFTER the gesture's own
+     *  deferred consolidation (scheduleAutoPostClusterEdit queues its timer during
+     *  the gesture, so FIFO order puts the release after the renumber and its
+     *  matrix refresh): the gesture, the hierarchy rebuild and the consolidation
+     *  then produce ONE matrix launch, after the child scope has settled -- no
+     *  child -> parent -> child flash.  Call before the doc operation; the release
+     *  is automatic.  Nested calls share one hold. */
+    void holdMatricesForGesture();
     /** Show the next (@p step +1) or previous (-1) usable space of the Space
      *  box, wrapping around; same path as picking it in the box. */
     void slotCycleFeatureSpace(int step);

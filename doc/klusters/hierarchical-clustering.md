@@ -106,6 +106,14 @@ appends) -- and is dropped when the child view is left (`V`) or another fiber
 is selected: coming back shows the atoms in their natural id order again. At
 the fiber level the same sorts renumber the fibers, as before.
 
+**One matrix refresh per gesture.** A hierarchy gesture (drop an atom to noise,
+merge or promote atoms, dissolve or break up a fiber, atom undo / redo) reaches
+the curation matrices once, after the child scope has settled: the gesture
+runs under a *matrix hold* with the busy cursor, and the three refreshes it
+used to trigger (the parent-layer move, the hierarchy rebuild, the deferred
+renumber) collapse into one launch at the release -- so the matrices no longer
+flash from the child view to the fiber view and back.
+
 **Leaving the children by clicking a fiber.** With atoms selected in the child
 palette, clicking a fiber in the fiber palette -- the same fiber or another --
 is the user leaving the atoms: the child view exits (the curation matrices

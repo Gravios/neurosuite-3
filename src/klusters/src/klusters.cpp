@@ -6169,6 +6169,7 @@ void KlustersApp::slotBreakUpParents(){
         return;
 
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    holdMatricesForGesture();
     doc->breakUpParents(plan, *activeView());
     QApplication::restoreOverrideCursor();
 

@@ -183,6 +183,19 @@ void KlustersApp::updateHierarchyEditActions(){
     if(mRedoChildEdit)  mRedoChildEdit->setEnabled(editable && doc->childRedoCount() > 0);
 }
 
+void KlustersApp::holdMatricesForGesture(){
+    if(!doc) return;
+    doc->beginMatrixHold();
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+    // Queued now, so it runs after the consolidation timer the gesture is about to
+    // queue (same event loop, FIFO).  A gesture that queues no consolidation
+    // releases on this timer alone.
+    QTimer::singleShot(0, this, [this](){
+        QApplication::restoreOverrideCursor();
+        if(doc) doc->endMatrixHold();
+    });
+}
+
 void KlustersApp::slotMergeChildren(){
     if(!activeView() || !childPanel || !childPanel->isVisible()) return;
     const QList<int> kids = childPalette->selectedClusters();
@@ -190,6 +203,7 @@ void KlustersApp::slotMergeChildren(){
         statusBar()->showMessage(tr("Select two or more children of the same parent to merge."), 4000);
         return;
     }
+    holdMatricesForGesture();
     if(doc->mergeChildren(kids, *activeView()) < 0)
         statusBar()->showMessage(tr("Children must belong to the same parent to merge."), 4000);
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
@@ -232,6 +246,7 @@ void KlustersApp::slotUndoChildEdit(){
         statusBar()->showMessage(tr("No child-layer (atom) edit to undo."), 4000);
         return;
     }
+    holdMatricesForGesture();
     doc->undoChildEditDispatch();
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
@@ -239,6 +254,7 @@ void KlustersApp::slotUndoChildEdit(){
 
 void KlustersApp::slotRedoChildEdit(){
     if(!activeView()) return;
+    holdMatricesForGesture();
     doc->redoChildEditDispatch();
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
     if(mRedoChildEdit) mRedoChildEdit->setEnabled(doc->childRedoCount() > 0);
@@ -251,6 +267,7 @@ void KlustersApp::slotGroupChildrenIntoParent(){
         statusBar()->showMessage(tr("Select the children to group into a new parent."), 4000);
         return;
     }
+    holdMatricesForGesture();
     doc->promoteChildren(kids, *activeView());
 }
 
@@ -261,6 +278,7 @@ void KlustersApp::slotDissolveParent(){
         statusBar()->showMessage(tr("Select exactly one parent to dissolve into its children."), 4000);
         return;
     }
+    holdMatricesForGesture();
     doc->dissolveParent(sel.first(), *activeView());
 }
 
@@ -279,6 +297,7 @@ void KlustersApp::slotDropChildToNoise(){
     }
     // One call, one gesture, one landing (and one undo step per parent): the
     // per-atom calls each parked a landing and recomputed it between drops.
+    holdMatricesForGesture();
     doc->dropChildrenToBin(kids, 1, *activeView());
 }
 
@@ -289,6 +308,7 @@ void KlustersApp::slotMergeParents(){
         statusBar()->showMessage(tr("Select two or more parents in the main palette to merge."), 4000);
         return;
     }
+    holdMatricesForGesture();
     doc->mergeParents(sel, *activeView());
 }
 
@@ -303,6 +323,7 @@ void KlustersApp::slotPromoteChildren(){
     // each call is one undo step.  Pooling them into a single parent is the other
     // operation, reached by passing them together.
     QList<int> newParents;
+    holdMatricesForGesture();
     for(int c : kids){
         const int p = doc->promoteChildren(QList<int>{c}, *activeView());
         if(p > 0) newParents.append(p);

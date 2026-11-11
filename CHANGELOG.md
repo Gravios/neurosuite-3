@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: one curation-matrix refresh per hierarchy gesture (no child -> fiber -> child flash)](#2026-11-11--klusters-one-curation-matrix-refresh-per-hierarchy-gesture-no-child---fiber---child-flash) |
 | 2026-11-11 | [Klusters: a fiber clicked over an atom selection leaves the child view](#2026-11-11--klusters-a-fiber-clicked-over-an-atom-selection-leaves-the-child-view) |
 | 2026-11-11 | [Klusters: the super-sample MODE builds the space on open; Save As adopts an existing space; `%spk`](#2026-11-11--klusters-the-super-sample-mode-builds-the-space-on-open-save-as-adopts-an-existing-space-spk) |
 | 2026-11-11 | [Klusters: super-sample mode -- waveform spaces at 2x / 4x the sampling, realign and nudge at sub-sample resolution](#2026-11-11--klusters-super-sample-mode--waveform-spaces-at-2x--4x-the-sampling-realign-and-nudge-at-sub-sample-resolution) |
@@ -180,6 +181,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-11 — Klusters: one curation-matrix refresh per hierarchy gesture (no child -> fiber -> child flash)
+
+<details>
+<summary>Details</summary>
+
+Dropping an atom (or merging, promoting, dissolving, undoing) launched the four curation
+matrices three times: the parent-layer move (`updateSimilarityMatrices` with the scope as
+it was), the hierarchy rebuild (`resolveMatrixScope` → `matrixScopeChanged`) and the deferred
+consolidation (`autoPostClusterEdit`'s renumber + `slotUpdateErrorMatrix`), the views swapping
+scope state in between -- the child → fiber → child flash.  A **matrix hold**
+(`KlustersDoc::beginMatrixHold` / `endMatrixHold`) now spans each gesture: while held,
+`updateSimilarityMatrices` and the views' `update*Matrix` only note the request and
+`resolveMatrixScope` keeps its signal; the release emits the held scope change once (the
+app's deferred recompute) or runs one refresh.  `KlustersApp::holdMatricesForGesture` opens
+it with the busy cursor and queues the release on a zero-timer AFTER the gesture's own
+consolidation timer, so renumber and landing happen inside the hold.  Applied to drop to
+noise, merge / promote / group children, merge / dissolve / break up parents, atom undo and
+redo.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-11 — Klusters: a fiber clicked over an atom selection leaves the child view
 

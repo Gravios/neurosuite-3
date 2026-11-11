@@ -703,8 +703,29 @@ void KlustersDoc::resolveMatrixScope()
                            << " on=" << matrixScopeOn
                            << " active=" << scopeResolvedActive
                            << " n=" << scopeResolvedClusters.size();
-    if (was != scopeResolvedActive || before != scopeResolvedClusters)
-        emit matrixScopeChanged();
+    if (was != scopeResolvedActive || before != scopeResolvedClusters) {
+        if (matrixHoldDepth > 0) scopeEmitDeferred = true;   // one emission at the release
+        else emit matrixScopeChanged();
+    }
+}
+
+void KlustersDoc::beginMatrixHold()
+{
+    ++matrixHoldDepth;
+}
+
+void KlustersDoc::endMatrixHold()
+{
+    if (matrixHoldDepth <= 0) return;
+    if (--matrixHoldDepth > 0) return;
+    const bool scopeMoved = scopeEmitDeferred;
+    const bool wanted     = matrixUpdateDeferred;
+    scopeEmitDeferred = matrixUpdateDeferred = false;
+    // One launch, with the scope as it now stands.  A held scope change goes out
+    // as the signal (the app recomputes all four matrices, deferred past this
+    // event-loop turn); otherwise the edit-driven refresh runs once.
+    if (scopeMoved) emit matrixScopeChanged();
+    else if (wanted) updateSimilarityMatrices();
 }
 
 void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& previous)
