@@ -141,6 +141,8 @@ int main(int argc, char** argv) {
             check(waveformToken(f[1]) == f[2], "waveform_token " + f[1] + " -> " + f[2]);
         } else if (kind == "supersample_of") {
             check(supersampleOf(f[1]) == std::stoi(f[2]), line);
+        } else if (kind == "base_rate_token") {
+            check(baseRateToken(f[1]) == f[2], "base_rate_token " + f[1] + " -> " + f[2]);
         } else if (kind == "drops_last") {
             check(sdiffDropsLastChannel(std::atoi(f[1].c_str())) == (f[2] == "1"),
                   "drops_last " + f[1] + " -> " + f[2]);

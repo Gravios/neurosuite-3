@@ -8,9 +8,11 @@
 //
 // where `start` is the window's first raw sample (timestamp - peakSample) and
 // `phase` (0 .. factor-1, in ticks) a sub-sample offset a realignment in the
-// super-sampled space may have given the spike.  The .res keeps the acquisition
-// sample; the phase travels beside it (Klusters' .php sidecar), so a later re-cut
-// of the same spike reproduces the same waveform.
+// super-sampled space may have given the spike.  The shared .res keeps the
+// acquisition sample; the phase travels beside it as the space's last feature
+// column, and the space's own .res.<token>_U<factor>.N holds the sum,
+// sample * factor + phase, in ticks (custody.hpp baseRateToken), so a later
+// re-cut of the same spike reproduces the same waveform.
 //
 // Two interpolators:
 //   CubicSpline  natural cubic spline through the raw samples (the default): local,

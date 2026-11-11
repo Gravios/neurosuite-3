@@ -503,6 +503,8 @@ private Q_SLOTS:
     /** Build the super-sampled space over the shown one (factor 2 or 4) and show it;
      *  offers to Save As into it so realign / nudge run there (KlustersDoc::buildSupersampledSpace). */
     void slotSupersample(int factor);
+    /** Actions > Export at the Recording's Sampling: KlustersDoc::exportAtBaseRate. */
+    void slotExportBaseRate();
     /** Preferences > Super-sample mode (x2 / x4): after a session opens (and when the
      *  mode changes), build the super-sampled space over the .clu's own space when it
      *  does not exist, show it, and -- with the adopt preference -- Save As under its
@@ -1381,6 +1383,7 @@ private:
     QAction* mShowReservedClusters = nullptr;  // View: list the reserved chunk clusters
     QAction* mShowChildPalette = nullptr;      // View: show the child cluster palette
     QAction* mFollowSelectionInMatrices = nullptr;   // View: the matrices centre on the selected parent / child
+    QAction* mExportBaseRate = nullptr;              // Actions: a _U session's .clu under its base-rate token
     QAction* mShowTemplatePalette = nullptr;   // View: show the template palette
     QAction* mMergeParents = nullptr;        // Hierarchy: merge selected parents
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)

@@ -952,8 +952,60 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     }
     log << "features " << QFileInfo(fetOut).fileName() << ": " << nSpikes << " rows x " << nDims
         << " (" << nPca << " PCA + phase + time)\n";
+
+    // ── 4. the super-sampled .res: the spike times in TICKS ─────────────
+    // <base>.res.<tok>_U<f>.N holds sample x factor + phase (0 here: freshly cut
+    // at the .res).  The shared base-rate .res is untouched; custody's res
+    // resolution never takes a _U res for it (baseRateToken).  Every save of
+    // the _U session rewrites it from the times and the phase column.
+    const QString resOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "res", newTok, group));
+    {
+        std::vector<int64_t> ticks(static_cast<size_t>(nSpikes));
+        for (int64_t i = 0; i < nSpikes; ++i)
+            ticks[static_cast<size_t>(i)] = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim))
+                                            * static_cast<int64_t>(factor);
+        if (!neurofileio::writeResBinary(resOut.toStdString(), ticks)) {
+            QFile::remove(spkOut); QFile::remove(pcaOut); QFile::remove(fetOut); QFile::remove(resOut);
+            return fail(tr("Writing %1 failed.").arg(QFileInfo(resOut).fileName()));
+        }
+        log << "times " << QFileInfo(resOut).fileName() << ": " << nSpikes << " spikes in ticks ("
+            << factor << " per sample)\n";
+    }
     if (token) *token = QString::fromStdString(newTok);
     return true;
+}
+
+// The super-sampled .res of the open .clu's space, in ticks: <base>.res.<tok>_U<f>.N
+// (an empty string when the .clu's space is not super-sampled).
+QString KlustersDoc::supersampledResPath() const
+{
+    if (!clusteringData || neurosuite::custody::supersampleOf(originMethod.toStdString()) <= 1) return QString();
+    const QString dir = QFileInfo(docUrl).absolutePath();
+    const std::string stem = (dir + QDir::separator() + baseName).toStdString();
+    return QString::fromStdString(neurosuite::custody::methodPath(stem, "res", originMethod.toStdString(),
+                                                                  electrodeGroupID.toInt()));
+}
+
+// The spike times of the .clu's super-sampled space in ticks: time x factor + the
+// phase column.  Empty when the .clu's space is not super-sampled or another
+// space is shown (the phase column is the .clu space's).
+std::vector<int64_t> KlustersDoc::supersampledTicks() const
+{
+    std::vector<int64_t> ticks;
+    const int factor = neurosuite::custody::supersampleOf(originMethod.toStdString());
+    if (!clusteringData || factor <= 1 || isBorrowedSpace()) return ticks;
+    const int phaseCol = supersamplePhaseColumn();
+    if (phaseCol < 0) return ticks;
+    const int timeDim = clusteringData->timeDimension();
+    const int64_t n = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+    ticks.resize(static_cast<size_t>(n));
+    for (int64_t i = 0; i < n; ++i) {
+        const dataType row = static_cast<dataType>(i + 1);
+        ticks[static_cast<size_t>(i)] =
+            static_cast<int64_t>(clusteringData->featureValue(row, timeDim)) * factor
+            + static_cast<int64_t>(clusteringData->featureValue(row, phaseCol + 1));
+    }
+    return ticks;
 }
 
 std::shared_ptr<const neurofileio::FetBinaryFile> KlustersDoc::featuresInMemory(const QString& path)

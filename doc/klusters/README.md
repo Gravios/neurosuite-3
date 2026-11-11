@@ -175,8 +175,12 @@ space. **Actions → Super-sample ×2 / ×4…** does it by hand; it builds, ove
 re-cut from the `.fil` with a margin of raw samples on either side so the
 edges are exact; from the stored windows when there is no recording), a PCA
 basis fitted on it (`.pca.<token>_U4.N`: the shown basis's window and
-component count, scaled) and `.fet.<token>_U4.N` — the projections, a
-**phase** column and time. The space is then listed under *Space* like any
+component count, scaled), `.fet.<token>_U4.N` — the projections, a
+**phase** column and time — and `.res.<token>_U4.N`, the spike times in
+**ticks** (`sample × 4 + phase`; rewritten at every save of the `_U` session
+from the times and the phase column, so it is always the sub-sample spike
+times of the saved clustering). The shared base-rate `.res` is a different
+file and never a `_U` one. The space is then listed under *Space* like any
 other; its waveforms show 4× the points, every matrix and the realign see a
 4× longer window. The `_U<factor>` token belongs to the waveform token
 (`standard_U4`, `stderiv_C5_U4`; a lag space over it keeps it:
@@ -201,6 +205,17 @@ the phase. **Sync Feature Spaces** re-cuts a super-sampled space at its
 spikes' phases. The phase lives in the `.fet`, so every row
 operation (sort by time, sub-sessions, recluster plugins) carries it for free;
 a `.fet` of such a space has `nCh × nComp + 2` columns.
+
+**Export at the recording's sampling** (*Actions*, from a saved `_U`
+session): copies the saved `.clu` — with its `.clc`/`.clp`/`.cli` — under
+the base-rate token (`<base>.clu.<token>.N`), beside the base-rate files it
+reads: the shared `.res` (whole samples, moved by every realign or nudge in
+the `_U` space; the phase stays in this space's column and tick `.res`) and
+the base space's `.spk`/`.fet`, which *Realign from any space* re-cuts at the
+moved times (run *Sync Feature Spaces* and *Save* first if that was off).
+The session stays open where it is; the dialog lists what was written and
+the base-rate files as they stand. (A *Save As* under the base token does the
+same move and reopens there.)
 
 Costs: the `.spk` and every waveform read are ×factor, the PCA basis works on
 a ×factor window (fitted on up to 20 000 spikes), realign's cross-correlation

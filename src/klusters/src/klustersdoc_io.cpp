@@ -723,6 +723,67 @@ std::vector<int32_t> labelsInSpikeOrder(const Data& d)
 }
 } // namespace
 
+// ── Export at the recording's sampling ───────────────────────────────────────
+// A _U session's clustering under its base-rate token: the saved .clu (with its
+// .clc/.clp/.cli sidecars) copied to <base>.clu.<basetok>.N.  The base-rate
+// .res is the shared one (a realign or nudge in the _U space moves it by whole
+// samples, the phase living in the _U space's own column and tick res); the
+// base-rate .spk/.fet are that space's files, re-cut at the moved times by the
+// realign-from-any-space sync (synced spaces are committed with the save).  So
+// after a Save there is nothing to convert: only the ids need a base-rate name.
+bool KlustersDoc::exportAtBaseRate(QStringList* written, QString* error)
+{
+    auto fail = [&](const QString& why) { if (error) *error = why; return false; };
+    if (!clusteringData) return fail(tr("No document is open."));
+    const int factor = neurosuite::custody::supersampleOf(originMethod.toStdString());
+    if (factor <= 1) return fail(tr("The open .clu (%1) is not in a super-sampled space.").arg(originMethod));
+    if (isModified()) return fail(tr("Save the session first: the export copies the saved files."));
+    const std::string baseTok = neurosuite::custody::baseRateToken(originMethod.toStdString());
+    const QString dir = QFileInfo(docUrl).absolutePath();
+    const std::string stem = (dir + QDir::separator() + baseName).toStdString();
+    const int group = electrodeGroupID.toInt();
+    const QString cluOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "clu", baseTok, group));
+    if (cluOut == docUrl) return fail(tr("The .clu is already under its base-rate token."));
+
+    struct Pair { QString from, to; };
+    QList<Pair> pairs{ {docUrl, cluOut} };
+    for (const char* side : {"clc", "clp"}) {
+        const QString from = fromLocal(hierarchyfiles::siblingPath(localPath(docUrl), side));
+        if (QFileInfo::exists(from))
+            pairs.append({from, fromLocal(hierarchyfiles::siblingPath(localPath(cluOut), side))});
+    }
+    {
+        const QString from = fromLocal(unitsidecar::pathFor(localPath(docUrl)));
+        if (QFileInfo::exists(from)) pairs.append({from, fromLocal(unitsidecar::pathFor(localPath(cluOut)))});
+    }
+    std::vector<std::string> targets;
+    for (const Pair& p : pairs) {
+        std::string e;
+        if (!filecommit::stageCopy(localPath(p.from), localPath(p.to), &e)) {
+            filecommit::discardStaged(targets);
+            return fail(tr("Could not stage %1:\n%2").arg(p.to, QString::fromStdString(e)));
+        }
+        targets.push_back(localPath(p.to));
+    }
+    const QString journal = QFileInfo(cluOut).absolutePath() + QDir::separator() + QStringLiteral(".")
+                            + QFileInfo(cluOut).fileName() + QStringLiteral(".commit");
+    std::string e;
+    if (!filecommit::commitStaged(targets, localPath(journal), &e))
+        return fail(tr("The export failed; nothing was written:\n%1").arg(QString::fromStdString(e)));
+    if (written) {
+        for (const Pair& p : pairs) *written << p.to;
+        // the base-rate files the exported .clu reads, as they stand
+        for (const char* type : {"res", "spk", "fet"}) {
+            const neurosuite::custody::Resolved r = type == std::string("res")
+                ? neurosuite::custody::resolveAny(stem, type, group, baseTok)
+                : neurosuite::custody::resolve(stem, type, group, baseTok);
+            *written << (QString::fromStdString(r.path) + (r.found ? QString() : tr("  (missing)")));
+        }
+    }
+    return true;
+}
+
+
 void KlustersDoc::updateAutoSavingInterval(int interval){
     savingInterval = interval;
     autoSave = true;
@@ -1160,6 +1221,28 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     if (!adoptsSpace
         && !stagePendingFiles(spkTarget, resTarget, fetTarget, targets, waveformsStaged, &err))
         return abandon(err, SAVE_ERROR);
+
+    // The super-sampled .res of a _U session (<base>.res.<tok>_U<f>.N, ticks =
+    // time x factor + phase): rewritten from the loaded times and phase column
+    // in the same transaction, so it never disagrees with the shared base-rate
+    // .res and the phase column it is derived from.  Not on a Save As into
+    // another token (that space's own res is its own business), nor while
+    // another space is shown (the phase column is not loaded).
+    if (!adoptsSpace && (!isSaveAs || saMethod == originMethod)) {
+        const QString tickRes = supersampledResPath();
+        const std::vector<int64_t> ticks = supersampledTicks();
+        if (!tickRes.isEmpty() && !ticks.empty()) {
+            const std::string target = localPath(tickRes);
+            const std::string st = filecommit::staged(target);
+            std::string fe;
+            if (!neurofileio::writeResBinary(st, ticks) || !filecommit::flushFile(st, &fe)) {
+                QFile::remove(QString::fromStdString(st));
+                return abandon(tr("Could not write the super-sampled spike times; nothing was saved:\n%1")
+                                   .arg(tickRes), SAVE_ERROR);
+            }
+            targets.push_back(target);
+        }
+    }
 
     // Cluster information: the clustering's .cli file (never the session
     // YAML -- see prepareSave), staged like the rest, left alone when unchanged.

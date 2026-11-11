@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Super-sampled spike times: `.res.<token>_U<f>.N` in ticks; the shared `.res` is always base-rate; Klusters exports a `_U` session at the recording's sampling](#2026-11-11--super-sampled-spike-times-restoken_ufn-in-ticks-the-shared-res-is-always-base-rate-klusters-exports-a-_u-session-at-the-recordings-sampling) |
 | 2026-11-11 | [Klusters: an atom's realign lands on the atom again -- the landing's parent selection no longer counts as a click](#2026-11-11--klusters-an-atoms-realign-lands-on-the-atom-again----the-landings-parent-selection-no-longer-counts-as-a-click) |
 | 2026-11-11 | [Klusters: the curation matrices follow the palette selection; a matrix lost off screen comes back](#2026-11-11--klusters-the-curation-matrices-follow-the-palette-selection-a-matrix-lost-off-screen-comes-back) |
 | 2026-11-11 | [Klusters: a delete at the end of the child list lands on the new last row, in list order](#2026-11-11--klusters-a-delete-at-the-end-of-the-child-list-lands-on-the-new-last-row-in-list-order) |
@@ -183,6 +184,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Super-sampled spike times: `.res.<token>_U<f>.N` in ticks; the shared `.res` is always base-rate; Klusters exports a `_U` session at the recording's sampling
+
+<details>
+<summary>Details</summary>
+
+**Contract** (`custody.hpp`, `ndm_resolve_io.py`, `ndm_custody`, fiber-kit `neuro_io` 0.66.7;
+`custody_vectors.tsv` +19 rows, kind `base_rate_token` in all four conformance tests).  A `.res`
+under a `_U<factor>` token holds the spike times in **ticks** -- `sample × factor + phase`, int64,
+one per spike in the shared `.res`'s row order: the sub-sample spike times of a super-sampled
+session.  `baseRateToken(m)` drops the `_U` (kind and lag kept: `stderiv_C5_U4_D34` →
+`stderiv_C5_D34`); `resolve()` takes a `_U` method's `.res` at the base rate (its `.spk` stays its
+own) and `resolveAny()` tries a `_U` preferred as its base-rate token and never scans to a `_U`
+copy, so no consumer of the shared `.res` or `.spk` can pick up ticks or another geometry.
+`doc/ndmanager-plugins/formats/naming.md`.
+
+**Klusters.**  *Actions ▸ Super-sample* writes `.res.<token>_U<f>.N` (`time × factor`, phase 0)
+beside the `.spk/.pca/.fet`; every save of a `_U` session rewrites it from the loaded times and
+the phase column in the same transaction (`KlustersDoc::supersampledResPath / supersampledTicks`),
+so it never disagrees with the shared `.res`.  *Actions ▸ Export at the Recording's Sampling…*
+(`KlustersDoc::exportAtBaseRate`; enabled when the `.clu` itself is under a `_U` token, saved):
+copies the saved `.clu` with its `.clc/.clp/.cli` under the base-rate token through `filecommit`,
+beside the base-rate `.res` (the shared one, moved by whole samples) and the base space's
+`.spk/.fet` (re-cut by the realign-from-any-space sync); the session stays open.  Row operations
+(sort by time, sub-sessions) already carry every `.res.*.N` of the group, the tick res included;
+fiber-kit's `read_res` resolves past it to the base-rate copy.  `doc/klusters/README.md`.  Not run
+in the GUI.
+
+</details>
 
 ---
 

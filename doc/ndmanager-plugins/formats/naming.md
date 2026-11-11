@@ -100,6 +100,12 @@ resolved (`resolvedIsStderiv`). See [`.spk`](spk.md).
   3. `<base>.<type>.standard.<group>` — only when `method` ≠ `standard`;
   4. `<base>.<type>.<group>` (untagged legacy).
 
+  For type `res` the method is first taken at the **base rate** (`baseRateToken`:
+  the `_U<factor>` dropped, kind and lag kept — `stderiv_C5_U4_D34` →
+  `stderiv_C5_D34`): a `.res` under a `_U` token holds **ticks**, not samples
+  (below), so `.clu.standard_U4.N` reads `.res.standard.N`; its `.spk` is its
+  own (`.spk.standard_U4.N`).
+
   If none exists, the result is the path under the waveform token (step 2's
   name, or step 1's when there is no `_D` suffix), for writers and error
   messages.
@@ -113,10 +119,13 @@ resolved (`resolvedIsStderiv`). See [`.spk`](spk.md).
 writing token is not known (C++ `custody::resolveAny`, bash `ndm_resolve_any`,
 Python `resolve_any`). Order:
 
-1. `<base>.<type>.<preferred>.<group>` (if `preferred` is given);
+1. `<base>.<type>.<preferred>.<group>` (if `preferred` is given — taken at the
+   base rate, `baseRateToken`);
 2. `.standard`, `.stderiv`, `.sdiff` (each once);
 3. any other `<base>.<type>.<token>.<group>` in the directory, where `<token>`
-   contains no dot;
+   contains no dot and carries no `_U<factor>` (a super-sampled copy is
+   another geometry: a `_U` `.res` holds ticks, a `_U` `.spk` `factor ×` the
+   samples — never the shared base-rate copy);
 4. the untagged `<base>.<type>.<group>`.
 
 If none exists it returns `<base>.<type>.<preferred or standard>.<group>`.
@@ -139,7 +148,7 @@ parsed from the right, so a token may carry several.
 | family | `standard`, `sdiff`, `stderiv` | the extraction engine and waveform domain |
 | kind | `S`, `C` | `S`: plain `methodOrder` spatial derivative (any `sdiffPairs` deliberately unused). `C`: the session's custom `sdiffPairs` pattern. |
 | order | integer | the spatial-derivative order actually applied |
-| `_U<factor>` | one digit, 2–9 | **super-sampled** waveform space: each raw sample interpolated into `factor` ticks (cubic spline from the recording; Klusters' super-sample mode), so the `.spk` holds `factor × nSamples` samples per waveform with the peak at 0-based tick `(peakSampleIndex − 1) × factor`. Part of the waveform token (`standard_U4`, `stderiv_C5_U4`). |
+| `_U<factor>` | one digit, 2–9 | **super-sampled** waveform space: each raw sample interpolated into `factor` ticks (cubic spline from the recording; Klusters' super-sample mode), so the `.spk` holds `factor × nSamples` samples per waveform with the peak at 0-based tick `(peakSampleIndex − 1) × factor`. Part of the waveform token (`standard_U4`, `stderiv_C5_U4`). A **`.res` under a `_U` token is in ticks**: `sample × factor + phase` (int64, one per spike, in the shared `.res`'s row order), the sub-sample spike times of a `_U` session — written by Klusters' super-sample build and at every save of the session; never the shared base-rate `.res` (resolution takes a `_U` method's res at the base rate). |
 | `_D<lag><dims>` | one digit each | lagged PCA feature space: per channel PC1 at −lag/0/+lag samples, plus PC2 when dims is 4 |
 
 Examples: `stderiv_S3` (plain all-pairs), `stderiv_C4` (single-partner

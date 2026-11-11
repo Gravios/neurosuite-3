@@ -208,6 +208,23 @@ inline std::string supersampledToken(const std::string& m, int factor)
     return w;
 }
 
+// The base-rate token of a super-sampled one: the _U<factor> dropped, kind and lag
+// kept (stderiv_C5_U4_D34 -> stderiv_C5_D34; a token without _U, or opaque, comes
+// back unchanged).  A .res under a _U token holds timestamps in TICKS (sample x
+// factor + phase: Klusters' super-sampled .res), and a _U .spk another geometry,
+// so the SHARED base-rate copy a consumer wants is the one under this token.
+// Mirrors base_rate_token (ndm_resolve_io.py, fiber-kit neuro_io) and
+// ndm_base_rate_token (ndm_custody).
+inline std::string baseRateToken(const std::string& m)
+{
+    const MethodSpec s = parseMethodToken(m);
+    if (s.supersample <= 1) return m;
+    std::string w = s.family;
+    if (s.kind != '\0') { w += '_'; w += s.kind; w += std::to_string(s.order); }
+    if (s.lag >= 1) { w += "_D"; w += std::to_string(s.lag); w += std::to_string(s.dims); }
+    return w;
+}
+
 // True when a spatial derivative of @p order leaves one channel that the PCA stage
 // drops (process_pca_stderiv; ndm_pca's -D): 1 (first difference) and 3
 // (all-pairs) are rank deficient by construction, 4's root output is redundant,
@@ -412,11 +429,15 @@ struct Resolved {
 //                     feature-space token reads the waveforms it was computed
 //                     from: stderiv_C5_D34 -> stderiv_C5), then standard, then
 //                     untagged; first that exists (else the waveform-token path,
-//                     for writers and diagnostics).
+//                     for writers and diagnostics).  A .res is always the
+//                     BASE-RATE one: a _U<factor> method resolves its res as its
+//                     base-rate token (the _U res holds ticks -- see
+//                     baseRateToken), while its .spk is its own.
 inline Resolved resolve(const std::string& base, const std::string& type,
-                        int group, const std::string& method)
+                        int group, const std::string& methodIn)
 {
     Resolved r;
+    const std::string method = type == "res" ? baseRateToken(methodIn) : methodIn;
     switch (classify(type)) {
     case Klass::SessionWide: {
         r.path  = sessionPath(base, type);
@@ -473,10 +494,15 @@ inline Resolved resolve(const std::string& base, const std::string& type,
 // file name, so the answer does not depend on the filesystem's listing order --
 // then the untagged legacy name.  Mirrors ndm_resolve_any (ndm_custody) and
 // resolve_any (ndm_resolve_io.py, fiber-kit neuro_io); custody_vectors.tsv.
+// The ONE base-rate copy: a _U<factor> preferred is tried as its base-rate token
+// and a _U-tagged copy is never scanned to -- a super-sampled .res holds ticks and
+// a super-sampled .spk another geometry (baseRateToken); a _U consumer reads its
+// own through resolve().
 inline Resolved resolveAny(const std::string& base, const std::string& type,
-                           int group, const std::string& preferred = std::string())
+                           int group, const std::string& preferredIn = std::string())
 {
     Resolved r;
+    const std::string preferred = baseRateToken(preferredIn);
     std::vector<std::string> order;
     if (!preferred.empty()) order.push_back(preferred);
     for (const char* m : { "standard", "stderiv", "sdiff" })
@@ -503,6 +529,7 @@ inline Resolved resolveAny(const std::string& base, const std::string& type,
         const std::string m = name.substr(stem.size(),
                                           name.size() - stem.size() - suffix.size());
         if (m.empty() || m.find('.') != std::string::npos) continue;  // not a bare token
+        if (supersampleOf(m) > 1) continue;                            // another geometry (ticks)
         names.push_back(name);
     }
     if (!names.empty()) {

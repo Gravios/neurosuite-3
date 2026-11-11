@@ -887,6 +887,13 @@ void KlustersApp::createMenus()
     connect(mSupersampleX4, &QAction::triggered, this, [this]() { slotSupersample(4); });
     registerActionCommand(QStringLiteral("space.supersample2"), QStringLiteral("Space"), mSupersampleX2);
     registerActionCommand(QStringLiteral("space.supersample4"), QStringLiteral("Space"), mSupersampleX4);
+    mExportBaseRate = actionMenu->addAction(tr("Export at the Recording's Sampling…"));
+    mExportBaseRate->setEnabled(false);
+    mExportBaseRate->setToolTip(tr("From a super-sampled (_U) session: copy the saved .clu (and its .clc/.clp/.cli)\n"
+                                   "under the base-rate token, beside the base-rate .res/.spk/.fet -- the shared\n"
+                                   ".res and the synced base space -- without leaving this session."));
+    connect(mExportBaseRate, &QAction::triggered, this, &KlustersApp::slotExportBaseRate);
+    registerActionCommand(QStringLiteral("space.exportBaseRate"), QStringLiteral("Space"), mExportBaseRate);
 
     // Step through the Space box without the mouse.  Ctrl+Tab, because plain
     // Tab / Shift+Tab move keyboard focus around the window.

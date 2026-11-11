@@ -95,6 +95,10 @@ while IFS= read -r line; do
             got="$(ndm_supersample_of "${F[1]}")"
             [ "$got" = "${F[2]:-1}" ] || { echo "FAIL supersample_of ${F[1]} -> ${F[2]:-1} (got $got)"; fail=$((fail+1)); }
             ;;
+        base_rate_token)
+            got="$(ndm_base_rate_token "${F[1]}")"
+            [ "$got" = "${F[2]:-}" ] || { echo "FAIL base_rate_token ${F[1]} -> ${F[2]:-} (got $got)"; fail=$((fail+1)); }
+            ;;
         drops_last)
             if ndm_sdiff_drops_last "${F[1]}"; then got=1; else got=0; fi
             [ "$got" = "${F[2]:-0}" ] || { echo "FAIL drops_last ${F[1]} -> ${F[2]:-0} (got $got)"; fail=$((fail+1)); }

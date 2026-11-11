@@ -141,8 +141,12 @@ Resolved = namedtuple("Resolved", "path method found")
 
 
 def resolve(base, type_, group, method):
-    """Resolve an input by class (see module docstring)."""
+    """Resolve an input by class (see module docstring).  A .res is always the
+    BASE-RATE one: a _U<factor> method resolves it as its base-rate token (its own
+    _U res holds ticks -- base_rate_token); its .spk is its own."""
     k = classify(type_)
+    if type_ == "res":
+        method = base_rate_token(method)
     if k == "SessionWide":
         path = session_path(base, type_)
         return Resolved(path, "", file_exists(path))
@@ -182,6 +186,22 @@ def supersample_of(method):
     stderiv_C5_U4_D34 -> 4.  Mirrors supersampleOf (custody.hpp), ndm_supersample_of
     (ndm_custody) and supersample_of (fiber-kit neuro_io)."""
     return parse_method_token(method).supersample
+
+
+def base_rate_token(method):
+    """The base-rate token of a super-sampled one: the _U<factor> dropped, kind and
+    lag kept (stderiv_C5_U4_D34 -> stderiv_C5_D34); unchanged without _U.  A .res
+    under a _U token holds timestamps in TICKS (sample x factor + phase, Klusters'
+    super-sampled .res) and a _U .spk another geometry, so the SHARED base-rate
+    copy is the one under this token.  Mirrors baseRateToken (custody.hpp),
+    ndm_base_rate_token (ndm_custody) and base_rate_token (fiber-kit neuro_io)."""
+    s = parse_method_token(method)
+    if s.supersample <= 1:
+        return method
+    w = s.family + (f"_{s.kind}{s.order}" if s.kind else "")
+    if s.lag >= 1:
+        w += f"_D{s.lag}{s.dims}"
+    return w
 
 
 # lag/dims default to 0 so existing unpacking by position keeps working.
@@ -248,6 +268,9 @@ def resolve_any(base, type_, group, preferred=""):
     copy, including suffixed tokens no fixed list can enumerate.  Mirrors
     ndm_resolve_any (bash) and custody::resolveAny (C++).
     """
+    # The ONE base-rate copy: a _U preferred is tried as its base-rate token and a
+    # _U-tagged copy is never scanned to (ticks / another geometry; base_rate_token).
+    preferred = base_rate_token(preferred) if preferred else preferred
     order = ([preferred] if preferred else []) + \
             [m for m in ("standard", "stderiv", "sdiff") if m != preferred]
     for m in order:
@@ -264,7 +287,7 @@ def resolve_any(base, type_, group, preferred=""):
         if not (name.startswith(stem) and name.endswith(suffix)):
             continue
         m = name[len(stem):len(name) - len(suffix)]
-        if not m or "." in m:
+        if not m or "." in m or supersample_of(m) > 1:
             continue
         return Resolved(os.path.join(directory, name), m, True)
     untagged = untagged_path(base, type_, group)

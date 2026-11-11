@@ -196,6 +196,42 @@ void KlustersApp::updateSupersampleActions()
                         : already ? tr("The shown space is already super-sampled (x%1).").arg(doc->supersampleFactor())
                         : tr("Build the super-sampled space over the shown one and show it."));
     }
+    // The export needs the .clu itself in a _U space (not merely a _U space shown).
+    if (mExportBaseRate) {
+        const bool cluSuper = open && neurosuite::custody::supersampleOf(doc->cluMethod().toStdString()) > 1;
+        mExportBaseRate->setEnabled(cluSuper);
+        mExportBaseRate->setStatusTip(cluSuper
+            ? tr("Copy the saved .clu under %1, beside the base-rate .res/.spk/.fet.")
+                  .arg(QString::fromStdString(neurosuite::custody::baseRateToken(doc->cluMethod().toStdString())))
+            : tr("Open a .clu saved under a super-sampled (_U) token first."));
+    }
+}
+
+void KlustersApp::slotExportBaseRate()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if (fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish before exporting."), 5000);
+        return;
+    }
+    if (doc->isModified()) {
+        QMessageBox::information(this, tr("Export at the recording's sampling"),
+                                 tr("Save the session first: the export copies the saved files."));
+        return;
+    }
+    QStringList written;
+    QString err;
+    if (!doc->exportAtBaseRate(&written, &err)) {
+        QMessageBox::warning(this, tr("Export at the recording's sampling"), err);
+        return;
+    }
+    QMessageBox::information(this, tr("Export at the recording's sampling"),
+                             tr("Written under the base-rate token:\n\n%1\n\nThe base-rate spike times are the shared .res "
+                                "(whole samples; the sub-sample phase stays in this space's .fet column and its tick .res). "
+                                "The base-rate .spk/.fet are re-cut at the realigned times by the realign-from-any-space "
+                                "sync; run Sync Feature Spaces and Save first if that was off.")
+                                 .arg(written.join(QLatin1Char('\n'))));
+    statusBar()->showMessage(tr("Exported at the recording's sampling: %1").arg(QFileInfo(written.value(0)).fileName()), 6000);
 }
 
 QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)

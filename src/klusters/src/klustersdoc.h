@@ -1783,6 +1783,17 @@ public:
      *  the .res by whole samples and leaves the rest here; a re-cut reads it back.
      *  -1 when the space is not super-sampled.  0-based feature column. */
     int  supersamplePhaseColumn() const;
+    /** <base>.res.<tok>_U<f>.N -- the .clu space's spike times in TICKS (empty when
+     *  the .clu's space is not super-sampled).  Written by buildSupersampledSpace
+     *  and rewritten by every save (saveDocument) from supersampledTicks(). */
+    QString supersampledResPath() const;
+    std::vector<int64_t> supersampledTicks() const;
+    /** Export at the recording's sampling: the open .clu (and its .clc/.clp/.cli)
+     *  copied under the base-rate token (baseRateToken) beside the base-rate
+     *  .res/.spk/.fet, which the shared .res and the synced base space already
+     *  are.  Only from a saved, unmodified _U session.  @p written lists the
+     *  files; false with @p error otherwise. */
+    bool exportAtBaseRate(QStringList* written, QString* error);
     /** The interpolator for every super-sampled cut (Preferences). */
     neurosuite::core::Interp supersampleInterp = neurosuite::core::Interp::CubicSpline;
     void setSupersampleInterp(neurosuite::core::Interp i) { supersampleInterp = i; }

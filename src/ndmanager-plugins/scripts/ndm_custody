@@ -95,6 +95,8 @@ ndm_resolve()
 {
     local base="$1" type="$2" group="$3" method="$4" p
     NDM_R_FOUND=0; NDM_R_METHOD=""
+    # A .res is always the BASE-RATE one (a _U method's own res holds ticks).
+    [ "$type" = res ] && method="$(ndm_base_rate_token "$method")"
     case "$(ndm_classify "$type")" in
         SessionWide)
             p="$(ndm_session_path "$base" "$type")"
@@ -215,6 +217,25 @@ ndm_supersample_of() {
     echo "$NDM_M_UP"
 }
 
+# The base-rate token of a super-sampled one: the _U<factor> dropped, kind and lag
+# kept (stderiv_C5_U4_D34 -> stderiv_C5_D34); unchanged without _U.  A .res under
+# a _U token holds TICKS (Klusters' super-sampled .res), a _U .spk another
+# geometry: the shared base-rate copy is the one under this token.  Mirrors
+# baseRateToken (custody.hpp) and base_rate_token (ndm_resolve_io.py, neuro_io).
+ndm_base_rate_token() {
+    local m="$1" sF="${NDM_M_FAMILY-}" sK="${NDM_M_KIND-}" sO="${NDM_M_ORDER-}" sL="${NDM_M_LAG-}" sD="${NDM_M_DIMS-}" sU="${NDM_M_UP-}" w
+    ndm_parse_method_token "$m"
+    if [ "$NDM_M_UP" != 1 ]; then
+        w="$NDM_M_FAMILY"
+        [ -n "$NDM_M_KIND" ] && w="${w}_${NDM_M_KIND}${NDM_M_ORDER}"
+        if [ -n "$NDM_M_LAG" ] && [ "$NDM_M_LAG" -ge 1 ] 2>/dev/null; then w="${w}_D${NDM_M_LAG}${NDM_M_DIMS}"; fi
+    else
+        w="$m"
+    fi
+    NDM_M_FAMILY="$sF"; NDM_M_KIND="$sK"; NDM_M_ORDER="$sO"; NDM_M_LAG="$sL"; NDM_M_DIMS="$sD"; NDM_M_UP="$sU"
+    echo "$w"
+}
+
 # True for the stderiv family: bare legacy "stderiv" and any stderiv_<kind><order>.
 # Not a prefix test - "stderivfoo" is a different family.
 # NOTE: clobbers NDM_M_* as a side effect.
@@ -282,6 +303,9 @@ ndm_check_method_token() {
 ndm_resolve_any() {
     local base="$1" type="$2" group="$3" pref="${4:-}" cand mm
     NDM_R_FOUND=0; NDM_R_METHOD=""
+    # The ONE base-rate copy: a _U preferred is tried as its base-rate token and a
+    # _U-tagged copy is never scanned to (ticks / another geometry).
+    [ -n "$pref" ] && pref="$(ndm_base_rate_token "$pref")"
     for mm in "$pref" standard stderiv sdiff; do
         [ -z "$mm" ] && continue
         cand="$(ndm_method_path "$base" "$type" "$group" "$mm")"
@@ -301,6 +325,7 @@ ndm_resolve_any() {
         [ -f "$cand" ] || continue
         mm="${cand#"$base.$type."}"; mm="${mm%".$group"}"
         case "$mm" in ''|*.*) continue ;; esac
+        [ "$(ndm_supersample_of "$mm")" = 1 ] || continue
         echo "$cand"; NDM_R_FOUND=1; NDM_R_METHOD="$mm"; return 0
     done
     cand="$(ndm_untagged_path "$base" "$type" "$group")"
