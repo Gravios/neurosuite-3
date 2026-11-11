@@ -14,6 +14,7 @@
 
 #include "klusters.h"
 #include "klustersdoc.h"
+#include "klustersdoc_internal.h"   // featureMethod: the token of a .pending working copy
 #include "klustersview.h"
 #include "data.h"
 #include "configuration.h"
@@ -246,8 +247,9 @@ QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)
     if (doc->isBorrowedSpace() && !showFeatureSpace(doc->cluMethod(), /*syncFirst*/ false))
         return QString();
     const Data& d = doc->data();
-    std::string spkTok = neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString());
-    if (spkTok.empty()) spkTok = neurosuite::custody::kDefaultMethod();   // an untagged legacy .spk is the standard space
+    // The shown .spk is a .pending working copy: its token is the file's it stands
+    // for (featureMethod strips the suffix; an untagged legacy .spk is standard).
+    const std::string spkTok = klustersdoc_internal::featureMethod(doc->activeSpkFilePath()).toStdString();
     const QString token = QString::fromStdString(neurosuite::custody::supersampledToken(spkTok, factor));
     if (token.isEmpty() || token == QString::fromStdString(spkTok)) return QString();
 

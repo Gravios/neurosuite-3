@@ -364,6 +364,26 @@ inline std::string methodOf(const std::string& path)
     return cand;                              // <base>.<type>.<method>.<group>
 }
 
+// Klusters' working copies and staging files sit beside the file they stand for
+// with one of these suffixes: <file>.pending (the session's working copy),
+// .pending.sync / .pending.tmp (a sync being built), .saving (a commit being
+// staged).  methodOf() wants the group LAST, so on such a path it returns "" --
+// which has read a stderiv working copy as standard and a super-sampled one as
+// base-rate.  Strip the suffix first: methodOfLive() is methodOf() of the file
+// the working copy stands for.
+inline std::string stripWorkingSuffix(const std::string& path)
+{
+    static const char* const suffixes[] = { ".pending.sync", ".pending.tmp", ".pending", ".saving" };
+    for (const char* s : suffixes) {
+        const std::string suf(s);
+        if (path.size() > suf.size() && path.compare(path.size() - suf.size(), suf.size(), suf) == 0)
+            return path.substr(0, path.size() - suf.size());
+    }
+    return path;
+}
+inline std::string methodOfLive(const std::string& path)
+{ return methodOf(stripWorkingSuffix(path)); }
+
 // ── full anchor parse ───────────────────────────────────────────────────────
 
 struct Anchor {

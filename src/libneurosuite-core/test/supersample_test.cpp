@@ -53,6 +53,15 @@ int main()
         check(supersampledToken("stderiv_C5_D34", 2) == "stderiv_C5_U2_D34", "supersampledToken keeps kind and lag: stderiv_C5_U2_D34");
         check(supersampledToken("", 4) == "standard_U4", "an untagged legacy .spk (empty token) super-samples as standard_U4, never a bare _U4");
         check(supersampledToken("standard_U4", 4) == "standard_U4", "a token already super-sampled comes back unchanged");
+        // Klusters' working copies: the token is the file's they stand for.
+        using neurosuite::custody::methodOfLive;
+        using neurosuite::custody::methodOf;
+        check(methodOf("s.spk.stderiv_C5.7.pending").empty(), "methodOf() of a .pending working copy is empty (the group is not last)");
+        check(methodOfLive("s.spk.stderiv_C5.7.pending") == "stderiv_C5", "methodOfLive() of a .pending working copy is the file's token");
+        check(methodOfLive("/p/s.spk.standard_U4.6.pending.sync") == "standard_U4", "... and of a sync's staging copy");
+        check(methodOfLive("s.fet.stderiv_C5_D34.6.saving") == "stderiv_C5_D34", "... and of a commit's staged file");
+        check(methodOfLive("s.spk.standard.6") == "standard" && methodOfLive("s.spk.6").empty(), "methodOfLive() is methodOf() on a committed path");
+        check(supersampledToken(methodOfLive("s.spk.stderiv_C5.7.pending"), 4) == "stderiv_C5_U4", "the super-sampled token of the shown (pending) stderiv_C5 .spk is stderiv_C5_U4");
     }
 
     // ── the interpolators on one channel ─────────────────────────────────

@@ -35,11 +35,7 @@ namespace klustersdoc_internal {
 // (re-extract-on-save rebuilt it raw).  Strip the suffix first, and a sync's
 // staging suffix (".pending.sync") before it.
 inline QString featureMethod(const QString& path) {
-    static const QString syncSuffix    = QStringLiteral(".sync");
-    static const QString pendingSuffix = QStringLiteral(".pending");
-    QString p = path.endsWith(syncSuffix) ? path.chopped(syncSuffix.size()) : path;
-    if (p.endsWith(pendingSuffix)) p.chop(pendingSuffix.size());
-    const std::string m = neurosuite::custody::methodOf(p.toStdString());
+    const std::string m = neurosuite::custody::methodOfLive(path.toStdString());
     return m.empty() ? QStringLiteral("standard") : QString::fromStdString(m);
 }
 

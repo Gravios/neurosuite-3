@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: the token of a `.pending` working copy -- the shown `.spk` was read as untagged (super-sample built `_U4` over stderiv waveforms; `%spk` was empty; a `_U` session opened at the base geometry)](#2026-11-11--klusters-the-token-of-a-pending-working-copy----the-shown-spk-was-read-as-untagged-super-sample-built-_u4-over-stderiv-waveforms-spk-was-empty-a-_u-session-opened-at-the-base-geometry) |
 | 2026-11-11 | [Klusters: super-sampling an untagged legacy session built a bare `_U4` token](#2026-11-11--klusters-super-sampling-an-untagged-legacy-session-built-a-bare-_u4-token) |
 | 2026-11-11 | [Super-sampled spike times: `.res.<token>_U<f>.N` in ticks; the shared `.res` is always base-rate; Klusters exports a `_U` session at the recording's sampling](#2026-11-11--super-sampled-spike-times-restoken_ufn-in-ticks-the-shared-res-is-always-base-rate-klusters-exports-a-_u-session-at-the-recordings-sampling) |
 | 2026-11-11 | [Klusters: an atom's realign lands on the atom again -- the landing's parent selection no longer counts as a click](#2026-11-11--klusters-an-atoms-realign-lands-on-the-atom-again----the-landings-parent-selection-no-longer-counts-as-a-click) |
@@ -185,6 +186,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: the token of a `.pending` working copy -- the shown `.spk` was read as untagged (super-sample built `_U4` over stderiv waveforms; `%spk` was empty; a `_U` session opened at the base geometry)
+
+<details>
+<summary>Details</summary>
+
+The session's live `.spk` is its `.pending` working copy
+(`<base>.spk.stderiv_C5.7.pending`), and `custody::methodOf` wants the group last, so on
+that path it returns "" (contract: `klustersdoc_internal.h` `featureMethod` says exactly
+this).  Three places and `Data` asked `methodOf` of the live path anyway: *Super-sample* on a
+`.clu.stderiv_C5_D34.6.manifold` session derived `_U4` (0959 would have made it
+`standard_U4` -- over stderiv waveforms, wrong); the plugin context's `%spk` was empty, so
+`fiber-kit-manifold` got no space; and `Data::applyWaveformSpaceGeometry` took a `_U4`
+session's pending `.spk` for factor 1.  `custody::stripWorkingSuffix / methodOfLive`
+(`.pending`, `.pending.sync`, `.pending.tmp`, `.saving`; `core_test_supersample` +6),
+`featureMethod` built on it, and the four sites use it: the super-sampled token of the shown
+`stderiv_C5` space is `stderiv_C5_U4`, `%spk` is `stderiv_C5`, a `_U` session's geometry is
+its own.  0959's empty-token default stays for a truly untagged `.spk`.
+
+</details>
 
 ---
 

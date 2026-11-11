@@ -136,7 +136,7 @@ bool Data::replaceFeatureSpace(const neurofileio::FetBinaryFile& fet, const QStr
     const qint64 sampleSize = isTwoBytesRecording ? 2 : 4;
     // A super-sampled space (.spk token _U<factor>) holds factor x nSamples per waveform.
     const int newFactor = std::max(1, neurosuite::custody::supersampleOf(
-                                          neurosuite::custody::methodOf(spkPath.toStdString())));
+                                          neurosuite::custody::methodOfLive(spkPath.toStdString())));
     const int base = baseNbSamplesInWaveform > 0 ? baseNbSamplesInWaveform : nbSamplesInWaveform;
     const qint64 expectedSpk = static_cast<qint64>(nbSpikes) * nbChannels
                              * (static_cast<qint64>(base) * newFactor) * sampleSize;
@@ -584,7 +584,9 @@ void Data::applyWaveformSpaceGeometry(const QString& spkPath){
     }
     int factor = 1;
     if(!spkPath.isEmpty()){
-        const std::string token = neurosuite::custody::methodOf(spkPath.toStdString());
+        // The live .spk is the session's .pending working copy: the token is the
+        // file's it stands for (methodOfLive), never "" for the suffix.
+        const std::string token = neurosuite::custody::methodOfLive(spkPath.toStdString());
         factor = neurosuite::custody::supersampleOf(token);
     }
     if(factor < 1) factor = 1;

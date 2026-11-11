@@ -835,9 +835,10 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
 
     // The shown space's waveforms are the source; the new tokens carry _U<factor>.
-    // An untagged legacy .spk (<base>.spk.<group>) is the standard space.
-    std::string shownSpk = neurosuite::custody::methodOf(activeSpkPath.toStdString());
-    if (shownSpk.empty()) shownSpk = neurosuite::custody::kDefaultMethod();
+    // The shown .spk is a .pending working copy (or a sync's): its token is the
+    // file's it stands for -- featureMethod strips the suffix; an untagged legacy
+    // .spk is the standard space.  methodOf() on the copy gave "" and a bare _U4.
+    const std::string shownSpk = featureMethod(activeSpkPath).toStdString();
     if (neurosuite::custody::supersampleOf(shownSpk) > 1)
         return fail(tr("The shown space (%1) is already super-sampled.").arg(QString::fromStdString(shownSpk)));
     const std::string newTok = neurosuite::custody::supersampledToken(shownSpk, factor);

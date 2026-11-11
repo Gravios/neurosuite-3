@@ -38,6 +38,7 @@
 #include "traceview.h"                  // TraceView::registerInput (primary-press seam)
 #include "correlationview.h"            // CorrelationView::registerInput (Ctrl+wheel scaling)
 #include "klustersdoc.h"
+#include "klustersdoc_internal.h"   // featureMethod: the token of a .pending working copy
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include <neurosuite/core/neurofileio.h> // shared res/clu/spk/fet readers+writers (decollide stage)
 #include <neurosuite/core/template_generate.hpp> // native fiber-template port (standalone template gen)
@@ -8928,8 +8929,9 @@ QMap<QString, QString> KlustersApp::pluginContext() const
     // The waveform space SHOWN (its .spk's method token, standard_U4 in super-sample
     // mode) and its factor, so an engine fitting waveforms follows the space Klusters
     // is in (fiber-kit-manifold's FK_MANIFOLD_SPK defaults to %spk).
-    ctx.insert(QStringLiteral("spk"), QString::fromStdString(
-        neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString())));
+    // (the shown .spk is a .pending working copy: methodOfLive strips the suffix,
+    // or the token came out empty and fiber-kit got no space at all)
+    ctx.insert(QStringLiteral("spk"), klustersdoc_internal::featureMethod(doc->activeSpkFilePath()));
     ctx.insert(QStringLiteral("supersample"), QString::number(doc->supersampleFactor()));
 
     // Waveform geometry of the open group, so a templating/extraction engine gets
