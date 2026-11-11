@@ -67,6 +67,7 @@ using namespace std;
 static int  buffer_size     = BUFFER_CHANNEL_SIZE; // scaled by nChanTot in main
 static bool verbose         = false;
 static extractspikes::NoiseOptions g_noise;           // -N/-E/-G: the .nst written with -R
+static extractspikes::SupersampleOptions g_super;    // -X/-I/-K: super-sampled -R
 
 // Per-run cross-buffer state for temporal first-difference.
 // Stores the last time-sample's *spatial* derivative from the previous
@@ -567,7 +568,7 @@ static void help(const char *name)
          << "                  and re-extract waveforms at those exact timestamps,\n"
          << "                  applying the same spatial+temporal derivative\n"
          << "                  transform as the detection path.  Ignores -r/-f/-l/-Z.\n\n"
-         << extractspikes::noiseHelp()
+         << extractspikes::noiseHelp() << extractspikes::supersampleHelp()
          << "  -v              verbose\n"
          << "  -h              this message\n\n"
          << "Order 3 (allpairs): s[i] = n*x[i] - sum_j(x[j])\n"
@@ -622,6 +623,8 @@ void parseArgs(int argc, char **argv, arguments &a)
         case 'R': a.useExistingRes = true; break;  // patch86
         case 'N': case 'E': case 'G':
                   extractspikes::parseNoiseFlag(i, argc, argv, g_noise); break;
+        case 'X': case 'I': case 'K':
+                  extractspikes::parseSupersampleFlag(i, argc, argv, g_super); break;
         case 'H': a.hybrid = true; break;
         case 'F': a.flatRunMax = atoi(argv[++i]);
                   if(a.flatRunMax < 0) { cerr << "error: -F must be >= 0." << endl; exit(1); }
@@ -766,7 +769,7 @@ static int runFromRes(const arguments &args,
             spec.setOff  = m.setOff.empty() ? nullptr : m.setOff.data();
             spec.setMem  = m.setMem.empty() ? nullptr : m.setMem.data();
             spec.expr    = m.expr;
-        }, g_noise);
+        }, g_noise, g_super);
 }
 
 // =========================================================================
@@ -779,6 +782,10 @@ int main(int argc, char *argv[])
     buffer_size *= args.totalChannelNumber;
 
     FILE *inputFile = fopen(args.inputFileName, "rb");
+    if(g_super.factor > 1 && !args.useExistingRes) {
+        cerr << "error: -X (super-sampling) needs -R." << endl;
+        exit(1);
+    }
     if(g_noise.windows > 0 && !args.useExistingRes) {
         cerr << "error: -N (noise statistics) needs -R." << endl;
         exit(1);

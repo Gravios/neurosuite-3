@@ -59,6 +59,15 @@
 			<option>-G</option> <replaceable>guard</replaceable>
 		</arg>
 		<arg>
+			<option>-X</option> <replaceable>factor</replaceable>
+		</arg>
+		<arg>
+			<option>-I</option> <replaceable>interp</replaceable>
+		</arg>
+		<arg>
+			<option>-K</option> <replaceable>0|1</replaceable>
+		</arg>
+		<arg>
 			<option>-v</option>
 		</arg>
 		<arg>
@@ -264,6 +273,41 @@
 					<para>
 						Clearance, in samples, added around every spike window before a noise window may
 						be drawn. Default: the waveform length.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-X</option> <replaceable>factor</replaceable></term>
+				<listitem>
+					<para>
+						With <option>-R</option>: super-sample the windows by <replaceable>factor</replaceable>
+						(2-9; 1 = off). Each window is cut with a margin of raw samples, interpolated on the
+						raw signal to nSamples x factor ticks, and only then transformed (a derived
+						stderiv window takes its temporal part from the interpolant's derivative per raw
+						sample, on the base-rate amplitude scale); the <filename>.spk</filename> rows hold
+						nSamples x factor ticks per channel.
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-I</option> <replaceable>interp</replaceable></term>
+				<listitem>
+					<para>
+						The interpolator of <option>-X</option>: <literal>smooth</literal> (default: a cubic
+						spline through Whittaker-smoothed samples, a low-pass of about 0.6 Nyquist),
+						<literal>spline</literal> (the exact natural cubic spline) or
+						<literal>lanczos3</literal> (windowed sinc).
+					</para>
+				</listitem>
+			</varlistentry>
+			<varlistentry>
+				<term><option>-K</option> <replaceable>0|1</replaceable></term>
+				<listitem>
+					<para>
+						With <option>-X</option>: 1 (default) reads <filename>basename.resU.N</filename>
+						(ticks = sample x factor + phase) for each spike's sub-sample phase when it exists
+						and agrees with <filename>basename.res.N</filename>, and writes it with phase 0
+						otherwise; 0 never touches it.
 					</para>
 				</listitem>
 			</varlistentry>

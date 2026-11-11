@@ -34,6 +34,7 @@ class QMenu;
 class RadialMenu;
 #include "actionid.h"      // ActionCatalogEntry (actionCatalog)
 #include <neurosuite/core/watershed2d.hpp>   // for Result struct used in live-preview state
+#include <neurosuite/core/supersample.hpp>    // Interp (the super-sampling interpolator preference)
 
 
 // include files for Qt
@@ -548,6 +549,17 @@ public:
     QString buildAndShowSupersampledSpace(int factor, bool quiet);
     /** The two Super-sample actions follow the Preferences gate and the document state. */
     void updateSupersampleActions();
+    /** The super-sampling interpolator the preference index names (0 cubic spline,
+     *  1 Lanczos-3, 2 smoothing spline), and its label for messages. */
+    static neurosuite::core::Interp interpFromPref(int i)
+    {
+        return i == 1 ? neurosuite::core::Interp::Lanczos3
+             : i == 0 ? neurosuite::core::Interp::CubicSpline : neurosuite::core::Interp::SmoothSpline;
+    }
+    static QString interpLabel(int i)
+    {
+        return i == 1 ? tr("Lanczos-3") : i == 0 ? tr("cubic spline") : tr("smoothing spline");
+    }
     /** Open a matrix hold for a hierarchy gesture (KlustersDoc::beginMatrixHold) with
      *  the busy cursor, and close it on a zero-timer queued AFTER the gesture's own
      *  deferred consolidation (scheduleAutoPostClusterEdit queues its timer during

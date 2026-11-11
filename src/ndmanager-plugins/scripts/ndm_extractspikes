@@ -31,12 +31,22 @@
 #    method          standard | sdiff | stderiv        (default standard)
 #    methodOrder     spatial-derivative order 0-3       (sdiff/stderiv; default 3)
 #    inputExtension  input data extension               (default fil)
+#    supersample     1 (off) | 2-9: SUPER-SAMPLED windows -- the raw window is
+#                    cut with a margin and interpolated to nSamples x factor
+#                    ticks BEFORE any transform, so a derived (stderiv) .spk
+#                    comes from the interpolated raw signal; written under the
+#                    _U<factor> token (standard_U4, stderiv_C5_U4) with the
+#                    group's tick .res (<base>.res.<resToken>_U<factor>.N,
+#                    ticks = sample x factor + phase) written once (phase 0) and
+#                    read for the phases by every later _U space
+#    interp          smooth (default) | spline | lanczos3  the interpolator
 #  Extraction needs no threshold/window parameters; under -R the engines take
 #  only channel geometry and, for sdiff/stderiv, the spatial-derivative transform.
 #
 #  USAGE
 #    ndm_extractspikes [parameter-file] [--method M] [--methodOrder N]
 #                      [--inputExtension EXT] [--group N[,M...]] [--force] [--check]
+#                      [--supersample F] [--interp smooth|spline|lanczos3]
 #    ndm_extractspikes [parameter-file] --allMethods [--check] [--inputExtension EXT]
 #    CLI flags override the YAML fields; --force re-extracts even when a .spk
 #    already exists (overwriting it); --group N[,M...] (or -g) re-extracts only
@@ -49,6 +59,9 @@
 #    re-extracts (overwrites) every group for every waveform method the session
 #    has .spk/.nst/.fet/.pca/.clu files for, skipping and reporting the ones the
 #    session file does not cover, and lists the feature spaces to re-project.
+#    --supersample F (or a _U<F> token in --method, which --allMethods passes
+#    for an existing _U space) re-extracts super-sampled; the post-extraction
+#    filter is not run on such a re-extraction (its .res was pruned already).
 #////////////////////////////////////////////////////////////////////////////
 
 # Source helper functions

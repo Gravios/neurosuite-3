@@ -225,6 +225,9 @@ KlustersApp::KlustersApp()
 
     //Create a KlustersDoc which will hold the document manipulated by the application.
     doc = new KlustersDoc(this,*clusterPalette,configuration().isCrashRecovery(),configuration().crashRecoveryInterval());
+    // The saved super-sampling interpolator reaches the document from the start, not
+    // only when the preferences dialog reports a change (applyPreferences).
+    doc->setSupersampleInterp(interpFromPref(configuration().getSupersampleInterp()));
 
 
     createMenus();
@@ -1953,8 +1956,7 @@ void KlustersApp::applyPreferences() {
     // Super-sampling: the gate and the interpolator; a mode just turned on applies
     // to the open session.
     updateSupersampleActions();
-    if (doc) doc->setSupersampleInterp(configuration().getSupersampleInterp() == 1
-                                       ? neurosuite::core::Interp::Lanczos3 : neurosuite::core::Interp::CubicSpline);
+    if (doc) doc->setSupersampleInterp(interpFromPref(configuration().getSupersampleInterp()));
     if (doc && !doc->url().isEmpty()) QTimer::singleShot(0, this, [this]() { applySupersampleMode(); });
 
     // Input bindings: a rebind in the Input preferences page set the registry overrides

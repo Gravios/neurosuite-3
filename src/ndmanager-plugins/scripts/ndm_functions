@@ -1838,11 +1838,16 @@ ndm_process_spikes()
 
 	# ── Parse command-line: <=1 positional (parameter file) + override flags ──
 	local methodOverride= methodOrderOverride= inputExtensionOverride= force= checkOnly= groupsOverride=
+	local supersampleOverride= interpOverride=
 	local -a positionals=()
 	while [ $# -gt 0 ]; do
 		case "$1" in
 			--method)           methodOverride="$2";            shift 2 ;;
 			--method=*)         methodOverride="${1#*=}";        shift ;;
+			--supersample)      supersampleOverride="$2";       shift 2 ;;
+			--supersample=*)    supersampleOverride="${1#*=}";   shift ;;
+			--interp)           interpOverride="$2";            shift 2 ;;
+			--interp=*)         interpOverride="${1#*=}";        shift ;;
 			--methodOrder)      methodOrderOverride="$2";        shift 2 ;;
 			--methodOrder=*)    methodOrderOverride="${1#*=}";    shift ;;
 			--inputExtension)   inputExtensionOverride="$2";     shift 2 ;;
@@ -1853,7 +1858,7 @@ ndm_process_spikes()
 			--check)            checkOnly=1;                     shift ;;
 			--)                 shift; while [ $# -gt 0 ]; do positionals+=("$1"); shift; done ;;
 			-*)                 echo_error "unknown option: $1"
-			                    echo_error "usage: $program [parameter-file] [--method M] [--methodOrder 0-3] [--inputExtension EXT] [--group N[,M...]] [--force] [--check]"
+			                    echo_error "usage: $program [parameter-file] [--method M] [--methodOrder 0-3] [--inputExtension EXT] [--group N[,M...]] [--supersample F] [--interp smooth|spline|lanczos3] [--force] [--check]"
 			                    exit $GENERAL_ERROR ;;
 			*)                  positionals+=("$1");             shift ;;
 		esac
@@ -1898,10 +1903,48 @@ ndm_process_spikes()
 	# (C) or deliberately not (S), and the order is the derivative order actually run.
 	# Recording all three in the name means a consumer never has to infer how a file
 	# was produced from parameters that may have changed since.
+	# SUPER-SAMPLING (extract only; core/supersample.hpp): the windows are cut
+	# with a margin, interpolated on the RAW signal to nSamples x factor ticks and
+	# only then transformed, so every derived .spk comes from the interpolated raw
+	# signal; written under the _U<factor> token (standard_U4, stderiv_C5_U4),
+	# with the group's tick .res (<base>.res.<resToken>_U<factor>.N, ticks =
+	# sample x factor + phase) read for the phases when it exists and written
+	# (phase 0) when it does not.  Asked for by --supersample F / the node's
+	# `supersample` field, or by a _U token in --method (stderiv_C5_U4), which
+	# --allMethods passes for an existing _U space.  `interp` / --interp picks
+	# the interpolator (smooth = default).
+	local supersample=$supersampleOverride interp=$interpOverride outMethod
+	[ -z "$supersample" ] && [ "$mode" = extract ] && supersample=$(read_script_parameter $session supersample)
+	[ -z "$interp" ] && [ "$mode" = extract ] && interp=$(read_script_parameter $session interp)
+	ndm_parse_method_token "$method"
+	if [ "$NDM_M_UP" != 1 ]; then
+		if [ -n "$supersample" ] && [ "$supersample" != "$NDM_M_UP" ]; then
+			echo_error "method '$method' is super-sampled x$NDM_M_UP but --supersample says $supersample"
+			exit $GENERAL_ERROR
+		fi
+		supersample=$NDM_M_UP
+		method=$(ndm_base_rate_token "$method")
+	fi
+	supersample=${supersample:-1}
+	case "$supersample" in
+		1) : ;;
+		[2-9]) ;;
+		*) echo_error "supersample must be 1 (off) or 2-9 (got '$supersample')"; exit $GENERAL_ERROR ;;
+	esac
+	if [ "$supersample" != 1 ] && [ "$mode" = detect ]; then
+		echo_error "supersample applies to extraction only (ndm_extractspikes)"; exit $GENERAL_ERROR
+	fi
+	interp=${interp:-smooth}
+	case "$interp" in
+		smooth|spline|lanczos3) : ;;
+		*) echo_error "interp must be smooth, spline or lanczos3 (got '$interp')"; exit $GENERAL_ERROR ;;
+	esac
 	ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
 	methodFamily=$NDM_M_FAMILY
 	methodKind=$NDM_M_KIND
 	methodTokenOrder=$NDM_M_ORDER
+	outMethod=$method
+	[ "$supersample" != 1 ] && outMethod=$(ndm_supersampled_token "$method" "$supersample")
 	methodOrder=$methodOrderOverride
 	[ -z "$methodOrder" ] && methodOrder=$(read_script_parameter $session methodOrder sdiffOrder)
 	methodOrder=${methodOrder:-3}
@@ -1990,7 +2033,9 @@ ndm_process_spikes()
 			nEmptyGroups=$((nEmptyGroups + 1))
 			continue
 		fi
-		if [ -n "$force" ] || [ ${#onlyGroups[@]} -gt 0 ] || ! outputs_exist "$(ndm_method_path "$session" $outType "$group" "$method")"; then
+		local _outTok=$method
+		[ "$mode" = extract ] && _outTok=$outMethod
+		if [ -n "$force" ] || [ ${#onlyGroups[@]} -gt 0 ] || ! outputs_exist "$(ndm_method_path "$session" $outType "$group" "$_outTok")"; then
 			electrodeGroups="$electrodeGroups $group"
 		fi
 	done
@@ -2294,7 +2339,7 @@ ndm_process_spikes()
 		# method, the first waveform-method .res found); it is copied into the temp
 		# slot and left untouched.  Every group is checked before any engine runs,
 		# and each .res is named with its spike count, so a wrong one shows.
-		local -A sharedRes=()
+		local -A sharedRes=() tickRes=() tickResHad=()
 		for group in $electrodeGroups; do
 			# (ndm_shared_res names the expected path even when it finds none: its
 			# status says whether it did.)
@@ -2312,6 +2357,23 @@ ndm_process_spikes()
 		for group in $electrodeGroups; do
 			echo_info "   group $group: ${sharedRes[$group]##*/} ($(( $(wc -c < "${sharedRes[$group]}") / 8 )) spikes)"
 		done
+		if [ "$supersample" != 1 ]; then
+			echo_info " Super-sampling             : x$supersample ($interp), waveforms written as $outMethod"
+			for group in $electrodeGroups; do
+				local _tr
+				# (not in a command substitution: NDM_R_FOUND / NDM_R_METHOD are read)
+				ndm_supersampled_res "$session" "$group" "$supersample" "$method" > /dev/null || true
+				_tr=$(ndm_method_path "$session" res "$group" "$NDM_R_METHOD")
+				tickRes[$group]="$_tr"
+				if [ "$NDM_R_FOUND" = 1 ]; then
+					tickResHad[$group]=1
+					echo_info "   group $group: phases from ${_tr##*/}"
+				else
+					tickResHad[$group]=0
+					echo_info "   group $group: ${_tr##*/} will be written (phase 0)"
+				fi
+			done
+		fi
 	fi
 	export PROCESS_EXTRACTSPIKES_MEM_CAP_GB=${memCapGB:-2}
 
@@ -2345,12 +2407,16 @@ ndm_process_spikes()
 			echo_error "cannot create the temporary input link $tmp.fil"
 			exit $GENERAL_ERROR
 		fi
+		local -a superArgs=()
 		if [ "$mode" = extract ]; then
 			declare -i i=0
 			for group in $bGroups; do
 				i=$i+1
 				cp "${sharedRes[$group]}" $tmp.res.$i
+				rm -f $tmp.resU.$i
+				[ "$supersample" != 1 ] && [ "${tickResHad[$group]}" = 1 ] && cp "${tickRes[$group]}" $tmp.resU.$i
 			done
+			[ "$supersample" != 1 ] && superArgs=(-X "$supersample" -I "$interp")
 		fi
 		[ ${#geomKeys[@]} -gt 1 ] && echo_info " Groups$bGroups (nSamples $samplesInWaveform, peakSampleIndex $peakSample)"
 
@@ -2377,7 +2443,7 @@ ndm_process_spikes()
 					process_extractspikes \
 						-n $nChannels -c $bList \
 						-w $samplesInWaveform -p $peakSample \
-						"${noiseArgs[@]}" \
+						"${noiseArgs[@]}" "${superArgs[@]}" \
 						-R $tmp
 				fi
 				;;
@@ -2402,7 +2468,7 @@ ndm_process_spikes()
 						-n $nChannels -c $bList \
 						-w $samplesInWaveform -p $peakSample \
 						$sdiffOrderArg "${bPairsArg[@]}" \
-						"${noiseArgs[@]}" \
+						"${noiseArgs[@]}" "${superArgs[@]}" \
 						-R $tmp
 				fi
 				;;
@@ -2421,12 +2487,24 @@ ndm_process_spikes()
 				mv $tmp.res.$i "$(ndm_method_path "$session" res "$group" "$method")"
 				rm -f $tmp.spk.$i
 			else
-				# Reused the shared .res unchanged; produce only the waveform file.
+				# Reused the shared .res unchanged; produce only the waveform file
+				# (under the _U token when super-sampled, with the group's tick .res
+				# written when it did not exist yet).
 				rm -f $tmp.res.$i
-				spkOut="$(ndm_method_path "$session" spk "$group" "$method")"
+				spkOut="$(ndm_method_path "$session" spk "$group" "$outMethod")"
 				mv $tmp.spk.$i "$spkOut"
-				[ ${#noiseArgs[@]} -gt 0 ] && mv $tmp.nst.$i "$(ndm_method_path "$session" nst "$group" "$method")"
-				if [ "$xFilter" = 1 ]; then
+				[ ${#noiseArgs[@]} -gt 0 ] && mv $tmp.nst.$i "$(ndm_method_path "$session" nst "$group" "$outMethod")"
+				if [ "$supersample" != 1 ]; then
+					if [ "${tickResHad[$group]}" = 1 ]; then rm -f $tmp.resU.$i
+					elif [ -f $tmp.resU.$i ]; then mv $tmp.resU.$i "${tickRes[$group]}"; echo_info "   wrote ${tickRes[$group]##*/}"
+					fi
+				fi
+				if [ "$xFilter" = 1 ] && [ "$supersample" != 1 ]; then
+					# The filter prunes the SHARED .res (and every per-spike file with it) on
+					# flat runs / duplicates measured in raw samples; a super-sampled
+					# re-extraction follows a .res that extraction already pruned.
+					[ "$i" = 1 ] && echo_info " Post-extraction filter     : not run on a super-sampled re-extraction"
+				elif [ "$xFilter" = 1 ]; then
 					groupCh=$(yaml_read $session "//spikeDetection/channelGroups/group[$group]/channels/channel")
 					nGroupCh=$(echo $groupCh | wc -w)
 					# The raw source is checked as well: a dead channel is mixed with its

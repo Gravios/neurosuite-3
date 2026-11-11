@@ -37,7 +37,7 @@ void   PrefRealignment::setSupersampleMode(int m) { supersampleModeCombo->setCur
 int    PrefRealignment::getSupersampleMode() const { const int i = supersampleModeCombo->currentIndex(); return i == 1 ? 2 : i == 2 ? 4 : 0; }
 void   PrefRealignment::setSupersampleAdopt(bool b) { supersampleAdoptCheckBox->setChecked(b); }
 bool   PrefRealignment::getSupersampleAdopt() const { return supersampleAdoptCheckBox->isChecked(); }
-void   PrefRealignment::setSupersampleInterp(int i) { supersampleInterpCombo->setCurrentIndex(i == 1 ? 1 : 0); }
+void   PrefRealignment::setSupersampleInterp(int i) { supersampleInterpCombo->setCurrentIndex((i >= 0 && i <= 2) ? i : 2); }
 int    PrefRealignment::getSupersampleInterp() const { return supersampleInterpCombo->currentIndex(); }
 
 void   PrefRealignment::setAutoRealignAfterMerge(bool b) { autoRealignAfterMergeCheckBox->setChecked(b); }

@@ -217,6 +217,27 @@ ndm_supersample_of() {
     echo "$NDM_M_UP"
 }
 
+# The super-sampled token of a base-rate one: _U<factor> after the kind, before the
+# lag (stderiv_C5_D34 -> stderiv_C5_U4_D34; an empty/untagged token -> standard_U4).
+# Unchanged when the factor is not 2-9 or the token already carries _U (or is
+# opaque).  Mirrors supersampledToken (custody.hpp) / supersampled_token (neuro_io).
+# NOTE: clobbers NDM_M_* as a side effect.
+ndm_supersampled_token() {
+    local m="$1" factor="$2" w
+    [ -n "$m" ] || m=standard
+    ndm_parse_method_token "$m"
+    if [ "$factor" -ge 2 ] 2>/dev/null && [ "$factor" -le 9 ] && [ "$NDM_M_UP" = 1 ] \
+       && { [ -n "$NDM_M_KIND" ] || [ -n "$NDM_M_LAG" ] || [ "$NDM_M_FAMILY" = "$m" ]; }; then
+        w="$NDM_M_FAMILY"
+        [ -n "$NDM_M_KIND" ] && w="${w}_${NDM_M_KIND}${NDM_M_ORDER}"
+        w="${w}_U${factor}"
+        if [ -n "$NDM_M_LAG" ] && [ "$NDM_M_LAG" -ge 1 ] 2>/dev/null; then w="${w}_D${NDM_M_LAG}${NDM_M_DIMS}"; fi
+    else
+        w="$m"
+    fi
+    echo "$w"
+}
+
 # The base-rate token of a super-sampled one: the _U<factor> dropped, kind and lag
 # kept (stderiv_C5_U4_D34 -> stderiv_C5_D34); unchanged without _U.  A .res under
 # a _U token holds TICKS (Klusters' super-sampled .res), a _U .spk another

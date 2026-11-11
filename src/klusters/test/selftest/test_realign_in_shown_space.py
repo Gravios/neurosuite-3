@@ -43,7 +43,7 @@ def main():
         clu = f"{base}.clu.standard.1"
         steps = [{"supersample": 4}, {"show": "standard_U4"}, {"realign": 2}, {"dump": True, "cluster": 2},
                  {"nudge": [3, 1]}, {"dump": True, "cluster": 3}, {"save": True}, {"dump": True, "cluster": 2}]
-        rep = R.run(klusters, clu, steps, d, realignFromAnySpace=True)
+        rep = R.run(klusters, clu, steps, d, realignFromAnySpace=True, supersampleInterp=0)
         check(rep.get("code") == 0 and rep["rc"] == 0,
               f"the self-test ran every step (code {rep.get('code')}, rc {rep['rc']})", rep.get("stderr", ""))
         results = [r for r in rep.get("results", []) if "step" in r]

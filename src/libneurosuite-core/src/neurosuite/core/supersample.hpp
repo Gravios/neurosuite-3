@@ -14,12 +14,24 @@
 // sample * factor + phase, in ticks (custody.hpp baseRateToken), so a later
 // re-cut of the same spike reproduces the same waveform.
 //
-// Two interpolators:
-//   CubicSpline  natural cubic spline through the raw samples (the default): local,
-//                no ringing, exact at the samples; a margin of raw samples on either
-//                side of the window makes the edges as good as the middle.
+// Three interpolators:
+//   SmoothSpline natural cubic spline through SMOOTHED samples (the default): the
+//                samples are first passed through a Whittaker smoother (penalised
+//                second differences, weight kSmoothLambda), which is a low-pass of
+//                about 0.6 Nyquist -- the spike (1-5 kHz at 32 kHz) is untouched,
+//                the sample-to-sample noise an exact interpolant would reproduce
+//                between the samples is not.  Not exact at the samples (within the
+//                noise); smooth derivative.
+//   CubicSpline  natural cubic spline through the raw samples: local, no ringing,
+//                exact at the samples; a margin of raw samples on either side of the
+//                window makes the edges as good as the middle.
 //   Lanczos3     windowed sinc (a = 3): the band-limited answer, slightly sharper
 //                peaks, mild ringing near clipped samples.
+// Each has a derivative (per raw sample): the stderiv of a super-sampled window
+// takes its temporal part from the interpolant's derivative (spike_extract.hpp),
+// not from the difference of two rounded ticks -- at x4 that difference is a
+// quarter of the base-rate one with the same rounding error, which is what made
+// the _U stderiv waveforms jagged.
 //
 // Everything is header-only and allocation-light; the per-call scratch is the
 // caller's (Scratch), so an extraction loop reuses it.
@@ -36,17 +48,24 @@
 
 namespace neurosuite::core {
 
-enum class Interp { CubicSpline, Lanczos3 };
+enum class Interp { CubicSpline, Lanczos3, SmoothSpline };
 
 inline const char* interpName(Interp i)
-{ return i == Interp::Lanczos3 ? "lanczos3" : "spline"; }
+{ return i == Interp::Lanczos3 ? "lanczos3" : i == Interp::SmoothSpline ? "smooth" : "spline"; }
 
 inline bool parseInterp(const std::string& s, Interp& out)
 {
-    if (s == "spline" || s == "cubic" || s == "cubic-spline") { out = Interp::CubicSpline; return true; }
-    if (s == "lanczos" || s == "lanczos3" || s == "sinc")     { out = Interp::Lanczos3;    return true; }
+    if (s == "spline" || s == "cubic" || s == "cubic-spline")        { out = Interp::CubicSpline;  return true; }
+    if (s == "lanczos" || s == "lanczos3" || s == "sinc")            { out = Interp::Lanczos3;     return true; }
+    if (s == "smooth" || s == "smooth-spline" || s == "smoothing")   { out = Interp::SmoothSpline; return true; }
     return false;
 }
+
+// The Whittaker smoother's roughness weight (unit sample spacing): the response
+// to a sinusoid of angular frequency w is 1 / (1 + lambda (2 - 2 cos w)^2), half
+// power at about 0.6 Nyquist for 0.15 (9.6 kHz at 32 kHz; a 0.3 ms spike trough
+// lives below 3 kHz and loses < 1 % of its depth).
+inline constexpr double kSmoothLambda = 0.15;
 
 // Raw samples to hold on either side of the window for the edges to be exact:
 // the spline wants two, Lanczos-3 three.  Three serves both.
@@ -54,10 +73,70 @@ inline constexpr int kSupersampleMargin = 3;
 
 struct SupersampleScratch {
     std::vector<double> x, m, c, d, l, mu, z;
+    std::vector<double> f;                       // the smoothed samples (SmoothSpline)
+    std::vector<double> a, b, e, g;              // the pentadiagonal solve's work
 };
 
-// Second-derivative coefficients of the natural cubic spline through x[0..n)
-// at unit spacing (Burden & Faires); O(n).
+// Whittaker smoother at unit spacing: f minimising sum (y - f)^2 + lambda * sum (d2 f)^2,
+// i.e. (I + lambda D'D) f = y with D the second-difference operator -- a symmetric
+// pentadiagonal system, solved by a banded Cholesky in O(n).  n < 3: f = y.
+inline void whittakerSmooth(const double* y, int n, double lambda, double* f, SupersampleScratch& s)
+{
+    if (n < 3 || lambda <= 0.0) { for (int i = 0; i < n; ++i) f[i] = y[i]; return; }
+    // A = I + lambda D'D: diagonal a, first off-diagonal b, second off-diagonal e (constant lambda)
+    s.a.assign(static_cast<std::size_t>(n), 0.0); s.b.assign(static_cast<std::size_t>(n), 0.0);
+    s.e.assign(static_cast<std::size_t>(n), 0.0); s.g.assign(static_cast<std::size_t>(n), 0.0);
+    for (int i = 0; i < n; ++i) {
+        // row i of D'D: the second-difference rows that touch i are those centred at i-1, i, i+1 (inside 1..n-2)
+        double diag = 0.0, off1 = 0.0, off2 = 0.0;
+        for (int c = i - 1; c <= i + 1; ++c) {                 // rows of D centred at c
+            if (c < 1 || c > n - 2) continue;
+            const double wi = (c == i) ? -2.0 : 1.0;           // D[c][i]
+            diag += wi * wi;
+            if (i + 1 <= n - 1) { const double wj = (c == i + 1) ? -2.0 : (std::abs(c - (i + 1)) == 1 ? 1.0 : 0.0); off1 += wi * wj; }
+            if (i + 2 <= n - 1) { const double wj = (c == i + 2) ? -2.0 : (std::abs(c - (i + 2)) == 1 ? 1.0 : 0.0); off2 += wi * wj; }
+        }
+        s.a[static_cast<std::size_t>(i)] = 1.0 + lambda * diag;
+        s.b[static_cast<std::size_t>(i)] = lambda * off1;      // A[i][i+1]
+        s.e[static_cast<std::size_t>(i)] = lambda * off2;      // A[i][i+2]
+    }
+    // Banded Cholesky A = L D L' with L unit lower, bandwidth 2 (l1 on the first, l2 on the second sub-diagonal)
+    std::vector<double>& d  = s.d;  d.assign(static_cast<std::size_t>(n), 0.0);
+    std::vector<double>& l1 = s.l;  l1.assign(static_cast<std::size_t>(n), 0.0);
+    std::vector<double>& l2 = s.mu; l2.assign(static_cast<std::size_t>(n), 0.0);
+    for (int i = 0; i < n; ++i) {
+        double di = s.a[static_cast<std::size_t>(i)];
+        if (i >= 1) di -= l1[static_cast<std::size_t>(i - 1)] * l1[static_cast<std::size_t>(i - 1)] * d[static_cast<std::size_t>(i - 1)];
+        if (i >= 2) di -= l2[static_cast<std::size_t>(i - 2)] * l2[static_cast<std::size_t>(i - 2)] * d[static_cast<std::size_t>(i - 2)];
+        d[static_cast<std::size_t>(i)] = di;
+        if (i + 1 < n) {
+            double v = s.b[static_cast<std::size_t>(i)];
+            if (i >= 1) v -= l2[static_cast<std::size_t>(i - 1)] * l1[static_cast<std::size_t>(i - 1)] * d[static_cast<std::size_t>(i - 1)];
+            l1[static_cast<std::size_t>(i)] = v / di;
+        }
+        if (i + 2 < n) l2[static_cast<std::size_t>(i)] = s.e[static_cast<std::size_t>(i)] / di;
+    }
+    // forward: L z = y ; diagonal: w = z / d ; back: L' f = w
+    std::vector<double>& z = s.z; z.assign(static_cast<std::size_t>(n), 0.0);
+    for (int i = 0; i < n; ++i) {
+        double v = y[i];
+        if (i >= 1) v -= l1[static_cast<std::size_t>(i - 1)] * z[static_cast<std::size_t>(i - 1)];
+        if (i >= 2) v -= l2[static_cast<std::size_t>(i - 2)] * z[static_cast<std::size_t>(i - 2)];
+        z[static_cast<std::size_t>(i)] = v;
+    }
+    for (int i = n - 1; i >= 0; --i) {
+        double v = z[static_cast<std::size_t>(i)] / d[static_cast<std::size_t>(i)];
+        if (i + 1 < n) v -= l1[static_cast<std::size_t>(i)] * f[i + 1];
+        if (i + 2 < n) v -= l2[static_cast<std::size_t>(i)] * f[i + 2];
+        f[i] = v;
+    }
+}
+
+// Second derivatives M_j of the natural cubic spline through x[0..n) at unit
+// spacing (Burden & Faires' tridiagonal solve gives c_j = M_j / 2; the Hermite
+// form in splineAt wants M itself -- until 0965 the half was used, which made
+// the curve between samples a cross between the spline and the chord: ~1 % off
+// on a spike trough and visibly kinked); O(n).
 inline void naturalSplineCoeffs(const double* x, int n, SupersampleScratch& s)
 {
     s.m.assign(static_cast<std::size_t>(n), 0.0);
@@ -72,6 +151,7 @@ inline void naturalSplineCoeffs(const double* x, int n, SupersampleScratch& s)
         s.z[i]  = (alpha - s.z[i - 1]) / s.l[i];
     }
     for (int j = n - 2; j >= 1; --j) s.m[j] = s.z[j] - s.mu[j] * s.m[j + 1];
+    for (int j = 1; j < n - 1; ++j) s.m[j] *= 2.0;            // c_j -> M_j
 }
 
 // Spline value at fractional position t (0 <= t <= n-1); clamped outside.
@@ -87,6 +167,17 @@ inline double splineAt(const double* x, int n, const SupersampleScratch& s, doub
     // cubic Hermite form of the natural spline with second derivatives m
     return v * x[i] + u * x[i + 1]
          + ((v * v * v - v) * mi + (u * u * u - u) * mj) / 6.0;
+}
+
+// Derivative of the spline (per unit of t); clamped flat outside.
+inline double splineDerivAt(const double* x, int n, const SupersampleScratch& s, double t)
+{
+    if (n < 2 || t <= 0.0 || t >= n - 1) return 0.0;
+    int i = static_cast<int>(t);
+    if (i >= n - 1) i = n - 2;
+    const double u = t - i, v = 1.0 - u;
+    const double mi = s.m[i], mj = s.m[i + 1];
+    return x[i + 1] - x[i] + ((1.0 - 3.0 * v * v) * mi + (3.0 * u * u - 1.0) * mj) / 6.0;
 }
 
 inline double lanczos3At(const double* x, int n, double t)
@@ -115,15 +206,32 @@ inline double lanczos3At(const double* x, int n, double t)
 // margin + (k + phaseTicks) / factor, into out[0..nOut).  nOut is the caller's
 // (nSamp * factor for a window; one more, from tick -1, when a transform wants
 // the sample before the window as its seed -- then pass firstTick = -1).
+// `deriv`, when given, receives the interpolant's derivative at each tick, per RAW
+// sample (so a tick-to-tick slope is deriv / factor).
 inline void supersampleChannel(const double* raw, int nRaw, int margin, int factor, int phaseTicks,
                                Interp interp, double* out, int nOut, int firstTick,
-                               SupersampleScratch& s)
+                               SupersampleScratch& s, double* deriv = nullptr)
 {
-    if (interp == Interp::CubicSpline) naturalSplineCoeffs(raw, nRaw, s);
+    const double* x = raw;
+    if (interp == Interp::SmoothSpline) {
+        s.f.resize(static_cast<std::size_t>(nRaw));
+        whittakerSmooth(raw, nRaw, kSmoothLambda, s.f.data(), s);
+        x = s.f.data();
+    }
+    if (interp != Interp::Lanczos3) naturalSplineCoeffs(x, nRaw, s);
     const double inv = 1.0 / factor;
     for (int k = 0; k < nOut; ++k) {
         const double t = margin + (firstTick + k + phaseTicks) * inv;
-        out[k] = interp == Interp::CubicSpline ? splineAt(raw, nRaw, s, t) : lanczos3At(raw, nRaw, t);
+        if (interp == Interp::Lanczos3) {
+            out[k] = lanczos3At(x, nRaw, t);
+            if (deriv) {                                     // central difference of the kernel
+                const double h = 0.05;
+                deriv[k] = (lanczos3At(x, nRaw, t + h) - lanczos3At(x, nRaw, t - h)) / (2.0 * h);
+            }
+        } else {
+            out[k] = splineAt(x, nRaw, s, t);
+            if (deriv) deriv[k] = splineDerivAt(x, nRaw, s, t);
+        }
     }
 }
 

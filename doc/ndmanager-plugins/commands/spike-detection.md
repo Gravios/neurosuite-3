@@ -406,12 +406,49 @@ its `.res` by the difference, and readers that use the group's own value
 | `noiseWindows` | `20000` | spike-free windows drawn per group for the `.nst`; `0` = no `.nst` |
 | `noiseRejectZ` | `5` | `.nst` outlier gate, in robust standard deviations |
 | `noiseGuard` | `nSamples` | clearance (samples) around every spike window before a noise window may be drawn |
+| `supersample` | `1` | `2`–`9`: super-sampled windows under the `_U<factor>` token — see [Super-sampled extraction](#super-sampled-extraction-supersample-interp) |
+| `interp` | `smooth` | the super-sampling interpolator: `smooth`, `spline` or `lanczos3` |
 
 ```yaml
 - name: ndm_extractspikes
   parameters:
   - {name: method,      value: standard, status: Optional}
   - {name: methodOrder, value: 3,        status: Optional}
+```
+
+### Super-sampled extraction (`supersample`, `interp`)
+
+`ndm_extractspikes --supersample 4` (or `supersample: 4` on the node, or a
+`_U4` token in `--method`: `stderiv_C5_U4`) cuts every window with a margin of
+raw samples on either side, interpolates it **on the raw signal** to
+`nSamples × 4` ticks, and only then applies the method's transform -- so a
+derived `stderiv` space is computed from the interpolated raw signal, with its
+temporal part the interpolant's derivative per raw sample (on the base-rate
+amplitude scale: tick `4k` stands where sample `k`'s derivative stands) rather
+than the difference of two rounded ticks.  The waveforms go to
+`session.spk.<method>_U4.N` (`standard_U4`, `stderiv_C5_U4`; the `.nst` beside
+it counts ticks), and the group's tick `.res` -- **one per factor for all
+spaces**, named after the shared `.res` (`.res.stderiv_S3.6` →
+`.res.stderiv_S3_U4.6`), `sample × 4 + phase` in ticks -- is written once
+(phase 0) and read by every later `_U4` extraction for the phases, so all `_U4`
+spaces carry the same sub-sample times (Klusters' realign in one of them moves
+the phases for all).  Klusters, asked for the `_U4` space of a session whose
+`.spk.<method>_U4.N` exists, fits the basis and the `.fet` on those waveforms
+instead of cutting its own.
+
+`interp` picks the interpolator (`--interp`): `smooth` (default) is a natural
+cubic spline through Whittaker-smoothed samples -- a low-pass of about 0.6
+Nyquist, so the spike is untouched and the sample-to-sample noise an exact
+interpolant reproduces between the samples is not; `spline` the exact natural
+cubic spline; `lanczos3` a windowed sinc.  A space must be re-cut with the
+interpolator it was built with: Klusters' *Super-sampling → Interpolation*
+preference must name it.  The post-extraction filter is not run on a
+super-sampled re-extraction (it prunes the shared `.res`, which the base-rate
+extraction did already).  The engines' flags are `-X`/`-I`/`-K` (with `-R`).
+
+```yaml
+  - {name: supersample, value: 4,      status: Optional}
+  - {name: interp,      value: smooth, status: Optional}
 ```
 
 ### Noise statistics (`noiseWindows`, `noiseRejectZ`, `noiseGuard`)

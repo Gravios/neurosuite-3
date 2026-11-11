@@ -78,8 +78,13 @@ struct SpikeWindowSpec {
     // Super-sampling (supersample.hpp): with factor > 1 each window is cut with
     // kSupersampleMargin raw samples on either side, interpolated to
     // nSamp * factor ticks (tick k at raw time start + (k + phase) / factor) and
-    // emitted as nChan * nSamp * factor entries; the transform, when applied,
-    // runs in the super-sampled domain (its seed the tick before the window).
+    // emitted as nChan * nSamp * factor entries.  The transform, when applied,
+    // runs on the INTERPOLANT in double precision: the spatial derivative of the
+    // unrounded ticks, and the temporal part as the interpolant's derivative per
+    // raw sample (centred at the tick, on the base-rate amplitude scale) rather
+    // than the difference of two rounded ticks; rounded once, at the end.  So a
+    // super-sampled stderiv file is derived from the interpolated raw signal, and
+    // tick k*factor of it stands where base-rate sample k's derivative stands.
     // `phaseTicks`, when given, holds each spike's sub-sample phase in ticks
     // (0 .. factor-1; Klusters' .php sidecar); null = 0 for every spike.
     int    supersample = 1;
@@ -142,7 +147,9 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
     std::vector<std::int16_t> seed(static_cast<std::size_t>(spec.nChan));
     std::vector<double>       spatialRow(static_cast<std::size_t>(spec.nChan));
     std::vector<std::int16_t> rawCM;                           // [ch][nSamp + mgLo + mgHi], super-sampling only
-    std::vector<double>       ticks;                           // one channel's ticks, from tick -1
+    std::vector<double>       ticks, dticks;                   // one channel's ticks (and their derivative), from tick -1
+    std::vector<double>       upCM, dupCM;                     // all channels' unrounded ticks / derivatives [ch][nOut]
+    std::vector<double>       dRow(static_cast<std::size_t>(spec.nChan));
     SupersampleScratch        scratch;
 
     std::int64_t emitted = 0, bad = 0;
@@ -212,15 +219,25 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
                     const int phase = spec.phaseTicks ? static_cast<int>(spec.phaseTicks[i]) : 0;
                     scratch.x.resize(static_cast<std::size_t>(nRaw));
                     ticks.resize(static_cast<std::size_t>(nOut) + 1);
+                    const bool wantDeriv = spec.applyTransform && spec.temporalDiff;
+                    if (spec.applyTransform) {
+                        upCM.resize(static_cast<std::size_t>(spec.nChan) * nOut);
+                        if (wantDeriv) { dticks.resize(static_cast<std::size_t>(nOut) + 1); dupCM.resize(upCM.size()); }
+                    }
                     for (int ci = 0; ci < spec.nChan; ++ci) {
                         for (int s = 0; s < nRaw; ++s)
                             scratch.x[static_cast<std::size_t>(s)] = rawCM[static_cast<std::size_t>(ci) * nRaw + s];
                         supersampleChannel(scratch.x.data(), nRaw, mgLo, up, phase, spec.interp,
-                                           ticks.data(), nOut + 1, -1, scratch);
+                                           ticks.data(), nOut + 1, -1, scratch, wantDeriv ? dticks.data() : nullptr);
                         leadRow[static_cast<std::size_t>(ci)] = roundToInt16(ticks[0]);
-                        for (int k = 0; k < nOut; ++k)
+                        for (int k = 0; k < nOut; ++k) {
                             wavCM[static_cast<std::size_t>(ci) * nOut + k] =
                                 roundToInt16(ticks[static_cast<std::size_t>(k) + 1]);
+                            if (spec.applyTransform) {
+                                upCM[static_cast<std::size_t>(ci) * nOut + k] = ticks[static_cast<std::size_t>(k) + 1];
+                                if (wantDeriv) dupCM[static_cast<std::size_t>(ci) * nOut + k] = dticks[static_cast<std::size_t>(k) + 1];
+                            }
+                        }
                     }
                 }
                 got = true;
@@ -232,7 +249,19 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
             // the lead sample, or (super-sampled) the tick before the window when the
             // low margin holds at least one raw sample.
             const bool haveSeed = up == 1 ? (lead != 0) : (mgLo >= 1 && spec.seedFromPrevious);
-            if (spec.applyTransform && !spec.temporalDiff) {
+            if (spec.applyTransform && up > 1) {
+                // Super-sampled: the transform on the interpolant, in double, rounded once.
+                const std::vector<double>& src = spec.temporalDiff ? dupCM : upCM;
+                for (int s = 0; s < nOut; ++s) {
+                    for (int ci = 0; ci < spec.nChan; ++ci)
+                        dRow[static_cast<std::size_t>(ci)] = src[static_cast<std::size_t>(ci) * nOut + s];
+                    for (int ci = 0; ci < spec.nChan; ++ci)
+                        wavCM[static_cast<std::size_t>(ci) * nOut + s] =
+                            clampToInt16(spatialDeriv(spec.order, dRow.data(), ci, spec.nChan,
+                                                      spec.partner, spec.setOff, spec.setMem,
+                                                      spec.expr));
+                }
+            } else if (spec.applyTransform && !spec.temporalDiff) {
                 std::vector<double>& r = spatialRow;
                 for (int s = 0; s < nOut; ++s) {
                     for (int ci = 0; ci < spec.nChan; ++ci)

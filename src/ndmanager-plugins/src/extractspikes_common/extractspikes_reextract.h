@@ -37,6 +37,62 @@
 
 namespace extractspikes {
 
+// -X / -I / -K: a SUPER-SAMPLED re-extraction (core/supersample.hpp).  With
+// factor > 1 each window is cut from the .fil with a margin, interpolated to
+// nSamp * factor ticks on the raw signal and only then transformed (the stderiv
+// of a super-sampled window is the interpolant's derivative, so every derived
+// .spk comes from the interpolated raw signal).  The tick .res of the group,
+// <stem>.resU.<g> (the bash marshals <base>.res.<resToken>_U<f>.<g> there):
+// when it exists and agrees with the shared .res it supplies each spike's
+// phase (ticks = sample * factor + phase); otherwise it is written as
+// sample * factor (phase 0) beside the .spk.
+struct SupersampleOptions {
+    int                       factor = 1;        // -X: ticks per raw sample (2-9); 1 = off
+    neurosuite::core::Interp  interp = neurosuite::core::Interp::SmoothSpline;   // -I
+    bool                      ticks  = true;     // -K 0: never read/write the tick .res
+};
+
+inline bool parseSupersampleFlag(int& i, int argc, char** argv, SupersampleOptions& o)
+{
+    const char f = argv[i][1];
+    if(f != 'X' && f != 'I' && f != 'K') return false;
+    if(i + 1 >= argc) {
+        std::fprintf(stderr, "error: -%c needs a value.\n", f);
+        std::exit(1);
+    }
+    const char* v = argv[++i];
+    if(f == 'X') {
+        o.factor = std::atoi(v);
+        if(o.factor < 1 || o.factor > 9) {
+            std::fprintf(stderr, "error: -X %s: the super-sample factor is 1 (off) or 2-9.\n", v);
+            std::exit(1);
+        }
+    } else if(f == 'I') {
+        if(!neurosuite::core::parseInterp(v, o.interp)) {
+            std::fprintf(stderr, "error: -I %s: the interpolator is smooth, spline or lanczos3.\n", v);
+            std::exit(1);
+        }
+    } else {
+        o.ticks = std::atoi(v) != 0;
+    }
+    return true;
+}
+
+inline std::string supersampleHelp()
+{
+    return
+        "Super-sampled re-extraction (-R):\n"
+        "  -X factor       ticks per raw sample (2-9; 1 = off): the window is interpolated\n"
+        "                  on the raw signal to nSamples * factor ticks before any\n"
+        "                  transform, and written as <stem>.spk.<g> of that length\n"
+        "  -I interp       smooth (default: cubic spline through Whittaker-smoothed\n"
+        "                  samples, ~0.6 Nyquist), spline (exact natural cubic spline),\n"
+        "                  lanczos3 (windowed sinc)\n"
+        "  -K 0|1          1 (default): read <stem>.resU.<g> (ticks = sample * factor +\n"
+        "                  phase) for each spike's phase when it exists and agrees with\n"
+        "                  <stem>.res.<g>, else write it with phase 0\n\n";
+}
+
 // -N / -E / -G: the per-group noise statistics written beside the .spk.
 struct NoiseOptions {
     long long windows = 0;     // -N: spike-free windows to draw per group; 0 = no .nst
@@ -97,7 +153,8 @@ inline const char* noiseHelp()
 template <class Args, class SetSpec>
 int reextractFromRes(const Args& args, int** channelList, const int* channelNb_group,
                      int nbGroups, bool verbose, SetSpec setSpec,
-                     const NoiseOptions& noise = NoiseOptions{})
+                     const NoiseOptions& noise = NoiseOptions{},
+                     const SupersampleOptions& ss = SupersampleOptions{})
 {
     std::FILE* fil = std::fopen(args.inputFileName, "rb");
     if(!fil) {
@@ -157,7 +214,56 @@ int reextractFromRes(const Args& args, int** channelList, const int* channelNb_g
         spec.nChan           = nCG;
         setSpec(grp, spec);
 
-        const std::size_t rowElems = (std::size_t)args.spikeLength * (std::size_t)nCG;
+        // Super-sampling: the factor, the interpolator and each spike's phase.
+        std::vector<std::int8_t> phases;
+        if(ss.factor > 1) {
+            spec.supersample = ss.factor;
+            spec.interp      = ss.interp;
+            if(ss.ticks) {
+                std::ostringstream tickPath;
+                tickPath << args.outputBaseFileName << ".resU." << (grp + 1);
+                std::vector<int64_t> ticks;
+                if(std::FILE* tf = std::fopen(tickPath.str().c_str(), "rb")) {
+                    int64_t t;
+                    while(std::fread(&t, sizeof t, 1, tf) == 1) ticks.push_back(t);
+                    std::fclose(tf);
+                }
+                bool agrees = ticks.size() == resTs.size();
+                if(agrees) {
+                    phases.assign(resTs.size(), 0);
+                    for(std::size_t k = 0; k < resTs.size() && agrees; ++k) {
+                        const int64_t ph = ticks[k] - resTs[k] * ss.factor;
+                        if(ph < 0 || ph >= ss.factor) agrees = false;
+                        else phases[k] = static_cast<std::int8_t>(ph);
+                    }
+                }
+                if(!agrees) {
+                    phases.clear();
+                    if(!ticks.empty())
+                        std::fprintf(stderr, "[-R] warning: group %d: %s does not agree with the .res "
+                                     "(%zu ticks for %zu spikes); phases taken as 0 and the file rewritten\n",
+                                     grp + 1, tickPath.str().c_str(), ticks.size(), resTs.size());
+                    std::FILE* tf = std::fopen(tickPath.str().c_str(), "wb");
+                    if(!tf) {
+                        std::fprintf(stderr, "[-R] cannot write '%s': %s\n", tickPath.str().c_str(), std::strerror(errno));
+                        errors++;
+                    } else {
+                        for(int64_t t : resTs) { const int64_t k = t * ss.factor; std::fwrite(&k, sizeof k, 1, tf); }
+                        std::fclose(tf);
+                        if(verbose) std::cout << "[-R] group " << (grp + 1) << ": wrote " << tickPath.str()
+                                              << " (sample x " << ss.factor << ", phase 0)" << std::endl;
+                    }
+                } else if(verbose) {
+                    std::cout << "[-R] group " << (grp + 1) << ": phases from " << tickPath.str() << std::endl;
+                }
+                if(!phases.empty()) spec.phaseTicks = phases.data();
+            }
+            if(verbose) std::cout << "[-R] group " << (grp + 1) << ": super-sampled x" << ss.factor << " ("
+                                  << neurosuite::core::interpName(ss.interp) << "), " << spec.outSamples()
+                                  << " ticks per channel" << std::endl;
+        }
+
+        const std::size_t rowElems = (std::size_t)spec.outSamples() * (std::size_t)nCG;
         bool writeFailed = false;
         int64_t zeroRows = 0;
         prog.beginStage("G" + std::to_string(grp + 1), (long long)resTs.size());

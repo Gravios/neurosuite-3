@@ -72,6 +72,7 @@ using namespace extractspikes;
 int buffer_size = BUFFER_CHANNEL_SIZE; // total buffer size
 static bool verbose = false;
 static extractspikes::NoiseOptions g_noise;           // -N/-E/-G: the .nst written with -R
+static extractspikes::SupersampleOptions g_super;    // -X/-I/-K: super-sampled -R
 const char *program_version = "process_extractspikes 0.8.1 (08-08-2012)";
 
 /** Usage error **/
@@ -107,7 +108,7 @@ void help(const char* name) {
 	cout << " -R\t\t\tre-extract mode: read existing basename.res.<grp>" << endl
 	<< "\t\t\tand re-extract .spk waveforms at those exact timestamps" << endl
 	<< "\t\t\t(no detection; threshold/refractory/-l ignored)" << endl;
-	cout << endl << extractspikes::noiseHelp();
+	cout << endl << extractspikes::noiseHelp() << extractspikes::supersampleHelp();
 //	cout << " -a look for the maxi absolute value to look for a spike peak" 
 //	<< endl; // Cheat option
 	cout << " -v\t\t\tverbose mode" << endl;
@@ -128,7 +129,7 @@ static int runFromRes(const arguments &args,
 {
 	return reextractFromRes(args, channelList, channelNb_group, nbGroups, verboseFlag,
 	                        [](int, neurosuite::core::SpikeWindowSpec&) {},    // raw copy
-	                        g_noise);
+	                        g_noise, g_super);
 }
 
 
@@ -230,7 +231,11 @@ int main(int argc,char *argv[]) {
 	// keep their -1 defaults.  checkInputs range-checks them, so running it in -R
 	// mode rejected every extraction with "negative refractory period (-1)".
 	// process_extractspikes_sdiff and _stderiv already gate the call this way.
-	if(g_noise.windows > 0 && !arguments.useExistingRes) {
+	if(g_super.factor > 1 && !arguments.useExistingRes) {
+        cerr << "error: -X (super-sampling) needs -R." << endl;
+        exit(1);
+    }
+    if(g_noise.windows > 0 && !arguments.useExistingRes) {
 		cerr << "error: -N (noise statistics) needs -R." << endl;
 		exit(1);
 	}
@@ -1349,6 +1354,10 @@ void parseArgs(const int argc, char **argv, arguments &arguments) {
 
 			case 'N': case 'E': case 'G': // per-group noise statistics (-R)
 				extractspikes::parseNoiseFlag(i, argc, argv, g_noise);
+				break;
+
+			case 'X': case 'I': case 'K': // super-sampled re-extraction (-R)
+				extractspikes::parseSupersampleFlag(i, argc, argv, g_super);
 				break;
 
 			case 'v': // verbose mode

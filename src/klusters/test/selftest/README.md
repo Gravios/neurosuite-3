@@ -11,8 +11,9 @@ Steps: `{"show": method}`, `{"realign": cluster}`, `{"nudge": [cluster, delta]}`
 `{"supersample": factor}`, `{"follow": true}`, `{"save": true}`, `{"saveas": "<path.clu>"}`,
 `{"dump": true, "cluster": id}` (the spaces, their files and working copies, the loaded times
 and phases of the cluster's spikes). A realign's completion is recorded as a `realignDone`
-entry with its shift count and log. Spec keys `realignFromAnySpace`, `realignVerbose` and
-`supersampleMode` set those preferences for the run (a private `QSettings` under the work
+entry with its shift count and log. Spec keys `realignFromAnySpace`, `realignVerbose`,
+`supersampleMode` and `supersampleInterp` (0 cubic spline, 1 Lanczos-3, 2 smoothing spline;
+the tests that compare ticks to raw samples exactly set 0) set those preferences for the run (a private `QSettings` under the work
 directory, never the user's).
 
 Tests: `test_follow_supersampled.py` (a `_U4`/`_U2` space follows a realign made in the `.clu`'s

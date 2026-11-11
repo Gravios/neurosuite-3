@@ -264,10 +264,14 @@ QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)
         const qint64 spkBytes = nSpikes * d.nbOfChannels() * static_cast<qint64>(d.baseNbSamplesPerWaveform()) * factor * 2;
         const QString rec = doc->recordingPath();
         const bool haveRec = QFileInfo::exists(rec);
+        const bool haveSpk = QFileInfo::exists(QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", token.toStdString(), group)));
         if (!quiet) {
-            const QString how = haveRec
+            const QString how = haveSpk
+                ? tr("the waveforms exist already (%1, built elsewhere -- ndm_extractspikes --supersample); the basis and the .fet are fitted on them")
+                      .arg(QFileInfo(QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", token.toStdString(), group))).fileName())
+                : haveRec
                 ? tr("every spike re-cut from %1 and interpolated (%2)").arg(QFileInfo(rec).fileName(),
-                      configuration().getSupersampleInterp() == 1 ? tr("Lanczos-3") : tr("cubic spline"))
+                      interpLabel(configuration().getSupersampleInterp()))
                 : tr("no recording found: the stored windows are interpolated (the last ticks of each window clamp to its final sample)");
             const auto answer = QMessageBox::question(this, tr("Super-sample ×%1").arg(factor),
                 tr("Build the super-sampled space <b>%1</b> over the .clu's space (%2)?<br><br>"

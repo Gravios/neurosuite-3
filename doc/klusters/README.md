@@ -177,8 +177,21 @@ see `src/klusters/test/selftest/README.md`.)
 
 For machines with the memory and cores to spare, a feature space can be built
 over **super-sampled** waveforms: each acquisition sample interpolated into 2
-or 4 ticks (a natural cubic spline through the recording's samples, or a
-windowed sinc). **Preferences → Curation → Realignment → Super-sampling** sets
+or 4 ticks — a **smoothing spline** by default (a cubic spline through
+Whittaker-smoothed samples, a low-pass of about 0.6 Nyquist: the spike is
+untouched, the sample-to-sample noise an exact interpolant reproduces between
+the samples is not), or the exact natural cubic spline, or a windowed sinc. A
+super-sampled **stderiv** space is derived from the interpolated raw signal: its
+temporal part is the interpolant's derivative per raw sample (on the base-rate
+amplitude scale, tick `4k` standing where sample `k`'s derivative stands), not
+the difference of two rounded ticks. The same cut is available outside Klusters
+as `ndm_extractspikes --supersample 4 [--interp smooth|spline|lanczos3]`
+(`--method stderiv_C5 --supersample 4`, or `--method stderiv_C5_U4`), which
+writes `.spk.<token>_U4.N` and the group's tick `.res`; Klusters then fits the
+basis and the `.fet` on those waveforms instead of cutting its own. A space
+must be re-cut (realign, nudge, sync) with the interpolator it was built with:
+the preference below must match, or the space is rebuilt.
+**Preferences → Curation → Realignment → Super-sampling** sets
 the **mode** (off by default, ×2, ×4): in a mode, every session that opens
 gets the super-sampled space over its `.clu`'s space built — if its files are
 not there yet — and shown, and with *Also save the clustering under the

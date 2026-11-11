@@ -17,6 +17,8 @@
 
 //include files for the application
 #include "configuration.h"
+
+#include <algorithm>
 #include <QSettings>
 #include <QStandardPaths>
 
@@ -122,7 +124,7 @@ void Configuration::read() {
     realignFromAnySpace = settings.value("realignFromAnySpace", true).toBool();
     { const int m = settings.value("supersampleMode", 0).toInt(); supersampleMode = (m == 2 || m == 4) ? m : 0; }
     supersampleAdopt    = settings.value("supersampleAdopt", false).toBool();
-    supersampleInterp   = settings.value("supersampleInterp", 0).toInt() == 1 ? 1 : 0;
+    supersampleInterp   = std::clamp(settings.value("supersampleInterp", 2).toInt(), 0, 2);   // 2 = smoothing spline (0965 default)
     matrixFollowSelection = settings.value("matrixFollowSelection", true).toBool();
     autoRealignAfterMerge = settings.value("autoRealignAfterMerge", true).toBool();
     autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", true).toBool();

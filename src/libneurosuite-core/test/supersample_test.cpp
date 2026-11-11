@@ -81,7 +81,47 @@ int main()
                 if (k % F == 0) maxAtSamples = std::max(maxAtSamples, err); else maxBetween = std::max(maxBetween, err);
             }
             check(maxAtSamples < 1e-9, std::string(interpName(ip)) + ": exact at the samples (max err " + std::to_string(maxAtSamples) + ")");
-            check(maxBetween < 12.0, std::string(interpName(ip)) + ": a Gaussian trough (sd 2.5 samples) between samples to ~1% of its depth (max err " + std::to_string(maxBetween) + ")");
+            check(maxBetween < (ip == Interp::Lanczos3 ? 5.0 : 1.0), std::string(interpName(ip)) + ": a Gaussian trough (sd 2.5 samples) between samples to " + (ip == Interp::Lanczos3 ? "0.5" : "0.1") + "% of its depth (max err " + std::to_string(maxBetween) + ")");
+        }
+        // the smoothing spline on a NOISY trough: near the samples, smoother between them, the trough kept
+        {
+            std::mt19937 rng(11);
+            std::normal_distribution<double> nd(0.0, 60.0);
+            std::vector<double> noisy(raw);
+            for (double& v : noisy) v += nd(rng);
+            const int nOut = (n - 2 * mg) * F;
+            std::vector<double> outE(static_cast<std::size_t>(nOut)), outS(static_cast<std::size_t>(nOut));
+            supersampleChannel(noisy.data(), n, mg, F, 0, Interp::CubicSpline, outE.data(), nOut, 0, s);
+            supersampleChannel(noisy.data(), n, mg, F, 0, Interp::SmoothSpline, outS.data(), nOut, 0, s);
+            double devS = 0.0, roughE = 0.0, roughS = 0.0, errE = 0.0, errS = 0.0;
+            for (int k = 0; k < nOut; ++k) {
+                const double t = mg + static_cast<double>(k) / F, truth = gauss(t, 19.5, 2.5);
+                if (k % F == 0) devS = std::max(devS, std::fabs(outS[static_cast<std::size_t>(k)] - noisy[static_cast<std::size_t>(mg + k / F)]));
+                errE += (outE[static_cast<std::size_t>(k)] - truth) * (outE[static_cast<std::size_t>(k)] - truth);
+                errS += (outS[static_cast<std::size_t>(k)] - truth) * (outS[static_cast<std::size_t>(k)] - truth);
+                if (k >= 1 && k + 1 < nOut) {
+                    const double d2E = outE[static_cast<std::size_t>(k) + 1] - 2 * outE[static_cast<std::size_t>(k)] + outE[static_cast<std::size_t>(k) - 1];
+                    const double d2S = outS[static_cast<std::size_t>(k) + 1] - 2 * outS[static_cast<std::size_t>(k)] + outS[static_cast<std::size_t>(k) - 1];
+                    roughE += d2E * d2E; roughS += d2S * d2S;
+                }
+            }
+            check(devS < 3 * 60.0, "smooth: passes within the noise of the samples (max deviation " + std::to_string(devS) + " at noise SD 60)");
+            check(roughS < 0.5 * roughE, "smooth: the x4 curve is at least twice as smooth as the exact spline's (sum d2^2 " + std::to_string(roughS) + " vs " + std::to_string(roughE) + ")");
+            check(errS < errE, "smooth: closer to the noise-free trough than the exact spline (" + std::to_string(std::sqrt(errS / nOut)) + " vs " + std::to_string(std::sqrt(errE / nOut)) + " RMS)");
+            double minS = 0.0; for (double v : outS) minS = std::min(minS, v);
+            check(std::fabs(minS - (-1000.0)) < 80.0, "smooth: the trough depth is kept to within the noise (" + std::to_string(minS) + ")");
+            // the derivative: of the clean Gaussian, against its analytic derivative
+            std::vector<double> dv(static_cast<std::size_t>(nOut)), vv(static_cast<std::size_t>(nOut));
+            double maxDerr = 0.0;
+            for (Interp ip : {Interp::CubicSpline, Interp::SmoothSpline, Interp::Lanczos3}) {
+                supersampleChannel(raw.data(), n, mg, F, 0, ip, vv.data(), nOut, 0, s, dv.data());
+                for (int k = 0; k < nOut; ++k) {
+                    const double t = mg + static_cast<double>(k) / F;
+                    const double dtrue = gauss(t, 19.5, 2.5) * (-(t - 19.5) / (2.5 * 2.5));
+                    maxDerr = std::max(maxDerr, std::fabs(dv[static_cast<std::size_t>(k)] - dtrue));
+                }
+            }
+            check(maxDerr < 25.0, "the interpolants' derivative per raw sample matches the Gaussian's (max err " + std::to_string(maxDerr) + " of a peak slope ~243)");
         }
         // the phase: tick 0 at phase p == tick p at phase 0
         std::vector<double> a(8), b(8);
@@ -103,7 +143,7 @@ int main()
         in[5] = 32767; in[6] = 32767;     // saturation stays in range
         SupersampleScratch s;
         bool exact = true;
-        for (Interp ip : {Interp::CubicSpline, Interp::Lanczos3}) {
+        for (Interp ip : {Interp::CubicSpline, Interp::Lanczos3}) {         // (smooth is not exact at the samples)
             supersampleWindow(in.data(), nChan, nRaw, mg, F, 0, ip, out.data(), nSamp * F, s);
             for (int ch = 0; ch < nChan; ++ch)
                 for (int k = 0; k < nSamp; ++k)
@@ -172,14 +212,29 @@ int main()
             if (shifted[3][static_cast<std::size_t>(k) * 2 + 1] < shifted[3][static_cast<std::size_t>(argmin) * 2 + 1]) argmin = k;
         check(badS == 0 && argmin == 20, "a per-spike phase of 2 ticks shifts the cut by half a sample (" + std::to_string(argmin) + " == 20)");
         auto [tr, badT] = run(4, true, nullptr);
-        // the transform in the super-sampled domain: the first tick of channel 0 is sd[tick0] - sd[tick-1];
-        // with first-difference order and 2 channels, sd = ch0 - ch1 ... just check the shape and that it differs from the plain one
-        check(badT == 0 && tr[1].size() == static_cast<std::size_t>(2 * nSamp * F), "the stderiv transform runs in the super-sampled domain (row shape)");
-        // first difference, 2 channels: sd = ch0 - ch1 per tick; tick 0 = sd[0] - sd[-1] (seeded from the tick before)
+        auto [trP, badTP] = run(1, true, nullptr);
+        check(badT == 0 && badTP == 0 && tr[1].size() == static_cast<std::size_t>(2 * nSamp * F), "the stderiv transform runs in the super-sampled domain (row shape)");
+        // The x4 stderiv is the interpolant's derivative (per raw sample) of the spatial derivative: on the
+        // base-rate amplitude scale, tick 4k standing where sample k's derivative stands -- against the plain
+        // (backward-difference) stderiv, tick 4k ~ the mean of the differences at k and k+1 (both sit half a
+        // sample off k), and the peak amplitudes agree.
         {
-            const int c0 = up4[1][0], c1 = up4[1][1];
-            const int sd0 = c0 - c1;
-            check(tr[1][0] != sd0 || sd0 == 0, "stderiv x4: tick 0 is seeded from the tick before the window, not the bare spatial derivative");
+            double maxP = 0.0, maxU = 0.0, maxDiff = 0.0;
+            for (int k = 0; k < nSamp; ++k) maxP = std::max(maxP, std::fabs(static_cast<double>(trP[1][static_cast<std::size_t>(k) * 2 + 0])));
+            for (int k = 0; k < nSamp * F; ++k) maxU = std::max(maxU, std::fabs(static_cast<double>(tr[1][static_cast<std::size_t>(k) * 2 + 0])));
+            for (int k = 1; k + 1 < nSamp; ++k) {
+                const double centred = 0.5 * (trP[1][static_cast<std::size_t>(k) * 2 + 0] + trP[1][static_cast<std::size_t>(k + 1) * 2 + 0]);
+                maxDiff = std::max(maxDiff, std::fabs(tr[1][static_cast<std::size_t>(k * F) * 2 + 0] - centred));
+            }
+            check(maxU > 0.8 * maxP && maxU < 1.25 * maxP, "stderiv x4 is on the base-rate amplitude scale (peak " + std::to_string(maxU) + " vs " + std::to_string(maxP) + ")");
+            check(maxDiff < 0.15 * maxP, "stderiv x4 at tick 4k ~ the centred base-rate difference at sample k (max deviation " + std::to_string(maxDiff) + " of a peak " + std::to_string(maxP) + ")");
+            // and it is smooth: no tick-to-tick rounding jitter beyond the derivative's own change
+            double rough = 0.0;
+            for (int k = 1; k + 1 < nSamp * F; ++k) {
+                const double d2 = tr[1][static_cast<std::size_t>(k + 1) * 2 + 0] - 2.0 * tr[1][static_cast<std::size_t>(k) * 2 + 0] + tr[1][static_cast<std::size_t>(k - 1) * 2 + 0];
+                rough = std::max(rough, std::fabs(d2));
+            }
+            check(rough < 0.1 * maxP, "stderiv x4: the largest tick-to-tick curvature is under 10% of the peak (" + std::to_string(rough) + ")");
         }
         fs::remove_all(dir);
     }

@@ -136,14 +136,18 @@ inline bool estimateNoiseStats(std::FILE* fil, SpikeWindowSpec spec, std::vector
     if (bytes < 0) return false;
     const std::int64_t totalSamples = static_cast<std::int64_t>(bytes)
         / (static_cast<std::int64_t>(sizeof(std::int16_t)) * spec.totalNbChannels);
-    const int nS = spec.nSamp, nC = spec.nChan, D = nS * nC;
-    const int guard = prm.guard < 0 ? nS : prm.guard;
+    // The window as emitted: nSamp raw samples, or nSamp * factor ticks when super-sampled
+    // (then the .nst is the noise model of that _U space; its header counts ticks, the
+    // clearance around spikes stays in raw samples).
+    const int up = spec.supersample > 1 ? spec.supersample : 1;
+    const int nS = spec.nSamp * up, nC = spec.nChan, D = nS * nC;
+    const int guard = prm.guard < 0 ? spec.nSamp : prm.guard;
     std::sort(spikes.begin(), spikes.end());
     const std::vector<std::int64_t> times =
-        drawNoiseTimes(spikes, totalSamples, nS, spec.peakSample, guard, prm.nWindows, prm.seed);
+        drawNoiseTimes(spikes, totalSamples, spec.nSamp, spec.peakSample, guard, prm.nWindows, prm.seed);
 
     out = NoiseStats{};
-    out.nSamp = nS; out.nChan = nC; out.peakSample = spec.peakSample; out.guard = guard;
+    out.nSamp = nS; out.nChan = nC; out.peakSample = spec.peakSample * up; out.guard = guard;
     out.passes = prm.passes; out.zMax = prm.zMax; out.seed = static_cast<double>(prm.seed);
     out.nRequested = prm.nWindows; out.nDrawn = static_cast<std::int64_t>(times.size());
     if (times.empty()) return false;

@@ -69,6 +69,10 @@ void KlustersApp::startSelfTest(const QString& specPath)
         configuration().setRealignVerbose(spec.value(QStringLiteral("realignVerbose")).toBool());
     if (spec.contains(QStringLiteral("supersampleMode")))
         configuration().setSupersampleMode(spec.value(QStringLiteral("supersampleMode")).toInt());
+    if (spec.contains(QStringLiteral("supersampleInterp"))) {      // 0 cubic spline, 1 Lanczos-3, 2 smoothing spline
+        configuration().setSupersampleInterp(spec.value(QStringLiteral("supersampleInterp")).toInt());
+        if (doc) doc->setSupersampleInterp(interpFromPref(configuration().getSupersampleInterp()));
+    }
     openDocumentFile(QFileInfo(clu).absoluteFilePath());
     if (!doc || doc->url().isEmpty()) {
         qWarning().noquote() << "[selftest] could not open" << clu;

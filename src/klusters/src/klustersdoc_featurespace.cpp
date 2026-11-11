@@ -1099,9 +1099,12 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     const QString spkOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", newTok, group));
     const QString pcaOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "pca", newTok, group));
     const QString fetOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", newTok, group));
-    if (QFileInfo::exists(fetOut) || QFileInfo::exists(spkOut))
+    if (QFileInfo::exists(fetOut))
         return fail(tr("The space %1 already exists (%2).  Remove its files to rebuild it.")
                         .arg(QString::fromStdString(newTok), QFileInfo(fetOut).fileName()));
+    // A .spk without a .fet was built elsewhere (ndm_extractspikes --supersample):
+    // the waveforms are taken as they are, the basis and the .fet fitted on them.
+    const bool reuseSpk = QFileInfo::exists(spkOut);
     const int nSampUp = nSampBase * factor;
     const size_t rowElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSampUp);
 
@@ -1148,7 +1151,14 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
 
     // ── 1. the waveforms ──────────────────────────────────────────────────
     const QString raw = rawRecordingPath();
-    if (QFileInfo::exists(raw)) {
+    if (reuseSpk) {
+        const qint64 want = static_cast<qint64>(nSpikes) * static_cast<qint64>(rowElems * sizeof(int16_t));
+        if (QFileInfo(spkOut).size() != want)
+            return fail(tr("%1 exists but holds %2 bytes, not the %3 of %4 spikes × %5 channels × %6 ticks.")
+                            .arg(QFileInfo(spkOut).fileName()).arg(QFileInfo(spkOut).size()).arg(want)
+                            .arg(nSpikes).arg(nChan).arg(nSampUp));
+        log << "waveforms: " << QFileInfo(spkOut).fileName() << " exists (built elsewhere); the basis and the .fet are fitted on it\n";
+    } else if (QFileInfo::exists(raw)) {
         QString reLog;
         if (!reextractAllSpikesFromFil(spkOut, reLog, shown.valid() ? &shown : nullptr, phases.empty() ? nullptr : &phases)) {
             QFile::remove(spkOut);
@@ -1190,7 +1200,7 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     // ── 2. the basis, fitted on the new waveforms ─────────────────────────
     const std::shared_ptr<const QByteArray> spk = SpkMemoryCache::instance().get(spkOut);
     if (!spk || static_cast<qint64>(spk->size()) != static_cast<qint64>(nSpikes) * static_cast<qint64>(rowElems * sizeof(int16_t))) {
-        QFile::remove(spkOut);
+        if (!reuseSpk) QFile::remove(spkOut);
         return fail(tr("Cannot hold %1 in memory.").arg(QFileInfo(spkOut).fileName()));
     }
     const int16_t* waveforms = reinterpret_cast<const int16_t*>(spk->constData());
@@ -1210,7 +1220,7 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
         pca, shown.valid() ? shown.method : neurosuite::core::Method::Standard,
         shown.valid() ? shown.nInputChannels : 0);
     if (!fitted || !neurosuite::core::writePca(pcaOut.toStdString(), pca)) {
-        QFile::remove(spkOut); QFile::remove(pcaOut);
+        if (!reuseSpk) QFile::remove(spkOut); QFile::remove(pcaOut);
         return fail(tr("Fitting or writing the basis %1 failed.").arg(QFileInfo(pcaOut).fileName()));
     }
     log << "basis " << QFileInfo(pcaOut).fileName() << ": " << nCh << " ch x " << nComp
@@ -1230,7 +1240,7 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
         row[static_cast<size_t>(nPca + 1)] = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
     }
     if (!neurofileio::writeFetBinary(fetOut.toStdString(), nDims, values)) {
-        QFile::remove(spkOut); QFile::remove(pcaOut); QFile::remove(fetOut);
+        if (!reuseSpk) QFile::remove(spkOut); QFile::remove(pcaOut); QFile::remove(fetOut);
         return fail(tr("Writing %1 failed.").arg(QFileInfo(fetOut).fileName()));
     }
     log << "features " << QFileInfo(fetOut).fileName() << ": " << nSpikes << " rows x " << nDims
@@ -1246,7 +1256,7 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
             ticks[static_cast<size_t>(i)] = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim))
                                             * static_cast<int64_t>(factor);
         if (!neurofileio::writeResBinary(resOut.toStdString(), ticks)) {
-            QFile::remove(spkOut); QFile::remove(pcaOut); QFile::remove(fetOut); QFile::remove(resOut);
+            if (!reuseSpk) QFile::remove(spkOut); QFile::remove(pcaOut); QFile::remove(fetOut); QFile::remove(resOut);
             return fail(tr("Writing %1 failed.").arg(QFileInfo(resOut).fileName()));
         }
         log << "times " << QFileInfo(resOut).fileName() << ": " << nSpikes << " spikes in ticks ("

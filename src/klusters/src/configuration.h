@@ -133,7 +133,7 @@ public:
     void setRealignFromAnySpace(bool b)   {realignFromAnySpace = b;}
     void setSupersampleMode(int m)        {supersampleMode = (m == 2 || m == 4) ? m : 0;}
     void setSupersampleAdopt(bool b)      {supersampleAdopt = b;}
-    void setSupersampleInterp(int i)      {supersampleInterp = (i == 1) ? 1 : 0;}
+    void setSupersampleInterp(int i)      {supersampleInterp = (i >= 0 && i <= 2) ? i : 2;}
     void setMatrixFollowSelection(bool b) {matrixFollowSelection = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
@@ -304,7 +304,7 @@ public:
     int    getSupersampleMode() const     {return supersampleMode;}      // 0 off, 2, 4: the space built and shown when a session opens
     bool   getSupersampleEnabled() const  {return supersampleMode > 0;}
     bool   getSupersampleAdopt() const    {return supersampleAdopt;}
-    int    getSupersampleInterp() const   {return supersampleInterp;}   // 0 cubic spline, 1 Lanczos-3
+    int    getSupersampleInterp() const   {return supersampleInterp;}   // 0 cubic spline, 1 Lanczos-3, 2 smoothing spline
     bool   getMatrixFollowSelection() const {return matrixFollowSelection;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
@@ -645,7 +645,7 @@ private:
     bool    realignFromAnySpace = true;        // realign/nudge from any space; other spaces follow moved spikes (on)
     int     supersampleMode = 0;               // 0 off, 2, 4: super-sampled waveform spaces (built on open; Actions > Super-sample); high-end machines only
     bool    supersampleAdopt = false;          // on open in super-sample mode: Save As under the _U token so realign / nudge run there
-    int     supersampleInterp = 0;             // 0 cubic spline, 1 Lanczos-3
+    int     supersampleInterp = 2;             // 0 cubic spline, 1 Lanczos-3, 2 smoothing spline (default)
     bool    matrixFollowSelection = true;      // View > Follow Selection in Matrices: the matrices centre on the selected parent / child
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)

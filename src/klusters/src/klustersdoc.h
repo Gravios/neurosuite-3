@@ -1801,7 +1801,7 @@ public:
      *  files; false with @p error otherwise. */
     bool exportAtBaseRate(QStringList* written, QString* error);
     /** The interpolator for every super-sampled cut (Preferences). */
-    neurosuite::core::Interp supersampleInterp = neurosuite::core::Interp::CubicSpline;
+    neurosuite::core::Interp supersampleInterp = neurosuite::core::Interp::SmoothSpline;
     void setSupersampleInterp(neurosuite::core::Interp i) { supersampleInterp = i; }
     /** Build the super-sampled space over the shown space's waveforms: writes
      *  <base>.spk.<waveform token>_U<factor>.<g> (every spike re-cut from the recording

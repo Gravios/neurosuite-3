@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Super-sampled extraction through the ndm engines; the smoothing spline; the `_U` stderiv from the interpolant's derivative; the spline's halved curvature fixed](#2026-11-11--super-sampled-extraction-through-the-ndm-engines-the-smoothing-spline-the-_u-stderiv-from-the-interpolants-derivative-the-splines-halved-curvature-fixed) |
 | 2026-11-11 | [Klusters: the realign shift cap in a super-sampled space, phase-aware currency of spaces (realign-in-shown-space, step 3 of 3)](#2026-11-11--klusters-the-realign-shift-cap-in-a-super-sampled-space-phase-aware-currency-of-spaces-realign-in-shown-space-step-3-of-3) |
 | 2026-11-11 | [Klusters: realign and nudge run in the shown feature space; the `.clu`'s own space follows (realign-in-shown-space, step 2 of 3)](#2026-11-11--klusters-realign-and-nudge-run-in-the-shown-feature-space-the-clus-own-space-follows-realign-in-shown-space-step-2-of-3) |
 | 2026-11-11 | [One tick `.res` per factor for all spaces, named after the shared `.res` (`.res.stderiv_S3_U4.6`); every `_U<f>` space carries the same phases](#2026-11-11--one-tick-res-per-factor-for-all-spaces-named-after-the-shared-res-resstderiv_s3_u46-every-_uf-space-carries-the-same-phases) |
@@ -190,6 +191,63 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Super-sampled extraction through the ndm engines; the smoothing spline; the `_U` stderiv from the interpolant's derivative; the spline's halved curvature fixed
+
+<details>
+<summary>Details</summary>
+
+The `_U4` stderiv waveforms looked jagged in Klusters.  Three causes, all in the
+super-sampled cut (`core/supersample.hpp`, `core/spike_extract.hpp`), fixed together:
+
+- **The natural cubic spline used half its curvature.**  `naturalSplineCoeffs` solved
+  Burden–Faires' tridiagonal system, whose unknowns are `c_j = M_j / 2`, and `splineAt`
+  used them as the second derivatives `M_j` of the Hermite form: the curve between samples
+  was a cross between the spline and the chord -- ~1 % off on a spike trough (max error 10
+  of 1000 on a Gaussian of sd 2.5 samples; 0.24 now) and visibly kinked.  Every `_U` space
+  built before this is affected; rebuild them.
+- **The super-sampled stderiv took its temporal part as the difference of two int16-rounded
+  ticks**: at ×4 a quarter of the base-rate difference with the same ±½ LSB rounding error
+  on each operand, i.e. ~4× the relative rounding noise, and 4× smaller in amplitude than
+  `stderiv_C5`.  Now the transform runs on the interpolant in double: the spatial derivative
+  of the unrounded ticks, the temporal part the interpolant's **derivative per raw sample**
+  (centred at the tick, base-rate amplitude scale: tick `4k` stands where sample `k`'s
+  derivative stands), rounded once.  `supersampleChannel(..., deriv)` gives the derivative of
+  each interpolator (the spline analytically, Lanczos by a central difference of the kernel).
+- **A smoothing interpolator, the new default**: `Interp::SmoothSpline` = the natural cubic
+  spline through Whittaker-smoothed samples (penalised second differences, `kSmoothLambda`
+  0.15: half power at ~0.6 Nyquist, 9.6 kHz at 32 kHz; a 0.3 ms trough keeps > 99 % of its
+  depth) -- the spike untouched, the sample-to-sample noise an exact interpolant reproduces
+  between the samples not.  `spline` (exact) and `lanczos3` stay.  Klusters' *Super-sampling →
+  Interpolation* preference gains it (default), and the saved preference now reaches the
+  document from the start (it only reached it on a change in the dialog).
+
+**Super-sampled extraction through the ndm engines** (`ndm_extractspikes --supersample 4
+[--interp smooth|spline|lanczos3]`, `supersample` / `interp` on the node, or a `_U4` token in
+`--method`, which `--allMethods` passes for an existing `_U` space): the raw window is cut
+with a margin and interpolated on the raw `.fil` to `nSamples × 4` ticks *before* the
+method's transform, so every derived `.spk` comes from the interpolated raw signal; written
+under the `_U4` token (`standard_U4`, `stderiv_C5_U4`, the `.nst` in ticks), with the group's
+tick `.res` (`.res.<resToken>_U4.N`, one per factor for all spaces) written once (phase 0)
+and read for the phases by every later `_U4` extraction.  The engines' `-R` grows `-X factor
+-I interp -K 0|1` (`extractspikes_reextract.h`; `-U` was taken by the stderiv engine's
+dedup).  The post-extraction filter is not run on a super-sampled re-extraction.
+`ndm_custody`: `ndm_supersampled_token`.  Klusters' space builder reuses a `.spk.<token>_U4.N`
+that exists without its `.fet` (fits the basis and the `.fet` on it; size-checked) instead of
+refusing.  `noise_stats.hpp`: a super-sampled spec's `.nst` counts ticks.
+
+Tests: `core_test_supersample` +12 (the smoothing spline near the samples, twice as smooth,
+closer to the truth; every interpolator's derivative; the ×4 stderiv on the base-rate scale,
+≈ the centred base-rate difference, smooth; the spline now within 0.1 % between samples),
+`ndm_test_extract_supersample` (the real engines through `ndm_extractspikes`: the files, the
+tick `.res` written once and read back, the token form, the refusals, the exact spline
+reproducing the samples), the Klusters self-tests pass `supersampleInterp: 0` (they compare
+ticks to raw samples exactly).  Docs: `doc/ndmanager-plugins/commands/spike-detection.md`,
+`doc/klusters/README.md`, the three engines' DocBook pages, `ndm_extractspikes`' header.
+
+</details>
 
 ---
 
