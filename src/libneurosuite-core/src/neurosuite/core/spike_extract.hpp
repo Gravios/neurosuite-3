@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "stderiv_transform.hpp"
+#include "supersample.hpp"
 
 #if !defined(_WIN32)
 #include <sys/types.h>   // off_t for fseeko / ftello
@@ -74,13 +75,26 @@ struct SpikeWindowSpec {
     // process_extractspikes_sdiff writes.
     bool temporalDiff = true;
 
+    // Super-sampling (supersample.hpp): with factor > 1 each window is cut with
+    // kSupersampleMargin raw samples on either side, interpolated to
+    // nSamp * factor ticks (tick k at raw time start + (k + phase) / factor) and
+    // emitted as nChan * nSamp * factor entries; the transform, when applied,
+    // runs in the super-sampled domain (its seed the tick before the window).
+    // `phaseTicks`, when given, holds each spike's sub-sample phase in ticks
+    // (0 .. factor-1; Klusters' .php sidecar); null = 0 for every spike.
+    int    supersample = 1;
+    Interp interp      = Interp::CubicSpline;
+    const std::int8_t* phaseTicks = nullptr;
+    int outSamples() const { return nSamp * (supersample > 1 ? supersample : 1); }
+
     // Read budget for the sliding buffer, in bytes.  Only affects speed.
     std::size_t bufferBytes = 8u << 20;
 };
 
 // Extract nSpikes windows.  `timestampAt(i)` returns the i-th spike time in samples
 // and MUST be non-decreasing.  `emitRow(i, row)` receives the finished window as
-// sample-major int16 [s * nChan + ch], nChan * nSamp entries.
+// sample-major int16 [s * nChan + ch], nChan * nSamp entries (nChan * nSamp * factor
+// with spec.supersample > 1: see SpikeWindowSpec).
 //
 // A window that would fall outside the file is emitted as zeros and counted in
 // outOfRange, so there is always one row per timestamp and the rows stay aligned
@@ -112,18 +126,24 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
 
     const std::size_t frameElems = static_cast<std::size_t>(spec.totalNbChannels);
     std::size_t bufSamples = spec.bufferBytes / (frameElems * sizeof(std::int16_t));
-    if (bufSamples < static_cast<std::size_t>(spec.nSamp) + 1)
-        bufSamples = static_cast<std::size_t>(spec.nSamp) + 1;   // window + seed sample
+    if (bufSamples < static_cast<std::size_t>(spec.nSamp) + 1 + 2 * kSupersampleMargin)
+        bufSamples = static_cast<std::size_t>(spec.nSamp) + 1 + 2 * kSupersampleMargin;   // window + seed + margins
 
     std::vector<std::int16_t> buf(bufSamples * frameElems);
     std::int64_t bufStart = -1;                 // first sample held in buf
     std::int64_t bufCount = 0;                  // samples held
 
-    std::vector<std::int16_t> wavCM(static_cast<std::size_t>(spec.nChan) * spec.nSamp);
-    std::vector<std::int16_t> row(static_cast<std::size_t>(spec.nChan) * spec.nSamp);
+    const int  up    = spec.supersample > 1 ? spec.supersample : 1;
+    const int  nOut  = spec.nSamp * up;                       // ticks per channel emitted
+    const int  mg    = up > 1 ? kSupersampleMargin : 0;       // raw samples kept on either side
+    std::vector<std::int16_t> wavCM(static_cast<std::size_t>(spec.nChan) * nOut);
+    std::vector<std::int16_t> row(static_cast<std::size_t>(spec.nChan) * nOut);
     std::vector<std::int16_t> leadRow(static_cast<std::size_t>(spec.nChan));
     std::vector<std::int16_t> seed(static_cast<std::size_t>(spec.nChan));
     std::vector<double>       spatialRow(static_cast<std::size_t>(spec.nChan));
+    std::vector<std::int16_t> rawCM;                           // [ch][nSamp + mgLo + mgHi], super-sampling only
+    std::vector<double>       ticks;                           // one channel's ticks, from tick -1
+    SupersampleScratch        scratch;
 
     std::int64_t emitted = 0, bad = 0;
     for (std::int64_t i = 0; i < nSpikes; ++i) {
@@ -134,13 +154,17 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
         const std::int64_t lead =
             (spec.applyTransform && spec.temporalDiff && spec.seedFromPrevious
              && startSample >= 1) ? 1 : 0;
-        const std::int64_t first = startSample - lead;
+        // Super-sampling: as much of the margin as the recording holds on each side.
+        const int mgLo = static_cast<int>(std::min<std::int64_t>(mg, std::max<std::int64_t>(0, startSample)));
+        const int mgHi = static_cast<int>(std::min<std::int64_t>(mg, std::max<std::int64_t>(0, totalSamples - (startSample + spec.nSamp))));
+        const std::int64_t first = startSample - std::max<std::int64_t>(lead, mgLo);
+        const std::int64_t last  = startSample + spec.nSamp + mgHi;      // one past
 
         if (startSample >= 0 && startSample + spec.nSamp <= totalSamples) {
             // Refill only when the span is not already buffered.  Timestamps are
             // non-decreasing, so the cursor only ever moves forward.
             if (bufStart < 0 || first < bufStart
-                || startSample + spec.nSamp > bufStart + bufCount) {
+                || last > bufStart + bufCount) {
                 const std::int64_t want =
                     (totalSamples - first < static_cast<std::int64_t>(bufSamples))
                     ? totalSamples - first
@@ -159,52 +183,82 @@ inline std::int64_t extractSpikeWindows(std::FILE* fil,
                 }
             }
             if (bufStart >= 0 && first >= bufStart
-                && startSample + spec.nSamp <= bufStart + bufCount) {
+                && last <= bufStart + bufCount) {
                 const std::int16_t* base =
                     buf.data() + static_cast<std::size_t>(startSample - bufStart) * frameElems;
-                for (int s = 0; s < spec.nSamp; ++s)
-                    for (int ci = 0; ci < spec.nChan; ++ci)
-                        wavCM[static_cast<std::size_t>(ci) * spec.nSamp + s] =
-                            base[static_cast<std::size_t>(s) * frameElems
-                                 + spec.groupChannels[ci]];
-                if (lead) {
-                    const std::int16_t* prevFrame = base - frameElems;   // first >= bufStart
-                    for (int ci = 0; ci < spec.nChan; ++ci)
-                        leadRow[static_cast<std::size_t>(ci)] =
-                            prevFrame[spec.groupChannels[ci]];
+                if (up == 1) {
+                    for (int s = 0; s < spec.nSamp; ++s)
+                        for (int ci = 0; ci < spec.nChan; ++ci)
+                            wavCM[static_cast<std::size_t>(ci) * spec.nSamp + s] =
+                                base[static_cast<std::size_t>(s) * frameElems
+                                     + spec.groupChannels[ci]];
+                    if (lead) {
+                        const std::int16_t* prevFrame = base - frameElems;   // first >= bufStart
+                        for (int ci = 0; ci < spec.nChan; ++ci)
+                            leadRow[static_cast<std::size_t>(ci)] =
+                                prevFrame[spec.groupChannels[ci]];
+                    }
+                } else {
+                    // Gather the raw window with its margins, channel-major, then
+                    // interpolate each channel to the ticks -- from tick -1, which is
+                    // the transform's seed (the tick before the window).
+                    const int nRaw = spec.nSamp + mgLo + mgHi;
+                    rawCM.resize(static_cast<std::size_t>(spec.nChan) * nRaw);
+                    const std::int16_t* rb = base - static_cast<std::size_t>(mgLo) * frameElems;
+                    for (int s = 0; s < nRaw; ++s)
+                        for (int ci = 0; ci < spec.nChan; ++ci)
+                            rawCM[static_cast<std::size_t>(ci) * nRaw + s] =
+                                rb[static_cast<std::size_t>(s) * frameElems + spec.groupChannels[ci]];
+                    const int phase = spec.phaseTicks ? static_cast<int>(spec.phaseTicks[i]) : 0;
+                    scratch.x.resize(static_cast<std::size_t>(nRaw));
+                    ticks.resize(static_cast<std::size_t>(nOut) + 1);
+                    for (int ci = 0; ci < spec.nChan; ++ci) {
+                        for (int s = 0; s < nRaw; ++s)
+                            scratch.x[static_cast<std::size_t>(s)] = rawCM[static_cast<std::size_t>(ci) * nRaw + s];
+                        supersampleChannel(scratch.x.data(), nRaw, mgLo, up, phase, spec.interp,
+                                           ticks.data(), nOut + 1, -1, scratch);
+                        leadRow[static_cast<std::size_t>(ci)] = roundToInt16(ticks[0]);
+                        for (int k = 0; k < nOut; ++k)
+                            wavCM[static_cast<std::size_t>(ci) * nOut + k] =
+                                roundToInt16(ticks[static_cast<std::size_t>(k) + 1]);
+                    }
                 }
                 got = true;
             }
         }
 
         if (got) {
+            // The seed exists when the raw sample before the window was read: with
+            // the lead sample, or (super-sampled) the tick before the window when the
+            // low margin holds at least one raw sample.
+            const bool haveSeed = up == 1 ? (lead != 0) : (mgLo >= 1 && spec.seedFromPrevious);
             if (spec.applyTransform && !spec.temporalDiff) {
                 std::vector<double>& r = spatialRow;
-                for (int s = 0; s < spec.nSamp; ++s) {
+                for (int s = 0; s < nOut; ++s) {
                     for (int ci = 0; ci < spec.nChan; ++ci)
                         r[static_cast<std::size_t>(ci)] =
-                            wavCM[static_cast<std::size_t>(ci) * spec.nSamp + s];
+                            wavCM[static_cast<std::size_t>(ci) * nOut + s];
                     for (int ci = 0; ci < spec.nChan; ++ci)
-                        wavCM[static_cast<std::size_t>(ci) * spec.nSamp + s] =
+                        wavCM[static_cast<std::size_t>(ci) * nOut + s] =
                             clampToInt16(spatialDeriv(spec.order, r.data(), ci, spec.nChan,
                                                       spec.partner, spec.setOff, spec.setMem,
                                                       spec.expr));
                 }
             } else if (spec.applyTransform) {
                 const std::int16_t* seedPtr = nullptr;
-                if (lead) {
+                if (haveSeed) {
                     stderivSeed(spec.order, leadRow.data(), spec.nChan, seed.data(),
                                 spec.partner, spec.setOff, spec.setMem, spec.expr);
                     seedPtr = seed.data();
                 }
-                applyStderivTransform(spec.order, wavCM.data(), spec.nChan, spec.nSamp,
+                applyStderivTransform(spec.order, wavCM.data(), spec.nChan, nOut,
                                       wavCM.data(), spec.partner, seedPtr,
                                       spec.setOff, spec.setMem, spec.expr);
             }
-            for (int s = 0; s < spec.nSamp; ++s)
+            for (int s = 0; s < nOut; ++s)
                 for (int ch = 0; ch < spec.nChan; ++ch)
                     row[static_cast<std::size_t>(s) * spec.nChan + ch] =
-                        wavCM[static_cast<std::size_t>(ch) * spec.nSamp + s];
+                        wavCM[static_cast<std::size_t>(ch) * nOut + s];
         } else {
             std::fill(row.begin(), row.end(), static_cast<std::int16_t>(0));
             ++bad;

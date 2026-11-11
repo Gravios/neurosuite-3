@@ -96,6 +96,10 @@ def run_vectors(vpath):
                     got = cst.waveform_token(f[1])
                     ok = got == f[2]
                     desc = "waveform_token {} -> {} (got {})".format(f[1], f[2], got)
+                elif kind == "supersample_of":
+                    got = cst.supersample_of(f[1])
+                    ok = got == int(f[2])
+                    desc = "supersample_of {} -> {} (got {})".format(f[1], f[2], got)
                 elif kind == "drops_last":
                     got = cst.sdiff_drops_last(int(f[1]))
                     ok = got == (f[2] == "1")

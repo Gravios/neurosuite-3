@@ -139,6 +139,8 @@ int main(int argc, char** argv) {
                   "is_stderiv " + f[1] + " -> " + f[2]);
         } else if (kind == "waveform_token") {
             check(waveformToken(f[1]) == f[2], "waveform_token " + f[1] + " -> " + f[2]);
+        } else if (kind == "supersample_of") {
+            check(supersampleOf(f[1]) == std::stoi(f[2]), line);
         } else if (kind == "drops_last") {
             check(sdiffDropsLastChannel(std::atoi(f[1].c_str())) == (f[2] == "1"),
                   "drops_last " + f[1] + " -> " + f[2]);

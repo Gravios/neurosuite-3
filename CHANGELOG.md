@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [core: the `_U<factor>` super-sampled token, `supersample.hpp`, a super-sampled cut, `pca_fit.hpp`](#2026-11-11--core-the-_ufactor-super-sampled-token-supersamplehpp-a-super-sampled-cut-pca_fithpp) |
 | 2026-11-10 | [Klusters: the Refine mode -- a plugin's children under the same parents](#2026-11-10--klusters-the-refine-mode--a-plugins-children-under-the-same-parents) |
 | 2026-11-10 | [Klusters: a plugin descriptor that does not parse says so](#2026-11-10--klusters-a-plugin-descriptor-that-does-not-parse-says-so) |
 | 2026-11-10 | [Klusters: feature spaces an engine writes in the sub-session come back as session-level spaces](#2026-11-10--klusters-feature-spaces-an-engine-writes-in-the-sub-session-come-back-as-session-level-spaces) |
@@ -176,6 +177,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-11 — core: the `_U<factor>` super-sampled token, `supersample.hpp`, a super-sampled cut, `pca_fit.hpp`
+
+<details>
+<summary>Details</summary>
+
+The ground for Klusters' super-sample mode (next entry), all Qt-free and in
+`libneurosuite-core`:
+
+- **Token grammar**: `<family>[_<kind><order>][_U<factor>][_D<lag><dims>]`.  `_U<factor>`
+  (one digit, 2-9) marks a super-sampled waveform space: `factor` ticks per acquisition
+  sample, so its `.spk` holds `factor × nSamples` samples per waveform with the peak at
+  0-based tick `(peakSampleIndex − 1) × factor`.  It belongs to the waveform token (`waveformToken` keeps it:
+  `stderiv_C5_U4_D34` → `stderiv_C5_U4`); `supersampleOf` gives the factor, `supersampledToken`
+  builds the token.  Repeated, `_U0`, `_U1` or two digits: opaque.  The four parsers --
+  `custody.hpp`, `ndm_resolve_io.py` (`supersample_of`), `ndm_custody` (`ndm_supersample_of`,
+  `NDM_M_UP`) and fiber-kit's `neuro_io` (1058) -- against 19 new rows of `custody_vectors.tsv`
+  (`supersample_of`, `method_token`, `waveform_token` kinds).
+- **`supersample.hpp`**: natural cubic spline (default) and Lanczos-3 interpolation of a raw
+  window with a margin of raw samples on either side (`kSupersampleMargin` 3), per-spike phase in
+  ticks, int16 rounding with saturation, a stored-window variant (no margin), `splitTicks`.
+- **`spike_extract.hpp`**: `SpikeWindowSpec::supersample`, `interp`, `phaseTicks`: the cut takes
+  the margins the recording holds, interpolates each channel to `nSamp × factor` ticks (tick k at
+  raw time `start + (k + phase) / factor`) and emits `nChan × nSamp × factor` entries; the stderiv
+  transform runs in the super-sampled domain, seeded from the tick before the window.
+- **`pca_fit.hpp`**: `fitPca` -- per-channel means and leading eigenvectors by cyclic Jacobi, into
+  a `PcaBasis` that `writePca` stores and every PCAE reader projects like one from `process_pca`.
+- `core_test_supersample` (24 checks); `CORE_API.md` §3.1, §3.9, §3.9a, §3.9b; `naming.md`.
+
+</details>
 
 ## 2026-11-10 — Klusters: the Refine mode -- a plugin's children under the same parents
 

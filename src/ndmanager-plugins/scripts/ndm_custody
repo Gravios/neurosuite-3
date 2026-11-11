@@ -145,7 +145,7 @@ ndm_resolve()
 # token never masquerades as a known one.
 ndm_parse_method_token() {
     local m="$1" suf rest
-    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""; NDM_M_UP=1
     rest="$m"
     # Peel suffixes from the RIGHT, so a token may carry more than one.  Parsing
     # only the last one made stderiv_C5_D34 opaque -- 'D' is neither S nor C, so
@@ -165,16 +165,22 @@ ndm_parse_method_token() {
         case "${suf:1}" in *[!0123456789]*) break ;; esac
         case "${suf:0:1}" in
             D)  if [ -n "$NDM_M_LAG" ] || [ ${#suf} -ne 3 ] || [ "${suf:1:1}" = 0 ]; then
-                    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+                    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""; NDM_M_UP=1
                     return 0
                 fi
                 NDM_M_LAG="${suf:1:1}"; NDM_M_DIMS="${suf:2:1}" ;;
+            U)  # _U<factor>: one digit 2-9, the super-sampled waveform space
+                if [ "$NDM_M_UP" != 1 ] || [ ${#suf} -ne 2 ] || [ "${suf:1:1}" -lt 2 ]; then
+                    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""; NDM_M_UP=1
+                    return 0
+                fi
+                NDM_M_UP="${suf:1:1}" ;;
             S|C) if [ -n "$NDM_M_KIND" ] || [ ${#suf} -gt 10 ]; then   # repeated, or order > 9 digits
-                    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+                    NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""; NDM_M_UP=1
                     return 0
                 fi
                 NDM_M_KIND="${suf:0:1}"; NDM_M_ORDER=$((10#${suf:1})) ;;
-            *)  NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""
+            *)  NDM_M_FAMILY="$m"; NDM_M_KIND=""; NDM_M_ORDER=""; NDM_M_LAG=""; NDM_M_DIMS=""; NDM_M_UP=1
                 return 0 ;;
         esac
         rest="${rest%_*}"
@@ -188,16 +194,25 @@ ndm_parse_method_token() {
 # token is never rewritten.  Leaves NDM_M_* as they were.  Mirrors waveformToken
 # (custody.hpp) and waveform_token (ndm_resolve_io.py).
 ndm_waveform_token() {
-    local m="$1" sF="${NDM_M_FAMILY-}" sK="${NDM_M_KIND-}" sO="${NDM_M_ORDER-}" sL="${NDM_M_LAG-}" sD="${NDM_M_DIMS-}" w
+    local m="$1" sF="${NDM_M_FAMILY-}" sK="${NDM_M_KIND-}" sO="${NDM_M_ORDER-}" sL="${NDM_M_LAG-}" sD="${NDM_M_DIMS-}" sU="${NDM_M_UP-}" w
     ndm_parse_method_token "$m"
     if [ -n "$NDM_M_LAG" ] && [ "$NDM_M_LAG" -ge 1 ] 2>/dev/null; then
         w="$NDM_M_FAMILY"
         [ -n "$NDM_M_KIND" ] && w="${w}_${NDM_M_KIND}${NDM_M_ORDER}"
+        [ "$NDM_M_UP" != 1 ] && w="${w}_U${NDM_M_UP}"
     else
         w="$m"
     fi
-    NDM_M_FAMILY="$sF"; NDM_M_KIND="$sK"; NDM_M_ORDER="$sO"; NDM_M_LAG="$sL"; NDM_M_DIMS="$sD"
+    NDM_M_FAMILY="$sF"; NDM_M_KIND="$sK"; NDM_M_ORDER="$sO"; NDM_M_LAG="$sL"; NDM_M_DIMS="$sD"; NDM_M_UP="$sU"
     echo "$w"
+}
+
+# The super-sampling factor a token carries (1 when none): standard_U4 -> 4.  Mirrors
+# supersampleOf (custody.hpp) and supersample_of (ndm_resolve_io.py).
+# NOTE: clobbers NDM_M_* as a side effect.
+ndm_supersample_of() {
+    ndm_parse_method_token "$1"
+    echo "$NDM_M_UP"
 }
 
 # True for the stderiv family: bare legacy "stderiv" and any stderiv_<kind><order>.

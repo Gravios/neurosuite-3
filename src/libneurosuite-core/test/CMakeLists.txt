@@ -42,6 +42,14 @@ target_link_libraries(core_test_golden_formats PRIVATE Neurosuite::core)
 add_test(NAME core_test_golden_formats
          COMMAND core_test_golden_formats "${CMAKE_CURRENT_SOURCE_DIR}/golden")
 
+# Super-sampling (supersample.hpp), the super-sampled cut of spike_extract.hpp and
+# the PCA fit (pca_fit.hpp): header-only, no link.
+add_executable(core_test_supersample supersample_test.cpp)
+target_compile_features(core_test_supersample PRIVATE cxx_std_20)
+target_include_directories(core_test_supersample
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+add_test(NAME core_test_supersample COMMAND core_test_supersample)
+
 add_executable(core_test_neurofileio_spk neurofileio_spk_test.cpp)
 target_compile_features(core_test_neurofileio_spk PRIVATE cxx_std_20)
 target_include_directories(core_test_neurofileio_spk

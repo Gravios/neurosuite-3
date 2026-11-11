@@ -174,26 +174,36 @@ def waveform_token(method):
     s = parse_method_token(method)
     if not (1 <= s.lag <= 9):
         return method
-    return s.family + (f"_{s.kind}{s.order}" if s.kind else "")
+    return s.family + (f"_{s.kind}{s.order}" if s.kind else "") + (f"_U{s.supersample}" if s.supersample > 1 else "")
+
+
+def supersample_of(method):
+    """The super-sampling factor a token carries (1 when none): standard_U4 -> 4,
+    stderiv_C5_U4_D34 -> 4.  Mirrors supersampleOf (custody.hpp), ndm_supersample_of
+    (ndm_custody) and supersample_of (fiber-kit neuro_io)."""
+    return parse_method_token(method).supersample
 
 
 # lag/dims default to 0 so existing unpacking by position keeps working.
-MethodSpec = namedtuple("MethodSpec", "family kind order lag dims",
-                        defaults=(0, 0))
+MethodSpec = namedtuple("MethodSpec", "family kind order lag dims supersample",
+                        defaults=(0, 0, 1))
 
 
 def parse_method_token(method):
-    """Decompose a method token <family>[_<kind><order>][_D<lag><dims>].
+    """Decompose a method token <family>[_<kind><order>][_U<factor>][_D<lag><dims>].
 
     Suffixes peel from the RIGHT, so a token may carry more than one:
     stderiv_C5_D34 is the custom sdiffPairs pattern AND the lag feature space.
+    _U<factor> (one digit, 2-9) marks a SUPER-SAMPLED waveform space (each raw
+    sample interpolated into <factor>; Klusters' super-sample mode): it belongs to
+    the waveform token, so stderiv_C5_U4_D34 -> waveforms stderiv_C5_U4.
 
     kind is "S" (plain methodOrder derivative) or "C" (the session's custom
     sdiffPairs pattern); order is the spatial-derivative order actually applied.
     A token that does not match the suffix grammar is opaque: the whole string
     becomes the family, so an unknown token never masquerades as a known one.
     """
-    rest, kind, order, lag, dims = method, None, None, 0, 0
+    rest, kind, order, lag, dims, up = method, None, None, 0, 0, 1
     while True:
         cut = rest.rfind("_")
         if cut == -1:
@@ -203,18 +213,22 @@ def parse_method_token(method):
             break
         if suffix[0] == "D":
             if lag or len(suffix) != 3 or suffix[1] == "0":   # repeated, not _D<lag><dims>, lag 0
-                return MethodSpec(method, None, None, 0, 0)
+                return MethodSpec(method, None, None, 0, 0, 1)
             lag, dims = int(suffix[1]), int(suffix[2])
+        elif suffix[0] == "U":
+            if up != 1 or len(suffix) != 2 or int(suffix[1]) < 2:   # repeated, not one digit, 0 or 1
+                return MethodSpec(method, None, None, 0, 0, 1)
+            up = int(suffix[1])
         elif suffix[0] in ("S", "C"):
             if kind or len(suffix) - 1 > 9:   # repeated, or an order longer than 9 digits
-                return MethodSpec(method, None, None, 0, 0)
+                return MethodSpec(method, None, None, 0, 0, 1)
             kind, order = suffix[0], int(suffix[1:])
         else:
-            return MethodSpec(method, None, None, 0, 0)
+            return MethodSpec(method, None, None, 0, 0, 1)
         rest = rest[:cut]
-    if kind is None and not lag:
-        return MethodSpec(method, None, None, 0, 0)
-    return MethodSpec(rest, kind, order, lag, dims)
+    if kind is None and not lag and up == 1:
+        return MethodSpec(method, None, None, 0, 0, 1)
+    return MethodSpec(rest, kind, order, lag, dims, up)
 
 
 def is_stderiv_method(method):

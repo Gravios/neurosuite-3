@@ -31,7 +31,7 @@ sites do not decide strict-vs-fallback resolution themselves.
 - **`base`** — the session base name. It may contain dots: the parser looks
   for the *last* known `type` token, not the first dot.
 - **`type`** — the artifact type (`res`, `spk`, `fet`, `clu`, …).
-- **`method`** — the variant token, `<family>[_<kind><order>][_D<lag><dims>]`;
+- **`method`** — the variant token, `<family>[_<kind><order>][_U<factor>][_D<lag><dims>]`;
   see [Method tokens](#method-tokens). Absent in an untagged legacy name.
 - **`group`** — the spike-group index (`1`, `2`, …), all digits. A token after
   the type that is not all digits is the method; the first all-digit token is
@@ -95,7 +95,8 @@ resolved (`resolvedIsStderiv`). See [`.spk`](spk.md).
 - **Shared** → the first existing of:
   1. `<base>.<type>.<method>.<group>`
   2. `<base>.<type>.<waveform-token>.<group>` — only when `method` carries a
-     `_D<lag><dims>` suffix (`stderiv_C5_D34` → `stderiv_C5`);
+     `_D<lag><dims>` suffix (`stderiv_C5_D34` → `stderiv_C5`; a `_U` suffix stays:
+     `stderiv_C5_U4_D34` → `stderiv_C5_U4`);
   3. `<base>.<type>.standard.<group>` — only when `method` ≠ `standard`;
   4. `<base>.<type>.<group>` (untagged legacy).
 
@@ -130,14 +131,15 @@ written as `.pxres.N` for this reason ([`.pxres`](pxspikes.md)).
 
 ## Method tokens
 
-A method token is `<family>[_<kind><order>][_D<lag><dims>]`. Suffixes are
-parsed from the right, so a token may carry both.
+A method token is `<family>[_<kind><order>][_U<factor>][_D<lag><dims>]`. Suffixes are
+parsed from the right, so a token may carry several.
 
 | Part | Values | Meaning |
 |---|---|---|
 | family | `standard`, `sdiff`, `stderiv` | the extraction engine and waveform domain |
 | kind | `S`, `C` | `S`: plain `methodOrder` spatial derivative (any `sdiffPairs` deliberately unused). `C`: the session's custom `sdiffPairs` pattern. |
 | order | integer | the spatial-derivative order actually applied |
+| `_U<factor>` | one digit, 2–9 | **super-sampled** waveform space: each raw sample interpolated into `factor` ticks (cubic spline from the recording; Klusters' super-sample mode), so the `.spk` holds `factor × nSamples` samples per waveform with the peak at 0-based tick `(peakSampleIndex − 1) × factor`. Part of the waveform token (`standard_U4`, `stderiv_C5_U4`). |
 | `_D<lag><dims>` | one digit each | lagged PCA feature space: per channel PC1 at −lag/0/+lag samples, plus PC2 when dims is 4 |
 
 Examples: `stderiv_S3` (plain all-pairs), `stderiv_C4` (single-partner
@@ -146,7 +148,9 @@ pattern), `stderiv_C5_D34` (lag-3,
 4-column feature space over the `stderiv_C5` waveforms, written by
 [`ndm_pca`](../commands/pca.md) or fiber-kit). The waveform token of a `_D`
 token is the token without the suffix (`custody::waveformToken`,
-`ndm_waveform_token`, `waveform_token`).
+`ndm_waveform_token`, `waveform_token`); a `_U` suffix belongs to the waveform
+token and stays (`custody::supersampleOf`, `ndm_supersample_of`,
+`supersample_of` give the factor, 1 when none).
 
 Rules, enforced by `ndm_check_method_token` (bash) before any wrapper runs:
 

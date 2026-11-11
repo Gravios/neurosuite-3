@@ -60,6 +60,7 @@ struct MethodSpec {
     int         order;   // -1 when absent
     int         lag;     // feature-space lag from a _D<lag><dims> suffix; 0 when absent
     int         dims;    // features per channel from that suffix; 0 when absent
+    int         supersample = 1;   // _U<factor>: the waveforms are super-sampled by this factor (1 = not)
 };
 
 // Peel one <letter><digits> suffix off the end of @p m, if the LAST underscore
@@ -89,7 +90,14 @@ inline bool peelSuffix(std::string& m, char& letter, int& value)
     return true;
 }
 
-// <family>[_<kind><order>][_D<lag><dims>]
+// <family>[_<kind><order>][_U<factor>][_D<lag><dims>]
+//
+// _U<factor> (one digit, 2-9): the waveform space is SUPER-SAMPLED -- each raw sample
+// interpolated into <factor> (cubic spline from the recording, Klusters' super-sample
+// mode), so a waveform of the group's nSamples is factor x nSamples samples long and
+// its peak tick is (peakSampleIndex - 1) x factor.  It belongs to the WAVEFORM token
+// (standard_U4, stderiv_C5_U4), and a lag space over it keeps it (stderiv_C5_U4_D34
+// -> waveforms stderiv_C5_U4).  Repeated, 0, 1 or more than one digit: opaque.
 //
 // Suffixes are peeled from the RIGHT, so a token may carry more than one.  This
 // matters because fiber-session emits stderiv_C5_D34: _C5 is the custom spatial
@@ -124,7 +132,7 @@ inline MethodSpec parseMethodToken(const std::string& m)
     const MethodSpec opaque = spec;   // the whole token is the family
     std::string rest = m;
     char letter = '\0'; int value = 0;
-    bool sawKind = false, sawDims = false;
+    bool sawKind = false, sawDims = false, sawUp = false;
 
     for (;;) {
         std::string before = rest;
@@ -137,6 +145,11 @@ inline MethodSpec parseMethodToken(const std::string& m)
             spec.lag  = value / 10;
             spec.dims = value % 10;
             sawDims = true;
+        } else if (letter == 'U') {
+            // _U<factor>: exactly one digit, 2-9.
+            if (sawUp || digits.size() != 1 || value < 2) return opaque;
+            spec.supersample = value;
+            sawUp = true;
         } else if (letter == 'S' || letter == 'C') {
             if (sawKind) return opaque;                   // repeated
             if (digits.size() > kMaxOrderDigits) return opaque;   // order does not fit
@@ -169,6 +182,29 @@ inline std::string waveformToken(const std::string& m)
     if (s.lag < 1 || s.lag > 9) return m;
     std::string w = s.family;
     if (s.kind != '\0') { w += '_'; w += s.kind; w += std::to_string(s.order); }
+    if (s.supersample > 1) { w += "_U"; w += std::to_string(s.supersample); }
+    return w;
+}
+
+// The super-sampling factor a token carries (1 when none): a _U<factor> suffix on the
+// waveform token (standard_U4, stderiv_C5_U4_D34 -> 4).  Mirrors supersample_of
+// (ndm_resolve_io.py), ndm_supersample_of (ndm_custody) and supersample_of (neuro_io.py).
+inline int supersampleOf(const std::string& m)
+{ return parseMethodToken(m).supersample; }
+
+// The token of the super-sampled space over @p m by @p factor: the _U suffix placed
+// after the family and kind, before any _D lag suffix (stderiv_C5_D34, 4 ->
+// stderiv_C5_U4_D34).  A token already super-sampled, opaque, or a factor outside
+// 2..9 comes back unchanged.
+inline std::string supersampledToken(const std::string& m, int factor)
+{
+    const MethodSpec s = parseMethodToken(m);
+    if (factor < 2 || factor > 9 || s.supersample != 1) return m;
+    if (s.kind == '\0' && s.lag == 0 && s.family != m) return m;   // opaque
+    std::string w = s.family;
+    if (s.kind != '\0') { w += '_'; w += s.kind; w += std::to_string(s.order); }
+    w += "_U"; w += std::to_string(factor);
+    if (s.lag >= 1) { w += "_D"; w += std::to_string(s.lag); w += std::to_string(s.dims); }
     return w;
 }
 

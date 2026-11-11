@@ -17,7 +17,7 @@ The code is the authority. Every statement below was read out of the headers in 
 | Area | Headers |
 |---|---|
 | On-disk formats and naming | `neurofileio.h/.cpp`, `custody.hpp` |
-| Waveform transforms and PCA | `stderiv_transform.hpp`, `pca_projection.hpp`, `spike_extract.hpp` |
+| Waveform transforms and PCA | `stderiv_transform.hpp`, `pca_projection.hpp`, `pca_fit.hpp`, `spike_extract.hpp`, `supersample.hpp` |
 | Collision decomposition | `decollide.hpp`, `decollide_eap.hpp` |
 | Template classes and the template library | `templateclass.hpp`, `template_generate.hpp`, `running_stats.hpp`, `drift_partition.hpp`, `projectionscope.hpp` |
 | Portable file and string primitives | `fileio64.hpp`, `fileops.hpp`, `mappedfile.hpp/.cpp`, `strsep.hpp` |
@@ -30,7 +30,7 @@ The code is the authority. Every statement below was read out of the headers in 
 
 - `neuro-io`: `neurofileio`, `custody.hpp`;
 - `neuro-core`: `templateclass.hpp`, `drift_partition.hpp`, `projectionscope.hpp`, `running_stats.hpp`;
-- `neuro-compute` (CPU only): `decollide*.hpp`, `template_generate.hpp`, `pca_projection.hpp`, `stderiv_transform.hpp`, `spike_extract.hpp`.
+- `neuro-compute` (CPU only): `decollide*.hpp`, `template_generate.hpp`, `pca_projection.hpp`, `pca_fit.hpp`, `stderiv_transform.hpp`, `spike_extract.hpp`, `supersample.hpp`.
 
 It satisfies the rules that matter for it: it depends on the C++ standard library only (no Qt, no yaml-cpp, no GPU runtime, no other in-repo library). The rule to keep: **nothing under `neurosuite/core/` may include a Qt, yaml-cpp, CUDA/HIP/SYCL header or a header from another subproject.** Qt callers convert at the boundary (`QString::toStdString()`); GPU mirrors (for example `src/klusters/src/pca_refine_cuda.cu` for the PCA energy) live in the consuming app.
 
@@ -87,7 +87,7 @@ Three consumption modes exist in the tree:
 
 | Header | Include-only safe? |
 |---|---|
-| `custody.hpp`, `pca_projection.hpp`, `stderiv_transform.hpp`, `spike_extract.hpp`, `decollide.hpp`, `running_stats.hpp` | yes — std only |
+| `custody.hpp`, `pca_projection.hpp`, `pca_fit.hpp`, `stderiv_transform.hpp`, `spike_extract.hpp`, `supersample.hpp`, `decollide.hpp`, `running_stats.hpp` | yes — std only |
 | `templateclass.hpp`, `projectionscope.hpp`, `drift_partition.hpp` | yes — they use only `neurofileio`'s structs, `EAP_ABSENT` and the inline `eapPresent` |
 | `template_generate.hpp` | `generate`, `renderLineage` and the numeric helpers: yes. `generateToFiles`, `renderLineageToFiles`, `readResAny`: **link** |
 | `decollide_eap.hpp` | **link** (`applyDecompsToEap` calls `neurofileio::growEap`) |
@@ -161,7 +161,7 @@ Sections 3.1–3.13 are in alphabetical order. Headers added after them are appe
 
 ### 3.1 `custody.hpp` — file-naming policy
 
-Namespace `neurosuite::custody`. Header-only. **Documented in depth in [FILE_FORMATS.md §1.1](FILE_FORMATS.md#11-per-group-naming-and-chain-of-custody) and in [`naming.md`](../../../doc/ndmanager-plugins/formats/naming.md); not repeated here.** In one paragraph: per-group files are `<base>.<type>.<method>.<group>[.<stage>]`; `classify(type)` puts each type in `MethodSpecific` (strict path, no fallback), `Shared` (`res`, `spk`: method → waveform token → `standard` → untagged) or `SessionWide` (`<base>.<type>`). `parseMethodToken` parses `<family>[_<S|C><order>][_D<lag><dims>]`; unknown suffixes make the token opaque. `resolveAny` finds the one physical copy of a Shared artifact under any method token by scanning the directory. `parseAnchor`/`methodOf` parse names from the right, so a base may contain dots.
+Namespace `neurosuite::custody`. Header-only. **Documented in depth in [FILE_FORMATS.md §1.1](FILE_FORMATS.md#11-per-group-naming-and-chain-of-custody) and in [`naming.md`](../../../doc/ndmanager-plugins/formats/naming.md); not repeated here.** In one paragraph: per-group files are `<base>.<type>.<method>.<group>[.<stage>]`; `classify(type)` puts each type in `MethodSpecific` (strict path, no fallback), `Shared` (`res`, `spk`: method → waveform token → `standard` → untagged) or `SessionWide` (`<base>.<type>`). `parseMethodToken` parses `<family>[_<S|C><order>][_U<factor>][_D<lag><dims>]`; unknown suffixes make the token opaque. `_U<factor>` (one digit, 2–9) marks a **super-sampled** waveform space (`supersample.hpp`): `supersampleOf(token)` gives the factor (1 when none), `waveformToken` keeps it (`stderiv_C5_U4_D34` → `stderiv_C5_U4`), `supersampledToken(m, 4)` builds it (`stderiv_C5_D34` → `stderiv_C5_U4_D34`). `resolveAny` finds the one physical copy of a Shared artifact under any method token by scanning the directory. `parseAnchor`/`methodOf` parse names from the right, so a base may contain dots.
 
 API surface (signatures only):
 
@@ -174,7 +174,9 @@ struct Resolved   { std::string path, method; bool found = false; };
 const char* kDefaultMethod();                         // "standard"
 MethodSpec  parseMethodToken(const std::string& m);
 bool        isStderivMethod(const std::string& m);
-std::string waveformToken(const std::string& m);      // stderiv_C5_D34 -> stderiv_C5
+std::string waveformToken(const std::string& m);      // stderiv_C5_D34 -> stderiv_C5, stderiv_C5_U4_D34 -> stderiv_C5_U4
+int         supersampleOf(const std::string& m);      // standard_U4 -> 4; 1 when none
+std::string supersampledToken(const std::string& m, int factor);   // stderiv_C5_D34, 4 -> stderiv_C5_U4_D34
 bool isPerGroupType(const std::string&); bool isSessionWideType(const std::string&);
 bool isKnownType(const std::string&);    bool isClusterIdType(const std::string&);   // clu | clc
 Klass classify(const std::string& type);
@@ -403,6 +405,10 @@ struct SpikeWindowSpec {
     const ChannelExprSet* expr = nullptr;  // Expr (order 6)
     bool seedFromPrevious = true;  // seed with the sample before the window (else 0)
     bool temporalDiff = true;      // false: spatial derivative only (sdiff)
+    int    supersample = 1;        // > 1: super-sampled cut, nSamp * factor ticks per channel (supersample.hpp)
+    Interp interp = Interp::CubicSpline;
+    const std::int8_t* phaseTicks = nullptr;   // per-spike sub-sample phase in ticks (0 .. factor-1), or null
+    int outSamples() const;        // nSamp * factor
     std::size_t bufferBytes = 8u << 20;   // read buffer budget; affects speed only
 };
 template <class TimestampAt, class EmitRow>
@@ -413,8 +419,18 @@ std::int64_t extractSpikeWindows(std::FILE* fil, std::int64_t nSpikes, const Spi
 
 **Contract.** `timestampAt(i)` returns spike `i`'s time in samples and **must be non-decreasing**; the window starts at `timestampAt(i) − peakSample`. `emitRow(i, const int16_t* row)` is called exactly once per spike, in order, with `nSamp × nChan` int16 values in **sample-major** (`.spk`) order; the pointer is only valid during the call. A window outside the file (or that the buffer cannot supply) is emitted as zeros and counted in `*outOfRange`. Returns the number of rows emitted, or −1 if `fil` is null, the geometry is non-positive, or the file cannot be sized. The function seeks `fil` (ownership stays with the caller) and keeps a forward-moving sliding buffer, so the whole pass is sequential I/O. With `applyTransform`, each window is transformed with `applyStderivTransform`, seeded (`seedFromPrevious`, default true) with `stderivSeed()` of the sample before the window — byte-identical to `process_extractspikes_stderiv -R`, which `ndm_extractspikes` runs — or with 0 when `seedFromPrevious` is false, the convention of `.spk` files from the older single-pass extractor. `detectStderivSeeding()` tells which convention an existing file follows by recomputing sample 0 of a few stored spikes both ways; a tool that rewrites spikes of an existing file must follow it. Offsets use 64-bit `fseeko` / `_fseeki64`.
 
+**Super-sampling** (`supersample > 1`, Klusters' super-sample mode, custody token `_U<factor>`): the window is cut with `kSupersampleMargin` (3) raw samples on either side — as many as the recording holds at the file edges — and each channel interpolated (`interp`: natural cubic spline or Lanczos-3, `supersample.hpp`) to `nSamp × factor` ticks, tick `k` at raw time `start + (k + phase) / factor`, `phase` the spike's entry of `phaseTicks` (0 when null). The row then holds `nSamp × factor × nChan` entries, so a `.spk` of such a space is `factor` times longer and its peak tick is `(peakSample) × factor` (0-based). With `applyTransform` the transform runs in the super-sampled domain, seeded from the tick before the window (when the low margin holds a raw sample). `splitTicks(ticks, factor, whole, phase)` turns a shift in ticks into the raw samples the `.res` moves by and the phase left over.
+
 **Consumers.** klusters `klustersdoc_realign.cpp` (re-extract on save; `peakSample = peakSampleIndex() − 1`), `klustersdoc_featurespace.cpp`, `klustersdoc.h` (`SpikeWindowSpec` member).
 **Also used by** the `-R` pass of `process_extractspikes`, `process_extractspikes_sdiff` (`temporalDiff = false`) and `process_extractspikes_stderiv` (`src/ndmanager-plugins/src/extractspikes_common/extractspikes_reextract.h`), which is how `ndm_extractspikes` extracts. **Twins.** The extractors' detection runs, and `process_reextractspikes_stderiv`, still cut windows with their own code; they are meant to produce the same bytes.
+
+### 3.9a `supersample.hpp` — super-sampling of spike windows
+
+Namespace `neurosuite::core`. Header-only, std only. `Interp { CubicSpline, Lanczos3 }`, `parseInterp`/`interpName`; `supersampleChannel(raw, nRaw, margin, factor, phaseTicks, interp, out, nOut, firstTick, scratch)` interpolates one channel (tick `k` at raw position `margin + (firstTick + k + phase) / factor`; `firstTick = -1` yields the transform's seed first); `supersampleWindow` does a whole channel-major window to int16 (rounded, saturated); `supersampleStoredWindow` the same from a stored window with no margin (the last `factor − 1` ticks clamp to the final sample); `splitTicks`. The natural cubic spline is exact at the samples and within ~1% of the depth of a 2.5-sample-sd Gaussian between them; Lanczos-3 within ~0.3%. **Consumers.** `spike_extract.hpp`; Klusters (the super-sampled space: `KlustersDoc::buildSupersampledSpace`, the re-cut in realign / sync).
+
+### 3.9b `pca_fit.hpp` — fit a PCAE basis from waveforms
+
+Namespace `neurosuite::core`. Header-only. `fitPca(nSpikes, nCh, data2use, recShift, nComp, sample(i, ch, s), out, method, nInputChannels)` fits per-channel means and the leading eigenvectors (cyclic Jacobi, `jacobiEigen`) of the window's covariance over the spikes given — what `process_pca` does — into a `PcaBasis` that `writePca` stores and `pcaProjectScores` / Klusters project exactly like one from the plugin. Eigenvector signs are fixed (largest-magnitude entry positive) for determinism. **Consumers.** Klusters (the basis of a space built in the GUI: the super-sample mode).
 
 ### 3.10 `stderiv_transform.hpp` — spatial derivative + temporal first difference
 
@@ -783,6 +799,7 @@ ctest --test-dir build -R '^core_test_|custody_conformance'   # this library onl
 | `core_test_watershed2d` | `watershed2d_test.cpp` | no | `watershed2d.hpp`: 1–3 blobs give 1–3 basins, each blob one basin; preview grid; degenerate input |
 | `core_test_contract` | `contract_test.cpp` | yes | `contract.yaml` (argument) equals `version_contract.hpp`; each format writer writes the version named and each reader rejects the next one; `parseNdmVersion`, `formatMismatches` |
 | `core_test_pca_method_conformance` | `pca_method_conformance_test.cpp` | no | runs `pca_method_vectors.tsv` against `Method`, `spatialOrder`, `hasTemporalDiff`, `methodTag`, `kPcaeMagic`/`kPcaeVersion` |
+| `core_test_supersample` | `supersample_test.cpp` | no | `supersample.hpp`: both interpolators exact at the samples and close between them, the phase, `splitTicks`, int16 saturation, a stored window; `spike_extract.hpp` with `supersample 4` on a synthetic `.fil`: row shape, ticks at multiples of 4 equal the plain cut, a trough between samples at its fractional tick, file-edge windows, a per-spike phase, the stderiv transform in the super-sampled domain; `pca_fit.hpp`: two planted directions recovered, orthogonality, `writePca`/`loadPca` round trip |
 | `core_test_neurofileio_spk` | `neurofileio_spk_test.cpp` | yes | `.spk` round trip, binary `.fet`, `.col` accepted-record parse, `.wti` + `.wtf` alignment, `.eap` (sentinel, grow, queries), `.tcl` statuses, `stagePath` composition |
 | `core_test_wti` | `wti_test.cpp` | yes | `.wti` v1/v2 round trip, `parent` column, `collision` link, hand-written files, version-3 rejection |
 | `core_test_wtl` | `wtl_test.cpp` | yes | `.wtl` v2 round trip, v1 back-compat, header/version rejection, `nNodes` check, corrupt line, `wtl*` helpers |
