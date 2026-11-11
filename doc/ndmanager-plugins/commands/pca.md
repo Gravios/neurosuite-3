@@ -56,6 +56,19 @@ or a space-separated list with one value per group. The number of components
 per channel is the group's `nFeatures` (mandatory, from
 `spikeDetection/channelGroups`), as are `channels` and `nSamples`.
 
+**Super-sampled waveforms.** A `_U<factor>` token (`--method standard_U4`,
+`stderiv_C5_U4`; the spaces `ndm_extractspikes --supersample` writes) fits the
+basis on the ticks: `nSamples`, `peakSampleIndex`, `before` and `after` are
+scaled by the factor (`.pca.<token>_U4.N` has a window in ticks), and the
+`.fet.<token>_U4.N` carries each spike's sub-sample **phase** as its last
+feature column before the time — Klusters' layout of a super-sampled space,
+what its realign, nudge and sync move — read from the group's tick `.res`
+(`.res.<resToken>_U4.N`, `sample × 4 + phase`), which must exist
+(`process_fet_phase.py` inserts the column after `process_mergefeatures`). The
+time column stays the shared base-rate `.res`; a shared `.res` is never taken
+from a `_U` tick `.res`. A lag space over super-sampled waveforms
+(`standard_U4_D34`) is refused: the lag is in base-rate samples.
+
 **Skip rules.** A group is skipped (exit 10) when its `.fet.<method>.N` exists,
 and (exit 11) when its `.spk` or `.res` is missing. With all groups, skipped
 groups do not fail the run; any other failure is reported per group and

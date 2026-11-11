@@ -35,7 +35,10 @@ set(_ndm_bin_test_extract_noise
 set(_ndm_bin_test_extract_supersample
     PROCESS_EXTRACTSPIKES_BIN         process_extractspikes
     PROCESS_EXTRACTSPIKES_SDIFF_BIN   process_extractspikes_sdiff
-    PROCESS_EXTRACTSPIKES_STDERIV_BIN process_extractspikes_stderiv)
+    PROCESS_EXTRACTSPIKES_STDERIV_BIN process_extractspikes_stderiv
+    PROCESS_PCA_BIN                   process_pca
+    PROCESS_MERGEFEATURES_BIN         process_mergefeatures
+    PROCESS_PCA_STDERIV_BIN           process_pca_stderiv)
 
 foreach(_t IN LISTS _ndm_tests)
     get_filename_component(_name "${_t}" NAME_WE)

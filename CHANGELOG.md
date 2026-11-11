@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [`ndm_pca` on super-sampled waveforms: the basis in ticks, the `.fet` with the phase column; a shared `.res` is never a `_U` tick `.res`](#2026-11-11--ndm_pca-on-super-sampled-waveforms-the-basis-in-ticks-the-fet-with-the-phase-column-a-shared-res-is-never-a-_u-tick-res) |
 | 2026-11-11 | [Super-sampled extraction through the ndm engines; the smoothing spline; the `_U` stderiv from the interpolant's derivative; the spline's halved curvature fixed](#2026-11-11--super-sampled-extraction-through-the-ndm-engines-the-smoothing-spline-the-_u-stderiv-from-the-interpolants-derivative-the-splines-halved-curvature-fixed) |
 | 2026-11-11 | [Klusters: the realign shift cap in a super-sampled space, phase-aware currency of spaces (realign-in-shown-space, step 3 of 3)](#2026-11-11--klusters-the-realign-shift-cap-in-a-super-sampled-space-phase-aware-currency-of-spaces-realign-in-shown-space-step-3-of-3) |
 | 2026-11-11 | [Klusters: realign and nudge run in the shown feature space; the `.clu`'s own space follows (realign-in-shown-space, step 2 of 3)](#2026-11-11--klusters-realign-and-nudge-run-in-the-shown-feature-space-the-clus-own-space-follows-realign-in-shown-space-step-2-of-3) |
@@ -191,6 +192,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — `ndm_pca` on super-sampled waveforms: the basis in ticks, the `.fet` with the phase column; a shared `.res` is never a `_U` tick `.res`
+
+<details>
+<summary>Details</summary>
+
+Completes the ndm path of a super-sampled space (0965 wrote the waveforms and the tick
+`.res`): `ndm_pca --method standard_U4` / `stderiv_C5_U4` fits the basis on the ticks
+(`nSamples`, `peakSampleIndex`, `before`, `after` scaled by the factor; the `.pca` window in
+ticks) and writes the `.fet.<token>_U4.N` with each spike's sub-sample **phase** as the last
+feature column before the time -- Klusters' layout of a `_U` space, what its realign, nudge
+and sync read and move -- taken from the group's tick `.res` (`process_fet_phase.py`, after
+`process_mergefeatures`; the tick `.res` must exist).  So a session can be super-sampled
+entirely outside Klusters (`ndm_extractspikes --supersample 4` for each method, then
+`ndm_pca --method <method>_U4`), and Klusters shows the space as one it built.  A lag space
+over super-sampled waveforms (`_U4_D34`) is refused by `ndm_pca` (the lag is in base-rate
+samples).  `ndm_shared_res`: a `_U` preference asks for its base-rate token, and the scan
+never returns a `_U` tick `.res` as the group's shared `.res` (it could, in a session whose
+detect node names no method).  `ndm_test_extract_supersample` +12 (the PCA binaries passed
+by ctest); `doc/ndmanager-plugins/commands/pca.md`.
+
+</details>
 
 ---
 

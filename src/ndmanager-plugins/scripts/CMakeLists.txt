@@ -111,6 +111,7 @@ install(PROGRAMS
     ndm_resolve_io.py
     probe_geometry.py
     process_spikefilter.py
+    process_fet_phase.py
     DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
 # Man pages.  The helpers with a .docbook page:

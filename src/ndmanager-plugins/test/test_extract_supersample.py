@@ -14,7 +14,11 @@ phase) is written once (phase 0) and read back for the phases by the next space.
      rounding jitter), its .nst.<tok>_U4 sized in ticks;
   3. --method stderiv_S1_U4 is the same request (the token form --allMethods passes); a factor that
      disagrees with the token is refused; --supersample on ndm_detectspikes is refused;
-  4. the post-extraction filter is not run on a super-sampled re-extraction.
+  4. the post-extraction filter is not run on a super-sampled re-extraction;
+  5. ndm_pca --method standard_U4 / stderiv_S1_U4 (with PROCESS_PCA_BIN, PROCESS_MERGEFEATURES_BIN and
+     PROCESS_PCA_STDERIV_BIN) fits the basis on the ticks (window and peak scaled), writes
+     .fet.<tok>_U4.N with the PHASE column before the time (Klusters' layout of a _U space) and
+     .pca.<tok>_U4.N; a shared .res is never taken from a _U tick .res.
 
 Runs the real ndm_extractspikes with the real engines: ctest passes PROCESS_EXTRACTSPIKES_BIN,
 PROCESS_EXTRACTSPIKES_SDIFF_BIN and PROCESS_EXTRACTSPIKES_STDERIV_BIN; otherwise they are looked
@@ -44,6 +48,11 @@ BINS = {k: find(v, k) for k, v in (
 if not all(BINS.values()) or not all(os.path.isfile(b) for b in BINS.values()):
     print(f"SKIPPED: extractor binaries not found ({BINS})")
     sys.exit(0)
+PCA_BINS = {k: find(v, k) for k, v in (
+    ("process_pca", "PROCESS_PCA_BIN"),
+    ("process_mergefeatures", "PROCESS_MERGEFEATURES_BIN"),
+    ("process_pca_stderiv", "PROCESS_PCA_STDERIV_BIN"))}
+HAVE_PCA = all(PCA_BINS.values()) and all(os.path.isfile(b) for b in PCA_BINS.values())
 
 fails = 0
 
@@ -62,7 +71,7 @@ def main():
     td = tempfile.mkdtemp()
     try:
         bind = os.path.join(td, "bin"); os.makedirs(bind)
-        for name, path in BINS.items():
+        for name, path in list(BINS.items()) + (list(PCA_BINS.items()) if HAVE_PCA else []):
             os.symlink(os.path.abspath(path), os.path.join(bind, name))
         with open(os.path.join(bind, "xpathReader"), "w") as fh:
             fh.write("#!/bin/bash\necho stub\n")
@@ -88,6 +97,7 @@ spikeDetection:
     - channels: [0, 1]
       nSamples: {NS}
       peakSampleIndex: {PEAK}
+      nFeatures: 3
 programs:
   - name: ndm_detectspikes
     parameters:
@@ -171,6 +181,36 @@ programs:
               and "x2 (spline)" in out, "--supersample 2 --interp spline: its own .spk and tick .res")
         u2 = np.fromfile(base + ".spk.standard_U2.1", np.int16).reshape(-1, NS * 2, 2)
         check(np.array_equal(u2[:, ::2, :], std), "the exact spline reproduces the raw samples at tick 2k")
+
+        # 5. ndm_pca on the super-sampled spaces
+        if not HAVE_PCA:
+            print(f"  skip: PCA binaries not found ({PCA_BINS}); ndm_pca on the _U spaces not tested")
+        else:
+            rc, out = run("ndm_pca", "1", "--method", "standard_U4")
+            check(rc == 0, f"ndm_pca --method standard_U4 exits 0\n{out[-2000:] if rc else ''}")
+            check("super-sampled x4 waveforms (128 ticks); phases from s.res.standard_U4.1" in out,
+                  "ndm_pca says the window is in ticks and where the phases come from")
+            fetU = base + ".fet.standard_U4.1"; pcaU = base + ".pca.standard_U4.1"
+            check(os.path.exists(fetU) and os.path.exists(pcaU), "s.fet.standard_U4.1 and s.pca.standard_U4.1 written")
+            ndU = int(np.fromfile(fetU, np.int32, 1)[0])
+            FU = np.fromfile(fetU, np.int64, offset=4).reshape(-1, ndU)
+            check(ndU == 2 * 3 + 2, f"the _U4 .fet is features + phase + time ({ndU} columns = 2 ch x 3 + 2)")
+            check(np.array_equal(FU[:, -1], res) and np.array_equal(FU[:, -2], np.zeros(len(res), np.int64)),
+                  "its time column is the shared .res and its phase column the tick .res's phases (0)")
+            h = np.fromfile(pcaU, np.int32, 9)
+            check(h[3] == NS * 4 or h[3] == 128 - 0, f"the _U4 basis window is in ticks (data2use {h[3]})")
+            rc, out = run("ndm_pca", "1", "--method", "stderiv_S1_U4")
+            check(rc == 0 and os.path.exists(base + ".fet.stderiv_S1_U4.1"),
+                  f"ndm_pca --method stderiv_S1_U4 exits 0 and writes its .fet\n{out[-2000:] if rc else ''}")
+            ndD = int(np.fromfile(base + ".fet.stderiv_S1_U4.1", np.int32, 1)[0])
+            check(ndD == 1 * 3 + 2, f"the stderiv_S1_U4 .fet drops the dependent channel: 1 ch x 3 + phase + time ({ndD})")
+            # a non-zero phase in the tick .res lands in the column
+            (res * 4 + np.array([0, 1, 2, 3], np.int64)).tofile(resU)
+            rc, out = run("ndm_pca", "1", "--method", "standard_U4", "--force")
+            FU = np.fromfile(fetU, np.int64, offset=4).reshape(-1, ndU)
+            check(rc == 0 and np.array_equal(FU[:, -2], [0, 1, 2, 3]), f"the phases of the tick .res fill the phase column ({FU[:, -2].tolist()})")
+            rc, out = run("ndm_pca", "1", "--method", "standard_U4_D34")
+            check(rc != 0 and "not supported" in out, "a lag space over super-sampled waveforms is refused")
     finally:
         shutil.rmtree(td, ignore_errors=True)
     print(f"test_extract_supersample: {'PASS' if not fails else 'FAIL'} ({fails} failed)")

@@ -1652,7 +1652,9 @@ ndm_sdiff_max_index()
 ndm_shared_res()
 {
 	local base="$1" group="$2" pref="${3:-}" det cand mm
-	local sF="${NDM_M_FAMILY-}" sK="${NDM_M_KIND-}" sO="${NDM_M_ORDER-}" sL="${NDM_M_LAG-}" sD="${NDM_M_DIMS-}" sE="${NDM_M_ERROR-}"
+	local sF="${NDM_M_FAMILY-}" sK="${NDM_M_KIND-}" sO="${NDM_M_ORDER-}" sL="${NDM_M_LAG-}" sD="${NDM_M_DIMS-}" sE="${NDM_M_ERROR-}" sU="${NDM_M_UP-}"
+	# The shared .res is base-rate: a _U<factor> preference asks for its base-rate token.
+	[ -n "$pref" ] && pref=$(ndm_base_rate_token "$pref")
 	det=$(read_script_parameter -s ndm_detectspikes -a "" "$base" method)
 	xml_read_failed "$det" && det=
 	NDM_RES_DETECT="$det"; NDM_R_METHOD=""
@@ -1673,6 +1675,7 @@ ndm_shared_res()
 				mm="${cand#"$base.res."}"; mm="${mm%".$group"}"
 				case "$mm" in ''|*.*) continue ;; esac
 				ndm_check_method_token "$mm" || continue          # emg and the like
+				[ "$NDM_M_UP" = 1 ] || continue                   # a _U<f> .res holds ticks, never the shared one
 				out="$cand"; NDM_R_METHOD="$mm"; rc=0; break
 			done
 		fi
@@ -1682,7 +1685,7 @@ ndm_shared_res()
 			else out="$(ndm_method_path "$base" res "$group" "${pref:-standard}")"; NDM_R_METHOD="$pref"; fi
 		fi
 	fi
-	NDM_M_FAMILY="$sF"; NDM_M_KIND="$sK"; NDM_M_ORDER="$sO"; NDM_M_LAG="$sL"; NDM_M_DIMS="$sD"; NDM_M_ERROR="$sE"
+	NDM_M_FAMILY="$sF"; NDM_M_KIND="$sK"; NDM_M_ORDER="$sO"; NDM_M_LAG="$sL"; NDM_M_DIMS="$sD"; NDM_M_ERROR="$sE"; NDM_M_UP="$sU"
 	echo "$out"
 	return $rc
 }

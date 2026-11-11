@@ -109,11 +109,21 @@ method=$methodOverride
 method=${method:-standard}
 ndm_check_method_token "$method" || { echo_error "$NDM_M_ERROR"; exit $GENERAL_ERROR; }
 methodFamily=$NDM_M_FAMILY
+# Super-sampled waveforms (_U<factor>, ndm_extractspikes --supersample): the .spk holds
+# nSamples x factor ticks per channel, so the window geometry (nSamples, peak, before,
+# after) is scaled by the factor, and the .fet gets each spike's sub-sample PHASE as its
+# last feature column before the time (Klusters' layout of a _U space), read from the
+# group's tick .res that extraction wrote (ticks = sample x factor + phase).
+upFactor=${NDM_M_UP:-1}
 # Lagged feature space: the _D<lag><dims> suffix names a FEATURE space over the same
 # waveforms, so inputs (.spk/.res) and the ordinary basis use the token without it.
 featLag=$NDM_M_LAG
 featDims=$NDM_M_DIMS
 waveMethod=$method
+if [ -n "$featLag" ] && [ "$upFactor" != 1 ]; then
+	echo_error "method '$method': a lag feature space over super-sampled waveforms is not supported here (the lag is in base-rate samples); fit the _U basis without _D"
+	exit $GENERAL_ERROR
+fi
 if [ -n "$featLag" ]; then
 	waveMethod=${method%_D[0-9][0-9]}
 	if [ "$featLag" -lt 1 ]; then
@@ -175,6 +185,7 @@ print_header "$session - Computing PCA for spike sorting [method=$method]"
 
 # Check required programs
 check_commands_installed xpathReader process_pca process_mergefeatures
+[ "$upFactor" != 1 ] && check_commands_installed python3
 [ "$methodFamily" = stderiv ] && check_commands_installed process_pca_stderiv
 
 once()
@@ -246,17 +257,38 @@ once()
 	check_mandatory_variable $waveformLength "missing number of samples per waveform"
 	check_mandatory_variable $nFeatures "missing number of features"
 
-	local options=""
+	local options="" tickres=
+	if [ "$upFactor" != 1 ]; then
+		# (not in a command substitution: NDM_R_FOUND / NDM_R_METHOD are read)
+		ndm_supersampled_res "$session" "$electrodeGroup" "$upFactor" "$waveMethod" > /dev/null || true
+		tickres=$(ndm_method_path "$session" res "$electrodeGroup" "$NDM_R_METHOD")
+		if [ "$NDM_R_FOUND" != 1 ]; then
+			echo_error "group $electrodeGroup: $(basename "$tickres") is missing -- the super-sampled waveforms' tick .res (ndm_extractspikes --supersample $upFactor writes it)"
+			exit $INPUTS_MISSING
+		fi
+		waveformLength=$(( waveformLength * upFactor ))
+		echo_info "Group $electrodeGroup: super-sampled x$upFactor waveforms ($waveformLength ticks); phases from $(basename "$tickres")"
+	fi
 
-	# PCA on partial waveform?
+	# PCA on partial waveform?  (in ticks for a super-sampled space: the 1-based peak
+	# sample p becomes tick (p - 1) * factor + 1, before/after scale by the factor)
 	peak=$(yaml_read $session "//spikeDetection/channelGroups/group[$electrodeGroup]/peakSampleIndex")
-	check_optional_variable $peak && options="$options -p $peak"
+	if check_optional_variable $peak; then
+		[ "$upFactor" != 1 ] && peak=$(( (peak - 1) * upFactor + 1 ))
+		options="$options -p $peak"
+	fi
 	before=($(read_script_parameter $session before))
 	[ ${#before[*]} -eq 1 ] && before=${before[0]} || before=${before[$electrodeGroup-1]}
-	check_optional_variable $before && options="$options -b $before"
+	if check_optional_variable $before; then
+		[ "$upFactor" != 1 ] && before=$(( before * upFactor ))
+		options="$options -b $before"
+	fi
 	after=($(read_script_parameter $session after))
 	[ ${#after[*]} -eq 1 ] && after=${after[0]} || after=${after[$electrodeGroup-1]}
-	check_optional_variable $after && options="$options -a $after"
+	if check_optional_variable $after; then
+		[ "$upFactor" != 1 ] && after=$(( after * upFactor ))
+		options="$options -a $after"
+	fi
 
 	# Extra features?
 	extra=$(read_script_parameter $session extra)
@@ -355,6 +387,13 @@ once()
 		process_mergefeatures $fetout.tmp $resfile $fetout
 		check_command_status process_mergefeatures
 		rm $fetout.tmp
+		if [ -n "$tickres" ]; then
+			# The phase column (the last feature column, before the time): tick - sample x factor.
+			PHASECOL="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/process_fet_phase.py"
+			[ -f "$PHASECOL" ] || PHASECOL="process_fet_phase.py"
+			python3 "$PHASECOL" --fet "$fetout" --res "$resfile" --ticks "$tickres" --factor "$upFactor"
+			check_command_status process_fet_phase.py
+		fi
 	fi
 	if [ -n "$lagfet" ]; then
 		process_mergefeatures $lagfet.tmp $resfile $lagfet
