@@ -95,17 +95,22 @@ space; pick the `(.clu)` entry to go back.
 - **Save** always writes the `.clu` under the method it was opened with,
   whichever space is shown.
 - **Realign**, **Align All**, **nudge** and the automatic post-edit realign
-  work from any space (Preferences → Curation → Realignment → *Realign and nudge from any
-  feature space; keep every space aligned*, on by default). They run in the
-  `.clu`'s own space — Klusters swaps to it and back — and every other space
-  then follows the spikes that moved: each moved spike is re-extracted from
-  the `.fil` into every other waveform file, in that space's own domain, and
-  re-projected into every space's features. Only the moved spikes are touched;
-  a space that was already behind gets a full sync instead. The results are
-  working copies, written by **Save**. This costs a `.fil` read of the moved
-  spikes and a rewrite of them in each space per realign or nudge; with the
-  preference off, these operations are off while another space is shown and
-  the other spaces keep their old spike times until synced.
+  run **in the space shown** (Preferences → Curation → Realignment → *Realign
+  and nudge in the shown feature space; every other space follows*, on by
+  default): they align on the shown space's waveforms and basis — sub-sample
+  lags in a super-sampled space, whichever space the `.clu` lives in — and
+  rewrite that space's working copies and the shared `.res`. Every other
+  space, the `.clu`'s own included, then follows the spikes that moved: each
+  moved spike is re-extracted from the `.fil` into every other waveform file,
+  in that file's own domain and geometry (a super-sampled file at the phases
+  the realign found), and re-projected into every space's features. Only the
+  moved spikes are touched; a space that was already behind gets a full sync
+  instead. The results are working copies, written by **Save**. This costs a
+  `.fil` read of the moved spikes and a rewrite of them in each space per
+  realign or nudge; with the preference off, these operations are off while
+  another space is shown and the other spaces keep their old spike times
+  until synced. Not in a lag (`_D`) space — show its waveform space. A Save
+  As into another space refuses while that space holds an unsaved realign.
 - **Save As**, **decollide** and **template generation** still need the
   `.clu`'s own space. **Recluster** works, using the shown space's features.
 - **Ctrl+Tab** shows the next space and **Ctrl+Shift+Tab** the previous one
@@ -198,13 +203,15 @@ other; its waveforms show 4× the points, every matrix and the realign see a
 `stderiv_C5_U4_D34`); the group's `nSamples` and `peakSampleIndex` in the
 session file stay those of the recording, Klusters scales them per space.
 
-**Realign and nudge at sub-sample resolution.** They run in the `.clu`'s own
-space, so to use them the clustering is saved under the super-sampled token
-(offered when the space is built, or automatic in the mode: *Save As*
-`<base>.clu.<token>_U4.N`) and reopened. A Save As into a method whose space
-already exists **adopts** that space: the `.clu` moves, the space's files stay
-(the origin's pending copies are not written over them; an unsaved realign in
-the origin must be saved first) and the session reopens there. A realignment then finds each spike's lag in **ticks**; the `.res`
+**Realign and nudge at sub-sample resolution.** They run in the space
+shown, so showing the super-sampled space is enough; the `.clu` may stay
+where it is (its own space follows) or move there with *Save As*
+`<base>.clu.<token>_U4.N` (offered when the space is built, or automatic in
+the mode). A Save As into a method whose space already exists **adopts** that
+space: the `.clu` moves, the space's files stay (the origin's pending copies
+are not written over them; an unsaved realign in either space must be saved
+first) and the session reopens there. A realignment in the super-sampled
+space finds each spike's lag in **ticks**; the `.res`
 keeps whole acquisition samples (a lag of −5 ticks at ×4 moves the `.res`
 by −2 samples) and the rest is the spike's **phase**, the space's last feature
 column (0 … factor−1): tick `k` of the waveform stands at raw time

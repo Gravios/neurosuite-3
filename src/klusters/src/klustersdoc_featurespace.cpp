@@ -214,10 +214,43 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
     return true;
 }
 
+// Reload the shown space from its files as they are now (its working copies
+// once they exist).  Not by clearing activeMethod: for an untagged session the
+// .clu's own token IS "", and switchFeatureSpace would then take the borrowed
+// table for the origin's and hold it under its name.
+bool KlustersDoc::reloadShownSpace(QString& error)
+{
+    const QString shown = activeMethod;
+    activeMethod = QStringLiteral("\u0001reload");          // never a real token
+    if (!switchFeatureSpace(shown, error)) { activeMethod = shown; return false; }
+    return true;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The working set of a space (SpaceFiles): what a realign or nudge reads and
 // rewrites when it runs in that space.
 // ─────────────────────────────────────────────────────────────────────────────
+
+// Before a realign or nudge in the shown space: its working copies exist
+// (seeded now if not) and the Data reads them, so the in-place rewrite lands in
+// what is on screen.  The .clu's own space is always ready (initPendingFiles).
+bool KlustersDoc::prepareShownSpaceForRealign(QString* error)
+{
+    if (!clusteringData) { if (error) *error = tr("No document is open."); return false; }
+    if (activeMethod == originMethod) return true;
+    if (neurosuite::custody::parseMethodToken(activeMethod.toStdString()).lag >= 1) {
+        if (error) *error = tr("Realign and nudge do not run in a lag (_D) feature space; show its waveform space (%1) first.")
+                                .arg(QString::fromStdString(neurosuite::custody::waveformToken(activeMethod.toStdString())));
+        return false;
+    }
+    const SpaceFiles ws = workingSetOf(activeMethod, error, /*seed*/ true);
+    if (!ws.valid) return false;
+    if (activeSpkPath != ws.spkWork || activeFetPath != ws.fetWork) {
+        QString err;
+        if (!reloadShownSpace(err)) { if (error) *error = err; return false; }
+    }
+    return activeSpkPath == ws.spkWork && activeFetPath == ws.fetWork;
+}
 
 KlustersDoc::SpaceFiles KlustersDoc::workingSetOf(const QString& method, QString* error, bool seed)
 {
@@ -584,14 +617,10 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
     // The space being shown read the old copies (or, after a failed swap, the
     // ones just removed): reload it.  A reload failure does not undo the sync.
     if (showsSynced) {
-        const QString shown = activeMethod;
         QString err;
-        activeMethod.clear();                        // force the reload
-        if (!switchFeatureSpace(shown, err)) {
-            activeMethod = shown;
-            log << shown << ": synced, but reloading it failed — " << err
+        if (!reloadShownSpace(err))
+            log << activeMethod << ": synced, but reloading it failed — " << err
                 << "  Switch to another space and back.\n";
-        }
     }
     return promoted;
 }
@@ -627,20 +656,24 @@ void KlustersDoc::recordMovedRows(const std::vector<int64_t>& rows)
     if (rows.empty()) return;
     QMutexLocker lk(&movedRowsMutex);
     movedRows.insert(movedRows.end(), rows.begin(), rows.end());
+    movedInMethod = activeMethod;    // realign / nudge write the SHOWN space
 }
 
 void KlustersDoc::dropMovedSpikes()
 {
     QMutexLocker lk(&movedRowsMutex);
     movedRows.clear();
+    movedInMethod.clear();
 }
 
 bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMethod)
 {
     std::vector<int64_t> rows;
+    QString movedIn;
     {
         QMutexLocker lk(&movedRowsMutex);
         rows.swap(movedRows);
+        movedIn.swap(movedInMethod);
     }
     if (rows.empty() || !clusteringData) return true;
     std::sort(rows.begin(), rows.end());
@@ -663,8 +696,9 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
     // moved spikes (waveforms re-cut, features re-projected, its phase column
     // when super-sampled).  Every other space follows -- the .clu's own too,
     // when it is not the one written.
-    const SpaceFiles written = workingSetOf(writtenMethod.isEmpty() ? originMethod : writtenMethod,
-                                            nullptr, /*seed*/ false);
+    const QString writtenIn = !writtenMethod.isEmpty() ? writtenMethod
+                            : !movedIn.isEmpty()       ? movedIn : originMethod;
+    const SpaceFiles written = workingSetOf(writtenIn, nullptr, /*seed*/ false);
     if (written.method.isEmpty()) {
         log << "follow: the space written (" << writtenMethod << ") is unknown; nothing followed.\n";
         return false;

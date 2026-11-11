@@ -90,7 +90,7 @@ def make_session(d, name, n_per_unit=300, dur=20.0, seed=7, group=1, method="sta
     up = 16
     fil = rng.normal(0, 12.0, (T, NTOT))
     # the units, at sub-sample offsets, their .res jittered by whole samples
-    times, labels, truth = [], [], []
+    times, labels, truth, sub = [], [], [], []
     for kind, cid in ((0, 2), (1, 3)):
         tpl = template(kind, NSAMP + 8, up)              # a little longer than the window
         at = np.sort(rng.choice(np.arange(SR, T - SR, 40), n_per_unit, replace=False))
@@ -103,10 +103,12 @@ def make_session(d, name, n_per_unit=300, dur=20.0, seed=7, group=1, method="sta
             times.append(int(a) + jitter)
             labels.append(cid)
             truth.append(int(a))
+            sub.append(-phase / up)                      # the peak's true sub-sample offset from `a`
     order = np.argsort(times, kind="stable")
     res = np.asarray(times, np.int64)[order]
     clu = np.asarray(labels, np.int32)[order]
     truth = np.asarray(truth, np.int64)[order]
+    sub = np.asarray(sub, np.float64)[order]
     fil = np.clip(np.rint(fil), -32768, 32767).astype(np.int16)
 
     base = os.path.join(d, name)
@@ -130,7 +132,7 @@ def make_session(d, name, n_per_unit=300, dur=20.0, seed=7, group=1, method="sta
                  "fieldPotentials: {lfpSamplingRate: 1250}\n"
                  "spikeDetection:\n  channelGroups:\n"
                  f"    - channels: [{chans}]\n      nSamples: {NSAMP}\n      peakSampleIndex: {PEAK}\n      nFeatures: {NCOMP}\n")
-    return base, dict(res=res, clu=clu, truth=truth, spk=spk, fet=fet, fil=fil)
+    return base, dict(res=res, clu=clu, truth=truth, sub=sub, spk=spk, fet=fet, fil=fil)
 
 
 # ── readers for the checks ───────────────────────────────────────────────────

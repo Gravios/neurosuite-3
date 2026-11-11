@@ -254,10 +254,10 @@
           <item row="6" column="0">
            <widget class="QCheckBox" name="realignFromAnySpaceCheckBox">
             <property name="text">
-             <string>Realign and nudge from any feature space; keep every space aligned</string>
+             <string>Realign and nudge in the shown feature space; every other space follows</string>
             </property>
             <property name="toolTip">
-             <string>Realign, Align All and nudge work while another method's space is shown: they run in the .clu's own space and return to the shown one.  After each of them every other space follows the moved spikes: each moved spike is re-extracted from the .fil into every other waveform file (in that space's own domain) and re-projected into every space's features, so all spaces stay at the same spike times.  The results are working copies, saved with Save.  On by default; when on, every realign or nudge also reads the .fil for the moved spikes and rewrites them in each space.  When off, realign and nudge are only available in the .clu's own space and the other spaces keep their old spike times until synced.</string>
+             <string>Realign, Align All and nudge work in whichever space is shown: they align on that space's waveforms and basis (sub-sample lags in a super-sampled space) and rewrite its working copies and the shared .res.  After each of them every other space -- the .clu's own included -- follows the moved spikes: each moved spike is re-extracted from the .fil into every other waveform file (in that space's own domain and geometry) and re-projected into every space's features, so all spaces stay at the same spike times.  The results are working copies, saved with Save.  On by default; when on, every realign or nudge also reads the .fil for the moved spikes and rewrites them in each space.  When off, realign and nudge are only available in the .clu's own space and the other spaces keep their old spike times until synced.  Not in a lag (_D) space: show its waveform space.</string>
             </property>
             <property name="checked">
              <bool>true</bool>

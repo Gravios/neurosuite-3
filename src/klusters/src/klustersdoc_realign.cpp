@@ -577,12 +577,30 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     nShifted = 0;
     logOut.clear();
 
-    // Realign rewrites the .clu space's .spk/.fet/.pca and the shared .res; it is
-    // not run from another method's feature space.
-    if (isBorrowedSpace()) {
-        logOut = tr("Realign works in the %1 feature space of the open .clu; "
-                    "switch back to it first (the %2 space is loaded).\n")
-                     .arg(originMethod, activeMethod);
+    // Realign runs IN THE SHOWN SPACE: it aligns on that space's waveforms and
+    // basis, rewrites that space's .spk/.fet working copies and the shared .res,
+    // and every other space -- the .clu's own included -- follows the moved
+    // spikes afterwards (followMovedSpikes).  The shown space's working set must
+    // be in place (workingSetOf, seeded by the app before the job starts) and
+    // loaded: a borrowed space whose Data still reads the committed files is
+    // refused, as is a _D lag space (its basis is not a plain per-channel PCAE
+    // to refine lags against: align in its waveform space).
+    QString wsErr;
+    const SpaceFiles ws = workingSetOf(activeMethod, &wsErr, /*seed*/ false);
+    if (!ws.valid) {
+        logOut = tr("Realign: the %1 space has no working copies to write (%2).\n").arg(activeMethod, wsErr);
+        if (liveLog) liveLog(logOut, true);
+        return false;
+    }
+    if (neurosuite::custody::parseMethodToken(activeMethod.toStdString()).lag >= 1) {
+        logOut = tr("Realign does not run in a lag (_D) feature space; show its waveform space (%1) first.\n")
+                     .arg(QString::fromStdString(neurosuite::custody::waveformToken(activeMethod.toStdString())));
+        if (liveLog) liveLog(logOut, true);
+        return false;
+    }
+    if (!ws.isOrigin && (activeSpkPath != ws.spkWork || activeFetPath != ws.fetWork)) {
+        logOut = tr("Realign: the %1 space is shown from its saved files, not its working copies; "
+                    "reload it first (the app does this before a realign).\n").arg(activeMethod);
         if (liveLog) liveLog(logOut, true);
         return false;
     }
@@ -697,14 +715,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // load pre-aligned waveforms, xcorr them against the updated template,
     // find the same non-zero lags all over again, and write them back —
     // pushing late spikes further forward and early spikes further backward.
-    auto pendingOrOrig = [](const QString& orig, const QString& pending) {
-        return QFileInfo::exists(pending) ? pending : orig;
-    };
-    const QString spkPath = pendingOrOrig(origSpkPath, pendingSpkPath);
-    const QString resPath = pendingOrOrig(origResPath, pendingResPath);
-    const QString fetPath = pendingOrOrig(origFetPath, pendingFetPath);
-    const QString cluPath = resolveFeature(dir + "/" + base, "clu", grpId,
-                                           featureMethod(origFetPath));
+    // The shown space's working copies (SpaceFiles): written in place below.
+    const QString spkPath = ws.spkWork;
+    const QString resPath = QFileInfo::exists(pendingResPath) ? pendingResPath : origResPath;   // the shared .res
+    const QString fetPath = ws.fetWork;
 
     // The raw recording every moved spike's window is re-cut from: the
     // session's .fil, else .dat (rawRecordingPath, as re-extract and the
@@ -747,16 +761,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     //   fetIsStderiv     — true if the resolved .fet is stderiv-space (the
     //     feature space the sort was done in), which selects the stderiv .pca
     //     basis and transforms the raw waveform before projecting.
-    const QString fetMethod = featureMethod(origFetPath);
-    const bool spkIsTransformed = methodIsStderiv(featureMethod(origSpkPath));
-    const bool fetIsStderiv     = methodIsStderiv(fetMethod);
+    // ... read off the SHOWN space's files (SpaceFiles), not the .clu's.
+    const QString fetMethod = ws.method;
+    const bool spkIsTransformed = ws.spkTransformed;
+    const bool fetIsStderiv     = ws.fetStderiv;
     // Kept as alias for existing legacy-named uses in this function that
     // really want the feature-space flag, not the .spk storage flag.
     const bool isStderivRealign = fetIsStderiv;
-    // Basis follows the feature space (.pca at fetMethod, with shared fallback).
-    const QString pcaPath = resolveFeature(
-        dir + "/" + base, "pca", grpId, fetMethod);
+    // Basis follows the feature space (.pca of the shown space).
+    const QString pcaPath = ws.pcaPath;
     const QString pcaDPath_ra = pcaPath;  // retained name for logging below
+    log << "Realign of cluster " << clusterId << " in the " << ws.method << " space"
+        << (ws.isOrigin ? " (the .clu's own)" : " (shown; the .clu is in " + originMethod + ")") << "\n";
 
     for (const QString& p : {spkPath, resPath, fetPath}) {
         if (!QFileInfo::exists(p)) {
@@ -2028,9 +2044,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // after every save/reject), so they are always complete files ready for
     // random-access writes.  The originals remain untouched until save.
     // -----------------------------------------------------------------------
-    FILE* spkW = fopen(pendingSpkPath.toLocal8Bit().constData(), "r+b");
+    FILE* spkW = fopen(ws.spkWork.toLocal8Bit().constData(), "r+b");
     FILE* resW = fopen(pendingResPath.toLocal8Bit().constData(), "r+b");
-    FILE* fetW = fopen(pendingFetPath.toLocal8Bit().constData(), "r+b");
+    FILE* fetW = fopen(ws.fetWork.toLocal8Bit().constData(), "r+b");
     if (!spkW || !resW || !fetW) {
         if (spkW) fclose(spkW);
         if (resW) fclose(resW);
@@ -2041,6 +2057,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     }
 
     PendingRealign pending;
+    pending.method         = ws.method;
     pending.bytesPerSpike  = bytesPerSpike;
     pending.spkElems       = spkElems;
     pending.timeDim        = timeDim;
@@ -2076,8 +2093,15 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // With `allPairs`, the transform is all-pairs and unseeded instead: what
     // KiloKlustaKwik's checkpoint and Phase-2b re-cuts write (ApplySdiffAllpairs-
     // TemporalDiff), whatever the group's pattern.
+    // A super-sampled .spk: the window is the recording's nSamp raw samples
+    // interpolated to factor ticks at the spike's phase (recutWindowCM with the
+    // kernel spec above), not nSamp raw frames.
     auto cutStoredSpace = [&](int64_t startSample, std::vector<int16_t>& out,
-                              bool allPairs = false) -> bool {
+                              bool allPairs = false, int phase = 0) -> bool {
+        if (upFactor > 1) {
+            out.assign(static_cast<size_t>(nChan * nSamp), 0);
+            return recutWindowCM(filF, totalSamples, startSample, phase, upCut, out.data());
+        }
         if (startSample < 0 || startSample + nSamp > totalSamples) return false;
         const std::int64_t off = static_cast<std::int64_t>(startSample)
                                * static_cast<std::int64_t>(totalNbChan)
@@ -2140,15 +2164,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             const int64_t i = (nCheck == N) ? k : k * N / nCheck;
             const int16_t* stored = storedWav.data()
                 + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            const int64_t start = resTs[static_cast<size_t>(i)] - static_cast<int64_t>(peakSamp0);
-            if (!cutStoredSpace(start, cut)) { ++nOut; continue; }
+            // The window's first RAW sample (a super-sampled space's peak is in ticks).
+            const int64_t start = resTs[static_cast<size_t>(i)]
+                - static_cast<int64_t>(upFactor > 1 ? d.basePeakSampleIndex() - 1 : peakSamp0);
+            const int phase = oldPhase[static_cast<size_t>(i)];
+            if (!cutStoredSpace(start, cut, false, phase)) { ++nOut; continue; }
             if (sameRow(cut.data(), stored, 0)) { ++nIntact; continue; }
             if (firstBad < 0) firstBad = i;
             const double rmsAtRes = rmsRatioOf(cut.data(), stored);
             bool found = false;
             // .res moved, row not rewritten: the window at .res - s itself.
             for (int sh = -maxRoll; sh <= maxRoll && !found; ++sh) {
-                if (sh == 0 || !cutStoredSpace(start - sh, cut)) continue;
+                if (sh == 0 || !cutStoredSpace(start - sh, cut, false, phase)) continue;
                 if (sameRow(cut.data(), stored, 0)) { ++nStale; ++stales[sh]; found = true; break; }
                 // Older Klusters realign: that window rolled circularly by s.
                 for (int ci = 0; ci < nChan; ++ci)
@@ -2390,7 +2417,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     fclose(spkW);
     fclose(resW);
     fclose(fetW);
-    SpkMemoryCache::instance().markWritten(pendingSpkPath);   // rows rewritten in place
+    SpkMemoryCache::instance().markWritten(ws.spkWork);   // rows rewritten in place
     fclose(filF);
     if (notRecut > 0) {
         nShifted = 0;
@@ -2415,6 +2442,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         recordMovedRows(moved);
     }
     ++spikeTimesGeneration;          // synced feature spaces are now stale
+    // ... except the one just written: its working copy IS the new times.
+    if (!ws.isOrigin) syncedGeneration.insert(ws.fetCommitted, spikeTimesGeneration.load());
 
     //Publish the overlay batch (revertible: rejectLastRealign pairs with it).
     //Both Data layers read the same pending .spk, so both get the batch —
@@ -2745,9 +2774,15 @@ void KlustersDoc::renewPendingAfterCommit(bool waveformsCommitted)
 void KlustersDoc::rejectLastRealign()
 {
     if (pendingRealign.empty()) return;
-    // It restores .clu-space features into the loaded table: only there.
-    if (isBorrowedSpace()) {
-        qWarning() << "[realign] undo refused while another feature space is shown";
+    // It restores the rows of the space the realign ran in into the loaded
+    // table, and re-seeds the .clu space's working copies: only with that space
+    // shown, and only for a realign made in the .clu's own space (a borrowed
+    // space's working copy is dropped with the synced set, not restored row by
+    // row).  The app no longer offers this; File > Close without saving is the
+    // way back.
+    if (isBorrowedSpace() || pendingRealign.back().method != originMethod) {
+        qWarning() << "[realign] undo refused: the realign ran in" << pendingRealign.back().method
+                   << "and" << activeMethod << "is shown";
         return;
     }
 
@@ -2845,13 +2880,20 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 {
     if (!clusteringData) return false;
     if (deltaSamples == 0) return true;
-    // Like realign, the nudge rewrites the .clu space's files and the shared .res.
-    if (isBorrowedSpace()) {
-        if (auto* sb = app() ? app()->statusBar() : nullptr)
-            sb->showMessage(tr("Nudge works in the %1 feature space; switch back to it first.")
-                                .arg(originMethod), 6000);
+    // Like realign, the nudge runs IN THE SHOWN SPACE: it rewrites that space's
+    // .spk/.fet working copies and the shared .res; every other space follows.
+    QString wsErr;
+    const SpaceFiles ws = workingSetOf(activeMethod, &wsErr, /*seed*/ false);
+    auto refuse = [&](const QString& why) {
+        if (auto* sb = app() ? app()->statusBar() : nullptr) sb->showMessage(why, 6000);
+        qWarning().noquote() << "[nudge]" << why;
         return false;
-    }
+    };
+    if (!ws.valid) return refuse(tr("Nudge: the %1 space has no working copies to write (%2).").arg(activeMethod, wsErr));
+    if (neurosuite::custody::parseMethodToken(activeMethod.toStdString()).lag >= 1)
+        return refuse(tr("Nudge does not run in a lag (_D) feature space; show its waveform space first."));
+    if (!ws.isOrigin && (activeSpkPath != ws.spkWork || activeFetPath != ws.fetWork))
+        return refuse(tr("Nudge: the %1 space is shown from its saved files, not its working copies.").arg(activeMethod));
 
     logBefore(CurationLogger::ActionType::NUDGE, QList<int>{ clusterId });
 
@@ -2925,9 +2967,10 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //                      the stderiv transform before projecting the raw
     //                      waveform onto the eigenvectors.
     // Independent flags (Pipeline-C), read off the resolved artifacts:
-    const QString nudgeMethod = featureMethod(origFetPath);
-    const bool spkIsTransformed = methodIsStderiv(featureMethod(origSpkPath));
-    const bool fetIsStderiv     = methodIsStderiv(nudgeMethod);
+    // ... of the SHOWN space (SpaceFiles), not the .clu's.
+    const QString nudgeMethod = ws.method;
+    const bool spkIsTransformed = ws.spkTransformed;
+    const bool fetIsStderiv     = ws.fetStderiv;
     // Legacy name retained for any downstream use that really means the
     // feature-space flag; nothing in nudge uses this directly after the
     // refactor below, but keep it for grep compatibility during review.
@@ -2936,8 +2979,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     // PCA basis follows the session method: .pca.stderiv.N stores eigenvectors
     // on the (nChan-1) stderiv-space channels, paired with .fet.stderiv.N.
-    const QString chosenPca = resolveFeature(
-        sessionBase, "pca", electrodeGroupID, nudgeMethod);
+    const QString chosenPca = ws.pcaPath;
 
     if (QFileInfo::exists(chosenPca)) {
         // PCAE loader (libneurosuite-core): validates magic/version and reads the
@@ -3012,9 +3054,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         : static_cast<int64_t>(d.maxDimension(d.timeDimension()));
 
     // ── Open pending files for writing ────────────────────────────────────
-    FILE* spkW = fopen(pendingSpkPath.toLocal8Bit().constData(), "r+b");
+    FILE* spkW = fopen(ws.spkWork.toLocal8Bit().constData(), "r+b");
     FILE* resW = fopen(pendingResPath.toLocal8Bit().constData(), "r+b");
-    FILE* fetW = fopen(pendingFetPath.toLocal8Bit().constData(), "r+b");
+    FILE* fetW = fopen(ws.fetWork.toLocal8Bit().constData(), "r+b");
     if (!resW || !fetW || !spkW) {
         if (spkW) fclose(spkW);
         if (resW) fclose(resW);
@@ -3131,11 +3173,10 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     std::vector<int> nudgePartner, nudgeSetOff, nudgeSetMem;
     neurosuite::core::ChannelExprSet nudgeExpr;
     if (neurosuite::core::hasTemporalDiff(pca.method) && !parameterFile.isEmpty()) {
-        // Nudge runs only in the .clu's own space (refused while another is
-        // shown), so originMethod is the token of the waveforms it rewrites.
+        // The token of the waveforms the nudge rewrites: the shown space's.
         const SdiffPattern sp = sdiffPatternForMethod(parameterFile, electrodeGroupID,
                                                       nChan, d.getTotalNbChannels(),
-                                                      originMethod);
+                                                      ws.method);
         if (sp.applied) {
             nudgePartner = sp.partner;
             nudgeSetOff  = sp.setOff;
@@ -3178,7 +3219,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         std::vector<int64_t> chkTs;
         std::vector<int16_t> chkS0;   // [i * nChan + ci]
         FILE* rs = fopen(pendingResPath.toLocal8Bit().constData(), "rb");
-        FILE* ss = fopen(pendingSpkPath.toLocal8Bit().constData(), "rb");
+        FILE* ss = fopen(ws.spkWork.toLocal8Bit().constData(), "rb");
         if (rs && ss) {
             const size_t rowElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
             std::vector<int16_t> rowBuf(rowElems);
@@ -3384,8 +3425,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     // invariant is broken; warn loudly so the user can re-run the
     // patched pipeline rather than producing more corrupted data.
     {
-        const QString readPath = QFileInfo(pendingSpkPath).exists()
-            ? pendingSpkPath : origSpkPath;
+        const QString readPath = ws.spkWork;
         FILE* fr = fopen(readPath.toLocal8Bit().constData(), "rb");
         if (fr && N > 0) {
             const std::vector<int64_t> probeIdx = {
@@ -3519,7 +3559,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     auto computeMean = [&](std::vector<double>& meanCM /* [ch*nSamp+s] */)
                           -> int64_t {
         meanCM.assign(static_cast<size_t>(nChan * nSamp), 0.0);
-        FILE* fr = fopen(pendingSpkPath.toLocal8Bit().constData(), "rb");
+        FILE* fr = fopen(ws.spkWork.toLocal8Bit().constData(), "rb");
         if (!fr) return 0;
         std::vector<int16_t> buf(static_cast<size_t>(nChan * nSamp));
         int64_t nRead = 0;
@@ -3824,7 +3864,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     fclose(spkW); fclose(resW); fclose(fetW);
     if (filF) fclose(filF);
-    SpkMemoryCache::instance().markWritten(pendingSpkPath);   // rows rewritten in place
+    SpkMemoryCache::instance().markWritten(ws.spkWork);   // rows rewritten in place
 
     //Publish the nudge's overlay batch (see the realign's twin above).
     clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);
@@ -3837,7 +3877,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
         // Write next to the .spk.pending file with a unique timestamp so
         // repeated nudges produce distinct dump files.
-        QFileInfo spkInfo(pendingSpkPath);
+        QFileInfo spkInfo(ws.spkWork);
         const QString outName = QString("nudge-meanwave-c%1-d%2-%3.txt")
             .arg(clusterId).arg(deltaSamples)
             .arg(QDateTime::currentSecsSinceEpoch());
@@ -3982,6 +4022,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
 
     recordMovedRows(nudgeMoved);     // before the bump: the rows moved from here
     ++spikeTimesGeneration;          // synced feature spaces are now stale
+    // ... except the one just written: its working copy IS the new times.
+    if (!ws.isOrigin) syncedGeneration.insert(ws.fetCommitted, spikeTimesGeneration.load());
     return true;
 }
 

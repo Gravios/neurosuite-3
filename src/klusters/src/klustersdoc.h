@@ -181,7 +181,7 @@ public:
     /** After a Save As that ADOPTED an existing space (another method whose .spk/.fet
      *  exist -- a super-sampled space, say): the .clu now belongs to that space but the
      *  loaded tables are the old space's, so the caller reopens the document. */
-    bool saveAdoptedSpace() const { return savePlan.adoptedSpace; }
+    bool saveAdoptedSpace() const { return lastSaveAdoptedSpace; }
     /**Returns the QString of the document. */
     const QString& url() const{return docUrl;}
     /** Absolute paths of the session's loaded sibling files, resolved at open
@@ -1731,6 +1731,7 @@ public:
     struct PendingRealign {
         // Paths are stored doc-level (origSpkPath etc.); only per-batch
         // metadata and the per-spike undo records are needed here.
+        QString method;              ///< the space the realign ran in (its working copies hold the rows)
         int64_t bytesPerSpike = 0;
         int     spkElems      = 0;
         int     timeDim       = 0;
@@ -1842,6 +1843,12 @@ public:
      *  would be and @c valid says whether they exist.  False @c valid with
      *  @p error when the space is unknown or cannot be made ready. */
     SpaceFiles workingSetOf(const QString& method, QString* error, bool seed = true);
+    /** Make the shown space ready for a realign or nudge IN it: seed its working
+     *  copies if it has none and reload it from them.  Refuses a _D lag space.
+     *  The .clu's own space is always ready. */
+    bool prepareShownSpaceForRealign(QString* error);
+    /** Reload the shown space from its files as they are now. */
+    bool reloadShownSpace(QString& error);
     /** Load @p method's .fet and .spk into both data layers, keeping the cluster
      *  assignment and undo history.  Stops the view jobs first (the feature table
      *  is reallocated).  Refused while an unsaved realign is pending, because
@@ -2342,6 +2349,7 @@ private:
     /** Rows moved since the last follow (followMovedSpikes).  Guarded by
      *  movedRowsMutex: realign records them from its worker thread. */
     std::vector<int64_t> movedRows;
+    QString movedInMethod;           ///< the space the moves were made in (followMovedSpikes' default)
     QMutex  movedRowsMutex;
     /** Spike-times generation each synced .fet was made at (committed .fet path
      *  -> spikeTimesGeneration then); a mismatch means the copy is stale. */
@@ -2822,6 +2830,7 @@ private:
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     int                  matrixHoldDepth = 0;       // beginMatrixHold / endMatrixHold
     int                  matrixSelectionDepth = 0;  // selectFromMatrix / addFromMatrix in progress (selectingFromMatrix)
+    bool                 lastSaveAdoptedSpace = false;   // the last save was a Save As that adopted an existing space (finishSave)
     bool                 matrixUpdateDeferred = false;   // a launch was asked for while held
     bool                 scopeEmitDeferred = false;      // resolveMatrixScope moved while held
     bool                 scopeResolvedActive = false;   // held answer, never derived on demand

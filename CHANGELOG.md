@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: realign and nudge run in the shown feature space; the `.clu`'s own space follows (realign-in-shown-space, step 2 of 3)](#2026-11-11--klusters-realign-and-nudge-run-in-the-shown-feature-space-the-clus-own-space-follows-realign-in-shown-space-step-2-of-3) |
 | 2026-11-11 | [One tick `.res` per factor for all spaces, named after the shared `.res` (`.res.stderiv_S3_U4.6`); every `_U<f>` space carries the same phases](#2026-11-11--one-tick-res-per-factor-for-all-spaces-named-after-the-shared-res-resstderiv_s3_u46-every-_uf-space-carries-the-same-phases) |
 | 2026-11-11 | [Klusters: the working set of a feature space; the follow after a realign is per-file geometry and can follow the `.clu`'s own space (realign-in-shown-space, step 1 of 3)](#2026-11-11--klusters-the-working-set-of-a-feature-space-the-follow-after-a-realign-is-per-file-geometry-and-can-follow-the-clus-own-space-realign-in-shown-space-step-1-of-3) |
 | 2026-11-11 | [Klusters: the token of a `.pending` working copy -- the shown `.spk` was read as untagged (super-sample built `_U4` over stderiv waveforms; `%spk` was empty; a `_U` session opened at the base geometry)](#2026-11-11--klusters-the-token-of-a-pending-working-copy----the-shown-spk-was-read-as-untagged-super-sample-built-_u4-over-stderiv-waveforms-spk-was-empty-a-_u-session-opened-at-the-base-geometry) |
@@ -188,6 +189,46 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: realign and nudge run in the shown feature space; the `.clu`'s own space follows (realign-in-shown-space, step 2 of 3)
+
+<details>
+<summary>Details</summary>
+
+*Realign and nudge in the shown feature space; every other space follows* (the renamed
+`realignFromAnySpace` preference, on by default): a realign, Align All or nudge now runs **in
+the space shown** -- cross-correlation, PCA refinement and re-projection on that space's
+waveforms and basis, the lags in that space's ticks -- and rewrites that space's `.spk/.fet`
+working copies (`KlustersDoc::SpaceFiles`, seeded by `prepareShownSpaceForRealign` and
+loaded before the job starts) and the shared `.res`.  Every other space follows when the job
+is done, the `.clu`'s own included (0961's follow); no swap to the `.clu`'s space and back.
+So with the `.clu` in `standard` and `standard_U4` shown, the alignment is sub-sample and the
+phases land in the `_U4` column and the tick `.res`; with the `.clu` in `_U4` and `standard`
+shown, it is a whole-sample alignment that keeps every phase.  Refused in a lag (`_D`) space
+(show its waveform space).  The raw-source verification before a realign cuts a super-sampled
+`.spk` as one (it compared raw frames against interpolated ticks and refused every `_U`
+realign).  A Save As into another space refuses while that space holds an unsaved realign.
+The realign journal records the space it ran in; undo (unused by the app) refuses otherwise.
+
+Found by the self-test and fixed on the way: a Save As that adopts an existing space never
+reopened the session there (`finishSave` reset the plan before the app read
+`saveAdoptedSpace`), and a reopen that met a deferred close (a view job still running --
+the common case right after a save) was dropped with a "reopen it yourself" message; the
+reopen now waits for that close (`mReopenUrlAfterClose`).
+
+Self-test: `test_realign_in_shown_space.py` (realign cluster 2 and nudge cluster 3 in
+`standard_U4` with the `.clu` in `standard`: 233/300 spikes get a non-zero phase, the input
+jitter's spread of 1.4 samples goes to <0.3 after the ×4 alignment, the `.clu` space follows,
+`.res.standard_U4.1 == 4×.res + phase`) and `test_realign_base_from_supersampled_clu.py`
+(Save As into `_U4`, a ×4 realign there, then a base-rate realign with `standard` shown: the
+`_U4` origin follows, phases kept); `test_follow_supersampled.py` updated for the `_U4`-shown
+case now aligning there.  Self-test steps `saveas` and a `realignDone` record; ctest hooks for
+the three.  **Run here on the built binary: 3/3 PASS (60 checks).**  Preferences page text,
+`doc/klusters/README.md`.
+
+</details>
 
 ---
 

@@ -4258,6 +4258,13 @@ void KlustersApp::customEvent (QEvent* event){
                 slotFileClose();
                 QApplication::restoreOverrideCursor();
                 slotStatusMsg(tr("Ready."));
+                // A reopen that was waiting for this deferred close (reopenCurrentDocument).
+                if(!mReopenUrlAfterClose.isEmpty() && !mainDock){
+                    const QString url = mReopenUrlAfterClose, why = mReopenReasonAfterClose;
+                    mReopenUrlAfterClose.clear(); mReopenReasonAfterClose.clear();
+                    openDocumentFile(url);
+                    statusBar()->showMessage(tr("Reloaded \"%1\" after %2.").arg(QFileInfo(url).fileName(), why), 5000);
+                }
             }
         }
     }
@@ -9198,11 +9205,15 @@ void KlustersApp::reopenCurrentDocument(const QString& reason)
                 .arg(QFileInfo(url).fileName(),
                      reason.isEmpty() ? mRunningPlugin.name : reason), 5000);
     } else {
-        statusBar()->showMessage(reason.isEmpty()
-            ? tr("\"%1\" finished; reopen \"%2\" to see the reloaded clustering.")
-                  .arg(mRunningPlugin.name, QFileInfo(url).fileName())
-            : tr("Reopen \"%1\" to see it after %2.")
-                  .arg(QFileInfo(url).fileName(), reason), 8000);
+        // Deferred (a view job was still running: canCloseDocument posted a
+        // CloseDocumentEvent that closes once it is done): reopen then, from
+        // that event's handler -- right after a Save As into another space
+        // this is the common case, and leaving the old tables loaded under
+        // the new .clu was a geometry mismatch waiting to happen.
+        mReopenUrlAfterClose = url;
+        mReopenReasonAfterClose = reason.isEmpty() ? mRunningPlugin.name : reason;
+        statusBar()->showMessage(tr("Reopening \"%1\" after %2 once the running job is done…")
+                                     .arg(QFileInfo(url).fileName(), mReopenReasonAfterClose), 8000);
     }
 }
 

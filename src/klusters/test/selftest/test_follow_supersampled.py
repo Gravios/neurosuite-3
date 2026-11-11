@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""A super-sampled space FOLLOWS a realign made in the .clu's own space (0961, step 1).
+"""A super-sampled space FOLLOWS a realign made in the .clu's own space (0961, step 1), and the
+.clu's own space follows a realign made in the super-sampled one (step 2).
 
-On the synthetic session: build standard_U4 (Actions > Super-sample x4), realign cluster 2 in
-`standard` (the .clu's space), Save; then:
+On the synthetic session: build standard_U4 and standard_U2, realign cluster 2 with `standard`
+shown (the .clu's space; every phase stays 0) and, in a second run, with `standard_U4` shown
+(the realign runs there at the sub-sample level), Save; then:
   * the shared .res moved for some of cluster 2's spikes (the realign had whole-sample work:
     the session's .res is jittered), and no other cluster's;
   * .res.standard_U4.1 (ticks) == 4 x .res (every phase 0: the move was made at the base rate);
@@ -59,30 +61,43 @@ def case(klusters, shown):
         moved = res != made["res"]
         check(moved.any() and not moved[clu_ids != 2].any(),
               f"the realign moved {int(moved.sum())} of cluster 2's {int((clu_ids == 2).sum())} spikes and nothing else")
+        fet_u = S.read_fet(f"{base}.fet.standard_U4.1")
+        check(np.array_equal(fet_u[:, -1], res), ".fet.standard_U4.1: the time column is the moved .res")
+        phase = fet_u[:, -2]
         ticks = S.read_res(f"{base}.res.standard_U4.1")
-        check(ticks.shape == res.shape and np.array_equal(ticks, res * 4),
-              ".res.standard_U4.1 is the moved .res in ticks (x4, phase 0)")
+        check(ticks.shape == res.shape and np.array_equal(ticks, res * 4 + phase),
+              ".res.standard_U4.1 is the moved .res in ticks (x4 + phase)")
         ures = sorted(f for f in os.listdir(d) if ".res." in f and "_U" in f)
         check(ures == ["rat.res.standard_U2.1", "rat.res.standard_U4.1"],
               f"ONE tick .res per factor, named after the shared .res ({ures})")
         ticks2 = S.read_res(f"{base}.res.standard_U2.1")
-        check(np.array_equal(ticks2, res * 2), ".res.standard_U2.1 followed too: the moved .res x2")
-        fet_u = S.read_fet(f"{base}.fet.standard_U4.1")
-        check(np.array_equal(fet_u[:, -1], res), ".fet.standard_U4.1: the time column is the moved .res")
-        check(not fet_u[:, -2].any(), ".fet.standard_U4.1: every phase is 0 (a base-rate move)")
+        check(np.array_equal(ticks2, res * 2 + (phase * 2 + 2) // 4),
+              ".res.standard_U2.1 followed too: the moved .res x2, the x4 phases scaled to x2")
+        if shown == "standard":
+            check(not phase.any(), ".fet.standard_U4.1: every phase is 0 (a base-rate move)")
+        else:
+            check((phase[clu_ids == 2] != 0).any() and not phase[clu_ids != 2].any(),
+                  ".fet.standard_U4.1: cluster 2 carries sub-sample phases (the realign ran in _U4), no other cluster does")
         spk_b = S.read_spk(f"{base}.spk.standard.1", ns, nch)
         spk_u = S.read_spk(f"{base}.spk.standard_U4.1", ns * 4, nch)
         check(spk_b.shape[0] == spk_u.shape[0] == res.size, "both .spk hold every spike")
         # the base .spk was re-cut at the moved times
         recut = S.cut(made["fil"], res, S.CHANS, ns, S.PEAK)
         check(np.array_equal(spk_b, recut), ".spk.standard.1 == a fresh cut at the moved times")
-        # tick 4k of the _U4 window == sample k of the base window, for every spike
-        u = spk_u.reshape(-1, ns * 4, nch)[:, ::4, :].reshape(-1, ns * nch)
-        bad = np.flatnonzero((u != spk_b).any(1))
-        check(bad.size == 0, f".spk.standard_U4.1 followed: tick 4k == sample k for every spike ({bad.size} differ)",
+        # tick 4k - phase of the _U4 window == sample k of the base window, for every spike
+        su = spk_u.reshape(-1, ns * 4, nch)
+        sb = spk_b.reshape(-1, ns, nch)
+        bad = []
+        for i in range(res.size):
+            p = int(phase[i])
+            ks = np.arange(1 if p else 0, ns)
+            if not np.array_equal(su[i, 4 * ks - p, :], sb[i, ks, :]):
+                bad.append(i)
+        bad = np.asarray(bad, np.int64)
+        check(bad.size == 0, f".spk.standard_U4.1 and .spk.standard.1 agree at the samples for every spike ({bad.size} differ)",
               f"first differing rows {bad[:10].tolist()}, moved among them: {int(moved[bad].sum()) if bad.size else 0}")
-        check(np.array_equal(u[moved], spk_b[moved]) and moved.any(),
-              "... the moved spikes included (the _U4 space followed the realign)")
+        check(moved.any() and not np.isin(np.flatnonzero(moved), bad).any(),
+              "... the moved spikes included (the other space followed the realign)")
         # the dumps: the loaded times of cluster 2 after the realign are the saved .res
         dumps = [r["dump"] for r in results if "dump" in r]
         t_loaded = np.asarray(dumps[-1]["cluster"]["times"], np.int64)

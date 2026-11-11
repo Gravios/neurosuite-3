@@ -1008,6 +1008,9 @@ void KlustersDoc::finishSave(bool ok){
         clcSiblingPath = savePlan.clcPath;
         clpSiblingPath = savePlan.clpPath;
     }
+    // Read by the app AFTER this (the save-done event decides whether to reopen
+    // the session in the adopted space): keep it past the plan's reset.
+    lastSaveAdoptedSpace = ok && savePlan.adoptedSpace;
     savePlan = SavePlan();
     if (ok) {
         unitsInfoModified = false;
@@ -1169,9 +1172,18 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
             if (!filecommit::atParity(QFile::encodeName(pr.first).toStdString(),
                                       QFile::encodeName(pr.second).toStdString(), stamp)) { clean = false; break; }
         }
+        // ... nor in the TARGET space: a realign or nudge made in it (realign
+        // runs in the shown space) sits in its synced working copy until saved.
+        for (const QString& committed : { spkTarget, fetTarget }) {
+            const QString work = syncedPending.value(committed);
+            if (work.isEmpty() || !QFile::exists(work)) continue;
+            filecommit::SyncStamp stamp = syncStamps.value(work);
+            if (!filecommit::atParity(QFile::encodeName(work).toStdString(),
+                                      QFile::encodeName(committed).toStdString(), stamp)) { clean = false; break; }
+        }
         if (!clean) {
-            lastSaveErrorMessage = tr("Save As into the %1 space: the %2 space has an unsaved realignment or nudge.  "
-                                      "Save it first, then Save As.").arg(saMethod, originMethod);
+            lastSaveErrorMessage = tr("Save As into the %1 space: the %2 or the %1 space has an unsaved realignment "
+                                      "or nudge.  Save first, then Save As.").arg(saMethod, originMethod);
             return SAVE_ERROR;
         }
         adoptsSpace = true;

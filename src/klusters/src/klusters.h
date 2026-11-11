@@ -525,6 +525,8 @@ private:
     bool selfTestRunStep(const QJsonObject& step, QJsonObject& result);
     QJsonObject selfTestDump(int clusterId) const;
     void selfTestFinish(int code);
+    void selfTestNoteRealign(bool ok, int nShifted);
+    QString     selfTestRealignLog_;
     QJsonArray  selfTestSteps_;
     QJsonArray  selfTestResults_;
     QString     selfTestReport_;
@@ -1413,6 +1415,8 @@ private:
     QAction* mShowChildPalette = nullptr;      // View: show the child cluster palette
     QAction* mFollowSelectionInMatrices = nullptr;   // View: the matrices centre on the selected parent / child
     QAction* mExportBaseRate = nullptr;              // Actions: a _U session's .clu under its base-rate token
+    QString  mReopenUrlAfterClose;                   // reopenCurrentDocument: a reopen waiting for a deferred close
+    QString  mReopenReasonAfterClose;
     QAction* mShowTemplatePalette = nullptr;   // View: show the template palette
     QAction* mMergeParents = nullptr;        // Hierarchy: merge selected parents
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)

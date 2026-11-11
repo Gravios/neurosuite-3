@@ -362,20 +362,23 @@ bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)
     if (!doc || !doc->isBorrowedSpace()) return true;
     if (!configuration().getRealignFromAnySpace())
         return !refuseInBorrowedSpace(what, silent);
-    // Realign and nudge rewrite the .clu space's .spk/.fet and the shared .res
-    // and update the loaded feature table as they go, so they run in that
-    // space: swap to it (every space is held in memory, so this is quick) and
-    // come back once they are done (returnFromRealignSpace).  A second one
-    // while away keeps the first space to return to.
-    if (realignReturnSpace.isEmpty()) realignReturnSpace = doc->activeFeatureMethod();
-    if (!showFeatureSpace(doc->cluMethod(), /*syncFirst*/ false)) {
-        realignReturnSpace.clear();
+    // Realign and nudge run IN THE SHOWN SPACE: they align on its waveforms and
+    // basis and rewrite its working copies and the shared .res; every other
+    // space -- the .clu's own included -- follows the moved spikes when the
+    // job is done (returnFromRealignSpace).  The shown space only needs its
+    // working copies in place and loaded (a copy of its files the first time,
+    // a sync when it was behind).  No swap, nothing to return to.
+    QString err;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const bool ready = doc->prepareShownSpaceForRealign(&err);
+    QApplication::restoreOverrideCursor();
+    if (!ready) {
+        if (!silent) statusBar()->showMessage(tr("%1: %2").arg(what, err), 8000);
         return false;
     }
-    slotStatusMsg(tr("%1 in the .clu's own %2 feature space; back to %3 when it is done.")
-                      .arg(what, doc->cluMethod(), realignReturnSpace));
-    // No return is scheduled here: the callers start their job right away,
-    // and its end (or the nudge's) triggers returnFromRealignSpace.
+    realignReturnSpace.clear();
+    slotStatusMsg(tr("%1 in the %2 feature space (shown); the .clu's own %3 space and every other follow when it is done.")
+                      .arg(what, doc->activeFeatureMethod(), doc->cluMethod()));
     return true;
 }
 

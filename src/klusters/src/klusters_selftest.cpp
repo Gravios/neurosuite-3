@@ -16,6 +16,8 @@
  *        {"supersample": <factor>}       buildSupersampledSpace (no Save As offer)
  *        {"follow": true}                followMovedSpikes now
  *        {"save": true}                  File > Save
+ *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
+ *                                        space exists adopts it and reopens there)
  *        {"dump": true, "cluster": <id>} the spaces, their files, the loaded
  *                                        times (and phases) of the cluster's spikes
  * A modal dialog that opens during a step is closed (its default button) and
@@ -63,6 +65,8 @@ void KlustersApp::startSelfTest(const QString& specPath)
     // The preference the steps assume unless the spec says otherwise.
     if (spec.contains(QStringLiteral("realignFromAnySpace")))
         configuration().setRealignFromAnySpace(spec.value(QStringLiteral("realignFromAnySpace")).toBool());
+    if (spec.contains(QStringLiteral("realignVerbose")))
+        configuration().setRealignVerbose(spec.value(QStringLiteral("realignVerbose")).toBool());
     if (spec.contains(QStringLiteral("supersampleMode")))
         configuration().setSupersampleMode(spec.value(QStringLiteral("supersampleMode")).toInt());
     openDocumentFile(QFileInfo(clu).absoluteFilePath());
@@ -175,6 +179,12 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         slotFileSave();
         return true;                                  // the next step waits for the save thread
     }
+    if (step.contains(QStringLiteral("saveas"))) {
+        // File > Save As to the given .clu path (a token naming an existing space
+        // adopts it and the document reopens there -- the next step waits).
+        startSave(step.value(QStringLiteral("saveas")).toString(), /*isSaveAs*/ true);
+        return true;
+    }
     if (step.contains(QStringLiteral("dump"))) {
         result.insert(QStringLiteral("dump"), selfTestDump(step.value(QStringLiteral("cluster")).toInt(-1)));
         return true;
@@ -227,6 +237,17 @@ QJsonObject KlustersApp::selfTestDump(int clusterId) const
         d.insert(QStringLiteral("cluster"), c);
     }
     return d;
+}
+
+void KlustersApp::selfTestNoteRealign(bool ok, int nShifted)
+{
+    if (!selfTestTimer_) return;
+    QJsonObject r;
+    r.insert(QStringLiteral("realignDone"), ok);
+    r.insert(QStringLiteral("nShifted"), nShifted);
+    r.insert(QStringLiteral("log"), selfTestRealignLog_.right(20000));
+    selfTestRealignLog_.clear();
+    selfTestResults_.append(r);
 }
 
 void KlustersApp::selfTestFinish(int code)
