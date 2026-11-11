@@ -294,7 +294,7 @@
       </item>
       <item row="1" column="1">
        <widget class="QComboBox" name="supersampleInterpCombo">
-        <property name="toolTip"><string>The interpolator of every super-sampled cut (building the space, realign, nudge, sync).  Smoothing spline (the default): a cubic spline through Whittaker-smoothed samples, a low-pass of about 0.6 Nyquist -- the spike is untouched, the sample-to-sample noise an exact interpolant reproduces between the samples is not.  Cubic spline: exact at every sample.  Windowed sinc (Lanczos-3): the band-limited answer, slightly sharper peaks, mild ringing near clipped samples.  A space must be re-cut with the interpolator it was built with: set this to match a space built elsewhere (ndm_extractspikes --interp), or rebuild the space.</string></property>
+        <property name="toolTip"><string>The interpolator of every super-sampled cut (building the space, realign, nudge, sync).  Smoothing spline (the default): a cubic spline through Whittaker-smoothed samples, a low-pass of about 0.6 Nyquist -- the spike is untouched, the sample-to-sample noise an exact interpolant reproduces between the samples is not.  Cubic spline: exact at every sample.  Windowed sinc (Lanczos-3): the band-limited answer, slightly sharper peaks, mild ringing near clipped samples.  An existing space is re-cut with the interpolator it was built with (detected from its rows), whatever this says; this choice decides new spaces.</string></property>
         <item><property name="text"><string>Cubic spline</string></property></item>
         <item><property name="text"><string>Windowed sinc (Lanczos-3)</string></property></item>
         <item><property name="text"><string>Smoothing spline</string></property></item>

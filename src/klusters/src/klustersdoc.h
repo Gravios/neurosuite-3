@@ -1808,8 +1808,19 @@ public:
      *  are.  Only from a saved, unmodified _U session.  @p written lists the
      *  files; false with @p error otherwise. */
     bool exportAtBaseRate(QStringList* written, QString* error);
-    /** The interpolator for every super-sampled cut (Preferences). */
+    /** The interpolator for every super-sampled cut (Preferences) -- of a NEW space.
+     *  An existing super-sampled .spk is re-cut with the interpolator it was built
+     *  with, found by supersampleInterpFor (the preference may differ: a space
+     *  built by ndm_extractspikes --interp, or before the preference changed). */
     neurosuite::core::Interp supersampleInterp = neurosuite::core::Interp::SmoothSpline;
+    /** The interpolator an existing super-sampled .spk (@p spkPath, token
+     *  @p spkMethod, @p factor ticks per sample) was built with: a sample of its
+     *  rows is re-cut from the recording with each interpolator and the one that
+     *  reproduces them wins (cached per file).  The preference when none does
+     *  (the raw-source verification then says why) or when there is no recording. */
+    neurosuite::core::Interp supersampleInterpFor(const QString& spkPath, const QString& spkMethod, int factor,
+                                                   const neurosuite::core::PcaBasis* fallbackBasis = nullptr);
+    QHash<QString, int> supersampleInterpCache;   // spkPath -> Interp
     void setSupersampleInterp(neurosuite::core::Interp i) { supersampleInterp = i; }
     /** Build the super-sampled space over the shown space's waveforms: writes
      *  <base>.spk.<waveform token>_U<factor>.<g> (every spike re-cut from the recording

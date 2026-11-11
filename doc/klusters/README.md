@@ -200,9 +200,12 @@ the difference of two rounded ticks. The same cut is available outside Klusters
 as `ndm_extractspikes --supersample 4 [--interp smooth|spline|lanczos3]`
 (`--method stderiv_C5 --supersample 4`, or `--method stderiv_C5_U4`), which
 writes `.spk.<token>_U4.N` and the group's tick `.res`; Klusters then fits the
-basis and the `.fet` on those waveforms instead of cutting its own. A space
-must be re-cut (realign, nudge, sync) with the interpolator it was built with:
-the preference below must match, or the space is rebuilt.
+basis and the `.fet` on those waveforms instead of cutting its own. A space is
+re-cut (realign, nudge, sync, follow) with the interpolator it was built with,
+whatever the preference says now: Klusters detects it from the file's rows
+(a sample re-cut with each interpolator; the one that reproduces the rows wins,
+and the log says when it differs from the preference). The preference decides
+new spaces only.
 **Preferences → Curation → Realignment → Super-sampling** sets
 the **mode** (off by default, ×2, ×4): in a mode, every session that opens
 gets the super-sampled space over its `.clu`'s space built — if its files are

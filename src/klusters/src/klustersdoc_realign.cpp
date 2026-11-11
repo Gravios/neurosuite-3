@@ -2050,7 +2050,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     neurosuite::core::SpikeWindowSpec upCut;
     upCut.nSamp = d.baseNbSamplesPerWaveform(); upCut.peakSample = d.basePeakSampleIndex() - 1;
     upCut.totalNbChannels = totalNbChan; upCut.groupChannels = upChans.data(); upCut.nChan = nChan;
-    upCut.supersample = upFactor; upCut.interp = supersampleInterp;
+    upCut.supersample = upFactor;
+    upCut.interp = supersampleInterpFor(ws.spkWork, featureMethod(ws.spkWork), upFactor);   // the file's own interpolator
     upCut.applyTransform = spkIsTransformed; upCut.order = stderivOrder;
     upCut.partner = stderivPartnerPtr; upCut.setOff = stderivSetOffPtr; upCut.setMem = stderivSetMemPtr; upCut.expr = stderivExprPtr;
     upCut.seedFromPrevious = stderivSeeded;
@@ -3274,7 +3275,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     if (upFactor > 1) {
         upCut.nSamp = d.baseNbSamplesPerWaveform(); upCut.peakSample = d.basePeakSampleIndex() - 1;
         upCut.totalNbChannels = totalNbChan; upCut.groupChannels = upChans.data(); upCut.nChan = nChan;
-        upCut.supersample = upFactor; upCut.interp = supersampleInterp;
+        upCut.supersample = upFactor;
+        upCut.interp = supersampleInterpFor(ws.spkWork, featureMethod(ws.spkWork), upFactor);   // the file's own interpolator
         upCut.applyTransform = isStderivSpk;
         upCut.order = static_cast<neurosuite::core::SdiffOrder>(kSdiffOrder);
         upCut.partner = nudgePartner.empty() ? nullptr : nudgePartner.data();
@@ -4064,6 +4066,71 @@ QString KlustersDoc::rawRecordingPath() const
     return QFileInfo::exists(fil) ? fil : stem + QStringLiteral(".dat");
 }
 
+neurosuite::core::Interp KlustersDoc::supersampleInterpFor(const QString& spkPath, const QString& spkMethod, int factor,
+                                                           const neurosuite::core::PcaBasis* fallbackBasis)
+{
+    using neurosuite::core::Interp;
+    if (factor <= 1 || !clusteringData) return supersampleInterp;
+    const auto hit = supersampleInterpCache.constFind(spkPath);
+    if (hit != supersampleInterpCache.constEnd()) return static_cast<Interp>(hit.value());
+    const QString filPath = rawRecordingPath();
+    FILE* filF = std::fopen(filPath.toLocal8Bit().constData(), "rb");
+    if (!filF) return supersampleInterp;
+    const int nChan = clusteringData->nbOfChannels();
+    const int totalNbChan = clusteringData->getTotalNbChannels();
+    const int64_t totalSamples = static_cast<int64_t>(QFileInfo(filPath).size()) / (static_cast<int64_t>(sizeof(short)) * totalNbChan);
+    const int64_t N = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+    const int timeDim = clusteringData->timeDimension();
+    SpikeCutSpec cut; QString logS; QTextStream log(&logS);
+    cut.window.applyTransform = methodIsStderiv(spkMethod);
+    cut.window.supersample = factor;
+    spikeCutSpecFor(spkMethod, fallbackBasis, cut, log);
+    const int nSampU = cut.window.outSamples();
+    const size_t elems = static_cast<size_t>(nChan) * static_cast<size_t>(nSampU);
+    const qint64 rowBytes = static_cast<qint64>(elems * sizeof(int16_t));
+    QFile spk(spkPath);
+    if (!spk.open(QIODevice::ReadOnly) || spk.size() != static_cast<qint64>(N) * rowBytes) { std::fclose(filF); return supersampleInterp; }
+    // the phases: the shown space's column when this is its file, else the tick .res on disk
+    const int phaseCol = (spkPath == activeSpkPath) ? supersamplePhaseColumn() : -1;
+    const std::vector<int64_t> ticks = phaseCol >= 0 ? std::vector<int64_t>{} : sharedTicksOnDisk(factor);
+    const int64_t nCheck = std::min<int64_t>(N, 12);
+    std::vector<int16_t> stored(elems), cm(elems);
+    const Interp order[3] = { supersampleInterp,
+                              supersampleInterp == Interp::SmoothSpline ? Interp::CubicSpline : Interp::SmoothSpline,
+                              supersampleInterp == Interp::Lanczos3 ? Interp::CubicSpline : Interp::Lanczos3 };
+    Interp best = supersampleInterp; bool found = false;
+    for (int oi = 0; oi < 3 && !found; ++oi) {
+        if (oi == 2 && order[2] == order[1]) break;
+        cut.window.interp = order[oi];
+        bool all = true; int tested = 0;
+        for (int64_t k = 0; k < nCheck && all; ++k) {
+            const int64_t i = k * N / nCheck;
+            const int64_t t = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+            int phase = 0;
+            if (phaseCol >= 0) phase = static_cast<int>(clusteringData->featureValue(static_cast<dataType>(i + 1), phaseCol + 1));
+            else if (static_cast<int64_t>(ticks.size()) == N && ticks[static_cast<size_t>(i)] / factor == t)
+                phase = static_cast<int>(ticks[static_cast<size_t>(i)] - t * factor);
+            if (!spk.seek(i * rowBytes) || spk.read(reinterpret_cast<char*>(stored.data()), rowBytes) != rowBytes) { all = false; break; }
+            if (!recutWindowCM(filF, totalSamples, t - static_cast<int64_t>(cut.window.peakSample), phase, cut.window, cm.data()))
+                continue;                                     // outside the recording: not a vote
+            ++tested;
+            for (int s = 0; s < nSampU && all; ++s)
+                for (int ci = 0; ci < nChan && all; ++ci)
+                    if (stored[static_cast<size_t>(s) * nChan + ci] != cm[static_cast<size_t>(ci) * nSampU + s]) all = false;
+        }
+        if (all && tested > 0) { best = order[oi]; found = true; }
+    }
+    std::fclose(filF);
+    if (found) {
+        supersampleInterpCache.insert(spkPath, static_cast<int>(best));
+        if (best != supersampleInterp)
+            qInfo().noquote() << "[supersample]" << QFileInfo(spkPath).fileName() << "was built with the"
+                       << neurosuite::core::interpName(best) << "interpolator (the preference says"
+                       << neurosuite::core::interpName(supersampleInterp) << "): re-cut with it";
+    }
+    return found ? best : supersampleInterp;
+}
+
 void KlustersDoc::spikeCutSpecFor(const QString& spkMethod,
                                   const neurosuite::core::PcaBasis* fallbackBasis,
                                   SpikeCutSpec& cut, QTextStream& log) const
@@ -4220,6 +4287,13 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
     spikeCutSpecFor(spkMethod, fallbackBasis, cut, log);
     if (cut.window.supersample > 1 && phases && static_cast<int64_t>(phases->size()) == nSpikes)
         cut.window.phaseTicks = phases->data();      // each spike's sub-sample phase (the space's own column)
+    if (cut.window.supersample > 1) {
+        // A sync of an existing super-sampled space keeps the interpolator the file
+        // was built with; a new space (no committed file yet) takes the preference.
+        const QString committed = QString::fromStdString(neurosuite::custody::stripWorkingSuffix(targetSpkPath.toStdString()));
+        if (QFileInfo::exists(committed))
+            cut.window.interp = supersampleInterpFor(committed, spkMethod, cut.window.supersample, fallbackBasis);
+    }
 
     const QString tmpPath = targetSpkPath + QStringLiteral(".reextract.tmp");
     FILE* out = std::fopen(tmpPath.toLocal8Bit().constData(), "wb");

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: a super-sampled space is re-cut with the interpolator it was built with (detected from its rows), not the preference](#2026-11-11--klusters-a-super-sampled-space-is-re-cut-with-the-interpolator-it-was-built-with-detected-from-its-rows-not-the-preference) |
 | 2026-11-11 | [Klusters: a detached feature space (no basis -- `.fet.manifold`) no longer blocks the realign of the spaces it shares waveforms with; its time column follows, realign in it is refused](#2026-11-11--klusters-a-detached-feature-space-no-basis----fetmanifold-no-longer-blocks-the-realign-of-the-spaces-it-shares-waveforms-with-its-time-column-follows-realign-in-it-is-refused) |
 | 2026-11-11 | [`ndm_pca` on super-sampled waveforms: the basis in ticks, the `.fet` with the phase column; a shared `.res` is never a `_U` tick `.res`](#2026-11-11--ndm_pca-on-super-sampled-waveforms-the-basis-in-ticks-the-fet-with-the-phase-column-a-shared-res-is-never-a-_u-tick-res) |
 | 2026-11-11 | [Super-sampled extraction through the ndm engines; the smoothing spline; the `_U` stderiv from the interpolant's derivative; the spline's halved curvature fixed](#2026-11-11--super-sampled-extraction-through-the-ndm-engines-the-smoothing-spline-the-_u-stderiv-from-the-interpolants-derivative-the-splines-halved-curvature-fixed) |
@@ -193,6 +194,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: a super-sampled space is re-cut with the interpolator it was built with (detected from its rows), not the preference
+
+<details>
+<summary>Details</summary>
+
+A `standard_U4` extracted by `ndm_extractspikes --supersample 4` (the `smooth` interpolator)
+failed the realign's raw-source verification under a Klusters whose saved *Super-sampling →
+Interpolation* preference was the cubic spline ("unexplained ... RMS difference up to 8.4%"):
+the verification and every re-cut used the preference, and the saved setting outlives a
+changed default.  Now `KlustersDoc::supersampleInterpFor(spk, method, factor)` re-cuts a
+sample of an existing super-sampled `.spk`'s rows from the recording with each interpolator
+(the preference first) and takes the one that reproduces them, cached per file; realign,
+nudge, the follow and the sync re-cut with it, and the log says when it differs from the
+preference.  The preference decides new spaces only.  A file no interpolator reproduces (a
+`_U` space built before 0965's spline fix, another raw source) still fails the verification
+with its diagnosis.  `test_supersample_interp_detect.py` (a `_U4` built with the exact spline,
+realigned under the smoothing-spline preference: runs, the moved rows re-cut with the
+spline); the other four self-tests pass; `doc/klusters/README.md`, the preference tooltip.
+
+</details>
 
 ---
 

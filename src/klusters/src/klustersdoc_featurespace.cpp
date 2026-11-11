@@ -899,6 +899,9 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
         } else {
             SpikeCutSpec cut;
             spikeCutSpecFor(spkMethod, &members.front().pca, cut, log);
+            if (g.factor > 1)                                 // the file's own interpolator
+                cut.window.interp = supersampleInterpFor(QFileInfo::exists(g.spkPending) ? g.spkPending : spkCommitted,
+                                                         spkMethod, g.factor, &members.front().pca);
             // Moved spikes are scattered over the recording: read one window at
             // a time instead of refilling the default 8 MB buffer per spike.
             cut.window.bufferBytes = static_cast<size_t>(cut.window.nSamp)

@@ -239,7 +239,7 @@ endif()
 # at the GUI.  Needs python3 with numpy; each test SKIPs (exit 77) without them.
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND AND TARGET klusters)
-    foreach(_t IN ITEMS follow_supersampled realign_in_shown_space realign_base_from_supersampled_clu detached_space)
+    foreach(_t IN ITEMS follow_supersampled realign_in_shown_space realign_base_from_supersampled_clu detached_space supersample_interp_detect)
         add_test(NAME klusters_selftest_${_t}
                  COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/selftest/test_${_t}.py")
         set_tests_properties(klusters_selftest_${_t} PROPERTIES
