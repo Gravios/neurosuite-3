@@ -545,6 +545,14 @@ void KlustersApp::repopulateChildPalette(const QList<int>& parents){
     bool landedFromOperation = false;   // a parked landing was applied below
     QList<int> priorSelection;
     if(childPaletteA) priorSelection = childPaletteA->selectedClusters();
+    // A parent clicked over a child selection (adoptCuratedParents): the children
+    // are not restored, the parent holds the selection.
+    if(dropChildSelectionOnRebuild){
+        dropChildSelectionOnRebuild = false;
+        priorSelection.clear();
+        if(childPaletteA && !childPaletteA->selectedClusters().isEmpty())
+            childPaletteA->selectItems(QList<int>());
+    }
 
     // JOINT scope: the palette deliberately starts EMPTY and lists only the
     // working set the curation matrices have built (doc->jointChildrenList()).

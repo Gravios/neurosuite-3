@@ -5679,7 +5679,21 @@ void KlustersApp::adoptCuratedParents(const QList<int>& selectedClusters){
                                                          : curatable.first();
         const bool parentMoved     = (doc->curatedParent() >= 0 &&
                                       doc->curatedParent() != firstParent);
-        if(doc->matrixScopeEnabled() && !multipleParents && parentMoved){
+        // Children selected in the child palette and the user clicks a parent: that
+        // is the user leaving the children -- the same parent or another.  The child
+        // view exits (the matrices return to the parent scope), the child selection
+        // is dropped by the rebuild that follows (repopulateChildPalette would
+        // otherwise restore it), and the clicked parent holds the selection.
+        const bool childSelected = childPaletteA && !childPaletteA->selectedClusters().isEmpty();
+        if(childSelected){
+            dropChildSelectionOnRebuild = true;
+            if(doc->matrixScopeEnabled()){
+                doc->setMatrixScopeEnabled(false);
+                statusBar()->showMessage(
+                    tr("Curation matrices: parent view (a parent was selected over the children) — V for child view."),
+                    4000);
+            }
+        } else if(doc->matrixScopeEnabled() && !multipleParents && parentMoved){
             doc->setMatrixScopeEnabled(false);
             statusBar()->showMessage(
                 tr("Curation matrices: parent view (curated parent changed) — V for child view."),

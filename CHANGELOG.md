@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: a fiber clicked over an atom selection leaves the child view](#2026-11-11--klusters-a-fiber-clicked-over-an-atom-selection-leaves-the-child-view) |
 | 2026-11-11 | [Klusters: the super-sample MODE builds the space on open; Save As adopts an existing space; `%spk`](#2026-11-11--klusters-the-super-sample-mode-builds-the-space-on-open-save-as-adopts-an-existing-space-spk) |
 | 2026-11-11 | [Klusters: super-sample mode -- waveform spaces at 2x / 4x the sampling, realign and nudge at sub-sample resolution](#2026-11-11--klusters-super-sample-mode--waveform-spaces-at-2x--4x-the-sampling-realign-and-nudge-at-sub-sample-resolution) |
 | 2026-11-11 | [core: the `_U<factor>` super-sampled token, `supersample.hpp`, a super-sampled cut, `pca_fit.hpp`](#2026-11-11--core-the-_ufactor-super-sampled-token-supersamplehpp-a-super-sampled-cut-pca_fithpp) |
@@ -179,6 +180,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-11 — Klusters: a fiber clicked over an atom selection leaves the child view
+
+<details>
+<summary>Details</summary>
+
+With atoms selected in the child palette, clicking a fiber in the fiber palette used to
+keep the child view: the rebuild restored the atom selection, and with the same fiber the
+V scope stayed on, so the matrices and the views kept showing the atoms.  Now that click is
+the user leaving the atoms: `adoptCuratedParents` turns the matrix scope off (the curation
+matrices return to the fiber scope) and marks the child selection to be dropped
+(`dropChildSelectionOnRebuild`), which `repopulateChildPalette` honours instead of
+restoring it; the clicked fiber holds the selection.  Without an atom selection nothing
+changes: the same fiber keeps the child view, another fiber drops it as before.
+`doc/klusters/hierarchical-clustering.md`.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-11 — Klusters: the super-sample MODE builds the space on open; Save As adopts an existing space; `%spk`
 

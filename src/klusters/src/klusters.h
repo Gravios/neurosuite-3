@@ -1302,6 +1302,10 @@ private:
      *  doing so drops the clustering scope in the middle of a child edit.
      */
     static bool childPaletteRebuilding;
+    /** Set by adoptCuratedParents when the user clicks a parent while children are
+     *  selected: the child selection is DROPPED by the rebuild that follows instead
+     *  of restored, so the parent holds the selection (the child view exits). */
+    bool dropChildSelectionOnRebuild = false;
 
     /** Sets childPaletteRebuilding for its lifetime.  Scoped so an early return in
      *  assignChildSlot cannot leave the flag stuck on. */

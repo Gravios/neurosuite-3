@@ -106,6 +106,14 @@ appends) -- and is dropped when the child view is left (`V`) or another fiber
 is selected: coming back shows the atoms in their natural id order again. At
 the fiber level the same sorts renumber the fibers, as before.
 
+**Leaving the children by clicking a fiber.** With atoms selected in the child
+palette, clicking a fiber in the fiber palette -- the same fiber or another --
+is the user leaving the atoms: the child view exits (the curation matrices
+return to the fiber scope), the atom selection is dropped rather than restored
+by the rebuild, and the clicked fiber holds the selection. With no atom
+selected, clicking the *same* fiber keeps the child view as before, and
+clicking another fiber drops it (`V` re-enters).
+
 ## Hierarchy operations
 
 ### Keys (while a palette holds focus)
