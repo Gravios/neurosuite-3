@@ -143,12 +143,16 @@ closes the document, rewrites the files, and opens it again; if the document
 cannot be closed yet, nothing is sorted. All files are written first and
 swapped in together; if anything fails, every file is left as it was.
 
-**Keeping spaces in sync.** Realign and nudge rewrite only the `.clu` space's
-`.spk` and `.fet`. A `_D` space has no waveform file of its own — it reads its
-waveform token's (`stderiv_C5_D34` reads `.spk.stderiv_C5`) — so with the
-`.clu` in `stderiv_C5` the lag space's waveforms are already current and only
-its `.fet` is stale; a space over a different waveform file (`standard`, say)
-is stale in both. **Actions → Sync Feature Spaces** brings every other space up
+**Keeping spaces in sync.** Realign and nudge rewrite the shown space's
+`.spk` and `.fet` (working copies) and the shared `.res`; the other spaces
+follow the moved spikes (above). A `_D` space has no waveform file of its
+own — it reads its waveform token's (`stderiv_C5_D34` reads
+`.spk.stderiv_C5`) — so with `stderiv_C5` shown the lag space's waveforms are
+already current and only its `.fet` is followed; a space over a different
+waveform file (`standard`, say) gets both. A space counts as current when
+its feature times are the session's and, super-sampled, its phases are the
+group's (one set per factor, in the tick `.res`); one that is behind gets a
+full sync instead of a follow. **Actions → Sync Feature Spaces** brings every other space up
 to date: it re-extracts each waveform file the `.clu` space does not use from
 the `.fil` at the current spike times (once, however many spaces read it) and
 re-projects every other space's `.fet` through its own `.pca` basis (lag `_D`

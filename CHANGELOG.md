@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: the realign shift cap in a super-sampled space, phase-aware currency of spaces (realign-in-shown-space, step 3 of 3)](#2026-11-11--klusters-the-realign-shift-cap-in-a-super-sampled-space-phase-aware-currency-of-spaces-realign-in-shown-space-step-3-of-3) |
 | 2026-11-11 | [Klusters: realign and nudge run in the shown feature space; the `.clu`'s own space follows (realign-in-shown-space, step 2 of 3)](#2026-11-11--klusters-realign-and-nudge-run-in-the-shown-feature-space-the-clus-own-space-follows-realign-in-shown-space-step-2-of-3) |
 | 2026-11-11 | [One tick `.res` per factor for all spaces, named after the shared `.res` (`.res.stderiv_S3_U4.6`); every `_U<f>` space carries the same phases](#2026-11-11--one-tick-res-per-factor-for-all-spaces-named-after-the-shared-res-resstderiv_s3_u46-every-_uf-space-carries-the-same-phases) |
 | 2026-11-11 | [Klusters: the working set of a feature space; the follow after a realign is per-file geometry and can follow the `.clu`'s own space (realign-in-shown-space, step 1 of 3)](#2026-11-11--klusters-the-working-set-of-a-feature-space-the-follow-after-a-realign-is-per-file-geometry-and-can-follow-the-clus-own-space-realign-in-shown-space-step-1-of-3) |
@@ -189,6 +190,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: the realign shift cap in a super-sampled space, phase-aware currency of spaces (realign-in-shown-space, step 3 of 3)
+
+<details>
+<summary>Details</summary>
+
+- The realign preference's *Max shift* is in samples of the recording; in a super-sampled
+  space the same cap now applies in that space's ticks (×2 / ×4) -- it was taken as ticks, a
+  quarter of the intended range at ×4.  The automatic cap (half the peak position) was
+  already in the space's ticks.  Tooltip says so.
+- A space's currency (whether a realign's follow touches only the moved rows or the space
+  gets a full sync; whether a working copy can be seeded by a plain copy) now includes the
+  phases: a super-sampled space of the written space's factor must carry the same phases at
+  the unmoved spikes, since a sub-sample realign can change a phase and no whole sample.
+  `KlustersDoc::sharedTicksOnDisk(factor)`.
+- `doc/klusters/README.md` "Keeping spaces in sync" rewritten for the shown-space realign.
+
+Self-tests 3/3 on the built binary.  This closes the plan
+`claude/klusters-realign-in-shown-space-plan-2026-11-11.md`.
+
+</details>
 
 ---
 

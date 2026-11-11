@@ -298,10 +298,18 @@ KlustersDoc::SpaceFiles KlustersDoc::workingSetOf(const QString& method, QString
                 const int     timeDim = clusteringData->timeDimension();
                 const size_t  nd = static_cast<size_t>(table->nFeatures);
                 current = table->nSpikes == n;
-                for (int64_t r = 0; r < n && current; ++r)
-                    if (table->values[static_cast<size_t>(r) * nd + nd - 1]
-                        != static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(r + 1), timeDim)))
-                        current = false;
+                // ... and, super-sampled, the session's phases (the loaded or held
+                // _U<f> table's; its own when it is the only one, which is current).
+                const int factor = std::max(1, neurosuite::custody::supersampleOf(
+                                                   neurosuite::custody::methodOf(ws.spkCommitted.toStdString())));
+                const std::vector<int64_t> ticks = factor > 1 ? supersampledTicks(factor) : std::vector<int64_t>{};
+                const bool withPhase = static_cast<int64_t>(ticks.size()) == n;
+                for (int64_t r = 0; r < n && current; ++r) {
+                    const int64_t* row = table->values.data() + static_cast<size_t>(r) * nd;
+                    const int64_t t = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(r + 1), timeDim));
+                    if (row[nd - 1] != t) current = false;
+                    else if (withPhase && t * factor + row[nd - 2] != ticks[static_cast<size_t>(r)]) current = false;
+                }
             }
             bool ok = current;
             if (current) {
@@ -763,10 +771,19 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
         if (sp.fits) {
             const size_t nDims = static_cast<size_t>(sp.table->nFeatures);
             sp.current = true;
-            for (int64_t r = 0; r < nSpikes && sp.current; ++r)
-                if (!moved[static_cast<size_t>(r)]
-                    && sp.table->values[static_cast<size_t>(r) * nDims + nDims - 1] != timeOf(r))
+            // A super-sampled space of the written space's factor must also
+            // carry its phases, not only its times: a sub-sample realign can
+            // change a phase and no whole sample (the loaded table is the
+            // written space's; a base-rate move changes no phase).
+            const int phaseColW = (written.factor > 1 && written.factor == g.factor) ? supersamplePhaseColumn() : -1;
+            for (int64_t r = 0; r < nSpikes && sp.current; ++r) {
+                if (moved[static_cast<size_t>(r)]) continue;
+                const int64_t* row = sp.table->values.data() + static_cast<size_t>(r) * nDims;
+                if (row[nDims - 1] != timeOf(r)) sp.current = false;
+                else if (phaseColW >= 0 && row[nDims - 2]
+                         != static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(r + 1), phaseColW + 1)))
                     sp.current = false;
+            }
         }
         g.members.push_back(std::move(sp));
     }
@@ -1237,6 +1254,14 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     }
     if (token) *token = QString::fromStdString(newTok);
     return true;
+}
+
+// The shared tick .res of @p factor as it is on disk (empty when there is none).
+std::vector<int64_t> KlustersDoc::sharedTicksOnDisk(int factor) const
+{
+    const QString path = supersampledResPath(factor);
+    if (path.isEmpty() || !QFileInfo::exists(path)) return {};
+    return neurofileio::readResBinary(path.toStdString());
 }
 
 // The shared tick .res of this group at @p factor: <base>.res.<resToken>_U<f>.N,

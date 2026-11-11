@@ -693,8 +693,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     bool  rmsRecenter = false; // post-alignment RMS circular group-recenter
     float rMin        = 0.4f;  // min mean-resultant-length to trust the centroid
     bool  alignCentroid = false; // realignMode 3: per-spike reference-free centroid de-jitter (no xcorr)
+    const int autoShift = maxShift;
     parseRealignArgs(args, maxShift, minScore, nIter, nTopChan,
                      pcaRefine, rmsRecenter, rMin, alignCentroid);
+    // The preference's cap is in SAMPLES; in a super-sampled space the search
+    // runs in ticks, so the same cap is factor x as many ticks (the automatic
+    // cap, peak/2, is already in the space's own ticks).
+    if (maxShift != autoShift && upFactor > 1) maxShift *= upFactor;
 
     // Clamp maxShift to the waveform width.  --maxshift is parsed with only a
     // >=1 lower bound, so a user value >= nSamp makes the circular roll index

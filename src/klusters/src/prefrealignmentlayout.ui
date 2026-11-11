@@ -117,7 +117,7 @@
           <item>
            <widget class="QSpinBox" name="realignMaxShiftSpinBox">
             <property name="toolTip">
-             <string>Maximum lag in samples. 0 = automatic (peak/2).</string>
+             <string>Maximum lag in samples of the recording. 0 = automatic (half the peak position).  In a super-sampled space the same cap applies, in that space's ticks (×2 / ×4), and the lags found are in ticks.</string>
             </property>
             <property name="minimum">
              <number>0</number>

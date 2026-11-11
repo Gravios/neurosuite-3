@@ -1792,6 +1792,8 @@ public:
      *  every factor among the _U spaces this session touched. */
     QString supersampledResPath(int factor) const;
     std::vector<int64_t> supersampledTicks(int factor);
+    /** The tick .res of @p factor as saved on disk (empty when there is none). */
+    std::vector<int64_t> sharedTicksOnDisk(int factor) const;
     /** Export at the recording's sampling: the open .clu (and its .clc/.clp/.cli)
      *  copied under the base-rate token (baseRateToken) beside the base-rate
      *  .res/.spk/.fet, which the shared .res and the synced base space already
