@@ -1089,6 +1089,33 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     }
     const QString cluTarget = isSaveAs ? saveUrl : docUrl;
 
+    // ── Save As that ADOPTS an existing space ───────────────────────────────
+    // The target names another method whose .spk and .fet already exist as a
+    // space of their own (a super-sampled space, say): the .clu moves into that
+    // space and its files stay -- the origin's pending copies are NOT written
+    // over them (they are another geometry).  Only when nothing is pending in
+    // the origin space: a realign or nudge not yet saved belongs to the origin's
+    // files, so Save first.
+    bool adoptsSpace = false;
+    if (isSaveAs && saMethod != originMethod && !pendingCluPath.isEmpty()
+        && QFileInfo::exists(fetTarget) && QFileInfo::exists(spkTarget)
+        && fetTarget != origFetPath && spkTarget != origSpkPath) {
+        bool clean = true;
+        for (const auto& pr : { std::make_pair(pendingSpkPath, origSpkPath), std::make_pair(pendingResPath, origResPath),
+                                std::make_pair(pendingFetPath, origFetPath) }) {
+            if (!QFile::exists(pr.first) || !QFile::exists(pr.second)) continue;
+            filecommit::SyncStamp stamp = syncStamps.value(pr.first);
+            if (!filecommit::atParity(QFile::encodeName(pr.first).toStdString(),
+                                      QFile::encodeName(pr.second).toStdString(), stamp)) { clean = false; break; }
+        }
+        if (!clean) {
+            lastSaveErrorMessage = tr("Save As into the %1 space: the %2 space has an unsaved realignment or nudge.  "
+                                      "Save it first, then Save As.").arg(saMethod, originMethod);
+            return SAVE_ERROR;
+        }
+        adoptsSpace = true;
+    }
+
     // ── phase 1: stage every file that is not already at parity ─────────────
     // Each new file is written completely next to its target ("<target>.saving")
     // and flushed; no target is touched.  A file whose content is already what
@@ -1127,9 +1154,11 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         return abandon(tr("Could not write the parent map (.clp); nothing was saved:\n%1").arg(err),
                        SAVE_ERROR);
 
-    // .spk/.res/.fet of the .clu space and the synced feature spaces.
+    // .spk/.res/.fet of the .clu space and the synced feature spaces (not when
+    // the .clu adopts an existing space: its files stay as they are).
     bool waveformsStaged = false;
-    if (!stagePendingFiles(spkTarget, resTarget, fetTarget, targets, waveformsStaged, &err))
+    if (!adoptsSpace
+        && !stagePendingFiles(spkTarget, resTarget, fetTarget, targets, waveformsStaged, &err))
         return abandon(err, SAVE_ERROR);
 
     // Cluster information: the clustering's .cli file (never the session
@@ -1204,6 +1233,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         if (!syncedPending.isEmpty()) discardSyncedFeatureSpaces();
         // Applied by finishSave() on the GUI thread.
         savePlan.siblingsMoved = savePlan.movesSiblings;
+        savePlan.adoptedSpace  = adoptsSpace;
     }
     // The pending .clu is the session's scratch copy of the ids (read when the
     // atom layer loads); keep it equal to what was just saved.

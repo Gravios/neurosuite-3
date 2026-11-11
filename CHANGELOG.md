@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: the super-sample MODE builds the space on open; Save As adopts an existing space; `%spk`](#2026-11-11--klusters-the-super-sample-mode-builds-the-space-on-open-save-as-adopts-an-existing-space-spk) |
 | 2026-11-11 | [Klusters: super-sample mode -- waveform spaces at 2x / 4x the sampling, realign and nudge at sub-sample resolution](#2026-11-11--klusters-super-sample-mode--waveform-spaces-at-2x--4x-the-sampling-realign-and-nudge-at-sub-sample-resolution) |
 | 2026-11-11 | [core: the `_U<factor>` super-sampled token, `supersample.hpp`, a super-sampled cut, `pca_fit.hpp`](#2026-11-11--core-the-_ufactor-super-sampled-token-supersamplehpp-a-super-sampled-cut-pca_fithpp) |
 | 2026-11-10 | [Klusters: the Refine mode -- a plugin's children under the same parents](#2026-11-10--klusters-the-refine-mode--a-plugins-children-under-the-same-parents) |
@@ -178,6 +179,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-11 — Klusters: the super-sample MODE builds the space on open; Save As adopts an existing space; `%spk`
+
+<details>
+<summary>Details</summary>
+
+The gate becomes a **mode** (*Preferences → Realignment → Super-sampling*: off / ×2 / ×4).
+In a mode, every session that opens gets the super-sampled space over its `.clu`'s space
+built when its files are missing and shown (`KlustersApp::applySupersampleMode`,
+`buildAndShowSupersampledSpace`, shared with the actions); with *Also save the clustering
+under the super-sampled token* it is saved as `<base>.clu.<token>_U4.N` and reopened there.
+A super-sampled `.clu` opened while its `.spk` is missing is opened through the base space
+(its `.clu` written from this one if absent), the space rebuilt, the clustering saved back
+under the asked-for name and reopened.  **Save As into a method whose space exists now
+ADOPTS it** (`KlustersDoc::saveDocument`, `SavePlan::adoptedSpace`): the `.clu` moves, the
+space's files stay -- before, the origin's pending `.spk/.res/.fet` were staged over the
+target's and a different geometry failed the size check, so the Save As offered by 0950
+could not succeed; an unsaved realign in the origin refuses the Save As; the app reopens
+the session after it.  The plugin context gains **`%spk`** (the shown `.spk`'s method token)
+and `%supersample`, so an engine that fits waveforms follows the space Klusters is in
+(fiber-kit 0.66.6: `FK_MANIFOLD_SPK` defaults to `%spk`); `%nsamp` stays the recording's
+nSamples whatever space is shown (an engine's `--nsamp` names the raw window), `%ticks` is the
+shown space's.  README "Super-sample mode",
+`PLUGIN_API.md`.  Compile-checked; not run in the GUI.
+
+</details>
 
 ## 2026-11-11 — Klusters: super-sample mode -- waveform spaces at 2x / 4x the sampling, realign and nudge at sub-sample resolution
 

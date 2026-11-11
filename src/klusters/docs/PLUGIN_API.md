@@ -151,6 +151,8 @@ the first word is the program and the rest is substituted:
 | token | value |
 | --- | --- |
 | `%base` `%group` `%variant` `%tag` `%nsamp` `%nchan` `%dir` | the context (as the `<consumes>` tokens); for a sub-session plugin `%base` is the SUB-SESSION's base name |
+| `%ticks` | samples per waveform of the space SHOWN (`%nsamp` × its super-sampling factor; `%nsamp` itself is always the recording's) |
+| `%spk` `%supersample` | the waveform space SHOWN: its `.spk`'s method token (`standard`, `stderiv_C5`, `standard_U4` in super-sample mode) and its super-sampling factor (1 when none), so an engine that fits waveforms follows the space Klusters is in (fiber-kit-manifold's `FK_MANIFOLD_SPK` defaults to `%spk`) |
 | `%final` | sub-session plugins: the `.clu` Klusters reads back (`<sub>.clu.klusters.<group>`) |
 | `%selection` / `%children` | the selected ids, one argument each |
 | `%params` | where the `--name value` parameters go (appended when the template has none) |

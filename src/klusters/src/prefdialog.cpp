@@ -215,7 +215,8 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     connect(prefSession->curationLoggingCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRealignment->syncFeatureSpaceOnSwitchCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefRealignment->realignFromAnySpaceCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
-    connect(prefRealignment->supersampleEnabledCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
+    connect(prefRealignment->supersampleModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &PrefDialog::enableApply);
+    connect(prefRealignment->supersampleAdoptCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefRealignment->supersampleInterpCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &PrefDialog::enableApply);
     connect(prefClusterOrder->reorderDisplayOnlyCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRealignment->autoRealignAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
@@ -364,7 +365,8 @@ void PrefDialog::updateDialog()
     prefSession->setReextractSpikesOnSave(configuration().getReextractSpikesOnSave());
     prefRealignment->setSyncFeatureSpaceOnSwitch(configuration().getSyncFeatureSpaceOnSwitch());
     prefRealignment->setRealignFromAnySpace(configuration().getRealignFromAnySpace());
-    prefRealignment->setSupersampleEnabled(configuration().getSupersampleEnabled());
+    prefRealignment->setSupersampleMode(configuration().getSupersampleMode());
+    prefRealignment->setSupersampleAdopt(configuration().getSupersampleAdopt());
     prefRealignment->setSupersampleInterp(configuration().getSupersampleInterp());
     prefRealignment->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
     prefClusterOrder->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMerge());
@@ -478,7 +480,8 @@ void PrefDialog::updateConfiguration()
     configuration().setReextractSpikesOnSave(prefSession->getReextractSpikesOnSave());
     configuration().setSyncFeatureSpaceOnSwitch(prefRealignment->getSyncFeatureSpaceOnSwitch());
     configuration().setRealignFromAnySpace(prefRealignment->getRealignFromAnySpace());
-    configuration().setSupersampleEnabled(prefRealignment->getSupersampleEnabled());
+    configuration().setSupersampleMode(prefRealignment->getSupersampleMode());
+    configuration().setSupersampleAdopt(prefRealignment->getSupersampleAdopt());
     configuration().setSupersampleInterp(prefRealignment->getSupersampleInterp());
     configuration().setAutoRealignAfterMerge(prefRealignment->getAutoRealignAfterMerge());
     configuration().setAutoRenumberAfterMerge(prefClusterOrder->getAutoRenumberAfterMerge());
@@ -605,7 +608,8 @@ void PrefDialog::slotDefault()
     prefSession->setReextractSpikesOnSave(configuration().getReextractSpikesOnSaveDefault());
     prefRealignment->setSyncFeatureSpaceOnSwitch(configuration().getSyncFeatureSpaceOnSwitchDefault());
     prefRealignment->setRealignFromAnySpace(configuration().getRealignFromAnySpaceDefault());
-    prefRealignment->setSupersampleEnabled(configuration().getSupersampleEnabledDefault());
+    prefRealignment->setSupersampleMode(configuration().getSupersampleModeDefault());
+    prefRealignment->setSupersampleAdopt(configuration().getSupersampleAdoptDefault());
     prefRealignment->setSupersampleInterp(configuration().getSupersampleInterpDefault());
     prefRealignment->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());
     prefClusterOrder->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMergeDefault());

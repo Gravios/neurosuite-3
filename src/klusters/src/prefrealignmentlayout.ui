@@ -271,10 +271,21 @@
     <widget class="QGroupBox" name="groupBox_supersample">
      <property name="title"><string>Super-sampling (high-end machines)</string></property>
      <layout class="QGridLayout" name="gridLayout_supersample">
-      <item row="0" column="0" colspan="2">
-       <widget class="QCheckBox" name="supersampleEnabledCheckBox">
-        <property name="text"><string>Enable super-sampled waveform spaces (Space → Super-sample ×2 / ×4)</string></property>
-        <property name="toolTip"><string>Builds a waveform space with 2 or 4 spline-interpolated ticks per acquisition sample (&lt;base&gt;.spk.&lt;token&gt;_U4.N, its own PCA basis and features), listed under Space like any other.  Realign and nudge in such a space work at sub-sample resolution: the .res keeps whole samples, the rest is each spike's phase (the space's last feature column), and the window is re-cut from the recording at the exact fractional time.  The .spk is 2× / 4× the size, every waveform read and PCA 2× / 4× the work: for machines with the memory and cores to spare.</string></property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="supersampleModeLabel"><property name="text"><string>Super-sample mode</string></property></widget>
+      </item>
+      <item row="0" column="1">
+       <widget class="QComboBox" name="supersampleModeCombo">
+        <property name="toolTip"><string>Off: nothing changes.  ×2 / ×4: a waveform space with 2 or 4 spline-interpolated ticks per acquisition sample (&lt;base&gt;.spk.&lt;token&gt;_U4.N, its own PCA basis and features) is built over the .clu's space when a session opens -- unless it already exists -- and shown; Actions → Super-sample ×2 / ×4 build one by hand.  Realign and nudge in such a space work at sub-sample resolution: the .res keeps whole samples, the rest is each spike's phase (the space's last feature column), and the window is re-cut from the recording at the exact fractional time.  The .spk is 2× / 4× the size, every waveform read and PCA 2× / 4× the work: for machines with the memory and cores to spare.</string></property>
+        <item><property name="text"><string>Off</string></property></item>
+        <item><property name="text"><string>×2</string></property></item>
+        <item><property name="text"><string>×4</string></property></item>
+       </widget>
+      </item>
+      <item row="2" column="0" colspan="2">
+       <widget class="QCheckBox" name="supersampleAdoptCheckBox">
+        <property name="text"><string>Also save the clustering under the super-sampled token when a session opens (realign and nudge run in that space)</string></property>
+        <property name="toolTip"><string>Realign and nudge run in the .clu's own space.  With this on, a session opened in super-sample mode whose .clu is not yet under the _U token is saved as &lt;base&gt;.clu.&lt;token&gt;_U4.N (the original .clu is left as it is) and reopened there, so realign and nudge work at sub-sample resolution right away.  Off: the super-sampled space is only shown; Actions → Super-sample offers the Save As.</string></property>
         <property name="checked"><bool>false</bool></property>
        </widget>
       </item>

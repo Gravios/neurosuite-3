@@ -33,8 +33,10 @@ void   PrefRealignment::setSyncFeatureSpaceOnSwitch(bool b) { syncFeatureSpaceOn
 bool   PrefRealignment::getSyncFeatureSpaceOnSwitch() const { return syncFeatureSpaceOnSwitchCheckBox->isChecked(); }
 void   PrefRealignment::setRealignFromAnySpace(bool b) { realignFromAnySpaceCheckBox->setChecked(b); }
 bool   PrefRealignment::getRealignFromAnySpace() const { return realignFromAnySpaceCheckBox->isChecked(); }
-void   PrefRealignment::setSupersampleEnabled(bool b) { supersampleEnabledCheckBox->setChecked(b); }
-bool   PrefRealignment::getSupersampleEnabled() const { return supersampleEnabledCheckBox->isChecked(); }
+void   PrefRealignment::setSupersampleMode(int m) { supersampleModeCombo->setCurrentIndex(m == 2 ? 1 : m == 4 ? 2 : 0); }
+int    PrefRealignment::getSupersampleMode() const { const int i = supersampleModeCombo->currentIndex(); return i == 1 ? 2 : i == 2 ? 4 : 0; }
+void   PrefRealignment::setSupersampleAdopt(bool b) { supersampleAdoptCheckBox->setChecked(b); }
+bool   PrefRealignment::getSupersampleAdopt() const { return supersampleAdoptCheckBox->isChecked(); }
 void   PrefRealignment::setSupersampleInterp(int i) { supersampleInterpCombo->setCurrentIndex(i == 1 ? 1 : 0); }
 int    PrefRealignment::getSupersampleInterp() const { return supersampleInterpCombo->currentIndex(); }
 

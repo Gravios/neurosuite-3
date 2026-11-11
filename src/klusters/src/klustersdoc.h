@@ -178,6 +178,10 @@ public:
     /** Notes from the last save the user should see although it succeeded
      *  (for example the .clp left as it was); empty when there are none. */
     QString lastSaveWarning() const { return lastSaveWarningMessage; }
+    /** After a Save As that ADOPTED an existing space (another method whose .spk/.fet
+     *  exist -- a super-sampled space, say): the .clu now belongs to that space but the
+     *  loaded tables are the old space's, so the caller reopens the document. */
+    bool saveAdoptedSpace() const { return savePlan.adoptedSpace; }
     /**Returns the QString of the document. */
     const QString& url() const{return docUrl;}
     /** Absolute paths of the session's loaded sibling files, resolved at open
@@ -2438,6 +2442,7 @@ private:
         QString              clcPath, clpPath;///< targets: the session's, or Save As's new names
         bool                 movesSiblings = false; ///< Save As: the session's siblings become clcPath/clpPath
         bool                 siblingsMoved = false; ///< set by saveDocument once docUrl moved; finishSave applies it
+        bool                 adoptedSpace = false;  ///< Save As under another method whose space exists: the .clu moved into it, the files stayed; the document must be reopened
         std::vector<std::string> staged;            ///< targets staged by saveDocument (finishSave discards leftovers)
         QString              unitsPath;        ///< the clustering's cluster-information file (unitsidecar.h)
         std::string          unitsText;        ///< its content, from the snapshot

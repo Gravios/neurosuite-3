@@ -120,7 +120,8 @@ void Configuration::read() {
     reextractSpikesOnSave = settings.value("reextractSpikesOnSave", false).toBool();
     syncFeatureSpaceOnSwitch = settings.value("syncFeatureSpaceOnSwitch", false).toBool();
     realignFromAnySpace = settings.value("realignFromAnySpace", true).toBool();
-    supersampleEnabled  = settings.value("supersampleEnabled", false).toBool();
+    { const int m = settings.value("supersampleMode", 0).toInt(); supersampleMode = (m == 2 || m == 4) ? m : 0; }
+    supersampleAdopt    = settings.value("supersampleAdopt", false).toBool();
     supersampleInterp   = settings.value("supersampleInterp", 0).toInt() == 1 ? 1 : 0;
     autoRealignAfterMerge = settings.value("autoRealignAfterMerge", true).toBool();
     autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", true).toBool();
@@ -293,7 +294,8 @@ void Configuration::write() const {
     settings.setValue("reextractSpikesOnSave", reextractSpikesOnSave);
     settings.setValue("syncFeatureSpaceOnSwitch", syncFeatureSpaceOnSwitch);
     settings.setValue("realignFromAnySpace", realignFromAnySpace);
-    settings.setValue("supersampleEnabled", supersampleEnabled);
+    settings.setValue("supersampleMode", supersampleMode);
+    settings.setValue("supersampleAdopt", supersampleAdopt);
     settings.setValue("supersampleInterp", supersampleInterp);
     settings.setValue("autoRealignAfterMerge", autoRealignAfterMerge);
     settings.setValue("tsneSpikeCap", tsneSpikeCap);

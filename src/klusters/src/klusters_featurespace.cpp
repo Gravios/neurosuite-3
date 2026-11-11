@@ -198,75 +198,124 @@ void KlustersApp::updateSupersampleActions()
     }
 }
 
+QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)
+{
+    if (!doc || doc->url().isEmpty()) return QString();
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish before super-sampling."), 5000);
+        return QString();
+    }
+    // The space is built over the .clu's OWN waveforms (predictable, and the
+    // phase column refers to the .clu's spike times): leave a borrowed space first.
+    if (doc->isBorrowedSpace() && !showFeatureSpace(doc->cluMethod(), /*syncFirst*/ false))
+        return QString();
+    const Data& d = doc->data();
+    const std::string spkTok = neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString());
+    const QString token = QString::fromStdString(neurosuite::custody::supersampledToken(spkTok, factor));
+    if (token.isEmpty() || token == QString::fromStdString(spkTok)) return QString();
+
+    // Already there (built earlier, or shipped): just show it.
+    const QString dir  = QFileInfo(doc->url()).absolutePath();
+    const std::string stem = (dir + QDir::separator() + doc->documentBaseName()).toStdString();
+    const int group = doc->currentElectrodeGroupID().toInt();
+    const bool exists = QFileInfo::exists(QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", token.toStdString(), group)))
+                     && QFileInfo::exists(QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", token.toStdString(), group)));
+    if (!exists) {
+        const qint64 nSpikes = static_cast<qint64>(d.totalNbOfSpikes());
+        const qint64 spkBytes = nSpikes * d.nbOfChannels() * static_cast<qint64>(d.baseNbSamplesPerWaveform()) * factor * 2;
+        const QString rec = doc->recordingPath();
+        const bool haveRec = QFileInfo::exists(rec);
+        if (!quiet) {
+            const QString how = haveRec
+                ? tr("every spike re-cut from %1 and interpolated (%2)").arg(QFileInfo(rec).fileName(),
+                      configuration().getSupersampleInterp() == 1 ? tr("Lanczos-3") : tr("cubic spline"))
+                : tr("no recording found: the stored windows are interpolated (the last ticks of each window clamp to its final sample)");
+            const auto answer = QMessageBox::question(this, tr("Super-sample ×%1").arg(factor),
+                tr("Build the super-sampled space <b>%1</b> over the .clu's space (%2)?<br><br>"
+                   "%3 spikes × %4 channels × %5 ticks: a new .spk of <b>%6 MB</b>, a PCA basis fitted on it and a "
+                   ".fet with %7 columns (PCA, phase, time).  %8.")
+                    .arg(token, doc->cluMethod()).arg(nSpikes).arg(d.nbOfChannels()).arg(d.baseNbSamplesPerWaveform() * factor)
+                    .arg(spkBytes / (1024 * 1024)).arg(d.nbOfChannels() * d.nbOfFeaturesByChannel() + 2).arg(how),
+                QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes);
+            if (answer != QMessageBox::Yes) return QString();
+        }
+        QString log, err, newToken;
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        slotStatusMsg(tr("Super-sampling ×%1 (%2 MB of waveforms%3)…").arg(factor).arg(spkBytes / (1024 * 1024))
+                          .arg(haveRec ? tr(", re-cut from the recording") : QString()));
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        const bool ok = doc->buildSupersampledSpace(factor, &newToken, log, &err);
+        QApplication::restoreOverrideCursor();
+        if (!ok) {
+            QMessageBox::warning(this, tr("Super-sample ×%1").arg(factor),
+                                 tr("The space was not built: %1\n\n%2").arg(err, log.trimmed()));
+            return QString();
+        }
+        NS3_DIAG() << "[supersample]" << newToken << ":" << log.trimmed();
+        slotStatusMsg(tr("Super-sampled space %1 built.").arg(newToken));
+        preloadFeatureSpaces();
+        populateFeatureSpaceCombo();
+    }
+    if (!showFeatureSpace(token, /*syncFirst*/ false)) return QString();
+    slotStatusMsg(tr("Super-sampled space %1 shown.").arg(token));
+    return token;
+}
+
 void KlustersApp::slotSupersample(int factor)
 {
     if (!doc || doc->url().isEmpty()) return;
     if (!configuration().getSupersampleEnabled()) {
         QMessageBox::information(this, tr("Super-sample"),
-            tr("Super-sampling is off: enable it in Preferences > Realignment > Super-sampling (high-end machines)."));
+            tr("Super-sampling is off: choose a mode in Preferences > Realignment > Super-sampling (high-end machines)."));
         return;
     }
-    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
-        statusBar()->showMessage(tr("Wait for the running job to finish before super-sampling."), 5000);
-        return;
-    }
-    const Data& d = doc->data();
-    const qint64 nSpikes = static_cast<qint64>(d.totalNbOfSpikes());
-    const qint64 spkBytes = nSpikes * d.nbOfChannels() * static_cast<qint64>(d.baseNbSamplesPerWaveform()) * factor * 2;
-    const QString shown = doc->activeFeatureMethod();
-    const QString token = QString::fromStdString(neurosuite::custody::supersampledToken(
-        neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString()), factor));
-    const QString rec = doc->recordingPath();
-    const bool haveRec = QFileInfo::exists(rec);
-    const QString how = haveRec
-        ? tr("every spike re-cut from %1 and interpolated (%2)").arg(QFileInfo(rec).fileName(),
-              configuration().getSupersampleInterp() == 1 ? tr("Lanczos-3") : tr("cubic spline"))
-        : tr("no recording found: the stored windows are interpolated (the last ticks of each window clamp to its final sample)");
-    const auto answer = QMessageBox::question(this, tr("Super-sample ×%1").arg(factor),
-        tr("Build the super-sampled space <b>%1</b> over the shown space (%2)?<br><br>"
-           "%3 spikes × %4 channels × %5 ticks: a new .spk of <b>%6 MB</b>, a PCA basis fitted on it and a "
-           ".fet with %7 columns (PCA, phase, time).  %8.<br><br>"
-           "The space is then listed under <i>Space</i>.  To realign or nudge in it, Save As the .clu under "
-           "that token (offered next) and reopen it.")
-            .arg(token, shown).arg(nSpikes).arg(d.nbOfChannels()).arg(d.baseNbSamplesPerWaveform() * factor)
-            .arg(spkBytes / (1024 * 1024)).arg(d.nbOfChannels() * d.nbOfFeaturesByChannel() + 2).arg(how),
-        QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes);
-    if (answer != QMessageBox::Yes) return;
-
-    QString log, err, newToken;
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    slotStatusMsg(tr("Super-sampling ×%1…").arg(factor));
-    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    const bool ok = doc->buildSupersampledSpace(factor, &newToken, log, &err);
-    QApplication::restoreOverrideCursor();
-    if (!ok) {
-        QMessageBox::warning(this, tr("Super-sample ×%1").arg(factor),
-                             tr("The space was not built: %1\n\n%2").arg(err, log.trimmed()));
-        return;
-    }
-    NS3_DIAG() << "[supersample]" << newToken << ":" << log.trimmed();
-    preloadFeatureSpaces();
-    populateFeatureSpaceCombo();
-    showFeatureSpace(newToken, /*syncFirst*/ false);
-    slotStatusMsg(tr("Super-sampled space %1 built and shown.").arg(newToken));
+    const QString token = buildAndShowSupersampledSpace(factor, /*quiet*/ false);
+    if (token.isEmpty() || neurosuite::custody::supersampleOf(doc->cluMethod().toStdString()) > 1) return;
 
     // Realign / nudge run in the .clu's own space: offer to make this one that.
     const QString dir = QFileInfo(doc->url()).absolutePath();
-    const QString newClu = dir + QDir::separator() + doc->documentBaseName() + QStringLiteral(".clu.") + newToken
+    const QString newClu = dir + QDir::separator() + doc->documentBaseName() + QStringLiteral(".clu.") + token
                          + QLatin1Char('.') + doc->currentElectrodeGroupID();
     const auto adopt = QMessageBox::question(this, tr("Super-sample ×%1").arg(factor),
-        tr("%1<br><br>Save the clustering as <b>%2</b> now, so realign and nudge run in the super-sampled space "
-           "once it is reopened?  (The current .clu stays as it is.)").arg(log.trimmed().toHtmlEscaped().replace(QLatin1Char('\n'), QStringLiteral("<br>")),
-                                                                              QFileInfo(newClu).fileName()),
+        tr("Save the clustering as <b>%1</b> now, so realign and nudge run in the super-sampled space?  "
+           "(The current .clu stays as it is; the session reopens there.)").arg(QFileInfo(newClu).fileName()),
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (adopt == QMessageBox::Yes) {
-        if (doc->isBorrowedSpace()) {
-            // Save As is refused in a borrowed space: go back to the .clu's own space for it.
-            QString e;
-            showFeatureSpace(doc->cluMethod(), false);
-        }
+        // Save As is refused in a borrowed space: back to the .clu's own space for it.
+        if (doc->isBorrowedSpace()) showFeatureSpace(doc->cluMethod(), false);
         startSave(newClu, true);
     }
+}
+
+void KlustersApp::applySupersampleMode()
+{
+    const int mode = configuration().getSupersampleMode();
+    if (mode <= 0 || !doc || doc->url().isEmpty() || doc->data().totalNbOfSpikes() <= 0) return;
+    if (doc->supersampleFactor() > 1) return;                       // already in a super-sampled space
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning() || saveThread->isRunning()) return;
+    const bool cluIsSuper = neurosuite::custody::supersampleOf(doc->cluMethod().toStdString()) > 1;
+    if (cluIsSuper) {                                               // the .clu's space is super-sampled; a borrowed one is shown
+        showFeatureSpace(doc->cluMethod(), false);
+        return;
+    }
+    const QString token = buildAndShowSupersampledSpace(mode, /*quiet*/ true);
+    if (token.isEmpty()) return;
+    const bool adopt = configuration().getSupersampleAdopt() || !mSupersampleReopenUrl.isEmpty();
+    if (!adopt) return;
+    const QString dir = QFileInfo(doc->url()).absolutePath();
+    QString newClu = mSupersampleReopenUrl;
+    if (newClu.isEmpty())
+        newClu = dir + QDir::separator() + doc->documentBaseName() + QStringLiteral(".clu.") + token
+               + QLatin1Char('.') + doc->currentElectrodeGroupID();
+    mSupersampleReopenUrl.clear();
+    if (QFileInfo::exists(newClu) && doc->isModified()) {
+        statusBar()->showMessage(tr("%1 exists: not saved over it in super-sample mode (Save As yourself).")
+                                     .arg(QFileInfo(newClu).fileName()), 8000);
+        return;
+    }
+    if (doc->isBorrowedSpace()) showFeatureSpace(doc->cluMethod(), false);
+    slotStatusMsg(tr("Super-sample mode: saving the clustering as %1 and reopening it there…").arg(QFileInfo(newClu).fileName()));
+    startSave(newClu, true);
 }
 
 bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)

@@ -496,6 +496,16 @@ private Q_SLOTS:
     /** Build the super-sampled space over the shown one (factor 2 or 4) and show it;
      *  offers to Save As into it so realign / nudge run there (KlustersDoc::buildSupersampledSpace). */
     void slotSupersample(int factor);
+    /** Preferences > Super-sample mode (x2 / x4): after a session opens (and when the
+     *  mode changes), build the super-sampled space over the .clu's own space when it
+     *  does not exist, show it, and -- with the adopt preference -- Save As under its
+     *  token and reopen, so realign and nudge run there.  No-op when off, when the
+     *  shown space is already super-sampled, or while a job runs. */
+    void applySupersampleMode();
+    /** Build the super-sampled space (factor) over the .clu's own space and show it;
+     *  the shared body of the action and the mode.  @p quiet: no dialogs (the mode).
+     *  Returns the new token, empty on failure. */
+    QString buildAndShowSupersampledSpace(int factor, bool quiet);
     /** The two Super-sample actions follow the Preferences gate and the document state. */
     void updateSupersampleActions();
     /** Show the next (@p step +1) or previous (-1) usable space of the Space
@@ -1461,6 +1471,10 @@ private:
     QAction *mSyncFeatureSpaces = nullptr;   ///< Actions > Sync Feature Spaces
     QAction *mSupersampleX2 = nullptr;       ///< Actions > Super-sample x2 (a super-sampled waveform space; Preferences gate)
     QAction *mSupersampleX4 = nullptr;       ///< Actions > Super-sample x4
+    /** A super-sampled .clu opened while its .spk was missing: the session was opened
+     *  through the base space instead and, once the space is rebuilt, saved back under
+     *  this url and reopened (applySupersampleMode).  Empty otherwise. */
+    QString  mSupersampleReopenUrl;
     QAction *mSortSpikesByTime  = nullptr;   ///< Actions > Sort Spikes by Time
     QAction *mNextFeatureSpace     = nullptr;   ///< Actions > Next Feature Space (Ctrl+Tab)
     QAction *mPreviousFeatureSpace = nullptr;   ///< Actions > Previous Feature Space (Ctrl+Shift+Tab)

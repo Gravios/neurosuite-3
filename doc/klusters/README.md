@@ -162,9 +162,16 @@ any one of them cannot be, none of them is.
 For machines with the memory and cores to spare, a feature space can be built
 over **super-sampled** waveforms: each acquisition sample interpolated into 2
 or 4 ticks (a natural cubic spline through the recording's samples, or a
-windowed sinc — **Preferences → Curation → Realignment → Super-sampling**,
-which also gates the actions, off by default). **Actions → Super-sample ×2 /
-×4…** builds, over the shown space, `<base>.spk.<token>_U4.N` (every spike
+windowed sinc). **Preferences → Curation → Realignment → Super-sampling** sets
+the **mode** (off by default, ×2, ×4): in a mode, every session that opens
+gets the super-sampled space over its `.clu`'s space built — if its files are
+not there yet — and shown, and with *Also save the clustering under the
+super-sampled token* the `.clu` is saved as `<base>.clu.<token>_U4.N` and
+reopened there, so realign and nudge run at sub-sample resolution without a
+further step. A super-sampled `.clu` opened while its `.spk.<token>_U4.N` is
+missing (copied without the big file) is rebuilt the same way through the base
+space. **Actions → Super-sample ×2 / ×4…** does it by hand; it builds, over the
+`.clu`'s space, `<base>.spk.<token>_U4.N` (every spike
 re-cut from the `.fil` with a margin of raw samples on either side so the
 edges are exact; from the stored windows when there is no recording), a PCA
 basis fitted on it (`.pca.<token>_U4.N`: the shown basis's window and
@@ -178,8 +185,11 @@ session file stay those of the recording, Klusters scales them per space.
 
 **Realign and nudge at sub-sample resolution.** They run in the `.clu`'s own
 space, so to use them the clustering is saved under the super-sampled token
-(offered when the space is built: *Save As* `<base>.clu.<token>_U4.N`) and
-reopened. A realignment then finds each spike's lag in **ticks**; the `.res`
+(offered when the space is built, or automatic in the mode: *Save As*
+`<base>.clu.<token>_U4.N`) and reopened. A Save As into a method whose space
+already exists **adopts** that space: the `.clu` moves, the space's files stay
+(the origin's pending copies are not written over them; an unsaved realign in
+the origin must be saved first) and the session reopens there. A realignment then finds each spike's lag in **ticks**; the `.res`
 keeps whole acquisition samples (a lag of −5 ticks at ×4 moves the `.res`
 by −2 samples) and the rest is the spike's **phase**, the space's last feature
 column (0 … factor−1): tick `k` of the waveform stands at raw time
@@ -195,7 +205,9 @@ a `.fet` of such a space has `nCh × nComp + 2` columns.
 Costs: the `.spk` and every waveform read are ×factor, the PCA basis works on
 a ×factor window (fitted on up to 20 000 spikes), realign's cross-correlation
 on ×factor ticks. fiber-kit reads such a space like any other (`FK_MANIFOLD_SPK
-standard_U4`, say) once it knows the token (fiber-kit 0.66.5).
+standard_U4`, say) once it knows the token (fiber-kit 0.66.5), and the
+`fiber-kit-manifold` plugin follows the shown space by itself: its
+`FK_MANIFOLD_SPK` defaults to the `%spk` context token (fiber-kit 0.66.6).
 
 ### Feature file format (`.fet.<method>.N`)
 

@@ -27,8 +27,10 @@ public:
     bool   getSyncFeatureSpaceOnSwitch() const;
     void   setRealignFromAnySpace(bool b);
     bool   getRealignFromAnySpace() const;
-    void   setSupersampleEnabled(bool b);
-    bool   getSupersampleEnabled() const;
+    void   setSupersampleMode(int m);       // 0 off, 2, 4
+    int    getSupersampleMode() const;
+    void   setSupersampleAdopt(bool b);
+    bool   getSupersampleAdopt() const;
     void   setSupersampleInterp(int i);     // 0 spline, 1 lanczos3
     int    getSupersampleInterp() const;
 

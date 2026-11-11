@@ -1934,10 +1934,12 @@ void KlustersApp::applyPreferences() {
     // "Realign and nudge from any feature space" decides which actions a
     // borrowed space locks.
     applyFeatureSpaceLocks();
-    // Super-sampling: the gate and the interpolator.
+    // Super-sampling: the gate and the interpolator; a mode just turned on applies
+    // to the open session.
     updateSupersampleActions();
     if (doc) doc->setSupersampleInterp(configuration().getSupersampleInterp() == 1
                                        ? neurosuite::core::Interp::Lanczos3 : neurosuite::core::Interp::CubicSpline);
+    if (doc && !doc->url().isEmpty()) QTimer::singleShot(0, this, [this]() { applySupersampleMode(); });
 
     // Input bindings: a rebind in the Input preferences page set the registry overrides
     // (live for resolver-dispatched keys) and the Configuration map (just persisted by
@@ -3839,9 +3841,61 @@ void KlustersApp::openDocumentFile(const QString& url)
 
         mFileOpenRecent->addRecentFile(url);
 
+        // A super-sampled .clu (<base>.clu.<token>_U4.N) whose .spk.<token>_U4.N is
+        // not there (copied without the big file, or never built): custody would
+        // fall back to the base .spk and the geometry check would refuse it.  Open
+        // the session through the base space instead -- its .clu, written from this
+        // one if absent (the ids are the same) -- rebuild the space (applySupersampleMode,
+        // which also saves the clustering back under this url and reopens it).
+        QString openUrl = url;
+        {
+            const QFileInfo fi(url);
+            const neurosuite::custody::Anchor a = neurosuite::custody::parseAnchor(fi.fileName().toStdString());
+            if (a.ok && a.type == "clu" && a.suffix.empty()
+                && neurosuite::custody::supersampleOf(a.method) > 1) {
+                const std::string stem = (fi.absolutePath() + QDir::separator() + QString::fromStdString(a.base)).toStdString();
+                const std::string wtok = neurosuite::custody::waveformToken(a.method);
+                const QString uSpk = QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", wtok, a.group));
+                if (!QFileInfo::exists(uSpk)) {
+                    const int f = neurosuite::custody::supersampleOf(a.method);
+                    QString baseTok = QString::fromStdString(wtok);
+                    baseTok.remove(QStringLiteral("_U") + QString::number(f));
+                    const QString baseSpk = QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", baseTok.toStdString(), a.group));
+                    const QString baseFet = QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", baseTok.toStdString(), a.group));
+                    const QString baseClu = QString::fromStdString(neurosuite::custody::methodPath(stem, "clu", baseTok.toStdString(), a.group));
+                    if (QFileInfo::exists(baseSpk) && QFileInfo::exists(baseFet)) {
+                        if (!QFileInfo::exists(baseClu) && !QFile::copy(url, baseClu)) {
+                            QApplication::restoreOverrideCursor();
+                            QMessageBox::critical(this, tr("Super-sampled session"),
+                                tr("%1 has no %2 (the super-sampled waveforms), and the base clustering %3 could not be written to rebuild it.")
+                                    .arg(fi.fileName(), QFileInfo(uSpk).fileName(), QFileInfo(baseClu).fileName()));
+                            slotStatusMsg(tr("Ready."));
+                            return;
+                        }
+                        const int mode = configuration().getSupersampleMode();
+                        if (mode != f) {
+                            configuration().setSupersampleMode(f);   // this session asks for x<f>; the mode follows it
+                            updateSupersampleActions();
+                        }
+                        mSupersampleReopenUrl = url;
+                        openUrl = baseClu;
+                        statusBar()->showMessage(tr("%1 has no %2: opening %3 to rebuild the super-sampled space ×%4, then back.")
+                                                     .arg(fi.fileName(), QFileInfo(uSpk).fileName(), QFileInfo(baseClu).fileName()).arg(f), 10000);
+                    } else {
+                        QApplication::restoreOverrideCursor();
+                        QMessageBox::critical(this, tr("Super-sampled session"),
+                            tr("%1 has no %2 (the super-sampled waveforms) and no base space (%3) to rebuild it from.")
+                                .arg(fi.fileName(), QFileInfo(uSpk).fileName(), QFileInfo(baseSpk).fileName()));
+                        slotStatusMsg(tr("Ready."));
+                        return;
+                    }
+                }
+            }
+        }
+
         // Open the file (that will also initialize the doc)
         QString errorInformation;
-        int returnStatus = doc->openDocument(url,errorInformation);
+        int returnStatus = doc->openDocument(openUrl,errorInformation);
         if(returnStatus == KlustersDoc::INCORRECT_FILE)
         {
             QApplication::restoreOverrideCursor();
@@ -3936,6 +3990,9 @@ void KlustersApp::openDocumentFile(const QString& url)
         setWindowTitle(doc->documentName());
         initDisplay();
         loadTemplateMarks();          // restore the template-unit set for this clustering
+        // Super-sample mode: the space over the .clu's own, built if missing, shown
+        // (and the clustering saved under its token when the preference says so).
+        QTimer::singleShot(0, this, [this]() { applySupersampleMode(); });
 
         //A traceView is possible only if the variables it needs are available (provided in the new parameter file) and
         //the .dat file exists.
@@ -4122,6 +4179,14 @@ void KlustersApp::customEvent (QEvent* event){
             //the KDE upload can not be call asynchronously, so the upload is call after the end of the thread.
             if(saveEvent->isItSaveAs())
                 mFileOpenRecent->addRecentFile(doc->url());
+            // A Save As that adopted an existing space (the super-sampled one):
+            // the .clu now belongs to it but the loaded tables are the old space's.
+            if(saveEvent->isItSaveAs() && doc->saveAdoptedSpace()) {
+                QTimer::singleShot(0, this, [this]() { reopenCurrentDocument(tr("the move into its new feature space")); });
+                slotStatusMsg(tr("Ready."));
+                slotStateChanged("SavingDoneState");
+                return;
+            }
             // Persist the template-unit set next to the just-saved clustering and,
             // if any unit is marked, (re)write their .wtf from the saved files.
             // Deferred: run the generator off this event-handler stack.
@@ -8799,13 +8864,22 @@ QMap<QString, QString> KlustersApp::pluginContext() const
     }
     ctx.insert(QStringLiteral("variant"), variant);
     ctx.insert(QStringLiteral("tag"), tag);
+    // The waveform space SHOWN (its .spk's method token, standard_U4 in super-sample
+    // mode) and its factor, so an engine fitting waveforms follows the space Klusters
+    // is in (fiber-kit-manifold's FK_MANIFOLD_SPK defaults to %spk).
+    ctx.insert(QStringLiteral("spk"), QString::fromStdString(
+        neurosuite::custody::methodOf(doc->activeSpkFilePath().toStdString())));
+    ctx.insert(QStringLiteral("supersample"), QString::number(doc->supersampleFactor()));
 
     // Waveform geometry of the open group, so a templating/extraction engine gets
     // the right --nsamp/--nchan without the user having to know them.  nsamp =
     // samplesBeforePeak + samplesAfterPeak + 1 (the peak sample itself).
+    // The RECORDING's geometry (the session file's nSamples), whatever space is shown:
+    // a super-sampled space shows factor x the samples, but an engine's --nsamp names the
+    // window the .spk.standard was cut with; %ticks is the shown space's.
     ctx.insert(QStringLiteral("nchan"), QString::number(doc->nbOfchannels()));
-    ctx.insert(QStringLiteral("nsamp"),
-               QString::number(doc->getNbSamplesBeforePeak() + doc->getNbSamplesAfterPeak() + 1));
+    ctx.insert(QStringLiteral("nsamp"), QString::number(doc->data().baseNbSamplesPerWaveform()));
+    ctx.insert(QStringLiteral("ticks"), QString::number(doc->getNbSamplesBeforePeak() + doc->getNbSamplesAfterPeak() + 1));
 
     // Aliases under the CLI flag stems some engines use verbatim, so a descriptor
     // parameter named exactly for the flag (--session/--method/--clu-tag/--group/
