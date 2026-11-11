@@ -22,6 +22,7 @@
 #include <vector>
 #include <memory>
 #include <QWidget>
+#include <QRectF>
 #include <QMap>
 #include <QColor>
 #include <QList>
@@ -174,6 +175,14 @@ public Q_SLOTS:
     /// matrix view): sets the full zoom + pan state. Does not emit viewChanged, so
     /// the two views can be cross-connected without a loop.
     void setViewState(double zoom, double px, double py);
+    /// Follow mode (View > Follow Selection in Matrices): pan so the diagonal
+    /// cell of cluster `id` is centred in the matrix area.  Applied at once when
+    /// the cluster is in the matrix and no recompute is pending; otherwise held
+    /// and applied when the next result lands (the cluster may be absent from
+    /// the matrix being shown -- a parent while the child-scoped matrix is up --
+    /// in which case the request lapses with that result).  Does not emit
+    /// viewChanged: every matrix is asked to follow on its own.
+    void followCluster(int id);
 
     /// Channel selection committed in the waveform view (empty = all channels).
     /// Recomputes over just those channels' feature columns.
@@ -339,6 +348,7 @@ protected:
         ViewWidget::resizeEvent(event);
         if (!clusterList.isEmpty()) {
             updateWindow();  // recompute cellWidth for new size
+            ensureMatrixInView();
             update();
         }
     }
@@ -464,6 +474,17 @@ private:
     // view keeps its own matrixTopLeft()/effZoomMin()/mouse handling below.
     MatrixViewport vp_;
     void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
+    // ── follow mode / out-of-view check ────────────────────────────────────
+    /// The widget rectangle the grid is drawn in (the view less its bars).
+    QRectF matrixArea() const;
+    /// 0-based display position of cluster `id` on the diagonal, -1 if absent.
+    int displayPositionOf(int id) const;
+    /// Centre followId_ when it is in the matrix; clears the pending request.
+    void applyPendingFollow();
+    /// Nothing of the grid on screen -> back to the upper-left corner.
+    bool ensureMatrixInView();
+    int  followId_ = -1;              // cluster to centre at the next chance
+    bool followPending_ = false;      // a followCluster() not yet applied
     MatrixNavigator nav_;        // Ctrl+Left-drag pan state (shared helper)
     static constexpr int    panDragThreshold{3};       // px before press → pan
     static constexpr int    selectionSuppressMove{2};  // px of Ctrl-drag that cancels the cell selection on release

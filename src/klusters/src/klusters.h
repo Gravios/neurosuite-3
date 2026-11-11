@@ -283,6 +283,13 @@ private Q_SLOTS:
     /** View ▸ Show Child Cluster Palette (hierarchical session): shows the child
      *  palette, or hides it and returns the displays and matrices to the parents.*/
     void slotShowChildPalette(bool shown);
+    /** View > Follow Selection in Matrices (persisted in the configuration). */
+    void slotFollowSelectionInMatrices(bool on);
+    /** Follow mode: every open curation matrix centres on the diagonal cell of
+     *  the cluster the user just selected -- the palette's current item when it
+     *  is part of @p selected, else the first of @p selected.  A no-op when the
+     *  mode is off or nothing is selected. */
+    void followMatrixSelection(const QList<int>& selected, const ClusterPalette* palette);
     /** View ▸ Show Template Palette: shows or hides the template palette while
      *  Templates mode is on (updateTemplatePanelVisibility).*/
     void slotShowTemplatePalette(bool shown);
@@ -1373,6 +1380,7 @@ private:
     QAction* mHierarchicalView = nullptr;   // View: toggle the child (.clc) palette
     QAction* mShowReservedClusters = nullptr;  // View: list the reserved chunk clusters
     QAction* mShowChildPalette = nullptr;      // View: show the child cluster palette
+    QAction* mFollowSelectionInMatrices = nullptr;   // View: the matrices centre on the selected parent / child
     QAction* mShowTemplatePalette = nullptr;   // View: show the template palette
     QAction* mMergeParents = nullptr;        // Hierarchy: merge selected parents
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)

@@ -234,7 +234,7 @@ The four curation matrices (`ErrorMatrixView`, `TemplateMatrixView`, `ResidualMa
 
 | Helper | What it is | Decl (file) |
 |---|---|---|
-| `struct MatrixViewport` | persistent pan/zoom state + the zoom-around-pivot math (`zoomAround`) and per-scope save/restore (`swapForScope`) | `matrixviewport.h` |
+| `struct MatrixViewport` | persistent pan/zoom state + the zoom-around-pivot math (`zoomAround`), per-scope save/restore (`swapForScope`), the follow mode's `centerOnDiagonal` and the out-of-view check `gridOutOfView` / `bringBackIfLost` | `matrixviewport.h` |
 | `struct MatrixNavigator` | transient Ctrl+Left-drag pan state machine over a `MatrixViewport` (`begin`/`drag`/`end`) | `matrixnavigator.h` |
 | `struct MatrixTemplateStrip` | the marked-node "template column" region: storage, per-cell time-overlap shade, and the click `hitTest`; `computeShade` needs the doc and is defined in `matrixtemplatestrip.cpp` | `matrixtemplatestrip.h` |
 | `struct MatrixTemplateCol` + strip renderer | one marked lineage-node template (channel-major `mean`/`std`, `[a,b]` window) and the free function that lays out/paints the strip | `matrixtemplatecols.h` |

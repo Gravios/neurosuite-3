@@ -728,9 +728,18 @@ void KlustersDoc::endMatrixHold()
     else if (wanted) updateSimilarityMatrices();
 }
 
+namespace {
+struct DepthGuard {
+    int& d;
+    explicit DepthGuard(int& depth) : d(depth) { ++d; }
+    ~DepthGuard() { --d; }
+};
+}
+
 void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& previous)
 {
     if (ids.isEmpty()) return;
+    const DepthGuard fromMatrix(matrixSelectionDepth);
     if (matrixScopeActive()) {
         // Atom ids: land them in the child palette, which is where the user is
         // working and where the merge will be made.
@@ -759,6 +768,7 @@ void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& prev
 void KlustersDoc::addFromMatrix(const QList<int>& ids)
 {
     if (ids.isEmpty()) return;
+    const DepthGuard fromMatrix(matrixSelectionDepth);
     if (matrixScopeActive()) {
         // The child palette's own selection is the accumulator, exactly as
         // addClustersToActiveView() uses the cluster palette's.  The doc cannot

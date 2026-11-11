@@ -241,6 +241,8 @@ void ResidualMatrixView::selectedChannelsChanged(const QList<int>& channels)
             dataReady = true;
             recomputeTemplateStripCells();   // strip follows the swapped-in matrix's means
             updateWindow();
+            applyPendingFollow();      // follow mode: centre the selected cluster
+            ensureMatrixInView();      // nothing on screen -> upper-left corner
             update();
             return;
         }
@@ -249,6 +251,8 @@ void ResidualMatrixView::selectedChannelsChanged(const QList<int>& channels)
         dataReady = true;
         recomputeTemplateStripCells();       // strip follows the swapped-in matrix's means
         updateWindow();
+        applyPendingFollow();      // follow mode: centre the selected cluster
+        ensureMatrixInView();      // nothing on screen -> upper-left corner
         update();
         return;
     }
@@ -322,6 +326,8 @@ void ResidualMatrixView::customEvent(QEvent* event)
         if (accepted) {
             updateWindow();
             dataReady = true;
+            applyPendingFollow();      // follow mode: centre the selected cluster
+            ensureMatrixInView();      // nothing on screen -> upper-left corner
             setCursor(Qt::ArrowCursor);
         } else if (jobToken->active.load(std::memory_order_acquire) == 0) {
             setCursor(Qt::ArrowCursor);
@@ -547,6 +553,9 @@ void ResidualMatrixView::mouseReleaseEvent(QMouseEvent* e)
     if (nav_.isPanning()) {
         nav_.end(e->position().toPoint());
         setCursor(Qt::ArrowCursor);
+        // Panned the whole matrix off screen: bring it back, and the
+        // cross-connected matrices with it.
+        if (ensureMatrixInView()) emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         e->accept();
         return;
     }
@@ -747,6 +756,51 @@ void ResidualMatrixView::setViewState(double newZoom, double px, double py)
     update();
 }
 
+// ── follow mode / out-of-view check (View > Follow Selection in Matrices) ───
+
+QRectF ResidualMatrixView::matrixArea() const
+{
+    return QRectF(0, 0, width(), std::max(height() - INFO_H, 1));
+}
+
+int ResidualMatrixView::displayPositionOf(int id) const
+{
+    const int m = clusterList.indexOf(id);
+    return m < 0 ? -1 : order_.toDisplay(m);
+}
+
+void ResidualMatrixView::followCluster(int id)
+{
+    followId_ = id;
+    followPending_ = id >= 0;
+    // A result on its way (or held back) will move the rows: centre on it when
+    // it lands.  Otherwise the matrix shown is the one the selection refers to
+    // -- unless the cluster is not in it (a fiber picked while the atom matrix
+    // is up): then the request waits for the next result, which may be the
+    // parent matrix coming back, and lapses with it if it is not.
+    if (computing || doc.matrixUpdatesHeld()) return;
+    if (dataReady && displayPositionOf(id) >= 0) applyPendingFollow();
+}
+
+void ResidualMatrixView::applyPendingFollow()
+{
+    if (!followPending_ || !dataReady) return;
+    followPending_ = false;
+    const int d = displayPositionOf(followId_);
+    if (d < 0) return;                 // not in this matrix (another scope): lapses
+    vp_.centerOnDiagonal(d, effCellSize(), matrixTopLeft(), matrixArea());
+    update();
+}
+
+bool ResidualMatrixView::ensureMatrixInView()
+{
+    if (!dataReady) return false;
+    if (!vp_.bringBackIfLost(clusterList.size(), effCellSize(), matrixTopLeft(), matrixArea()))
+        return false;
+    update();
+    return true;
+}
+
 void ResidualMatrixView::wheelEvent(QWheelEvent* event)
 {
     // Ctrl+wheel zoom is a registry Action (matrix.residual.wheelZoom{In,Out}); a plain wheel
@@ -807,6 +861,7 @@ void ResidualMatrixView::resizeEvent(QResizeEvent* e)
     QWidget::resizeEvent(e);
     updateInfoElide();
     if (dataReady) updateWindow();
+    ensureMatrixInView();
     update();
 }
 

@@ -120,6 +120,14 @@ target_link_libraries(klusters_test_subsessionfiles PRIVATE Qt6::Core)
 add_test(NAME klusters_test_subsessionfiles COMMAND klusters_test_subsessionfiles)
 endif()
 
+# matrixviewport -- the pan/zoom viewport the four curation matrices share: the follow
+# mode (centre on a diagonal cell) and the out-of-view check (back to the corner).
+add_executable(klusters_test_matrixviewport matrixviewport_test.cpp)
+target_compile_features(klusters_test_matrixviewport PRIVATE cxx_std_20)
+target_include_directories(klusters_test_matrixviewport PRIVATE "${_klu_src}")
+target_link_libraries(klusters_test_matrixviewport PRIVATE Qt6::Core)
+add_test(NAME klusters_test_matrixviewport COMMAND klusters_test_matrixviewport)
+
 # matrixdisplayorder -- the display permutation the four curation matrices derive from the
 # document's held child-scope sort order (header-only, QtCore only).
 if (Qt6_FOUND)

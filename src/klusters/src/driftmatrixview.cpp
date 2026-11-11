@@ -416,6 +416,8 @@ void DriftMatrixView::customEvent(QEvent* event)
             dataReady = true;
             recomputeTemplateStripCells();   // fresh means/clusters: refresh the strip
             updateWindow();
+            applyPendingFollow();      // follow mode: centre the selected cluster
+            ensureMatrixInView();      // nothing on screen -> upper-left corner
             setCursor(Qt::ArrowCursor);
         } else if (computeToken->active.load(std::memory_order_acquire) == 0) {
             setCursor(Qt::ArrowCursor);
@@ -497,6 +499,8 @@ void DriftMatrixView::activateCache(const Cache& c)
     refreshSliderEnabled();
     dataReady = true;
     updateWindow();
+    applyPendingFollow();      // follow mode: centre the selected cluster
+    ensureMatrixInView();      // nothing on screen -> upper-left corner
     setCursor(Qt::ArrowCursor);
     update();
 }
@@ -601,6 +605,7 @@ void DriftMatrixView::resizeEvent(QResizeEvent* e)
     QWidget::resizeEvent(e);
     updateInfoElide();
     if (dataReady) updateWindow();
+    ensureMatrixInView();
     update();
 }
 
@@ -865,6 +870,51 @@ void DriftMatrixView::setViewState(double newZoom, double px, double py)
     update();
 }
 
+// ── follow mode / out-of-view check (View > Follow Selection in Matrices) ───
+
+QRectF DriftMatrixView::matrixArea() const
+{
+    return QRectF(0, CTRL_H, width(), std::max(height() - CTRL_H - INFO_H, 1));
+}
+
+int DriftMatrixView::displayPositionOf(int id) const
+{
+    const int m = clusterList.indexOf(id);
+    return m < 0 ? -1 : order_.toDisplay(m);
+}
+
+void DriftMatrixView::followCluster(int id)
+{
+    followId_ = id;
+    followPending_ = id >= 0;
+    // A result on its way (or held back) will move the rows: centre on it when
+    // it lands.  Otherwise the matrix shown is the one the selection refers to
+    // -- unless the cluster is not in it (a fiber picked while the atom matrix
+    // is up): then the request waits for the next result, which may be the
+    // parent matrix coming back, and lapses with it if it is not.
+    if (computing || doc.matrixUpdatesHeld()) return;
+    if (dataReady && displayPositionOf(id) >= 0) applyPendingFollow();
+}
+
+void DriftMatrixView::applyPendingFollow()
+{
+    if (!followPending_ || !dataReady) return;
+    followPending_ = false;
+    const int d = displayPositionOf(followId_);
+    if (d < 0) return;                 // not in this matrix (another scope): lapses
+    vp_.centerOnDiagonal(d, effCellSize(), matrixTopLeft(), matrixArea());
+    update();
+}
+
+bool DriftMatrixView::ensureMatrixInView()
+{
+    if (!dataReady) return false;
+    if (!vp_.bringBackIfLost(clusterList.size(), effCellSize(), matrixTopLeft(), matrixArea()))
+        return false;
+    update();
+    return true;
+}
+
 // ── input ────────────────────────────────────────────────────────────────────
 
 void DriftMatrixView::mousePressEvent(QMouseEvent* e)
@@ -887,6 +937,9 @@ void DriftMatrixView::mouseReleaseEvent(QMouseEvent* e)
     if (nav_.isPanning()) {
         nav_.end(e->position().toPoint());
         setCursor(Qt::ArrowCursor);
+        // Panned the whole matrix off screen: bring it back, and the
+        // cross-connected matrices with it.
+        if (ensureMatrixInView()) emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         e->accept();
         return;
     }

@@ -176,6 +176,11 @@ public:
     /// never disagree.  Closed docks (QPointer-null) are omitted.
     QList<QDockWidget*> matrixDocks() const;
 
+    /// Follow mode: ask every open curation matrix of this view to centre on
+    /// cluster `id`'s diagonal cell (ErrorMatrixView::followCluster and the
+    /// three siblings).  Each matrix pans on its own; nothing is emitted.
+    void followMatrixSelection(int id);
+
     /// The docks that share the Overview's right-hand tabbed frame, in canonical
     /// order: the matrixDocks() followed by the Overview trace dock (so the trace
     /// tab sits after the Drift matrix).  The "E" cycle, the tabify order and the

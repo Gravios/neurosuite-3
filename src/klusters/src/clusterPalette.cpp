@@ -722,6 +722,11 @@ void ClusterPalette::renumberPinnedIds(const QMap<int,int>& oldToNew)
     iconView->sPinnedIds = renumbered;
 }
 
+int ClusterPalette::currentClusterId() const {
+    QListWidgetItem* cur = iconView ? iconView->currentItem() : nullptr;
+    return cur ? cur->data(CLUSTER_ID).toInt() : -1;
+}
+
 void ClusterPalette::toggleCurrentSelection(){
     QListWidgetItem *cur = iconView->currentItem();
     if (!cur) return;

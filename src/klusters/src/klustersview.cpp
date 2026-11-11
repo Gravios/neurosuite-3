@@ -2318,6 +2318,19 @@ void KlustersView::connectMatrixZoomSync()
     linkMatrixZoom(dmv, emv);  linkMatrixZoom(dmv, tmv);  linkMatrixZoom(dmv, rmv);
 }
 
+void KlustersView::followMatrixSelection(int id)
+{
+    if (id < 0) return;
+    if (overviewErrorMatrixDock)
+        if (auto* v = qobject_cast<ErrorMatrixView*>(overviewErrorMatrixDock->widget())) v->followCluster(id);
+    if (overviewTemplateMatrixDock)
+        if (auto* v = qobject_cast<TemplateMatrixView*>(overviewTemplateMatrixDock->widget())) v->followCluster(id);
+    if (overviewResidualMatrixDock)
+        if (auto* v = qobject_cast<ResidualMatrixView*>(overviewResidualMatrixDock->widget())) v->followCluster(id);
+    if (overviewDriftMatrixDock)
+        if (auto* v = qobject_cast<DriftMatrixView*>(overviewDriftMatrixDock->widget())) v->followCluster(id);
+}
+
 QList<QDockWidget*> KlustersView::matrixDocks() const
 {
     QList<QDockWidget*> docks;

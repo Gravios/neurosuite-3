@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: the curation matrices follow the palette selection; a matrix lost off screen comes back](#2026-11-11--klusters-the-curation-matrices-follow-the-palette-selection-a-matrix-lost-off-screen-comes-back) |
 | 2026-11-11 | [Klusters: a delete at the end of the child list lands on the new last row, in list order](#2026-11-11--klusters-a-delete-at-the-end-of-the-child-list-lands-on-the-new-last-row-in-list-order) |
 | 2026-11-11 | [Klusters: an atom's realign lands back on the atom](#2026-11-11--klusters-an-atoms-realign-lands-back-on-the-atom) |
 | 2026-11-11 | [Klusters: one curation-matrix refresh per hierarchy gesture (no child -> fiber -> child flash)](#2026-11-11--klusters-one-curation-matrix-refresh-per-hierarchy-gesture-no-child---fiber---child-flash) |
@@ -181,6 +182,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: the curation matrices follow the palette selection; a matrix lost off screen comes back
+
+<details>
+<summary>Details</summary>
+
+**View ▸ Follow Selection in Matrices** (on by default; persisted as `matrixFollowSelection`).
+A fiber picked in the parent palette, or an atom picked in the child palette, centres every
+open curation matrix (error / template / residual / drift) on that cluster's diagonal cell:
+the view pans so the cell is in the middle of the matrix area, the zoom is kept.  With
+several selected it is the palette's current item (the one clicked or reached with the
+keyboard) that is centred.  A matrix whose result is still on its way (or held back by a
+hierarchy gesture) centres when the result lands; a cluster absent from the matrix shown (a
+fiber picked while the atom matrix is up) waits for the next result -- the parent matrix
+coming back, which then centres on it -- and lapses with that result otherwise.  A selection that
+came from a matrix cell click does not move the matrix under the cursor
+(`KlustersDoc::selectingFromMatrix`).
+
+Independently of the mode, a matrix panned completely off screen (nothing of the grid in
+view, after a drag, a resize or a scope swap restoring an old pan) is brought back to its
+upper-left corner at the current zoom, and the cross-connected matrices follow.
+
+`MatrixViewport::centerOnDiagonal / gridOutOfView / bringBackIfLost` (unit test
+`klusters_test_matrixviewport`), `ErrorMatrixView::followCluster` and the three siblings,
+`KlustersView::followMatrixSelection`, `KlustersApp::followMatrixSelection` from
+`slotUpdateShownClusters` / `slotChildSelectionChanged`, `ClusterPalette::currentClusterId`.
+`doc/klusters/README.md`.  Not run in the GUI.
+
+</details>
 
 ---
 

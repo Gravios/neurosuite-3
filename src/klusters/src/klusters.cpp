@@ -439,6 +439,14 @@ void KlustersApp::createMenus()
                                      "Hidden, the selection, the displays and the matrices work on\n"
                                      "the parent clusters."));
     connect(mShowChildPalette, &QAction::toggled, this, &KlustersApp::slotShowChildPalette);
+    mFollowSelectionInMatrices = viewMenu->addAction(tr("&Follow Selection in Matrices"));
+    mFollowSelectionInMatrices->setCheckable(true);
+    mFollowSelectionInMatrices->setChecked(configuration().getMatrixFollowSelection());
+    mFollowSelectionInMatrices->setToolTip(tr("Centre the curation matrices on the cluster selected in the parent or\n"
+                                              "the child cluster palette: the view pans so its diagonal cell is in the\n"
+                                              "middle (the zoom is kept).  A matrix panned completely off screen is\n"
+                                              "brought back to its upper-left corner either way."));
+    connect(mFollowSelectionInMatrices, &QAction::toggled, this, &KlustersApp::slotFollowSelectionInMatrices);
     mShowTemplatePalette = viewMenu->addAction(tr("Show &Template Palette"));
     mShowTemplatePalette->setCheckable(true);
     mShowTemplatePalette->setChecked(true);
@@ -2556,6 +2564,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("edit.selectAllExcept"),  QStringLiteral("Edit"),    mSelectAllExceptAction);
     registerActionCommand(QStringLiteral("view.showReservedClusters"), QStringLiteral("View"), mShowReservedClusters);
     registerActionCommand(QStringLiteral("view.showChildPalette"),     QStringLiteral("View"), mShowChildPalette);
+    registerActionCommand(QStringLiteral("view.followSelectionInMatrices"), QStringLiteral("View"), mFollowSelectionInMatrices);
     registerActionCommand(QStringLiteral("view.showTemplatePalette"),  QStringLiteral("View"), mShowTemplatePalette);
     registerActionCommand(QStringLiteral("action.deleteArtifact"), QStringLiteral("Actions"), mDeleteArtifact);
     registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
@@ -4807,6 +4816,28 @@ void KlustersApp::slotViewClusterInfo(){
 
 }
 
+void KlustersApp::slotFollowSelectionInMatrices(bool on){
+    configuration().setMatrixFollowSelection(on);
+    configuration().write();
+    // Switched on: catch up with the current selection at once.
+    if(on && doc && clusterPalette){
+        if(doc->matrixScopeActive() && childPaletteA && !childPaletteA->selectedClusters().isEmpty())
+            followMatrixSelection(childPaletteA->selectedClusters(), childPaletteA);
+        else
+            followMatrixSelection(clusterPalette->selectedClusters(), clusterPalette);
+    }
+}
+
+void KlustersApp::followMatrixSelection(const QList<int>& selected, const ClusterPalette* palette){
+    if(!doc || selected.isEmpty() || !configuration().getMatrixFollowSelection()) return;
+    if(doc->selectingFromMatrix()) return;   // a cell click lands a selection; the matrix stays put
+    int id = palette ? palette->currentClusterId() : -1;
+    if(!selected.contains(id)) id = selected.first();
+    const QList<KlustersView*> views = doc->viewListCopy();
+    for(KlustersView* view : views)
+        if(view) view->followMatrixSelection(id);
+}
+
 void KlustersApp::slotShowReservedClusters(bool shown){
     if(!doc) return;
     const int count = doc->setReservedClustersShown(shown);
@@ -5778,6 +5809,9 @@ void KlustersApp::slotUpdateShownClusters(const QList<int>& selectedClusters){
         adoptCuratedParents(selectedClusters);
         repopulateChildPalette(selectedClusters);
     }
+    // Follow mode: the parent matrix centres on the parent just picked.  (In
+    // the child-scoped matrix a parent has no cell; the request lapses there.)
+    followMatrixSelection(selectedClusters, clusterPalette);
 }
 
 

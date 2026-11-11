@@ -134,6 +134,7 @@ public:
     void setSupersampleMode(int m)        {supersampleMode = (m == 2 || m == 4) ? m : 0;}
     void setSupersampleAdopt(bool b)      {supersampleAdopt = b;}
     void setSupersampleInterp(int i)      {supersampleInterp = (i == 1) ? 1 : 0;}
+    void setMatrixFollowSelection(bool b) {matrixFollowSelection = b;}
     void setAutoRealignAfterMerge(bool b) {autoRealignAfterMerge = b;}
     void setAutoRenumberAfterMerge(bool b) {autoRenumberAfterMerge = b;}
     void setTsneSpikeCap(int n) {tsneSpikeCap = (n < 1000) ? 1000 : n;}
@@ -304,6 +305,7 @@ public:
     bool   getSupersampleEnabled() const  {return supersampleMode > 0;}
     bool   getSupersampleAdopt() const    {return supersampleAdopt;}
     int    getSupersampleInterp() const   {return supersampleInterp;}   // 0 cubic spline, 1 Lanczos-3
+    bool   getMatrixFollowSelection() const {return matrixFollowSelection;}
     bool   getAutoRealignAfterMerge() const {return autoRealignAfterMerge;}
     bool   getAutoRenumberAfterMerge() const {return autoRenumberAfterMerge;}
     int    getTsneSpikeCap() const {return tsneSpikeCap;}
@@ -644,6 +646,7 @@ private:
     int     supersampleMode = 0;               // 0 off, 2, 4: super-sampled waveform spaces (built on open; Actions > Super-sample); high-end machines only
     bool    supersampleAdopt = false;          // on open in super-sample mode: Save As under the _U token so realign / nudge run there
     int     supersampleInterp = 0;             // 0 cubic spline, 1 Lanczos-3
+    bool    matrixFollowSelection = true;      // View > Follow Selection in Matrices: the matrices centre on the selected parent / child
     bool    autoRealignAfterMerge;  // run spike alignment after each interactive merge
     bool    autoRenumberAfterMerge;        // renumber clusters after each merge (interactive + auto-merge)
     int     tsneSpikeCap;                  // feature-view t-SNE: max spikes embedded (latency budget)

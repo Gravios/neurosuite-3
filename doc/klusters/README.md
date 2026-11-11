@@ -247,6 +247,17 @@ checked and holds until Klusters closes.
   for the palette.
 - **Show Template Palette** (Templates mode): shows or hides the template
   palette.
+- **Follow Selection in Matrices** (on by default): a cluster picked in the
+  parent palette, or an atom picked in the child palette, centres every open
+  curation matrix on its diagonal cell -- the view pans, the zoom is kept.
+  With several selected, the palette's current item (the one clicked or
+  reached with the keyboard) is centred. A matrix still computing centres
+  when its result lands; a cluster that is not in the matrix shown (a fiber
+  picked while the atom matrix is up) is centred by the next result that
+  holds it (the parent matrix coming back) and forgotten otherwise, and a
+  selection made by clicking a matrix cell leaves the matrix where it is. Whatever the setting,
+  a matrix panned completely off screen is brought back to its upper-left
+  corner at the current zoom (the cross-connected matrices follow).
 
 ### Radial context menu (experimental)
 

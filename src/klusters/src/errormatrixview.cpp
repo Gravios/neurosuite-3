@@ -290,6 +290,8 @@ void ErrorMatrixView::customEvent(QEvent* event){
                 // from the (updated) clusterList before triggering a repaint.
                 updateWindow();
                 dataReady = true;
+                applyPendingFollow();      // follow mode: centre the selected cluster
+                ensureMatrixInView();      // nothing on screen -> upper-left corner
                 setCursor(Qt::ArrowCursor);
                 update();
                 // Notify external listeners (e.g. KlustersApp Shift+S reorder
@@ -1022,6 +1024,9 @@ void ErrorMatrixView::mouseReleaseEvent(QMouseEvent* e){
         const int moved = nav_.end(e->position().toPoint());
         unsetCursor();
         if(moved >= selectionSuppressMove){
+            // Panned the whole matrix off screen: bring it back, and the
+            // cross-connected matrices with it.
+            if(ensureMatrixInView()) emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
             e->accept();
             return;
         }
@@ -1163,6 +1168,53 @@ void ErrorMatrixView::setViewState(double newZoom, double px, double py){
     pairBoxSettleTimer->start(pairBoxSettleMs);
     invalidate(REDRAW);
     update();
+}
+
+// ── follow mode / out-of-view check (View > Follow Selection in Matrices) ───
+
+QRectF ErrorMatrixView::matrixArea() const
+{
+    return QRectF(rect());
+}
+
+int ErrorMatrixView::displayPositionOf(int id) const
+{
+    const int m = clusterList.indexOf(id);
+    return m < 0 ? -1 : matrixToDisplay(m);
+}
+
+void ErrorMatrixView::followCluster(int id)
+{
+    followId_ = id;
+    followPending_ = id >= 0;
+    // A result on its way (or held back) will move the rows: centre on it when
+    // it lands.  Otherwise the matrix shown is the one the selection refers to
+    // -- unless the cluster is not in it (a fiber picked while the atom matrix
+    // is up): then the request waits for the next result, which may be the
+    // parent matrix coming back, and lapses with it if it is not.
+    if (isComputing() || doc.matrixUpdatesHeld()) return;
+    if (dataReady && displayPositionOf(id) >= 0) applyPendingFollow();
+}
+
+void ErrorMatrixView::applyPendingFollow()
+{
+    if (!followPending_ || !dataReady) return;
+    followPending_ = false;
+    const int d = displayPositionOf(followId_);
+    if (d < 0) return;                 // not in this matrix (another scope): lapses
+    vp_.centerOnDiagonal(d, effCellSize(), matrixTopLeft(), matrixArea());
+    invalidate(REDRAW);
+    update();
+}
+
+bool ErrorMatrixView::ensureMatrixInView()
+{
+    if (!dataReady) return false;
+    if (!vp_.bringBackIfLost(clusterList.size(), effCellSize(), matrixTopLeft(), matrixArea()))
+        return false;
+    invalidate(REDRAW);
+    update();
+    return true;
 }
 
 

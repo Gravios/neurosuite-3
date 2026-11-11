@@ -673,6 +673,8 @@ void KlustersApp::slotChildSelectionChanged(const QList<int>&){
     } else {
         doc->setActiveClustering(true);                  // show the selected children's spikes
         doc->shownClustersUpdate(kids, *activeView());
+        // Follow mode: the child-scoped matrices centre on the child just picked.
+        followMatrixSelection(kids, childPaletteA);
     }
 }
 

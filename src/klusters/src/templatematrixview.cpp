@@ -393,6 +393,8 @@ void TemplateMatrixView::selectedChannelsChanged(const QList<int>& channels)
             scores = scoresAll;
             dataReady = true;
             updateWindow();
+            applyPendingFollow();      // follow mode: centre the selected cluster
+            ensureMatrixInView();      // nothing on screen -> upper-left corner
             update();
             return;
         }
@@ -400,6 +402,8 @@ void TemplateMatrixView::selectedChannelsChanged(const QList<int>& channels)
         scores = scoresSel;
         dataReady = true;
         updateWindow();
+        applyPendingFollow();      // follow mode: centre the selected cluster
+        ensureMatrixInView();      // nothing on screen -> upper-left corner
         update();
         return;
     }
@@ -521,6 +525,8 @@ void TemplateMatrixView::customEvent(QEvent* event)
             if (accepted) {
                 updateWindow();
                 dataReady = true;
+                applyPendingFollow();      // follow mode: centre the selected cluster
+                ensureMatrixInView();      // nothing on screen -> upper-left corner
                 setCursor(Qt::ArrowCursor);
             } else if (matrixToken->active.load(std::memory_order_acquire) == 0) {
                 setCursor(Qt::ArrowCursor);
@@ -980,6 +986,9 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
     if (nav_.isPanning()) {
         nav_.end(e->position().toPoint());
         unsetCursor();
+        // Panned the whole matrix off screen: bring it back, and the
+        // cross-connected matrices with it.
+        if (ensureMatrixInView()) emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
         e->accept();
         return;
     }
@@ -1099,6 +1108,51 @@ void TemplateMatrixView::setViewState(double newZoom, double px, double py)
     // transfer directly.  No signal is emitted so the change is not echoed back.
     vp_.setState(newZoom, px, py, effZoomMin(), zoomMax);
     update();
+}
+
+// ── follow mode / out-of-view check (View > Follow Selection in Matrices) ───
+
+QRectF TemplateMatrixView::matrixArea() const
+{
+    return QRectF(0, 0, width(), std::max(height() - CONTROLS_H, 1));
+}
+
+int TemplateMatrixView::displayPositionOf(int id) const
+{
+    const int m = clusterList.indexOf(id);
+    return m < 0 ? -1 : order_.toDisplay(m);
+}
+
+void TemplateMatrixView::followCluster(int id)
+{
+    followId_ = id;
+    followPending_ = id >= 0;
+    // A result on its way (or held back) will move the rows: centre on it when
+    // it lands.  Otherwise the matrix shown is the one the selection refers to
+    // -- unless the cluster is not in it (a fiber picked while the atom matrix
+    // is up): then the request waits for the next result, which may be the
+    // parent matrix coming back, and lapses with it if it is not.
+    if (computing || doc.matrixUpdatesHeld()) return;
+    if (dataReady && displayPositionOf(id) >= 0) applyPendingFollow();
+}
+
+void TemplateMatrixView::applyPendingFollow()
+{
+    if (!followPending_ || !dataReady) return;
+    followPending_ = false;
+    const int d = displayPositionOf(followId_);
+    if (d < 0) return;                 // not in this matrix (another scope): lapses
+    vp_.centerOnDiagonal(d, effCellSize(), matrixTopLeft(), matrixArea());
+    update();
+}
+
+bool TemplateMatrixView::ensureMatrixInView()
+{
+    if (!dataReady) return false;
+    if (!vp_.bringBackIfLost(clusterList.size(), effCellSize(), matrixTopLeft(), matrixArea()))
+        return false;
+    update();
+    return true;
 }
 
 void TemplateMatrixView::wheelEvent(QWheelEvent* event)
@@ -1265,6 +1319,7 @@ void TemplateMatrixView::resizeEvent(QResizeEvent* e)
     // cause the matrix to shrink each time the widget is laid out.
     const int matH = std::max(height() - CONTROLS_H, 1);
     matrixViewport  = QRect(0, 0, width(), matH);
+    ensureMatrixInView();
     update();
 }
 

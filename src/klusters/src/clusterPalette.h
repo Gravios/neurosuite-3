@@ -183,6 +183,9 @@ public:
     void reset();
     /**Returns the list of selected clusters*/
     QList<int> selectedClusters();
+    /**The cluster id of the palette's current item (the one last clicked or
+     * reached with the keyboard), -1 when there is none.*/
+    int currentClusterId() const;
 
     /** Hides the user cluster information, that is show the normal cluster palette.*/
     void hideUserClusterInformation();

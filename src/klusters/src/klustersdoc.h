@@ -607,6 +607,12 @@ public:
      */
     void addFromMatrix(const QList<int>& ids);
 
+    /** True while selectFromMatrix / addFromMatrix are landing a cell click in
+     *  a palette.  The follow mode (View > Follow Selection in Matrices) reads
+     *  it: a selection that CAME from a matrix cell must not re-centre the
+     *  matrix under the cursor -- only a pick in a palette follows. */
+    bool selectingFromMatrix() const { return matrixSelectionDepth > 0; }
+
     /** True when the matrices should restrict themselves to one parent's children:
      *  a loaded child layer, a selected parent, and at least one child.
      *
@@ -2769,6 +2775,7 @@ private:
     QList<int>           scopeSortOrder;            // held child-scope sort order (atom ids)
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     int                  matrixHoldDepth = 0;       // beginMatrixHold / endMatrixHold
+    int                  matrixSelectionDepth = 0;  // selectFromMatrix / addFromMatrix in progress (selectingFromMatrix)
     bool                 matrixUpdateDeferred = false;   // a launch was asked for while held
     bool                 scopeEmitDeferred = false;      // resolveMatrixScope moved while held
     bool                 scopeResolvedActive = false;   // held answer, never derived on demand

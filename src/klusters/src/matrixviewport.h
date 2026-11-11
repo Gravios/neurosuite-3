@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <QPoint>
 #include <QPointF>
+#include <QRectF>
 
 /** Shared pan/zoom viewport for the four curation matrices.  See the file header. */
 struct MatrixViewport {
@@ -62,6 +63,35 @@ struct MatrixViewport {
 
     /** Back to the default framing (no pan, unit zoom). */
     void reset() { panX = panY = 0.0; zoom = 1.0; }
+
+    // ── follow mode (View > Follow Selection in Matrices) ───────────────────
+    /** Pan (zoom untouched) so the centre of the diagonal cell at display
+     *  position `d` sits at the centre of `area`, the widget rectangle the grid
+     *  is drawn in (the whole widget less the view's control / info bars).
+     *  `base` is the view's matrixTopLeft(), `effCell` its effCellSize(). */
+    void centerOnDiagonal(int d, double effCell, QPoint base, const QRectF& area) {
+        const double cx = area.x() + area.width()  * 0.5;
+        const double cy = area.y() + area.height() * 0.5;
+        panX = cx - base.x() - (d + 0.5) * effCell;
+        panY = cy - base.y() - (d + 0.5) * effCell;
+    }
+
+    /** True iff the n x n grid, at the current pan, lies wholly outside `area`:
+     *  nothing of the matrix is on screen. */
+    bool gridOutOfView(int n, double effCell, QPoint base, const QRectF& area) const {
+        if (n <= 0 || effCell <= 0.0 || area.isEmpty()) return false;
+        const QRectF grid(base.x() + panX, base.y() + panY, n * effCell, n * effCell);
+        return !grid.intersects(area);
+    }
+
+    /** The out-of-view check: when the grid is wholly off screen, drop the pan
+     *  so the matrix's upper-left corner (and its labels) is back at the
+     *  area's upper-left, at the current zoom.  Returns true iff it moved. */
+    bool bringBackIfLost(int n, double effCell, QPoint base, const QRectF& area) {
+        if (!gridOutOfView(n, effCell, base, area)) return false;
+        panX = panY = 0.0;
+        return true;
+    }
 
     // ── per-scope saved view (parent matrix vs child-scoped matrix) ─────────
     // The parent and the child-scoped matrix are different matrices (thousands of
