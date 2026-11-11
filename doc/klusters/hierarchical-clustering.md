@@ -114,6 +114,15 @@ used to trigger (the parent-layer move, the hierarchy rebuild, the deferred
 renumber) collapse into one launch at the release -- so the matrices no longer
 flash from the child view to the fiber view and back.
 
+**Realigning an atom.** *Realign* with the child view showing realigns the
+first shown atom (its spikes only, against their own template). When it
+finishes the landing stays in the child view: the atom is selected in the
+child palette with the keyboard focus, its fiber is selected in the fiber
+palette (silently), and the extrema pass and the matrices are told about the
+fiber as well as the atom. It used to select the atom's *number* in the fiber
+palette, which picked whichever fiber carried it and moved the views and the
+focus up to the fiber layer.
+
 **Leaving the children by clicking a fiber.** With atoms selected in the child
 palette, clicking a fiber in the fiber palette -- the same fiber or another --
 is the user leaving the atoms: the child view exits (the curation matrices

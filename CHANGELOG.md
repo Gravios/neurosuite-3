@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: an atom's realign lands back on the atom](#2026-11-11--klusters-an-atoms-realign-lands-back-on-the-atom) |
 | 2026-11-11 | [Klusters: one curation-matrix refresh per hierarchy gesture (no child -> fiber -> child flash)](#2026-11-11--klusters-one-curation-matrix-refresh-per-hierarchy-gesture-no-child---fiber---child-flash) |
 | 2026-11-11 | [Klusters: a fiber clicked over an atom selection leaves the child view](#2026-11-11--klusters-a-fiber-clicked-over-an-atom-selection-leaves-the-child-view) |
 | 2026-11-11 | [Klusters: the super-sample MODE builds the space on open; Save As adopts an existing space; `%spk`](#2026-11-11--klusters-the-super-sample-mode-builds-the-space-on-open-save-as-adopts-an-existing-space-spk) |
@@ -181,6 +182,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-11 — Klusters: an atom's realign lands back on the atom
+
+<details>
+<summary>Details</summary>
+
+*Realign* with the child view showing takes the first shown ATOM (the doc resolves the id in
+the active layer), but its completion (`applyRealignResult`) treated the id as a parent: it
+selected the atom's number in the parent palette (whichever parent carried it, or nothing),
+moved the keyboard focus there and the views to the parent layer, and handed the parent-keyed
+extrema pass (`refeaturizeRealignedClusters`) the atom's number.  `startRealignForCluster`
+now records that the target is an atom and its parent (`realignTargetIsChild`,
+`realignTargetParent`); on success the extrema pass takes the parent, the matrices are told
+about the atom and the parent, and the landing stays in the child view: the parent selected
+silently in the parent palette, the atom selected in the child palette with the focus, the
+child scope kept.  `doc/klusters/hierarchical-clustering.md`.  Not run in the GUI.
+
+</details>
 
 ## 2026-11-11 — Klusters: one curation-matrix refresh per hierarchy gesture (no child -> fiber -> child flash)
 

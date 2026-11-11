@@ -1851,6 +1851,12 @@ private:
     bool realignRunning;
     /**The cluster ID currently being realigned (valid while realignRunning).*/
     int realignClusterId;
+    /** The single-cluster realign was started on an ATOM (the child view was showing
+     *  it): its completion lands back in the child palette, on that atom, under its
+     *  parent (realignTargetParent) -- not in the parent palette on whichever parent
+     *  carries the atom's number. */
+    bool realignTargetIsChild = false;
+    int  realignTargetParent  = -1;
 
     // ── PCA-center batch state ───────────────────────────────────────────────
     /**True while slotPcaAlignAllClusters is iterating the cluster list.

@@ -180,6 +180,15 @@ void KlustersApp::startRealignForCluster(int clusterId)
     // confirmation): realign runs there; returnFromRealignSpace comes back.
     if (!enterClusterSpaceForRealign(tr("Realign"))) return;
     realignArgs = buildRealignArgs();   // saved mode + top-ch gate
+    // An atom (the child view is showing it): remember so the completion lands
+    // in the child palette and the extrema pass takes its PARENT (the doc's
+    // refeaturize is parent-keyed).  The doc side resolves the id in the active
+    // layer (data()), which is the child layer right now.
+    realignTargetIsChild = doc->isChildClusteringActive() && doc->parentOfChild(clusterId) > 0;
+    realignTargetParent  = realignTargetIsChild ? doc->parentOfChild(clusterId) : -1;
+    if (KlustersDoc::scopeTraceEnabled())
+        qDebug().noquote() << QStringLiteral("[scope] realign start id=%1 child=%2 parent=%3")
+                              .arg(clusterId).arg(realignTargetIsChild ? "true" : "false").arg(realignTargetParent);
 
     // ── Lock UI exactly as reclustering does ─────────────────────────────────
     realignRunning = true;
@@ -710,16 +719,20 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
         // and recompute correlograms from the updated in-memory timestamps.
         if (realignClusterId >= 0) {
             // Single job = a one-cluster mutation cycle: same end-of-cycle
-            // extrema pass, before the notify below reads them.
-            doc->refeaturizeRealignedClusters(QList<int>{ realignClusterId });
+            // extrema pass, before the notify below reads them.  The pass is
+            // parent-keyed (it translates parents to their atoms): an atom's
+            // realign hands it the atom's parent, not the atom's number.
+            doc->refeaturizeRealignedClusters(QList<int>{ realignTargetIsChild ? realignTargetParent : realignClusterId });
             doc->invalidateWaveformCache(realignClusterId);
             doc->invalidateCorrelogramCache(realignClusterId);
             doc->forceClusterRefresh(realignClusterId);
             // Realign reprojected this cluster's .fet features (membership
             // unchanged), so no group/split/renumber signal fires for it.  Tell
             // the error matrix so the incremental path treats it as changed and
-            // refreshes its row instead of reusing stale probabilities.
+            // refreshes its row instead of reusing stale probabilities -- the
+            // atom's row in a child-scoped matrix, its parent's in the parent one.
             doc->notifyClusterFeaturesReprojected(realignClusterId);
+            if (realignTargetIsChild) doc->notifyClusterFeaturesReprojected(realignTargetParent);
         }
 
         // Switch to the Overview tab so the user immediately sees the
@@ -738,12 +751,34 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
         // so the user can immediately use arrow keys for further work.
         // (No activeView()->focusClusterView() — that would steal focus
         // from the palette and silently break arrow-key navigation.)
-        if (clusterPalette && realignClusterId >= 0) {
+        //
+        // An ATOM was realigned: the landing is the child palette, on that
+        // atom, with its parent selected in the parent palette (silently) and
+        // the child scope kept -- selecting the atom's NUMBER in the parent
+        // palette picked whichever parent carried it and flipped the views and
+        // the focus to the parent layer, which is where the curator was not.
+        if (realignTargetIsChild && realignClusterId >= 0 && activeView()) {
+            const int atom = realignClusterId, parent = realignTargetParent;
+            if (clusterPalette && parent > 1 && doc->clusterHasMembers(parent))
+                clusterPalette->selectItems(QList<int>{parent});
+            if (childPanel && childPanel->isVisible() && childPaletteA) {
+                if (doc->curatedParent() != parent) {
+                    doc->setCuratedParent(parent);
+                    repopulateChildPalette(QList<int>{parent});
+                }
+                childPaletteA->selectItems(QList<int>{atom});
+                doc->setActiveClustering(true);
+                doc->shownClustersUpdate(QList<int>{atom}, *activeView());
+                childPaletteA->setFocusToList();
+            }
+        } else if (clusterPalette && realignClusterId >= 0) {
             clusterPalette->selectItems(QList<int>{realignClusterId});
             clusterPalette->setFocusToList();
         }
 
         realignClusterId = -1;
+        realignTargetIsChild = false;
+        realignTargetParent = -1;
     } else {
         // The realign refused or failed: no feature row was touched (the doc
         // side now refuses BEFORE writing anything it cannot reproject), but
@@ -754,6 +789,8 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
                          "see the realign output panel for the reason.")
                       .arg(clusterLabel(realignClusterId)));
         realignClusterId = -1;
+        realignTargetIsChild = false;
+        realignTargetParent = -1;
     }
 
     // Restore undo/redo state correctly.
