@@ -173,6 +173,10 @@ instead of waiting for a full sync. (Exercised headlessly by
 `src/klusters/test/selftest/test_follow_supersampled.py` on the built binary —
 see `src/klusters/test/selftest/README.md`.)
 
+The *Space* box rescans the session directory each time it is opened, so a
+space made beside an open session (`ndm_extractspikes --supersample`, `ndm_pca`,
+fiber-kit) is listed without a reopen.
+
 ### Detached feature spaces
 
 A `.fet.<token>.N` with no basis (`.pca.<token>.N`) is a **detached** space: a

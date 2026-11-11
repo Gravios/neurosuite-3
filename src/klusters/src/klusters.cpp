@@ -1911,6 +1911,10 @@ void KlustersApp::initSelectionBoxes(){
     // activated() fires on user choice only, never on the programmatic refill.
     connect(featureSpaceCombo, &QComboBox::activated,
             this, &KlustersApp::slotFeatureSpaceActivated);
+    // The list is rescanned when the box is opened: a space made beside the session
+    // while it is open (ndm_extractspikes --supersample, ndm_pca, fiber-kit) shows
+    // up without a reopen.  Cheap: a directory listing and a few file sizes.
+    featureSpaceCombo->installEventFilter(this);
 }
 
 void KlustersApp::executePreferencesDlg(){
@@ -2138,6 +2142,12 @@ void KlustersApp::initStatusBar()
 bool KlustersApp::eventFilter(QObject* object,QEvent* event){
     if(object == paramBar && event->type() == 71){//filter the removal of items from the paramBar
         return true;
+    }
+    if(object == featureSpaceCombo && event->type() == QEvent::MouseButtonPress
+       && featureSpaceCombo->isEnabled() && doc && !doc->url().isEmpty() && !fileJobRunning()){
+        const int before = featureSpaceCombo->count();
+        populateFeatureSpaceCombo();                      // rescan the session's .fet.<method>.<group>
+        if (featureSpaceCombo->count() != before) doc->preloadFeatureSpaces();
     }
 
     // Keep the childPalette alias pointing at the child palette when it gains

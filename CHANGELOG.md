@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | [Klusters: the Space box rescans the session's feature spaces when opened](#2026-11-12--klusters-the-space-box-rescans-the-sessions-feature-spaces-when-opened) |
 | 2026-11-11 | [Klusters: a super-sampled space is re-cut with the interpolator it was built with (detected from its rows), not the preference](#2026-11-11--klusters-a-super-sampled-space-is-re-cut-with-the-interpolator-it-was-built-with-detected-from-its-rows-not-the-preference) |
 | 2026-11-11 | [Klusters: a detached feature space (no basis -- `.fet.manifold`) no longer blocks the realign of the spaces it shares waveforms with; its time column follows, realign in it is refused](#2026-11-11--klusters-a-detached-feature-space-no-basis----fetmanifold-no-longer-blocks-the-realign-of-the-spaces-it-shares-waveforms-with-its-time-column-follows-realign-in-it-is-refused) |
 | 2026-11-11 | [`ndm_pca` on super-sampled waveforms: the basis in ticks, the `.fet` with the phase column; a shared `.res` is never a `_U` tick `.res`](#2026-11-11--ndm_pca-on-super-sampled-waveforms-the-basis-in-ticks-the-fet-with-the-phase-column-a-shared-res-is-never-a-_u-tick-res) |
@@ -194,6 +195,21 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-12 — Klusters: the Space box rescans the session's feature spaces when opened
+
+<details>
+<summary>Details</summary>
+
+The *Space* box was filled when the session opened and after a build Klusters made itself; a
+space written beside an open session by `ndm_extractspikes --supersample` / `ndm_pca` /
+fiber-kit (`.fet.standard_U4.6`, `.spk.standard_U4.6`) did not show until a reopen.  Clicking
+the box now rescans the directory (`populateFeatureSpaceCombo`, a listing and a few file sizes)
+and preloads a space that is new.
+
+</details>
 
 ---
 
