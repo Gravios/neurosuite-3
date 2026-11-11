@@ -598,6 +598,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         if (liveLog) liveLog(logOut, true);
         return false;
     }
+    if (!ws.isOrigin) {
+        // A detached space (no basis: a per-spike table such as .fet.manifold) has
+        // no features to re-project: align in a waveform space.
+        for (const FeatureSpace& s : availableFeatureSpaces())
+            if (s.method == activeMethod && !s.projection) {
+                logOut = tr("Realign does not run in the %1 space: its features are not a projection of waveforms "
+                            "(no basis); show a waveform space (%2) first.\n")
+                             .arg(activeMethod, QString::fromStdString(neurosuite::custody::methodOf(ws.spkCommitted.toStdString())));
+                if (liveLog) liveLog(logOut, true);
+                return false;
+            }
+    }
     if (!ws.isOrigin && (activeSpkPath != ws.spkWork || activeFetPath != ws.fetWork)) {
         logOut = tr("Realign: the %1 space is shown from its saved files, not its working copies; "
                     "reload it first (the app does this before a realign).\n").arg(activeMethod);
@@ -2897,6 +2909,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     if (!ws.valid) return refuse(tr("Nudge: the %1 space has no working copies to write (%2).").arg(activeMethod, wsErr));
     if (neurosuite::custody::parseMethodToken(activeMethod.toStdString()).lag >= 1)
         return refuse(tr("Nudge does not run in a lag (_D) feature space; show its waveform space first."));
+    for (const FeatureSpace& s : availableFeatureSpaces())
+        if (s.method == activeMethod && s.method != originMethod && !s.projection)
+            return refuse(tr("Nudge does not run in the %1 space: its features are not a projection of waveforms (no basis); show a waveform space first.").arg(activeMethod));
     if (!ws.isOrigin && (activeSpkPath != ws.spkWork || activeFetPath != ws.fetWork))
         return refuse(tr("Nudge: the %1 space is shown from its saved files, not its working copies.").arg(activeMethod));
 

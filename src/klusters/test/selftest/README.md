@@ -20,7 +20,10 @@ Tests: `test_follow_supersampled.py` (a `_U4`/`_U2` space follows a realign made
 space, and the reverse), `test_realign_in_shown_space.py` (realign and nudge computed in the
 shown `_U4` space with the `.clu` in `standard`: sub-sample phases, the base space follows,
 alignment quality), `test_realign_base_from_supersampled_clu.py` (Save As into `_U4`, a
-base-rate realign with the `.clu` in `_U4`).
+base-rate realign with the `.clu` in `_U4`), `test_detached_space.py` (a detached space --
+a per-spike table with no basis, `.fet.manifold.1` -- neither blocks a realign in the space
+it shares waveforms with nor loses its features; its time column follows; a realign asked for
+in it is refused).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

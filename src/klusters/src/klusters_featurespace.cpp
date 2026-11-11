@@ -53,6 +53,10 @@ void KlustersApp::populateFeatureSpaceCombo()
             ? tr("Features: %1\nWaveforms: %2")
                   .arg(QFileInfo(s.fetPath).fileName(), QFileInfo(s.spkPath).fileName())
             : tr("Not available: %1").arg(s.reason);
+        if (s.usable && !s.projection)
+            tip += tr("\nDetached: no basis (.pca) -- a per-spike feature table, not a projection of the waveforms. "
+                      "Its features keep their values when spikes move (only the time column follows); "
+                      "realign and nudge do not run in it.");
         if (s.synced)
             tip += s.syncStale
                 ? tr("\nSynced this session, but spike times have changed since: "

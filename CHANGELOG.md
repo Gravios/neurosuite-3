@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: a detached feature space (no basis -- `.fet.manifold`) no longer blocks the realign of the spaces it shares waveforms with; its time column follows, realign in it is refused](#2026-11-11--klusters-a-detached-feature-space-no-basis----fetmanifold-no-longer-blocks-the-realign-of-the-spaces-it-shares-waveforms-with-its-time-column-follows-realign-in-it-is-refused) |
 | 2026-11-11 | [`ndm_pca` on super-sampled waveforms: the basis in ticks, the `.fet` with the phase column; a shared `.res` is never a `_U` tick `.res`](#2026-11-11--ndm_pca-on-super-sampled-waveforms-the-basis-in-ticks-the-fet-with-the-phase-column-a-shared-res-is-never-a-_u-tick-res) |
 | 2026-11-11 | [Super-sampled extraction through the ndm engines; the smoothing spline; the `_U` stderiv from the interpolant's derivative; the spline's halved curvature fixed](#2026-11-11--super-sampled-extraction-through-the-ndm-engines-the-smoothing-spline-the-_u-stderiv-from-the-interpolants-derivative-the-splines-halved-curvature-fixed) |
 | 2026-11-11 | [Klusters: the realign shift cap in a super-sampled space, phase-aware currency of spaces (realign-in-shown-space, step 3 of 3)](#2026-11-11--klusters-the-realign-shift-cap-in-a-super-sampled-space-phase-aware-currency-of-spaces-realign-in-shown-space-step-3-of-3) |
@@ -192,6 +193,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: a detached feature space (no basis -- `.fet.manifold`) no longer blocks the realign of the spaces it shares waveforms with; its time column follows, realign in it is refused
+
+<details>
+<summary>Details</summary>
+
+Realign in `standard` on the 20120312 g6 session was refused: *"standard could not be
+brought to the session's spike times: standard (it shares .spk.standard.6 with manifold):
+not synced -- no readable basis .pca.manifold.6"*.  The sync a realign needs first groups
+every usable space over the same `.spk`, and fiber-manifold's `.fet.manifold.6` -- a
+per-spike table (snr, lag, position, ...), not a projection -- is listed as a space over the
+standard waveforms (custody's fallback); with no basis the whole group was refused, and a
+follow after any move left the group behind for the same reason.
+
+- `FeatureSpace::projection` (false when no readable `.pca.<token>` resolves): a DETACHED
+  space.  It is shown and cut like any space; in a sync (`syncOneSpace`) and in the follow
+  (`followMovedSpikes`) its features stay and only its time (and phase) column is rewritten
+  at the session's times; it never leads a group's re-cut (a projection member does; a group
+  of detached spaces alone re-cuts nothing); it is never a reason to refuse.
+- Realign and nudge are refused in a detached space ("not a projection of waveforms (no
+  basis); show a waveform space first"); the *Space* tooltip says a space is detached.
+- `RealignWorker` now emits its `logLine`s (the single-cluster job's log never reached the
+  headless self-test's record).
+
+`test_detached_space.py` (realign in `standard` with `.fet.manifold.1` beside it: runs,
+the manifold features untouched, its time column the saved `.res`; a realign asked for in
+`manifold` refused, nothing moved); the other three self-tests pass.  `doc/klusters/README.md`
+"Detached feature spaces".
+
+</details>
 
 ---
 

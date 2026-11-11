@@ -1757,6 +1757,14 @@ public:
         QString spkPath;       ///< the .spk its waveforms come from (custody-resolved)
         QString spkMethod;     ///< token the .spk was found under (may differ: _D, fallback)
         bool    usable = false;
+        /** The .fet is a projection of the waveforms through a readable basis
+         *  (.pca.<method>): it is re-projected by a sync and a follow.  False for
+         *  a DETACHED space -- a per-spike feature table with no basis, such as
+         *  fiber-manifold's .fet.manifold.<g> (snr, lag, position, ...): it can be
+         *  shown and cut, its features stay as they are when spikes move and only
+         *  its time (and phase) column follows the spike times; realign and nudge
+         *  do not run in it. */
+        bool    projection = true;
         bool    synced = false;  ///< reads working copies synced this session
         bool    syncStale = false; ///< synced, but spike times changed since (sync again)
         QString reason;        ///< why it is not usable (tooltip text)

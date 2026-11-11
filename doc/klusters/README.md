@@ -173,6 +173,18 @@ instead of waiting for a full sync. (Exercised headlessly by
 `src/klusters/test/selftest/test_follow_supersampled.py` on the built binary —
 see `src/klusters/test/selftest/README.md`.)
 
+### Detached feature spaces
+
+A `.fet.<token>.N` with no basis (`.pca.<token>.N`) is a **detached** space: a
+per-spike feature table that is not a projection of the waveforms — fiber-manifold's
+`.fet.manifold.N` (snr, lag, position, …) is one. It is listed and can be shown and
+cut like any space (its waveforms are the `.spk` custody resolves for the token,
+usually `standard`), but it is never re-projected: when spikes move, its feature
+values stay and only its time (and phase) column follows, and it never blocks the
+sync or the follow of the spaces it shares waveforms with. Realign and nudge do not
+run in it ("not a projection of waveforms"); show a waveform space first. The
+*Space* tooltip says when a space is detached.
+
 ### Super-sample mode — a space at 2× or 4× the sampling
 
 For machines with the memory and cores to spare, a feature space can be built

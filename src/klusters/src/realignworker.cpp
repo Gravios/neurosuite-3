@@ -146,6 +146,7 @@ void RealignWorker::run()
                               || line.startsWith(QLatin1String("WARNING"));
             if (isError || verbose)
                 std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
+            emit logLine(line + QLatin1Char('\n'), isError);   // the job's log (the headless self-test reads it)
         }
     }
 
