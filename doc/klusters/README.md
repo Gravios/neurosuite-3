@@ -155,7 +155,14 @@ and undoing a realignment drops them (re-sync afterwards). A space that cannot
 be synced — no `.pca` basis, a basis that does not fit the waveforms, or one
 trained in the other domain (standard vs stderiv) — is reported and keeps its
 existing files. Spaces that read the same `.spk` are synced together, and if
-any one of them cannot be, none of them is.
+any one of them cannot be, none of them is. The follow after a realign or
+nudge (*Realign and nudge from any feature space*) works per waveform file
+in that file's own geometry: a super-sampled `_U` space is re-cut at
+`factor` ticks per sample at each spike's own phase (a move made in another
+space is a whole-sample move for it), so it follows like any other space
+instead of waiting for a full sync. (Exercised headlessly by
+`src/klusters/test/selftest/test_follow_supersampled.py` on the built binary —
+see `src/klusters/test/selftest/README.md`.)
 
 ### Super-sample mode — a space at 2× or 4× the sampling
 

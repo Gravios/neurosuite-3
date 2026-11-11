@@ -231,3 +231,21 @@ if(TARGET Neurosuite::metal)
     set_tests_properties(klusters_test_groupingassistant_metal PROPERTIES
         SKIP_REGULAR_EXPRESSION "SKIPPED")
 endif()
+
+# ── The headless self-test harness (test/selftest, klusters_selftest.cpp) ─────
+# Runs the BUILT klusters binary with QT_QPA_PLATFORM=offscreen over a synthetic session
+# (NS3_KLUSTERS_SELFTEST=<spec.json>) and checks the files it wrote: the one way realign,
+# nudge, the follow of other spaces, super-sampling and Save are exercised without a person
+# at the GUI.  Needs python3 with numpy; each test SKIPs (exit 77) without them.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND AND TARGET klusters)
+    foreach(_t IN ITEMS follow_supersampled)
+        add_test(NAME klusters_selftest_${_t}
+                 COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/selftest/test_${_t}.py")
+        set_tests_properties(klusters_selftest_${_t} PROPERTIES
+            ENVIRONMENT "KLUSTERS_BIN=$<TARGET_FILE:klusters>"
+            SKIP_RETURN_CODE 77
+            TIMEOUT 1800
+            LABELS "selftest")
+    endforeach()
+endif()

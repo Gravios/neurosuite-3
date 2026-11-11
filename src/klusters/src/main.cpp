@@ -91,6 +91,16 @@ int main(int argc, char* argv[])
     KlustersApp* Klusters = new KlustersApp();
     Klusters->show();
 
+    // Headless self-test: NS3_KLUSTERS_SELFTEST=<spec.json> opens the spec's .clu,
+    // drives the steps and quits with the report written (klusters_selftest.cpp).
+    const QString selfTest = qEnvironmentVariable("NS3_KLUSTERS_SELFTEST");
+    if (!selfTest.isEmpty()) {
+        Klusters->startSelfTest(selfTest);
+        const int rc = app.exec();
+        delete Klusters;
+        return rc;
+    }
+
     const QStringList positional = parser.positionalArguments();
     if (!positional.isEmpty()) {
         const QString file = positional.at(0);

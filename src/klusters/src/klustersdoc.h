@@ -1783,11 +1783,13 @@ public:
      *  the .res by whole samples and leaves the rest here; a re-cut reads it back.
      *  -1 when the space is not super-sampled.  0-based feature column. */
     int  supersamplePhaseColumn() const;
-    /** <base>.res.<tok>_U<f>.N -- the .clu space's spike times in TICKS (empty when
-     *  the .clu's space is not super-sampled).  Written by buildSupersampledSpace
-     *  and rewritten by every save (saveDocument) from supersampledTicks(). */
-    QString supersampledResPath() const;
-    std::vector<int64_t> supersampledTicks() const;
+    /** <base>.res.<tok>_U<f>.N -- a _U space's spike times in TICKS (its time
+     *  column x factor + its phase column; empty when @p method is not
+     *  super-sampled).  Written by buildSupersampledSpace and rewritten by every
+     *  save (saveDocument) for the .clu's own space and for every _U space whose
+     *  working copy this session synced or followed. */
+    QString supersampledResPath(const QString& method) const;
+    std::vector<int64_t> supersampledTicks(const QString& method);
     /** Export at the recording's sampling: the open .clu (and its .clc/.clp/.cli)
      *  copied under the base-rate token (baseRateToken) beside the base-rate
      *  .res/.spk/.fet, which the shared .res and the synced base space already
@@ -1811,6 +1813,34 @@ public:
      *  to the .clu's own space (realign, nudge, Save As, decollide, template
      *  generation) refuse in this state. */
     bool isBorrowedSpace() const { return activeMethod != originMethod; }
+
+    // ── The working set of a space ───────────────────────────────────────────
+    /** The files a realign or nudge reads and writes when it runs in one space:
+     *  the committed .spk/.fet/.pca of @p method and the WORKING COPIES it
+     *  rewrites in place (Save commits them).  For the .clu's own space these are
+     *  the pending triple initPendingFiles seeded; for another space its synced
+     *  working copies (syncedPending), seeded on demand by workingSetOf -- a
+     *  plain copy when the space is current, a full sync (syncOneSpace) when it
+     *  is behind.  A space over the .clu's own waveforms (a _D lag space, the
+     *  standard fallback) shares the origin's live .spk copy.  The .res working
+     *  copy is always the shared pendingResPath (base-rate samples). */
+    struct SpaceFiles {
+        QString method;
+        QString spkCommitted, fetCommitted, pcaPath;
+        QString spkWork, fetWork;        ///< what a realign rewrites (the committed file when no copy exists)
+        int     factor = 1;              ///< supersampleOf(the .spk's token)
+        bool    spkTransformed = false;  ///< the .spk stores stderiv waveforms
+        bool    fetStderiv = false;      ///< the features are stderiv-space (basis + transform at projection)
+        bool    ownsWaveforms = false;   ///< the .spk is the .clu space's own file
+        bool    isOrigin = false;        ///< the .clu's own space
+        bool    valid = false;
+    };
+    /** The working set of @p method (see SpaceFiles).  With @p seed, a space that
+     *  has no working copies yet gets them (a copy, or a sync when it is behind
+     *  the session's spike times); without it their paths are reported as they
+     *  would be and @c valid says whether they exist.  False @c valid with
+     *  @p error when the space is unknown or cannot be made ready. */
+    SpaceFiles workingSetOf(const QString& method, QString* error, bool seed = true);
     /** Load @p method's .fet and .spk into both data layers, keeping the cluster
      *  assignment and undo history.  Stops the view jobs first (the feature table
      *  is reallocated).  Refused while an unsaved realign is pending, because
@@ -1840,15 +1870,19 @@ public:
     void discardSyncedFeatureSpaces();
     /** Bring every other feature space up to the spike times realign / nudge
      *  moved since the last call: each moved spike is re-extracted from the
-     *  .fil into each other waveform file (once per file, in its own domain)
-     *  and re-projected into each space's features; the rest of every file is
-     *  untouched.  A space that was not current before the moves (its features'
+     *  .fil into each other waveform file (once per file, in its own domain and
+     *  geometry -- a _U<factor> file at its spikes' own phases) and re-projected
+     *  into each space's features; the rest of every file is untouched.
+     *  @p writtenMethod is the space the realign / nudge ran in (its working
+     *  copies already hold the moved spikes; the .clu's own space when empty);
+     *  every other space follows, the .clu's own included when it is not the
+     *  one written (its held table is patched, so switching back stays instant).  A space that was not current before the moves (its features'
      *  times differ from the session's at spikes that did not move) gets a
      *  full sync instead; the spaces reading one waveform file are followed
      *  together or not at all.  Results go to the spaces' .pending working copies (Save
      *  writes them) and to the tables held in memory.  @p logOut gets a summary;
      *  false when some space could not be brought up to date. */
-    bool followMovedSpikes(QString& logOut);
+    bool followMovedSpikes(QString& logOut, const QString& writtenMethod = QString());
     /** Forget the recorded moves (the option is off: spaces are left as they are). */
     void dropMovedSpikes();
     /** Record spike rows (0-based) whose times realign / nudge just changed.

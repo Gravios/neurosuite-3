@@ -58,6 +58,8 @@ class RadialMenu;
 #include <QTableWidget>
 #include <QProcess>
 #include <QTimer>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QElapsedTimer>   // Qt 6.9/6.10 no longer pull this in transitively; declared member lastNudgeTimer needs it
 #include <QThread>
 #include <QPointer>
@@ -505,6 +507,33 @@ private Q_SLOTS:
     void slotSupersample(int factor);
     /** Actions > Export at the Recording's Sampling: KlustersDoc::exportAtBaseRate. */
     void slotExportBaseRate();
+
+public:
+    // ── Headless self-test (klusters_selftest.cpp) ───────────────────────────
+    /** Drive the open document through a list of steps from a JSON spec and write
+     *  a JSON report, then quit -- the harness test/selftest/*.py runs the built
+     *  binary with QT_QPA_PLATFORM=offscreen and NS3_KLUSTERS_SELFTEST=<spec>.
+     *  Steps (one object each): {"show": method}, {"realign": cluster},
+     *  {"nudge": [cluster, delta]}, {"supersample": factor}, {"follow": true},
+     *  {"save": true}, {"dump": true} (the spaces, their files and working
+     *  copies, the loaded times of a cluster: {"dump": true, "cluster": id}).
+     *  Every step waits for the app to be idle (no realign, nudge, save or
+     *  pending return to a space) before it runs and before the next one. */
+    void startSelfTest(const QString& specPath);
+private:
+    void selfTestTick();
+    bool selfTestRunStep(const QJsonObject& step, QJsonObject& result);
+    QJsonObject selfTestDump(int clusterId) const;
+    void selfTestFinish(int code);
+    QJsonArray  selfTestSteps_;
+    QJsonArray  selfTestResults_;
+    QString     selfTestReport_;
+    QTimer*     selfTestTimer_ = nullptr;
+    int         selfTestIndex_ = 0;
+    int         selfTestIdleTicks_ = 0;
+    int         selfTestWaitTicks_ = 0;
+    bool        selfTestStepPending_ = false;
+public:
     /** Preferences > Super-sample mode (x2 / x4): after a session opens (and when the
      *  mode changes), build the super-sampled space over the .clu's own space when it
      *  does not exist, show it, and -- with the adopt preference -- Save As under its

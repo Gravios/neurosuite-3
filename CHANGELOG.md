@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [Klusters: the working set of a feature space; the follow after a realign is per-file geometry and can follow the `.clu`'s own space (realign-in-shown-space, step 1 of 3)](#2026-11-11--klusters-the-working-set-of-a-feature-space-the-follow-after-a-realign-is-per-file-geometry-and-can-follow-the-clus-own-space-realign-in-shown-space-step-1-of-3) |
 | 2026-11-11 | [Klusters: the token of a `.pending` working copy -- the shown `.spk` was read as untagged (super-sample built `_U4` over stderiv waveforms; `%spk` was empty; a `_U` session opened at the base geometry)](#2026-11-11--klusters-the-token-of-a-pending-working-copy----the-shown-spk-was-read-as-untagged-super-sample-built-_u4-over-stderiv-waveforms-spk-was-empty-a-_u-session-opened-at-the-base-geometry) |
 | 2026-11-11 | [Klusters: super-sampling an untagged legacy session built a bare `_U4` token](#2026-11-11--klusters-super-sampling-an-untagged-legacy-session-built-a-bare-_u4-token) |
 | 2026-11-11 | [Super-sampled spike times: `.res.<token>_U<f>.N` in ticks; the shared `.res` is always base-rate; Klusters exports a `_U` session at the recording's sampling](#2026-11-11--super-sampled-spike-times-restoken_ufn-in-ticks-the-shared-res-is-always-base-rate-klusters-exports-a-_u-session-at-the-recordings-sampling) |
@@ -186,6 +187,51 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — Klusters: the working set of a feature space; the follow after a realign is per-file geometry and can follow the `.clu`'s own space (realign-in-shown-space, step 1 of 3)
+
+<details>
+<summary>Details</summary>
+
+Groundwork for running realign and nudge *in the shown space* (plan:
+`claude/klusters-realign-in-shown-space-plan-2026-11-11.md`).  No change to what the user
+sees except one: a super-sampled `_U` space now **follows** a realign or nudge made in the
+`.clu`'s space (it was left stale -- "a basis ... does not fit" -- because the follow sized
+every waveform file by the shown space's geometry; it now works per waveform file at that
+file's factor, re-cutting at each spike's own phase).
+
+- `KlustersDoc::SpaceFiles` / `workingSetOf(method, error, seed)`: the committed
+  `.spk/.fet/.pca` of a space and the working copies a realign in it would rewrite -- the
+  pending triple for the `.clu`'s own space, the synced copies (`syncedPending`) for another,
+  seeded on demand (a plain copy when the space's feature times are the session's, a full
+  `syncOneSpace` when it is behind); a space over the `.clu`'s own waveforms shares the live
+  pending `.spk`.
+- `followMovedSpikes(log, writtenMethod)`: the space the realign ran in is a parameter (the
+  `.clu`'s own by default); every other space follows, the `.clu`'s own included when it is
+  not the one written -- its pending triple is patched in place and its held table with it,
+  never deleted on a failure (it holds the unsaved realigns), and a `.clu` space left behind
+  is reported rather than silently skipped.  Spaces are grouped per waveform file with that
+  file's geometry (`nSamples × factor`, phases from the space's own column).
+
+- The tick `.res` (0958) is written at every save for **every** `_U` space whose working
+  copy this session synced or followed, not only the `.clu`'s own
+  (`supersampledResPath(method)` / `supersampledTicks(method)`, from the space's own table).
+- **Headless self-test harness**: `klusters_selftest.cpp` --
+  `NS3_KLUSTERS_SELFTEST=<spec.json>` with `QT_QPA_PLATFORM=offscreen` drives the built
+  binary through `show / realign / nudge / supersample / follow / save / dump` steps and writes
+  a JSON report (a modal is closed with its default, never waited for); `test/selftest/`
+  holds a synthetic-session generator (`session.py`), a runner and the first test,
+  `test_follow_supersampled.py`: super-sample ×4, realign cluster 2 with `standard` shown and
+  again with `standard_U4` shown (today's swap-and-return), Save -- the shared `.res` moved
+  for cluster 2 only, the base `.spk` equals a fresh cut at the moved times, the `_U4`
+  `.spk` followed (tick 4k == sample k for every spike, moved ones included), its `.fet` time
+  column is the moved `.res` with every phase 0, its tick `.res` is 4× the moved `.res`, and the
+  shown space is back. ctest `klusters_selftest_follow_supersampled` (skips without python3 /
+  numpy / the built binary).  **Run here on the built binary: 26/26.**
+
+</details>
 
 ---
 

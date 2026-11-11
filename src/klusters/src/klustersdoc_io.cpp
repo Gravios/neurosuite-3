@@ -1222,16 +1222,20 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         && !stagePendingFiles(spkTarget, resTarget, fetTarget, targets, waveformsStaged, &err))
         return abandon(err, SAVE_ERROR);
 
-    // The super-sampled .res of a _U session (<base>.res.<tok>_U<f>.N, ticks =
-    // time x factor + phase): rewritten from the loaded times and phase column
+    // The super-sampled .res of every _U space (<base>.res.<tok>_U<f>.N, ticks =
+    // time x factor + phase): rewritten from the space's times and phase column
     // in the same transaction, so it never disagrees with the shared base-rate
-    // .res and the phase column it is derived from.  Not on a Save As into
-    // another token (that space's own res is its own business), nor while
-    // another space is shown (the phase column is not loaded).
+    // .res and the phase column it is derived from -- the .clu's own space from
+    // the loaded (or held) table, every other _U space whose working copy this
+    // session synced or followed from that copy.  Not on a Save As into another
+    // token (that space's own res is its own business).
     if (!adoptsSpace && (!isSaveAs || saMethod == originMethod)) {
-        const QString tickRes = supersampledResPath();
-        const std::vector<int64_t> ticks = supersampledTicks();
-        if (!tickRes.isEmpty() && !ticks.empty()) {
+        for (const FeatureSpace& s : availableFeatureSpaces()) {
+            if (!s.usable || neurosuite::custody::supersampleOf(s.method.toStdString()) <= 1) continue;
+            if (s.method != originMethod && !s.synced) continue;    // its files were not touched
+            const QString tickRes = supersampledResPath(s.method);
+            const std::vector<int64_t> ticks = supersampledTicks(s.method);
+            if (tickRes.isEmpty() || ticks.empty()) continue;
             const std::string target = localPath(tickRes);
             const std::string st = filecommit::staged(target);
             std::string fe;
