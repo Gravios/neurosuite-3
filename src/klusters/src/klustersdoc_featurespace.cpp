@@ -430,6 +430,7 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
 
     // ── Waveforms ────────────────────────────────────────────────────────
     QString spkSource;
+    std::vector<int8_t> phases;                   // a super-sampled target's, per spike
     if (ownWaveforms) {
         spkSource = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
     } else {
@@ -438,16 +439,32 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
         QString reLog;
         const QString spkStage = spkPending + stage;
         staged.push_back(spkStage);
-        // A super-sampled target: each spike's phase is the space's own column
-        // (the last feature before time), carried into the re-cut.
-        std::vector<int8_t> phases;
+        // A super-sampled target: each spike's phase comes from the shared tick
+        // .res of this factor when it agrees with the session's times (spike
+        // times are one thing for every space), else from the space's own column
+        // (the last feature before time); carried into the re-cut and into the
+        // re-projected table's phase column.
         if (spkFactor > 1) {
             const Plan& p0 = plans.front();
             const int64_t nd = p0.nDims;
-            phases.resize(static_cast<size_t>(p0.oldFet->nSpikes));
-            for (int64_t i = 0; i < p0.oldFet->nSpikes; ++i)
+            const int64_t nS = p0.oldFet->nSpikes;
+            const int timeDimL = clusteringData->timeDimension();
+            phases.resize(static_cast<size_t>(nS));
+            for (int64_t i = 0; i < nS; ++i)
                 phases[static_cast<size_t>(i)] = static_cast<int8_t>(
                     p0.oldFet->values[static_cast<size_t>(i) * static_cast<size_t>(nd) + static_cast<size_t>(nd - 2)]);
+            const QString tickRes = supersampledResPath(spkFactor);
+            const std::vector<int64_t> have = QFileInfo::exists(tickRes)
+                ? neurofileio::readResBinary(tickRes.toStdString()) : std::vector<int64_t>{};
+            if (static_cast<int64_t>(have.size()) == nS) {
+                int64_t taken = 0;
+                for (int64_t i = 0; i < nS; ++i) {
+                    const int64_t t = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDimL));
+                    const int64_t k = have[static_cast<size_t>(i)];
+                    if (k / spkFactor == t && k >= t * spkFactor) { phases[static_cast<size_t>(i)] = static_cast<int8_t>(k - t * spkFactor); ++taken; }
+                }
+                log << method << ": phases of " << taken << " spike(s) from " << QFileInfo(tickRes).fileName() << "\n";
+            }
         }
         if (!reextractAllSpikesFromFil(spkStage, reLog, &plans.front().pca, phases.empty() ? nullptr : &phases)) {
             log << method << ": waveforms not re-extracted — " << reLog << "\n";
@@ -502,6 +519,7 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
                     row);
                 row[nDims - 1] = static_cast<int64_t>(
                     clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+                if (!phases.empty()) row[nDims - 2] = phases[static_cast<size_t>(i)];   // the phase column follows
             }
         }
         // Written for Save (the working copy); the table itself stays in memory.
@@ -754,6 +772,19 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
             continue;
         }
 
+        // The phase of a moved spike for this file: the written space's (scaled)
+        // when that space is super-sampled, else the member's own column.
+        const int writtenPhaseCol = written.factor > 1 ? supersamplePhaseColumn() : -1;
+        auto phaseOf = [&](int64_t row, const std::shared_ptr<const neurofileio::FetBinaryFile>& table,
+                           size_t nd, int factor) -> int64_t {
+            if (writtenPhaseCol >= 0) {
+                const int64_t pw = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(row + 1), writtenPhaseCol + 1));
+                return (pw * factor + written.factor / 2) / written.factor;
+            }
+            return table->values[static_cast<size_t>(row) * nd + nd - 2];
+        };
+        std::vector<int8_t> phases;
+
         // ── Moved waveforms, in this file's domain and geometry ──────────
         bool ok = true;
         if (writtenWaveforms) {
@@ -777,17 +808,17 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
                 std::iota(byTime.begin(), byTime.end(), size_t{0});
                 std::stable_sort(byTime.begin(), byTime.end(),
                                  [&](size_t x, size_t y) { return timeOf(rows[x]) < timeOf(rows[y]); });
-                // A super-sampled file is re-cut at each spike's own phase: the
-                // space's last feature column, carried unchanged (a move in
-                // another space is a whole-sample move for this one).
-                std::vector<int8_t> phases;
+                // A super-sampled file is re-cut at each spike's phase.  Spike
+                // times are one thing for every space, so a move made in a
+                // super-sampled space hands its phases on (scaled to this file's
+                // factor); a move made at the base rate is a whole-sample move
+                // and this file keeps its own phases (its last feature column).
                 if (g.factor > 1) {
                     const Space& p0 = members.front();
                     const size_t nd = static_cast<size_t>(p0.table->nFeatures);
                     phases.resize(rows.size());
                     for (size_t i = 0; i < rows.size(); ++i)
-                        phases[i] = static_cast<int8_t>(
-                            p0.table->values[static_cast<size_t>(rows[byTime[i]]) * nd + nd - 2]);
+                        phases[i] = static_cast<int8_t>(phaseOf(rows[byTime[i]], p0.table, nd, g.factor));
                     cut.window.phaseTicks = phases.data();
                 }
                 int64_t outOfRange = 0;
@@ -821,7 +852,8 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
             for (size_t k = 0; k < rows.size(); ++k) {
                 int64_t* row = sp.newRows.data() + k * nDims;
                 const int64_t* old = sp.table->values.data() + static_cast<size_t>(rows[k]) * nDims;
-                std::copy(old, old + nDims, row);           // keeps the extra columns (a phase among them)
+                std::copy(old, old + nDims, row);           // keeps the extra columns
+                if (g.factor > 1) row[nDims - 2] = phaseOf(rows[k], sp.table, nDims, g.factor);   // the phase column follows
                 const int16_t* w = wav.data() + k * spikeElems;
                 klusters::projectSpikeOntoPca(
                     sp.pca,
@@ -1037,11 +1069,37 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
                     shown = neurosuite::core::PcaBasis{};
     }
 
+    // ── 0. the shared tick .res of this factor ────────────────────────────
+    // ONE <base>.res.<resToken>_U<f>.N for every _U<f> space (spike times are one
+    // thing for all of them).  When another _U<f> space built it already -- and
+    // it agrees with the shared .res -- its phases are this space's too: the
+    // waveforms are cut at them and the phase column carries them.  Otherwise
+    // it is written afresh (phase 0: cut at the .res).
+    const int timeDim = clusteringData->timeDimension();
+    const QString resOut = supersampledResPath(factor);
+    std::vector<int8_t> phases;
+    {
+        const std::vector<int64_t> have = QFileInfo::exists(resOut)
+            ? neurofileio::readResBinary(resOut.toStdString()) : std::vector<int64_t>{};
+        if (static_cast<int64_t>(have.size()) == nSpikes) {
+            phases.assign(static_cast<size_t>(nSpikes), 0);
+            bool agrees = true;
+            for (int64_t i = 0; i < nSpikes && agrees; ++i) {
+                const int64_t t = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+                const int64_t k = have[static_cast<size_t>(i)];
+                if (k / factor != t || k - (k / factor) * factor < 0) agrees = false;
+                else phases[static_cast<size_t>(i)] = static_cast<int8_t>(k - t * factor);
+            }
+            if (!agrees) phases.clear();
+            else log << "phases from " << QFileInfo(resOut).fileName() << " (shared with the other x" << factor << " space)\n";
+        }
+    }
+
     // ── 1. the waveforms ──────────────────────────────────────────────────
     const QString raw = rawRecordingPath();
     if (QFileInfo::exists(raw)) {
         QString reLog;
-        if (!reextractAllSpikesFromFil(spkOut, reLog, shown.valid() ? &shown : nullptr, nullptr)) {
+        if (!reextractAllSpikesFromFil(spkOut, reLog, shown.valid() ? &shown : nullptr, phases.empty() ? nullptr : &phases)) {
             QFile::remove(spkOut);
             return fail(tr("Re-extracting the waveforms failed: %1").arg(reLog));
         }
@@ -1108,17 +1166,16 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
         << " components over ticks " << recShift << "+" << data2use << " of " << nSampUp
         << ", fitted on " << (nSpikes / step) << " spikes\n";
 
-    // ── 3. the features: projections, the phase column (0), time ─────────
+    // ── 3. the features: projections, the phase column, time ─────────────
     const int nPca  = nCh * nComp;
     const int nDims = nPca + 2;
-    const int timeDim = clusteringData->timeDimension();
     std::vector<int64_t> values(static_cast<size_t>(nSpikes) * static_cast<size_t>(nDims), 0);
     for (int64_t i = 0; i < nSpikes; ++i) {
         const int16_t* r = waveforms + static_cast<size_t>(i) * rowElems;
         int64_t* row = values.data() + static_cast<size_t>(i) * static_cast<size_t>(nDims);
         klusters::projectSpikeOntoPca(
             pca, [&](int ch, int j) { return static_cast<double>(r[static_cast<size_t>(recShift + j) * nChan + ch]); }, row);
-        row[static_cast<size_t>(nPca)]     = 0;                       // phase: freshly cut at the .res
+        row[static_cast<size_t>(nPca)]     = phases.empty() ? 0 : phases[static_cast<size_t>(i)];   // phase: the shared tick .res's, else cut at the .res
         row[static_cast<size_t>(nPca + 1)] = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
     }
     if (!neurofileio::writeFetBinary(fetOut.toStdString(), nDims, values)) {
@@ -1128,13 +1185,11 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     log << "features " << QFileInfo(fetOut).fileName() << ": " << nSpikes << " rows x " << nDims
         << " (" << nPca << " PCA + phase + time)\n";
 
-    // ── 4. the super-sampled .res: the spike times in TICKS ─────────────
-    // <base>.res.<tok>_U<f>.N holds sample x factor + phase (0 here: freshly cut
-    // at the .res).  The shared base-rate .res is untouched; custody's res
-    // resolution never takes a _U res for it (baseRateToken).  Every save of
-    // the _U session rewrites it from the times and the phase column.
-    const QString resOut = QString::fromStdString(neurosuite::custody::methodPath(stem, "res", newTok, group));
-    {
+    // ── 4. the shared tick .res, when this space is the first at its factor ──
+    // (sample x factor + phase 0; the shared base-rate .res is untouched and
+    // custody's res resolution never takes a _U res for it).  Every save
+    // rewrites it from the times and phases of a _U<f> space.
+    if (phases.empty()) {
         std::vector<int64_t> ticks(static_cast<size_t>(nSpikes));
         for (int64_t i = 0; i < nSpikes; ++i)
             ticks[static_cast<size_t>(i)] = static_cast<int64_t>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim))
@@ -1150,28 +1205,29 @@ bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& lo
     return true;
 }
 
-// The super-sampled .res of a _U space, in ticks: <base>.res.<tok>_U<f>.N (an
-// empty string when @p method is not super-sampled).
-QString KlustersDoc::supersampledResPath(const QString& method) const
+// The shared tick .res of this group at @p factor: <base>.res.<resToken>_U<f>.N,
+// one for every _U<f> space, named after the shared base-rate .res
+// (custody::supersampledRes); empty for factor 1.
+QString KlustersDoc::supersampledResPath(int factor) const
 {
-    if (!clusteringData || neurosuite::custody::supersampleOf(method.toStdString()) <= 1) return QString();
+    if (!clusteringData || factor <= 1) return QString();
     const QString dir = QFileInfo(docUrl).absolutePath();
     const std::string stem = (dir + QDir::separator() + baseName).toStdString();
-    return QString::fromStdString(neurosuite::custody::methodPath(stem, "res", method.toStdString(),
-                                                                  electrodeGroupID.toInt()));
+    return QString::fromStdString(neurosuite::custody::supersampledRes(
+        stem, electrodeGroupID.toInt(), factor, originMethod.toStdString()).path);
 }
 
-// The spike times of a _U space in ticks: its time column x factor + its phase
-// column (the last feature column before time) -- from the loaded table when the
-// space is shown, else from the table held for its working copy (or committed
-// file).  Empty when @p method is not super-sampled or its table is not at hand.
-std::vector<int64_t> KlustersDoc::supersampledTicks(const QString& method)
+// The spike times at @p factor in ticks: a _U<f> space's time column x factor +
+// its phase column -- the shown space's when it is one, else the .clu's own
+// (held) table's, else the first usable _U<f> space's (they agree: the follow
+// carries one set of phases).  Empty when no _U<f> space's table is at hand.
+std::vector<int64_t> KlustersDoc::supersampledTicks(int factor)
 {
     std::vector<int64_t> ticks;
-    const int factor = neurosuite::custody::supersampleOf(method.toStdString());
     if (!clusteringData || factor <= 1) return ticks;
     const int64_t n = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
-    if (method == activeMethod) {
+    auto factorOf = [](const QString& m) { return neurosuite::custody::supersampleOf(m.toStdString()); };
+    if (factorOf(activeMethod) == factor) {
         const int phaseCol = supersamplePhaseColumn();
         if (phaseCol < 0) return ticks;
         const int timeDim = clusteringData->timeDimension();
@@ -1185,8 +1241,11 @@ std::vector<int64_t> KlustersDoc::supersampledTicks(const QString& method)
         return ticks;
     }
     QString fetPath;
-    for (const FeatureSpace& s : availableFeatureSpaces())
-        if (s.method == method) { fetPath = s.fetPath; break; }    // the working copy when there is one
+    for (const FeatureSpace& s : availableFeatureSpaces()) {      // the .clu's own space is listed first
+        if (!s.usable || factorOf(s.method) != factor) continue;
+        fetPath = s.fetPath;                                      // the working copy when there is one
+        break;
+    }
     const std::shared_ptr<const neurofileio::FetBinaryFile> t = fetPath.isEmpty() ? nullptr : featuresInMemory(fetPath);
     if (!t || t->nSpikes != n || t->nFeatures < 3) return ticks;
     const size_t nd = static_cast<size_t>(t->nFeatures);

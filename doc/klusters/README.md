@@ -183,11 +183,15 @@ re-cut from the `.fil` with a margin of raw samples on either side so the
 edges are exact; from the stored windows when there is no recording), a PCA
 basis fitted on it (`.pca.<token>_U4.N`: the shown basis's window and
 component count, scaled), `.fet.<token>_U4.N` — the projections, a
-**phase** column and time — and `.res.<token>_U4.N`, the spike times in
-**ticks** (`sample × 4 + phase`; rewritten at every save of the `_U` session
-from the times and the phase column, so it is always the sub-sample spike
-times of the saved clustering). The shared base-rate `.res` is a different
-file and never a `_U` one. The space is then listed under *Space* like any
+**phase** column and time — and, if it is the first space at ×4, the
+group's tick `.res`: **one per factor for all spaces**, named after the
+shared `.res` (`.res.stderiv_S3.6` → `.res.stderiv_S3_U4.6`), the spike
+times in **ticks** (`sample × 4 + phase`). A second ×4 space built later
+(`stderiv_C5_U4` after `standard_U4`, say) takes its phases from it, so
+every ×4 space carries the same sub-sample times; a realign in one of them
+hands its phases to the others (the follow), and every save rewrites the
+tick `.res` from a ×4 space's columns. The shared base-rate `.res` is a
+different file and never a `_U` one. The space is then listed under *Space* like any
 other; its waveforms show 4× the points, every matrix and the realign see a
 4× longer window. The `_U<factor>` token belongs to the waveform token
 (`standard_U4`, `stderiv_C5_U4`; a lag space over it keeps it:

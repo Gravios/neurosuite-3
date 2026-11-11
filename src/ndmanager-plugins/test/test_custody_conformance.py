@@ -100,6 +100,20 @@ def run_vectors(vpath):
                     got = cst.supersample_of(f[1])
                     ok = got == int(f[2])
                     desc = "supersample_of {} -> {} (got {})".format(f[1], f[2], got)
+                elif kind == "supersampled_res":
+                    existing = [x for x in f[1].split(",") if x]
+                    for suf in existing:
+                        open(base + "." + suf, "w").close()
+                    try:
+                        r = cst.supersampled_res(base, int(f[2]), int(f[3]), f[4])
+                        ok = (os.path.basename(r.path) == f[5] and r.found == (f[6] == "1"))
+                        desc = "supersampled_res [{}] {}/{}/'{}' -> {} (found={}; got {} found={})".format(
+                            f[1], f[2], f[3], f[4], f[5], f[6], os.path.basename(r.path), r.found)
+                    finally:
+                        for suf in existing:
+                            p2 = base + "." + suf
+                            if os.path.exists(p2):
+                                os.remove(p2)
                 elif kind == "base_rate_token":
                     got = cst.base_rate_token(f[1])
                     ok = got == f[2]

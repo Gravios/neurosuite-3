@@ -572,6 +572,28 @@ inline Resolved resolveAny(const std::string& base, const std::string& type,
     return r;
 }
 
+// The super-sampled .res of a group at @p factor: ONE file for every _U<factor>
+// space (spike times are one thing for all of them), named after the shared
+// base-rate .res -- its token (standard for an untagged one) with _U<factor>:
+// <base>.res.<resToken>_U<factor>.<group>, holding sample x factor + phase in
+// ticks.  @p preferred narrows which base-rate copy is meant (resolveAny).
+// `found` says whether the tick res exists; `method` is its token.  Mirrors
+// supersampled_res (ndm_resolve_io.py, fiber-kit neuro_io) and
+// ndm_supersampled_res (ndm_custody).
+inline Resolved supersampledRes(const std::string& base, int group, int factor,
+                                const std::string& preferred = std::string())
+{
+    Resolved r;
+    const Resolved shared = resolveAny(base, "res", group, preferred);
+    std::string tok = shared.found ? shared.method : baseRateToken(preferred);
+    if (tok.empty()) tok = kDefaultMethod();
+    r.method = supersampledToken(tok, factor);
+    r.path   = methodPath(base, "res", r.method, group);
+    r.found  = fileExists(r.path);
+    return r;
+}
+
+
 inline bool resolvedIsStderiv(const Resolved& r) { return isStderivMethod(r.method); }
 
 } // namespace custody

@@ -296,6 +296,25 @@ def resolve_any(base, type_, group, preferred=""):
     return Resolved(method_path(base, type_, preferred or DEFAULT_METHOD, group), preferred, False)
 
 
+def supersampled_res(base, group, factor, preferred=""):
+    """The super-sampled .res of a group at `factor`: ONE file for every _U<factor> space
+    (spike times are one thing for all of them), named after the shared base-rate .res --
+    its token (standard for an untagged one) with _U<factor>:
+    <base>.res.<resToken>_U<factor>.<group>, sample x factor + phase in ticks.  Mirrors
+    supersampledRes (custody.hpp), ndm_supersampled_res (ndm_custody) and supersampled_res
+    (fiber-kit neuro_io).  Returns Resolved(path, token, found)."""
+    shared = resolve_any(base, "res", group, preferred)
+    tok = shared.method if shared.found else base_rate_token(preferred)
+    tok = tok or DEFAULT_METHOD
+    s = parse_method_token(tok)
+    if 2 <= factor <= 9 and s.supersample == 1 and not (s.kind is None and not s.lag and s.family != tok):
+        method = s.family + (f"_{s.kind}{s.order}" if s.kind else "") + f"_U{factor}" + (f"_D{s.lag}{s.dims}" if s.lag else "")
+    else:
+        method = tok
+    path = method_path(base, "res", method, group)
+    return Resolved(path, method, file_exists(path))
+
+
 def resolved_is_stderiv(resolved):
     """True iff the file actually resolved is in the stderiv domain."""
     return is_stderiv_method(resolved.method)

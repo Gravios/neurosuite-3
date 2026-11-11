@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | [One tick `.res` per factor for all spaces, named after the shared `.res` (`.res.stderiv_S3_U4.6`); every `_U<f>` space carries the same phases](#2026-11-11--one-tick-res-per-factor-for-all-spaces-named-after-the-shared-res-resstderiv_s3_u46-every-_uf-space-carries-the-same-phases) |
 | 2026-11-11 | [Klusters: the working set of a feature space; the follow after a realign is per-file geometry and can follow the `.clu`'s own space (realign-in-shown-space, step 1 of 3)](#2026-11-11--klusters-the-working-set-of-a-feature-space-the-follow-after-a-realign-is-per-file-geometry-and-can-follow-the-clus-own-space-realign-in-shown-space-step-1-of-3) |
 | 2026-11-11 | [Klusters: the token of a `.pending` working copy -- the shown `.spk` was read as untagged (super-sample built `_U4` over stderiv waveforms; `%spk` was empty; a `_U` session opened at the base geometry)](#2026-11-11--klusters-the-token-of-a-pending-working-copy----the-shown-spk-was-read-as-untagged-super-sample-built-_u4-over-stderiv-waveforms-spk-was-empty-a-_u-session-opened-at-the-base-geometry) |
 | 2026-11-11 | [Klusters: super-sampling an untagged legacy session built a bare `_U4` token](#2026-11-11--klusters-super-sampling-an-untagged-legacy-session-built-a-bare-_u4-token) |
@@ -187,6 +188,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-11 — One tick `.res` per factor for all spaces, named after the shared `.res` (`.res.stderiv_S3_U4.6`); every `_U<f>` space carries the same phases
+
+<details>
+<summary>Details</summary>
+
+0958 named the tick `.res` after each `_U` space (`.res.standard_U4.6`, `.res.stderiv_C5_U4.6`,
+...).  Spike times are one thing for every space, so there is **one base-rate `.res` and one
+tick `.res` per factor for the whole group**, the latter named after the former:
+`.res.stderiv_S3.6` → `.res.stderiv_S3_U4.6` (`standard_U4` for an untagged `.res`).
+`custody::supersampledRes(base, group, factor, preferred)` with the Python / bash / fiber-kit
+mirrors (`supersampled_res`, `ndm_supersampled_res`; fiber-kit also `read_res_ticks`);
+`custody_vectors.tsv` +7 rows of a new `supersampled_res` kind in all four conformance tests;
+`formats/naming.md`.
+
+Klusters: the super-sample build writes the tick `.res` only as the first space at its factor
+and otherwise **takes its phases from it** (waveforms cut at them, phase column set) when it
+agrees with the shared `.res`; every save rewrites it once per factor from a `_U<f>` space's
+columns (`supersampledResPath(factor)` / `supersampledTicks(factor)`); the follow after a
+realign in a super-sampled space hands that space's phases to every other `_U` file (scaled
+to its factor), and a sync takes a `_U` target's phases from the tick `.res` when it agrees --
+so all `_U<f>` spaces carry one set of sub-sample times.  `test_follow_supersampled` builds
+×4 and ×2, checks exactly `rat.res.standard_U2.1` and `rat.res.standard_U4.1` exist and both
+follow the moved `.res` (×2, ×4).  Run on the built binary: 32/32 (both cases).
+
+</details>
 
 ---
 

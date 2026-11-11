@@ -141,6 +141,16 @@ int main(int argc, char** argv) {
             check(waveformToken(f[1]) == f[2], "waveform_token " + f[1] + " -> " + f[2]);
         } else if (kind == "supersample_of") {
             check(supersampleOf(f[1]) == std::stoi(f[2]), line);
+        } else if (kind == "supersampled_res") {
+            // ONE tick .res per factor, named after the shared base-rate .res.
+            for (const std::string& suf : csv(f[1]))
+                std::ofstream(base + "." + suf).put('x');
+            const Resolved r = supersampledRes(base, std::atoi(f[2].c_str()), std::atoi(f[3].c_str()), f[4]);
+            check(baseNameOf(r.path) == f[5] && r.found == (f[6] == "1"),
+                  "supersampled_res [" + f[1] + "] " + f[2] + "/" + f[3] + "/'" + f[4] + "' -> " + f[5]
+                      + " (found=" + f[6] + "; got " + baseNameOf(r.path) + " found=" + (r.found ? "1" : "0") + ")");
+            for (const std::string& suf : csv(f[1]))
+                std::remove((base + "." + suf).c_str());
         } else if (kind == "base_rate_token") {
             check(baseRateToken(f[1]) == f[2], "base_rate_token " + f[1] + " -> " + f[2]);
         } else if (kind == "drops_last") {

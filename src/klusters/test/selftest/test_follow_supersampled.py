@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A super-sampled space FOLLOWS a realign made in the .clu's own space (0960, step 1).
+"""A super-sampled space FOLLOWS a realign made in the .clu's own space (0961, step 1).
 
 On the synthetic session: build standard_U4 (Actions > Super-sample x4), realign cluster 2 in
 `standard` (the .clu's space), Save; then:
@@ -38,7 +38,7 @@ def case(klusters, shown):
     with tempfile.TemporaryDirectory() as d:
         base, made = S.make_session(d, "rat")
         clu = f"{base}.clu.standard.1"
-        steps = [{"supersample": 4}, {"show": shown}, {"realign": 2},
+        steps = [{"supersample": 4}, {"supersample": 2}, {"show": shown}, {"realign": 2},
                  {"dump": True, "cluster": 2}, {"save": True}, {"dump": True, "cluster": 2}]
         rep = R.run(klusters, clu, steps, d, realignFromAnySpace=True)
         check(rep.get("code") == 0 and rep["rc"] == 0,
@@ -51,6 +51,7 @@ def case(klusters, shown):
             return
         tok = results[0].get("token")
         check(tok == "standard_U4", f"the super-sampled space is standard_U4 (got {tok!r})")
+        check(results[1].get("token") == "standard_U2", "a second space at x2 is standard_U2")
 
         nch, ns = len(S.CHANS), S.NSAMP
         res = S.read_res(f"{base}.res.standard.1")
@@ -61,6 +62,11 @@ def case(klusters, shown):
         ticks = S.read_res(f"{base}.res.standard_U4.1")
         check(ticks.shape == res.shape and np.array_equal(ticks, res * 4),
               ".res.standard_U4.1 is the moved .res in ticks (x4, phase 0)")
+        ures = sorted(f for f in os.listdir(d) if ".res." in f and "_U" in f)
+        check(ures == ["rat.res.standard_U2.1", "rat.res.standard_U4.1"],
+              f"ONE tick .res per factor, named after the shared .res ({ures})")
+        ticks2 = S.read_res(f"{base}.res.standard_U2.1")
+        check(np.array_equal(ticks2, res * 2), ".res.standard_U2.1 followed too: the moved .res x2")
         fet_u = S.read_fet(f"{base}.fet.standard_U4.1")
         check(np.array_equal(fet_u[:, -1], res), ".fet.standard_U4.1: the time column is the moved .res")
         check(not fet_u[:, -2].any(), ".fet.standard_U4.1: every phase is 0 (a base-rate move)")

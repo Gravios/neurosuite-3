@@ -1230,11 +1230,14 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     // session synced or followed from that copy.  Not on a Save As into another
     // token (that space's own res is its own business).
     if (!adoptsSpace && (!isSaveAs || saMethod == originMethod)) {
+        QSet<int> factorsDone;
         for (const FeatureSpace& s : availableFeatureSpaces()) {
-            if (!s.usable || neurosuite::custody::supersampleOf(s.method.toStdString()) <= 1) continue;
+            const int factor = neurosuite::custody::supersampleOf(s.method.toStdString());
+            if (!s.usable || factor <= 1 || factorsDone.contains(factor)) continue;
             if (s.method != originMethod && !s.synced) continue;    // its files were not touched
-            const QString tickRes = supersampledResPath(s.method);
-            const std::vector<int64_t> ticks = supersampledTicks(s.method);
+            factorsDone.insert(factor);                             // ONE tick .res per factor
+            const QString tickRes = supersampledResPath(factor);
+            const std::vector<int64_t> ticks = supersampledTicks(factor);
             if (tickRes.isEmpty() || ticks.empty()) continue;
             const std::string target = localPath(tickRes);
             const std::string st = filecommit::staged(target);

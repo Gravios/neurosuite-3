@@ -1783,13 +1783,14 @@ public:
      *  the .res by whole samples and leaves the rest here; a re-cut reads it back.
      *  -1 when the space is not super-sampled.  0-based feature column. */
     int  supersamplePhaseColumn() const;
-    /** <base>.res.<tok>_U<f>.N -- a _U space's spike times in TICKS (its time
-     *  column x factor + its phase column; empty when @p method is not
-     *  super-sampled).  Written by buildSupersampledSpace and rewritten by every
-     *  save (saveDocument) for the .clu's own space and for every _U space whose
-     *  working copy this session synced or followed. */
-    QString supersampledResPath(const QString& method) const;
-    std::vector<int64_t> supersampledTicks(const QString& method);
+    /** The shared tick .res at @p factor -- <base>.res.<resToken>_U<f>.N, ONE for
+     *  every _U<f> space, named after the shared base-rate .res (spike times are
+     *  one thing for all spaces): time x factor + phase, from a _U<f> space's
+     *  columns (the shown one, else the .clu's own, else any).  Written by the
+     *  first super-sample build at that factor and rewritten by every save for
+     *  every factor among the _U spaces this session touched. */
+    QString supersampledResPath(int factor) const;
+    std::vector<int64_t> supersampledTicks(int factor);
     /** Export at the recording's sampling: the open .clu (and its .clc/.clp/.cli)
      *  copied under the base-rate token (baseRateToken) beside the base-rate
      *  .res/.spk/.fet, which the shared .res and the synced base space already

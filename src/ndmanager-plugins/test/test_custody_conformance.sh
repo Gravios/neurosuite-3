@@ -77,6 +77,17 @@ while IFS= read -r line; do
                 { echo "FAIL resolve_any [${F[1]}] ${F[2]}/${F[3]}/'${F[4]}' -> ${F[5]} found=$want_found (got ${path##*/} found=$found)"; fail=$((fail+1)); }
             for s in "${sufs[@]}"; do [ -n "$s" ] && rm -f "$B.$s"; done
             ;;
+        supersampled_res)
+            # ONE tick .res per factor, named after the shared base-rate .res.
+            IFS=',' read -r -a sufs <<< "${F[1]}"
+            for s in "${sufs[@]}"; do [ -n "$s" ] && : > "$B.$s"; done
+            path="$(ndm_supersampled_res "$B" "${F[2]}" "${F[3]}" "${F[4]}")" || true
+            if [ -f "$path" ]; then found=1; else found=0; fi
+            want_found="${F[6]:-0}"
+            { [ "${path##*/}" = "${F[5]}" ] && [ "$found" = "$want_found" ]; } || \
+                { echo "FAIL supersampled_res [${F[1]}] ${F[2]}/${F[3]}/'${F[4]}' -> ${F[5]} found=$want_found (got ${path##*/} found=$found)"; fail=$((fail+1)); }
+            for s in "${sufs[@]}"; do [ -n "$s" ] && rm -f "$B.$s"; done
+            ;;
         method_token)
             ndm_parse_method_token "${F[1]}"
             { [ "$NDM_M_FAMILY" = "${F[2]:-}" ] && [ "$NDM_M_KIND" = "${F[3]:-}" ] && \

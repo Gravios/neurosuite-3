@@ -339,6 +339,33 @@ ndm_resolve_any() {
     return 1
 }
 
+# The super-sampled .res of a group at <factor>: ONE file for every _U<factor>
+# space, named after the shared base-rate .res -- its token (standard for an
+# untagged one) with _U<factor>: <base>.res.<resToken>_U<factor>.<group>, in
+# ticks (sample x factor + phase).  Echoes the path; NDM_R_FOUND/NDM_R_METHOD as
+# ndm_resolve_any.  Mirrors supersampledRes (custody.hpp) / supersampled_res.
+#   args: base group factor [preferred]
+ndm_supersampled_res() {
+    local base="$1" group="$2" factor="$3" pref="${4:-}" tok p
+    ndm_resolve_any "$base" res "$group" "$pref" > /dev/null || true    # not in a subshell: NDM_R_* are read
+    if [ "$NDM_R_FOUND" = 1 ]; then tok="$NDM_R_METHOD"; else tok="$(ndm_base_rate_token "$pref")"; fi
+    [ -n "$tok" ] || tok=standard
+    ndm_parse_method_token "$tok"
+    local method="$tok"
+    if [ "$factor" -ge 2 ] 2>/dev/null && [ "$factor" -le 9 ] && [ "$NDM_M_UP" = 1 ] \
+       && { [ -n "$NDM_M_KIND" ] || [ -n "$NDM_M_LAG" ] || [ "$NDM_M_FAMILY" = "$tok" ]; }; then
+        method="$NDM_M_FAMILY"
+        [ -n "$NDM_M_KIND" ] && method="${method}_${NDM_M_KIND}${NDM_M_ORDER}"
+        method="${method}_U${factor}"
+        if [ -n "$NDM_M_LAG" ] && [ "$NDM_M_LAG" -ge 1 ] 2>/dev/null; then method="${method}_D${NDM_M_LAG}${NDM_M_DIMS}"; fi
+    fi
+    p="$(ndm_method_path "$base" res "$group" "$method")"
+    NDM_R_METHOD="$method"
+    if [ -f "$p" ]; then NDM_R_FOUND=1; else NDM_R_FOUND=0; fi
+    echo "$p"
+    [ "$NDM_R_FOUND" = 1 ]
+}
+
 # ── backward-compatible names ───────────────────────────────────────────────
 # Strict method-pinned resolve (composes <base>.<type>.<method>.<group>, no
 # fallback); echoes path, rc 0 if it exists.
