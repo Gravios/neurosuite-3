@@ -123,9 +123,12 @@ void RealignWorker::run()
     try {
         ok = doc->realignSpikes(clusterId, logOut, nShifted,
             [this](const QString& line, bool isError) {
-                // Errors always surface to stderr; detail only when verbose.
+                // Errors always surface to stderr; detail only when verbose.  Every line is
+                // the job's log too (the realign log pane, the headless self-test's record):
+                // with this live callback supplied, realignSpikes writes nothing to logOut.
                 if (isError || verbose)
                     std::fprintf(stderr, "%s\n", line.toLocal8Bit().constData());
+                emit logLine(line + QLatin1Char('\n'), isError);
             },
             args,
             &meanBefore, &meanAfter, &backupBase);

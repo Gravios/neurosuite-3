@@ -11,6 +11,10 @@ void   PrefRealignment::setRealignMaxShift(int n)      { realignMaxShiftSpinBox-
 double PrefRealignment::getRealignThreshold()  const { return realignThresholdSpinBox->value(); }
 int    PrefRealignment::getRealignIterations() const { return realignIterationsSpinBox->value(); }
 int    PrefRealignment::getRealignMaxShift()   const { return realignMaxShiftSpinBox->value(); }
+void   PrefRealignment::setRealignKernel(int k)       { realignKernelCombo->setCurrentIndex((k >= 0 && k <= 3) ? k : 0); }
+void   PrefRealignment::setRealignKernelWidth(int n)  { realignKernelWidthSpinBox->setValue(n); }
+int    PrefRealignment::getRealignKernel()     const { return realignKernelCombo->currentIndex(); }
+int    PrefRealignment::getRealignKernelWidth() const { return realignKernelWidthSpinBox->value(); }
 
 void   PrefRealignment::setRealignMode(int m) {
     switch (m) {

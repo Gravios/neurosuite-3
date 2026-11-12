@@ -65,6 +65,15 @@ void KlustersApp::startSelfTest(const QString& specPath)
     // The preference the steps assume unless the spec says otherwise.
     if (spec.contains(QStringLiteral("realignFromAnySpace")))
         configuration().setRealignFromAnySpace(spec.value(QStringLiteral("realignFromAnySpace")).toBool());
+    // The realign preference's structured fields: the args string a realign runs with is
+    // buildRealignArgs() of these (Preferences > Realignment), rebuilt here once they are set.
+    if (spec.contains(QStringLiteral("realignKernel")))           // 0 none, 1 gauss, 2 hann, 3 template energy
+        configuration().setRealignKernel(spec.value(QStringLiteral("realignKernel")).toInt());
+    if (spec.contains(QStringLiteral("realignKernelWidth")))      // samples each side of the peak, 0 = auto
+        configuration().setRealignKernelWidth(spec.value(QStringLiteral("realignKernelWidth")).toInt());
+    if (spec.contains(QStringLiteral("realignThreshold")))
+        configuration().setRealignThreshold(spec.value(QStringLiteral("realignThreshold")).toDouble());
+    realignArgs = buildRealignArgs();
     if (spec.contains(QStringLiteral("realignVerbose")))
         configuration().setRealignVerbose(spec.value(QStringLiteral("realignVerbose")).toBool());
     if (spec.contains(QStringLiteral("supersampleMode")))

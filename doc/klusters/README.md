@@ -1457,7 +1457,7 @@ that behaviour.
 For each spike in the cluster:
 
 1. The cluster mean waveform is computed.
-2. The spike's waveform is cross-correlated against the mean template at each lag within ±*Max shift* samples.
+2. The spike's waveform is cross-correlated against the mean template at each lag within ±*Max shift* samples — over the whole window by default, or under a **correlation window** (**Settings → Preferences → Curation → Realignment → Correlation window**): a Gaussian or Hann bell of the given half-width centred on the peak sample, or the template's own energy profile. Under a window the score is the normalised correlation of the template with the part of the spike the window admits, normalised by that part's energy, so a second spike in the tail or the lead-in of the window — a collision — neither feeds the score nor its normalisation and cannot pull the lag toward itself. *None* is the classic kernel (every GPU back end); a window runs on the CPU kernel. Argument form: `--kernel none|gauss|hann|template`, `--kernel-width N` (samples each side of the peak; 0 = half the peak position, like the automatic max shift; in a super-sampled space the width applies in ticks).
 3. If the peak correlation exceeds the *Threshold*, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`). A spike whose snippet is all zeros (or a cluster whose mean is all zeros) has no defined correlation; it is never shifted, whatever the threshold is, and its score counts as 0.
 4. Each spike is written back to its own row; rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's.
 
@@ -1509,9 +1509,11 @@ saving.
 
 Realignment parameters are set in **Settings → Preferences → Curation →
 Realignment**: *Threshold* (minimum score), *Iterations*,
-*Max shift* (0 = automatic) and an optional post-alignment pass (PCA
-projection refine, RMS circular recenter, per-spike centroid). The same page
-can realign a cluster automatically after each merge.
+*Max shift* (0 = automatic), the *Correlation window* (None / Gaussian / Hann /
+Template energy, with its half-width; the collision guard described above) and
+an optional post-alignment pass (PCA projection refine, RMS circular recenter,
+per-spike centroid). The same page can realign a cluster automatically after
+each merge.
 
 </details>
 

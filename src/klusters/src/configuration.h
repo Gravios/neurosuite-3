@@ -96,6 +96,8 @@ public:
     void setRealignThreshold(double v)  {realignThreshold = qBound(0.0, v, 1.0);}
     void setRealignIterations(int n)     {realignIterations = qMax(1, n);}
     void setRealignMaxShift(int n)        {realignMaxShift = qMax(0, n);}
+    void setRealignKernel(int k)          {realignKernel = (k < 0 || k > 3) ? 0 : k;}   // 0 none, 1 gauss, 2 hann, 3 template energy
+    void setRealignKernelWidth(int n)     {realignKernelWidth = qMax(0, n);}            // samples each side of the peak, 0 = auto
     /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter, 3=per-spike centroid).*/
     void setRealignMode(int m)            {realignMode = (m < 0 || m > 3) ? 0 : m;}
     void setReorderMethod(int m)          {reorderMethod = (m < 0 || m > 2) ? 0 : m;}
@@ -285,6 +287,8 @@ public:
     double getRealignThreshold()  const {return realignThreshold;}
     int    getRealignIterations() const {return realignIterations;}
     int    getRealignMaxShift()   const {return realignMaxShift;}
+    int    getRealignKernel()     const {return realignKernel;}
+    int    getRealignKernelWidth() const {return realignKernelWidth;}
     /**Returns the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
     int    getRealignMode()       const {return realignMode;}
     int    getReorderMethod()     const {return reorderMethod;}
@@ -405,6 +409,8 @@ public:
     double getRealignThresholdDefault()  const {return 0.70;}
     int    getRealignIterationsDefault() const {return 2;}
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
+    int    getRealignKernelDefault()     const {return 0;}  // none: the whole window, as before
+    int    getRealignKernelWidthDefault() const {return 0;} // 0 = half the peak position
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     int    getReorderMethodDefault()     const {return 0;}  // 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
     bool   getWaveformSortMeanDefault()  const {return false;}  // median
@@ -624,6 +630,8 @@ private:
     double  realignThreshold;
     int     realignIterations;
     int     realignMaxShift;
+    int     realignKernel;
+    int     realignKernelWidth;
     int     realignMode;
     int     reorderMethod;   // reorder-by-similarity: 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
     bool    waveformSortMean;   // waveform sorts: mean waveform (true) or median (false)

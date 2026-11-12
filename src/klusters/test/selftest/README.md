@@ -24,7 +24,10 @@ base-rate realign with the `.clu` in `_U4`), `test_detached_space.py` (a detache
 a per-spike table with no basis, `.fet.manifold.1` -- neither blocks a realign in the space
 it shares waveforms with nor loses its features; its time column follows; a realign asked for
 in it is refused), `test_supersample_interp_detect.py` (a `_U4` built with the exact spline is
-realigned under the smoothing-spline preference: the file's interpolator is detected and used).
+realigned under the smoothing-spline preference: the file's interpolator is detected and used),
+`test_realign_kernel.py` (a correlation window -- Preferences > Realignment > Correlation window,
+`realignKernel` / `realignKernelWidth` in the spec -- keeps a collision in the tail of the window
+from steering the lag: more collided spikes on their true time than with the whole window).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

@@ -148,6 +148,77 @@
         <item row="2" column="0">
          <layout class="QHBoxLayout">
           <item>
+           <widget class="QLabel" name="realignKernelLabel">
+            <property name="text">
+             <string>Correlation window</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QComboBox" name="realignKernelCombo">
+            <property name="toolTip">
+             <string>The part of the waveform window the cross-correlation scores and normalises on.  None: the whole window (every sample, the classic behaviour).  Gaussian / Hann: a bell of the given half-width centred on the alignment target (peak sample), so a second spike in the tail or the lead-in -- a collision -- neither feeds the score nor its normalisation and cannot pull the lag toward itself.  Template energy: the cluster template's own energy profile (self-calibrating, no width; works in derivative and super-sampled spaces).  A window runs on the CPU kernel.</string>
+            </property>
+            <item><property name="text"><string>None (whole window)</string></property></item>
+            <item><property name="text"><string>Gaussian</string></property></item>
+            <item><property name="text"><string>Hann</string></property></item>
+            <item><property name="text"><string>Template energy</string></property></item>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_k1">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Fixed</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>12</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="realignKernelWidthLabel">
+            <property name="text">
+             <string>Half-width (samples, 0=auto)</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QSpinBox" name="realignKernelWidthSpinBox">
+            <property name="toolTip">
+             <string>Half-width of the Gaussian (2 sigma) or Hann window, in samples of the recording, each side of the peak sample.  0 = automatic: half the peak position (the same rule as the automatic max shift).  In a super-sampled space the same width applies in that space's ticks.  Not used by the template-energy window.</string>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>200</number>
+            </property>
+            <property name="value">
+             <number>0</number>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="spacer_ra_k2">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+            <property name="sizeHint" stdset="0">
+             <size><width>20</width><height>20</height></size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+        </item>
+        <item row="3" column="0">
+         <layout class="QHBoxLayout">
+          <item>
            <widget class="QLabel" name="realignModeLabel">
             <property name="text">
              <string>Post-alignment:</string>
@@ -212,7 +283,7 @@
           </item>
          </layout>
         </item>
-        <item row="3" column="0">
+        <item row="4" column="0">
          <widget class="QCheckBox" name="autoRealignAfterMergeCheckBox">
           <property name="text">
            <string>Auto-align spikes after each merge</string>
@@ -225,7 +296,7 @@
           </property>
          </widget>
         </item>
-        <item row="4" column="0">
+        <item row="5" column="0">
          <widget class="QCheckBox" name="realignVerboseCheckBox">
           <property name="text">
            <string>Verbose alignment logging</string>
@@ -238,7 +309,7 @@
           </property>
          </widget>
         </item>
-          <item row="5" column="0">
+          <item row="6" column="0">
            <widget class="QCheckBox" name="syncFeatureSpaceOnSwitchCheckBox">
             <property name="text">
              <string>Sync a feature space to the current spike times when switching to it</string>
@@ -251,7 +322,7 @@
             </property>
            </widget>
           </item>
-          <item row="6" column="0">
+          <item row="7" column="0">
            <widget class="QCheckBox" name="realignFromAnySpaceCheckBox">
             <property name="text">
              <string>Realign and nudge in the shown feature space; every other space follows</string>

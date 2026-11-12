@@ -113,6 +113,35 @@ int xcorr_omp_compute(
     int*   shifts_out,
     float* scores_out);
 
+/**
+ * WEIGHTED normalised cross-correlation (OpenMP only).  `weights` is a per-sample
+ * kernel w[s] >= 0 of length nSamples in the TEMPLATE's frame (the same frame the
+ * template's peak was rolled to), applied to every channel:
+ *
+ *   num(τ)    = Σ_ch Σ_s  w[s] · tmpl[ch,s] · spike[ch,(s+τ) % N]
+ *   tmplE     = Σ_ch Σ_s  w[s] · tmpl[ch,s]²                (constant)
+ *   spkE(τ)   = Σ_ch Σ_s  w[s] · spike[ch,(s+τ) % N]²       (per lag: the spike's
+ *                                                           energy INSIDE the window)
+ *   score(τ)  = num(τ) / sqrt(tmplE · spkE(τ))
+ *
+ * i.e. the correlation of the template with the part of the spike the window
+ * admits, normalised by that part's energy -- a second spike (a collision) in
+ * the tail or the lead-in of the window no longer feeds the score or its
+ * normalisation, so it cannot pull the lag toward itself.  With w ≡ 1 every
+ * score is bit-identical to xcorr_omp_compute (spkE(τ) is then the full
+ * energy at every lag).  `weights == nullptr` is the unweighted kernel.  The
+ * zero-energy rule is the unweighted one, per lag: a lag whose windowed energy
+ * is <= 1e-12 scores 0.
+ */
+int xcorr_omp_compute_weighted(
+    const int16_t* waveforms,
+    const int16_t* tmpl,
+    const float*   weights,
+    int nSpikes, int nChannels, int nSamples,
+    int maxShift, float minScore,
+    int*   shifts_out,
+    float* scores_out);
+
 #ifdef __cplusplus
 }
 
@@ -130,6 +159,21 @@ namespace XcorrDispatch {
 int compute(
     const int16_t* waveforms,
     const int16_t* tmpl,
+    int nSpikes, int nChannels, int nSamples,
+    int maxShift, float minScore,
+    int*   shifts_out,
+    float* scores_out);
+
+/**
+ * The weighted kernel (xcorr_omp_compute_weighted).  With `weights == nullptr`
+ * this is compute() on the best backend; with a kernel it runs on OpenMP, the
+ * one backend that implements the weighting (the GPU kernels are unweighted),
+ * whatever backend compute() selected.
+ */
+int computeWeighted(
+    const int16_t* waveforms,
+    const int16_t* tmpl,
+    const float*   weights,
     int nSpikes, int nChannels, int nSamples,
     int maxShift, float minScore,
     int*   shifts_out,

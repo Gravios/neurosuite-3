@@ -158,6 +158,13 @@ if(NS_BUILD_TESTS)
     target_link_libraries(klustersshared_xcorr_dispatch_test PRIVATE Threads::Threads)
     add_test(NAME klustersshared_xcorr_dispatch_test COMMAND klustersshared_xcorr_dispatch_test)
 
+    add_executable(klustersshared_xcorr_weighted_test
+        test/xcorr_weighted_test.cpp
+        src/xcorr/realign_xcorr_omp.cpp)
+    target_include_directories(klustersshared_xcorr_weighted_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/xcorr")
+    add_test(NAME klustersshared_xcorr_weighted_test COMMAND klustersshared_xcorr_weighted_test)
+
     # The Metal realignment back end against the OpenMP one, bit for bit
     # (macOS with USE_METAL; SKIPPED without a Metal device).
     if(TARGET Neurosuite::metal)

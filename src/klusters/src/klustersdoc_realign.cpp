@@ -317,10 +317,20 @@ static bool swapSpkEntries(const QString& spkPath, long idxA0, long idxB0,
 // Phase-0 decomposition: lifted verbatim out of realignSpikes.  Pure -- it
 // touches no member or document state, only the argv-style token list and the
 // out-parameters, so it is a free function in this TU (no header change).
+// The correlation window (--kernel): none = the whole window, the pre-kernel
+// behaviour; gauss / hann = a bell of half-width --kernel-width samples centred
+// on the alignment target (peakSampleIndex - 1), so a second spike (a collision)
+// in the tail or the lead-in neither feeds the score nor its normalisation;
+// template = the template's own channel-summed energy profile, smoothed, floored
+// at 2 % -- self-calibrating (the stderiv and super-sampled spaces included),
+// no width to choose.  See xcorr_omp_compute_weighted.
+enum class RealignKernel { None, Gauss, Hann, Template };
+
 static void parseRealignArgs(const QString& args,
                              int& maxShift, float& minScore, int& nIter,
                              int& nTopChan, bool& pcaRefine, bool& rmsRecenter,
-                             float& rMin, bool& alignCentroid)
+                             float& rMin, bool& alignCentroid,
+                             RealignKernel& kernel, int& kernelWidth)
 {
     const QStringList tokens = args.split(QLatin1Char(' '), Qt::SkipEmptyParts);
     for (qsizetype ti = 0; ti < tokens.size(); ++ti) {
@@ -355,8 +365,67 @@ static void parseRealignArgs(const QString& args,
                 && ti + 1 < tokens.size()) {
             bool ok2; float v = tokens[++ti].toFloat(&ok2);
             if (ok2 && v >= 0.0f && v <= 1.0f) rMin = v;
+        } else if (tok == QStringLiteral("--kernel") && ti + 1 < tokens.size()) {
+            const QString v = tokens[++ti].toLower();
+            if      (v == QStringLiteral("none"))     kernel = RealignKernel::None;
+            else if (v == QStringLiteral("gauss"))    kernel = RealignKernel::Gauss;
+            else if (v == QStringLiteral("hann"))     kernel = RealignKernel::Hann;
+            else if (v == QStringLiteral("template")) kernel = RealignKernel::Template;
+        } else if (tok == QStringLiteral("--kernel-width") && ti + 1 < tokens.size()) {
+            bool ok2; int v = tokens[++ti].toInt(&ok2);
+            if (ok2 && v >= 1) kernelWidth = v;
         }
     }
+}
+
+// The per-sample weights of the correlation window for this pass, in the
+// template's frame (its peak at peakSamp0): gauss = exp(-((s-p)/(w/2))^2 / 2)
+// (half-width w ~ 2 sigma), hann = the raised cosine over [p-w, p+w], zero
+// outside; template = the channel-summed template energy, 3-sample box
+// smoothed, scaled to max 1 and floored at 0.02 so the whole window keeps a
+// little say (the energy of a derivative space has several lobes: they all
+// count, in proportion).  Empty for RealignKernel::None.
+static std::vector<float> realignKernelWeights(RealignKernel kernel, int kernelWidth,
+                                               int peakSamp0, int nSamp, int nChan,
+                                               const int16_t* tmpl)
+{
+    std::vector<float> w;
+    if (kernel == RealignKernel::None || nSamp <= 0) return w;
+    w.assign(static_cast<size_t>(nSamp), 0.0f);
+    if (kernel == RealignKernel::Template) {
+        std::vector<double> e(static_cast<size_t>(nSamp), 0.0);
+        for (int ch = 0; ch < nChan; ++ch)
+            for (int s = 0; s < nSamp; ++s) {
+                const double v = static_cast<double>(tmpl[ch * nSamp + s]);
+                e[static_cast<size_t>(s)] += v * v;
+            }
+        double mx = 0.0;
+        for (int s = 0; s < nSamp; ++s) {
+            double acc = 0.0; int n = 0;
+            for (int k = -1; k <= 1; ++k) {
+                const int t = s + k;
+                if (t >= 0 && t < nSamp) { acc += e[static_cast<size_t>(t)]; ++n; }
+            }
+            w[static_cast<size_t>(s)] = static_cast<float>(acc / std::max(n, 1));
+            mx = std::max(mx, static_cast<double>(w[static_cast<size_t>(s)]));
+        }
+        if (!(mx > 0.0)) { w.clear(); return w; }           // a zero template: no window
+        for (int s = 0; s < nSamp; ++s)
+            w[static_cast<size_t>(s)] = std::max(0.02f, static_cast<float>(w[static_cast<size_t>(s)] / mx));
+        return w;
+    }
+    const double hw = std::max(1, kernelWidth);
+    for (int s = 0; s < nSamp; ++s) {
+        const double d = static_cast<double>(s - peakSamp0);
+        if (kernel == RealignKernel::Gauss) {
+            const double sig = hw / 2.0;
+            w[static_cast<size_t>(s)] = static_cast<float>(std::exp(-0.5 * (d / sig) * (d / sig)));
+        } else {                                              // Hann
+            w[static_cast<size_t>(s)] = (std::abs(d) <= hw)
+                ? static_cast<float>(0.5 * (1.0 + std::cos(M_PI * d / hw))) : 0.0f;
+        }
+    }
+    return w;
 }
 
 // Phase-0 decomposition of realignSpikes: optional post-alignment RMS circular
@@ -705,13 +774,19 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     bool  rmsRecenter = false; // post-alignment RMS circular group-recenter
     float rMin        = 0.4f;  // min mean-resultant-length to trust the centroid
     bool  alignCentroid = false; // realignMode 3: per-spike reference-free centroid de-jitter (no xcorr)
+    RealignKernel kernel = RealignKernel::None;   // --kernel: the correlation window (collision guard)
+    int   kernelWidth = std::max(2, peakSamp0 / 2);   // --kernel-width, samples each side of the target
     const int autoShift = maxShift;
+    const int autoKernelWidth = kernelWidth;
     parseRealignArgs(args, maxShift, minScore, nIter, nTopChan,
-                     pcaRefine, rmsRecenter, rMin, alignCentroid);
+                     pcaRefine, rmsRecenter, rMin, alignCentroid, kernel, kernelWidth);
     // The preference's cap is in SAMPLES; in a super-sampled space the search
     // runs in ticks, so the same cap is factor x as many ticks (the automatic
-    // cap, peak/2, is already in the space's own ticks).
+    // cap, peak/2, is already in the space's own ticks).  The kernel width the
+    // same way.
     if (maxShift != autoShift && upFactor > 1) maxShift *= upFactor;
+    if (kernelWidth != autoKernelWidth && upFactor > 1) kernelWidth *= upFactor;
+    if (kernelWidth > nSamp - 1) kernelWidth = nSamp - 1;
 
     // Clamp maxShift to the waveform width.  --maxshift is parsed with only a
     // >=1 lower bound, so a user value >= nSamp makes the circular roll index
@@ -805,7 +880,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         << "  maxShift=+-" << maxShift
         << "  topChan=" << (nTopChan > 0 ? QString::number(nTopChan)
                                          : QStringLiteral("all"))
-        << "  backend=" << XcorrDispatch::backendName() << "\n";
+        << "  kernel=" << (kernel == RealignKernel::None ? QStringLiteral("none (whole window)")
+                         : kernel == RealignKernel::Template ? QStringLiteral("template energy")
+                         : (kernel == RealignKernel::Gauss ? QStringLiteral("gauss") : QStringLiteral("hann"))
+                           + QStringLiteral(" +-") + QString::number(kernelWidth)
+                           + (upFactor > 1 ? QStringLiteral(" ticks") : QStringLiteral(" samples")))
+        << "  backend=" << (kernel == RealignKernel::None ? XcorrDispatch::backendName() : "OpenMP CPU (weighted)") << "\n";
     emitFlush();
 
     // -----------------------------------------------------------------------
@@ -1228,8 +1308,13 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
 
         std::vector<int>   sh(static_cast<size_t>(N), 0);
         std::vector<float> sc(static_cast<size_t>(N), 0.0f);
-        int rc = XcorrDispatch::compute(
-            xcorrWav, xcorrTmpl,
+        // The correlation window for this pass, on the template as rolled (its
+        // peak at peakSamp0) and masked (the template kernel sees the top-K
+        // channels only, like the correlation).
+        const std::vector<float> kw = realignKernelWeights(kernel, kernelWidth, peakSamp0,
+                                                           nSamp, nChan, xcorrTmpl);
+        int rc = XcorrDispatch::computeWeighted(
+            xcorrWav, xcorrTmpl, kw.empty() ? nullptr : kw.data(),
             static_cast<int>(N), nChan, nSamp,
             maxShift, minScore, sh.data(), sc.data());
         if (rc != 0) {
@@ -1853,9 +1938,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             scoreTmpl = finalTmplMasked.data();
         }
 
-        // Use maxShift=0 so no shifting occurs — we just want the scores.
-        XcorrDispatch::compute(
-            scoreWav, scoreTmpl,
+        // Use maxShift=0 so no shifting occurs — we just want the scores, under
+        // the same window the passes aligned with.
+        const std::vector<float> kwFinal = realignKernelWeights(kernel, kernelWidth, peakSamp0,
+                                                                nSamp, nChan, scoreTmpl);
+        XcorrDispatch::computeWeighted(
+            scoreWav, scoreTmpl, kwFinal.empty() ? nullptr : kwFinal.data(),
             static_cast<int>(N), nChan, nSamp,
             0, 0.005f, dummySh.data(), allScores.data());
 

@@ -14,9 +14,13 @@ public:
     void   setRealignThreshold(double v);
     void   setRealignIterations(int n);
     void   setRealignMaxShift(int n);
+    void   setRealignKernel(int k);          // 0 none, 1 gauss, 2 hann, 3 template energy
+    void   setRealignKernelWidth(int n);     // samples, 0 = auto
     double getRealignThreshold()  const;
     int    getRealignIterations() const;
     int    getRealignMaxShift()   const;
+    int    getRealignKernel()     const;
+    int    getRealignKernelWidth() const;
     // Post-alignment mode: 0 = off, 1 = PCA refine, 2 = RMS recenter
     void   setRealignMode(int m);
     int    getRealignMode()       const;

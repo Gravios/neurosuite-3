@@ -7540,6 +7540,16 @@ QString KlustersApp::buildRealignArgs(){
         .arg(configuration().getRealignIterations());
     if (configuration().getRealignMaxShift() > 0)
         a += QString(" --maxshift %1").arg(configuration().getRealignMaxShift());
+    // The correlation window (collision guard); none = whole window, the classic kernel.
+    switch (configuration().getRealignKernel()) {
+    case 1:  a += QStringLiteral(" --kernel gauss");    break;
+    case 2:  a += QStringLiteral(" --kernel hann");     break;
+    case 3:  a += QStringLiteral(" --kernel template"); break;
+    default: break;
+    }
+    if (configuration().getRealignKernel() == 1 || configuration().getRealignKernel() == 2)
+        if (configuration().getRealignKernelWidth() > 0)
+            a += QString(" --kernel-width %1").arg(configuration().getRealignKernelWidth());
     const int topCh = realignTopChanSpinBox ? realignTopChanSpinBox->value() : 0;
     if (topCh > 0) {
         a += QString(" --topchannels %1").arg(topCh);

@@ -103,6 +103,8 @@ void Configuration::read() {
     realignThreshold  = settings.value("realignThreshold",  0.70).toDouble();
     realignIterations = settings.value("realignIterations",  2).toInt();
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
+    realignKernel     = settings.value("realignKernel",      0).toInt();
+    realignKernelWidth = settings.value("realignKernelWidth", 0).toInt();
     realignMode       = settings.value("realignMode",        0).toInt();
     reorderMethod     = settings.value("reorderMethod",      0).toInt();
     waveformSortMean  = settings.value("waveformSortMean",   false).toBool();
@@ -282,6 +284,8 @@ void Configuration::write() const {
     settings.setValue("realignThreshold",  realignThreshold);
     settings.setValue("realignIterations", realignIterations);
     settings.setValue("realignMaxShift",   realignMaxShift);
+    settings.setValue("realignKernel",     realignKernel);
+    settings.setValue("realignKernelWidth", realignKernelWidth);
     settings.setValue("realignMode",       realignMode);
     settings.setValue("reorderMethod",     reorderMethod);
     settings.setValue("waveformSortMean",  waveformSortMean);

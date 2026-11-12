@@ -211,6 +211,8 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     connect(prefRealignment->realignThresholdSpinBox,    &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefRealignment->realignIterationsSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRealignment->realignMaxShiftSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefRealignment->realignKernelCombo,         &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
+    connect(prefRealignment->realignKernelWidthSpinBox,  &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRealignment->realignModeOffRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefSession->curationLoggingCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRealignment->syncFeatureSpaceOnSwitchCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
@@ -351,6 +353,8 @@ void PrefDialog::updateDialog()
     prefRealignment->setRealignThreshold(configuration().getRealignThreshold());
     prefRealignment->setRealignIterations(configuration().getRealignIterations());
     prefRealignment->setRealignMaxShift(configuration().getRealignMaxShift());
+    prefRealignment->setRealignKernel(configuration().getRealignKernel());
+    prefRealignment->setRealignKernelWidth(configuration().getRealignKernelWidth());
     prefRealignment->setRealignMode(configuration().getRealignMode());
     prefClusterOrder->setReorderMethod(configuration().getReorderMethod());
     prefClusterOrder->setWaveformSortMean(configuration().getWaveformSortMean());
@@ -466,6 +470,8 @@ void PrefDialog::updateConfiguration()
     configuration().setRealignThreshold(prefRealignment->getRealignThreshold());
     configuration().setRealignIterations(prefRealignment->getRealignIterations());
     configuration().setRealignMaxShift(prefRealignment->getRealignMaxShift());
+    configuration().setRealignKernel(prefRealignment->getRealignKernel());
+    configuration().setRealignKernelWidth(prefRealignment->getRealignKernelWidth());
     configuration().setRealignMode(prefRealignment->getRealignMode());
     configuration().setReorderMethod(prefClusterOrder->getReorderMethod());
     configuration().setWaveformSortMean(prefClusterOrder->getWaveformSortMean());
@@ -594,6 +600,8 @@ void PrefDialog::slotDefault()
     prefRealignment->setRealignThreshold(configuration().getRealignThresholdDefault());
     prefRealignment->setRealignIterations(configuration().getRealignIterationsDefault());
     prefRealignment->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
+    prefRealignment->setRealignKernel(configuration().getRealignKernelDefault());
+    prefRealignment->setRealignKernelWidth(configuration().getRealignKernelWidthDefault());
     prefRealignment->setRealignMode(configuration().getRealignModeDefault());
     prefClusterOrder->setReorderMethod(configuration().getReorderMethodDefault());
     prefClusterOrder->setWaveformSortMean(configuration().getWaveformSortMeanDefault());

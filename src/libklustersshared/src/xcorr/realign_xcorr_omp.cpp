@@ -140,6 +140,71 @@ int xcorr_omp_compute(
     return 0;
 }
 
+int xcorr_omp_compute_weighted(
+    const int16_t* waveforms,
+    const int16_t* tmpl,
+    const float*   weights,
+    int nSpikes, int nChannels, int nSamples,
+    int maxShift, float minScore,
+    int*   shifts_out,
+    float* scores_out)
+{
+    if (!weights)
+        return xcorr_omp_compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
+                                 maxShift, minScore, shifts_out, scores_out);
+
+    // Weighted template energy (constant for all spikes and lags).
+    double tmplEnergy = 0.0;
+    for (int ch = 0; ch < nChannels; ++ch)
+        for (int s = 0; s < nSamples; ++s) {
+            const double v = static_cast<double>(tmpl[ch * nSamples + s]);
+            tmplEnergy += static_cast<double>(weights[s]) * v * v;
+        }
+    const double sqrtTmplEnergy = std::sqrt(tmplEnergy);
+
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (int sp = 0; sp < nSpikes; ++sp) {
+        const int16_t* spk = waveforms + static_cast<ptrdiff_t>(sp)
+                             * nChannels * nSamples;
+        float bestScore = -FLT_MAX;
+        int   bestLag   = 0;
+        bool  any       = false;
+
+        for (int lag = -maxShift; lag <= maxShift; ++lag) {
+            double num = 0.0, spkEnergy = 0.0;
+            for (int ch = 0; ch < nChannels; ++ch) {
+                const int16_t* tch = tmpl + ch * nSamples;
+                const int16_t* sch = spk  + ch * nSamples;
+                for (int s = 0; s < nSamples; ++s) {
+                    const int sLag = ((s + lag) % nSamples + nSamples) % nSamples;
+                    const double w = static_cast<double>(weights[s]);
+                    const double v = static_cast<double>(sch[sLag]);
+                    num       += w * static_cast<double>(tch[s]) * v;
+                    spkEnergy += w * v * v;
+                }
+            }
+            const double denom = sqrtTmplEnergy * std::sqrt(spkEnergy);
+            if (!(denom > 1e-12)) continue;               // nothing under the window at this lag
+            const float score = static_cast<float>(num / denom);
+            any = true;
+            if (score > bestScore) {
+                bestScore = score;
+                bestLag   = lag;
+            }
+        }
+        if (!any) {                                       // zero template, or a zero spike
+            shifts_out[sp] = 0;
+            scores_out[sp] = 0.0f;
+            continue;
+        }
+        shifts_out[sp] = (bestScore >= minScore) ? bestLag : 0;
+        scores_out[sp] = bestScore;
+    }
+    return 0;
+}
+
 /* availability always true — OMP is always compiled */
 int xcorr_omp_available() { return 1; }
 

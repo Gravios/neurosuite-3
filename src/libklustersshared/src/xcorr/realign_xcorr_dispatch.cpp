@@ -209,4 +209,22 @@ int compute(
                              maxShift, minScore, shifts_out, scores_out);
 }
 
+int computeWeighted(
+    const int16_t* waveforms,
+    const int16_t* tmpl,
+    const float*   weights,
+    int nSpikes, int nChannels, int nSamples,
+    int maxShift, float minScore,
+    int*   shifts_out,
+    float* scores_out)
+{
+    if (!weights)
+        return compute(waveforms, tmpl, nSpikes, nChannels, nSamples,
+                       maxShift, minScore, shifts_out, scores_out);
+    // The weighting exists in the OpenMP kernel only; the GPU kernels correlate
+    // the whole window.  The backend compute() chose is left as it is.
+    return xcorr_omp_compute_weighted(waveforms, tmpl, weights, nSpikes, nChannels,
+                                      nSamples, maxShift, minScore, shifts_out, scores_out);
+}
+
 } // namespace XcorrDispatch
