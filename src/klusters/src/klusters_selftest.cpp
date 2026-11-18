@@ -25,6 +25,7 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
+#include "neurosuite/core/drift_partition.hpp"   // uniformPartition (residualScan)
 #include "klusters.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
@@ -33,6 +34,8 @@
 #include "serialjobqueue.h"
 #include "configuration.h"
 
+#include <cmath>
+#include <vector>
 #include <QApplication>
 #include <QFile>
 #include <QFileInfo>
@@ -199,6 +202,51 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // adopts it and the document reopens there -- the next step waits).
         startSave(step.value(QStringLiteral("saveas")).toString(), /*isSaveAs*/ true);
         return true;
+    }
+    if (step.contains(QStringLiteral("residualScan"))) {
+        // The Strip Residual Outliers scan, without the dialog and without applying it:
+        // {"residualScan": {"clusters": [..], "kOn", "kOff", "minGain", "window",
+        //  "minSpikes", "seed", "seedThreshold", "chunkSeconds"}} -> the flagged 0-based
+        // .spk indices per cluster.  chunkSeconds > 0 tiles the session as the dialog's
+        // "Uniform" choice does (ceil(T / chunk) equal chunks); 0 = the whole session.
+        const QJsonObject o = step.value(QStringLiteral("residualScan")).toObject();
+        QList<int> ids;
+        for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
+        const Data& layer = doc->parentData();
+        const double sessionSec = static_cast<double>(layer.maxTimeInRecordingUnits())
+                                * layer.intervalOfSampling() / 1.0e6;
+        const double chunkSec = o.value(QStringLiteral("chunkSeconds")).toDouble(0.0);
+        std::vector<double> bounds;
+        if (chunkSec > 0.0 && sessionSec > chunkSec)
+            bounds = neurosuite::drift::uniformPartition(
+                sessionSec, static_cast<int>(std::ceil(sessionSec / chunkSec))).bounds;
+        const KlustersDoc::ResidualOutlierResult R = doc->detectResidualOutliers(
+            ids,
+            o.value(QStringLiteral("kOn")).toDouble(3.0),
+            o.value(QStringLiteral("kOff")).toDouble(3.0),
+            o.value(QStringLiteral("minGain")).toDouble(0.25),
+            o.value(QStringLiteral("window")).toInt(layer.nbOfSampleInWaveform() / 2),
+            static_cast<long>(o.value(QStringLiteral("minSpikes")).toInt(40)),
+            o.value(QStringLiteral("seed")).toInt(0),
+            o.value(QStringLiteral("seedThreshold")).toBool(true),
+            bounds);
+        QJsonObject flagged;
+        for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it) {
+            QJsonArray idx;
+            for (const KlustersDoc::ResidualFlag& f : it.value()) idx.append(f.index);
+            flagged.insert(QString::number(it.key()), idx);
+        }
+        QJsonArray lines;
+        for (const QString& l : R.perCluster) lines.append(l);
+        result.insert(QStringLiteral("ok"), R.ok);
+        result.insert(QStringLiteral("scored"), R.scored);
+        result.insert(QStringLiteral("total"), static_cast<qint64>(R.total));
+        result.insert(QStringLiteral("chunks"), R.chunks);
+        result.insert(QStringLiteral("sessionSec"), sessionSec);
+        result.insert(QStringLiteral("flagged"), flagged);
+        result.insert(QStringLiteral("lines"), lines);
+        result.insert(QStringLiteral("reason"), R.reason);
+        return R.ok;
     }
     if (step.contains(QStringLiteral("dump"))) {
         result.insert(QStringLiteral("dump"), selfTestDump(step.value(QStringLiteral("cluster")).toInt(-1)));

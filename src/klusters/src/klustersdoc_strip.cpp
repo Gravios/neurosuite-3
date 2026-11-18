@@ -14,6 +14,8 @@
 // Waveform access mirrors TemplateMatrixThread: layer spikePositions() names
 // the feature rows, row-1 is the .spk record index, and tmReadSpikeFloat
 // de-interleaves one record into a channel-major float buffer.
+#include <map>
+#include <utility>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -646,7 +648,7 @@ struct ResidTemplate {
 };
 
 static ResidTemplate residBuildTemplate(const Data::ClusteringSnapshot& spkSrc,
-                                        const SortableTable& pos, long n,
+                                        const std::vector<long>& rows,
                                         int nCh, int nSamp, const QList<int>& chans,
                                         int windowSamples,
                                         std::vector<int16_t>& raw,
@@ -655,6 +657,7 @@ static ResidTemplate residBuildTemplate(const Data::ClusteringSnapshot& spkSrc,
     ResidTemplate tpl;
     const int nSel = chans.size();
     const int P    = nSel * nSamp;
+    const long n   = static_cast<long>(rows.size());
     if (nSel <= 0 || nSamp <= 0 || n <= 0) return tpl;
 
     // ── the per-point median over <=1024 evenly-strided spikes ──
@@ -663,7 +666,7 @@ static ResidTemplate residBuildTemplate(const Data::ClusteringSnapshot& spkSrc,
     tplBuf.reserve(static_cast<size_t>(P) * std::min(n, 1024L));
     long used = 0;
     for (long s = 0; s < n; s += step) {
-        const long row = static_cast<long>(pos(1, s + 1));
+        const long row = rows[static_cast<size_t>(s)];
         if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
         for (int ci = 0; ci < nSel; ++ci) {
             const float* src = &wav[static_cast<size_t>(chans[ci]) * nSamp];
@@ -740,26 +743,25 @@ static ResidTemplate residBuildTemplate(const Data::ClusteringSnapshot& spkSrc,
     return tpl;
 }
 
-// Score every spike of one cluster against a built template.  Appends in the
-// cluster's own spike order; a spike that cannot be read is skipped entirely
-// (no row, no score), exactly as detectWaveformOutliers skips a short read.
-static void residScoreCluster(const Data::ClusteringSnapshot& spkSrc,
-                              const SortableTable& pos, long n,
-                              int nCh, int nSamp, const QList<int>& chans,
-                              const ResidTemplate& tpl, double minGain,
-                              std::vector<double>& onv, std::vector<double>& offv,
-                              std::vector<long>& rows, std::vector<char>& noGain,
-                              std::vector<int16_t>& raw, std::vector<float>& wav)
+// Score a list of spikes (1-based .spk rows) against a built template.  The
+// outputs are ALIGNED with @p rows: state[i] is 0 for a spike that could not be
+// read (it gets no score and is never flagged, exactly as detectWaveformOutliers
+// skips a short read), 1 for a scored one, 2 for one with no template-shaped
+// signal (flagged outright, counted apart, left out of the tails).
+static void residScoreRows(const Data::ClusteringSnapshot& spkSrc,
+                           const std::vector<long>& rows,
+                           int nCh, int nSamp, const QList<int>& chans,
+                           const ResidTemplate& tpl, double minGain,
+                           std::vector<double>& onv, std::vector<double>& offv,
+                           std::vector<char>& state,
+                           std::vector<int16_t>& raw, std::vector<float>& wav)
 {
     const int nSel = chans.size();
-    onv.clear(); offv.clear(); rows.clear(); noGain.clear();
-    onv.reserve(static_cast<size_t>(n));
-    offv.reserve(static_cast<size_t>(n));
-    rows.reserve(static_cast<size_t>(n));
-    noGain.reserve(static_cast<size_t>(n));
-    for (long s = 0; s < n; ++s) {
-        const long row = static_cast<long>(pos(1, s + 1));
-        if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+    onv.assign(rows.size(), 0.0);
+    offv.assign(rows.size(), 0.0);
+    state.assign(rows.size(), 0);
+    for (size_t s = 0; s < rows.size(); ++s) {
+        if (!tmReadSpikeFloat(spkSrc, rows[s] - 1, nCh, nSamp, raw, wav)) continue;
 
         // a = sum_c u_c sum_t h x T / Eon  (Eon is that same sum with x=T).
         double num = 0.0;
@@ -773,17 +775,14 @@ static void residScoreCluster(const Data::ClusteringSnapshot& spkSrc,
         }
         const double a = num / tpl.Eon;
 
-        rows.push_back(row);
         if (!(a >= minGain)) {
             // No template-shaped signal, or anti-correlated with it: the ratios
             // divide by a^2 and would be meaningless (or infinite).  Flagged
             // outright and counted apart, rather than scored.
-            onv.push_back(0.0);
-            offv.push_back(0.0);
-            noGain.push_back(1);
+            state[s] = 2;
             continue;
         }
-        noGain.push_back(0);
+        state[s] = 1;
 
         double qOn = 0.0, qOff = 0.0;
         for (int ci = 0; ci < nSel; ++ci) {
@@ -798,9 +797,76 @@ static void residScoreCluster(const Data::ClusteringSnapshot& spkSrc,
             qOff += (1.0 - tpl.u[static_cast<size_t>(ci)]) * qc;
         }
         const double nrm = a * a * tpl.Eon;
-        onv.push_back(qOn  / nrm);
-        offv.push_back(qOff / nrm);
+        onv[s]  = qOn  / nrm;
+        offv[s] = qOff / nrm;
     }
+}
+
+// ── time chunks ─────────────────────────────────────────────────────────────
+// A cell's waveform drifts over a session, so one median over the whole
+// recording is the template of no moment in particular, and the spread around
+// it is drift plus contamination -- the tail is sited on the sum.  The scan
+// therefore runs per TIME CHUNK when the caller passes chunk boundaries (the
+// Template view's drift partition, or uniform chunks of the default template
+// chunk length): each chunk of a cluster is judged against the median of that
+// chunk and by the spread of that chunk.
+//
+// A chunk that holds too few of the cluster's spikes to site a median and a
+// MAD on borrows its neighbours: its REFERENCE WINDOW grows one chunk each way
+// until it holds enough (or covers the session).  The template and the tails
+// come from the window; only the chunk's own spikes are flagged from it, so
+// every spike is judged exactly once, by the nearest stretch of time that can
+// support a statistic.
+
+/** The cluster's spikes (1-based .spk rows, in the cluster's own order) by time chunk. */
+static std::vector<std::vector<long>> residRowsByChunk(Data& layer, int cluster,
+                                                       const SortableTable& pos, long n,
+                                                       const std::vector<double>& boundsSec,
+                                                       double secPerUnit)
+{
+    std::vector<std::vector<long>> by(boundsSec.size() + 1);
+    std::vector<long> times;
+    // Times that do not line up with the position table (an edit in between)
+    // put the cluster in one chunk rather than guess.
+    const bool timed = !boundsSec.empty()
+                    && layer.spikeTimesInRecordingUnits(cluster, times)
+                    && static_cast<long>(times.size()) == n;
+    for (long s = 0; s < n; ++s) {
+        const long row = static_cast<long>(pos(1, s + 1));
+        size_t k = 0;
+        if (timed) {
+            const double tSec = static_cast<double>(times[static_cast<size_t>(s)]) * secPerUnit;
+            k = static_cast<size_t>(std::upper_bound(boundsSec.begin(), boundsSec.end(), tSec)
+                                    - boundsSec.begin());
+        }
+        by[k].push_back(row);
+    }
+    return by;
+}
+
+/** Chunk @p k's reference window [lo, hi]: grown one chunk each way until it holds @p need spikes. */
+static std::pair<int, int> residWindow(const std::vector<std::vector<long>>& by, int k, long need)
+{
+    int lo = k, hi = k;
+    const int last = static_cast<int>(by.size()) - 1;
+    long cnt = static_cast<long>(by[static_cast<size_t>(k)].size());
+    while (cnt < need && (lo > 0 || hi < last)) {
+        if (lo > 0)    cnt += static_cast<long>(by[static_cast<size_t>(--lo)].size());
+        if (hi < last) cnt += static_cast<long>(by[static_cast<size_t>(++hi)].size());
+    }
+    return { lo, hi };
+}
+
+/** The rows of chunks [lo, hi] in order; @p offsetOfK = where chunk @p k's rows start in it. */
+static std::vector<long> residWindowRows(const std::vector<std::vector<long>>& by,
+                                         std::pair<int, int> win, int k, size_t* offsetOfK)
+{
+    std::vector<long> rows;
+    for (int c = win.first; c <= win.second; ++c) {
+        if (c == k && offsetOfK) *offsetOfK = rows.size();
+        rows.insert(rows.end(), by[static_cast<size_t>(c)].begin(), by[static_cast<size_t>(c)].end());
+    }
+    return rows;
 }
 }  // namespace
 
@@ -812,7 +878,8 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
                                     int               windowSamples,
                                     long              minSpikes,
                                     int               templateCluster,
-                                    bool              thresholdFromTemplate)
+                                    bool              thresholdFromTemplate,
+                                    const std::vector<double>& chunkBoundsSec)
 {
     ResidualOutlierResult R;
 
@@ -839,9 +906,24 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
     std::vector<int16_t> raw;
     std::vector<float>   wav;
     std::vector<double>  onv, offv;
-    std::vector<long>    rowv;
-    std::vector<char>    noGain;
+    std::vector<char>    state;
     const double inf = std::numeric_limits<double>::infinity();
+
+    // ── the time chunks ─────────────────────────────────────────────────
+    // Interior boundaries in seconds; kept only if strictly increasing and
+    // positive, so a malformed list degrades to fewer chunks, never to a wrong
+    // assignment.  The time column is in recording units (the same conversion
+    // Data::maxTime reports the session length with).
+    std::vector<double> bounds;
+    for (double b : chunkBoundsSec)
+        if (b > 0.0 && (bounds.empty() || b > bounds.back())) bounds.push_back(b);
+    const double secPerUnit = layer.intervalOfSampling() / 1.0e6;
+    if (!(secPerUnit > 0.0)) bounds.clear();
+    const int nChunks = static_cast<int>(bounds.size()) + 1;
+    R.chunks = nChunks;
+    auto num = [inf](double v) {
+        return v == inf ? QStringLiteral("off") : QString::number(v, 'g', 3);
+    };
 
     // ── the seed, when one is designated ────────────────────────────────
     // A designated seed changes BOTH halves of the gesture, and the second is
@@ -849,11 +931,22 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
     // (so the shape is the clean cell's, not the mixture's), and with
     // @p thresholdFromTemplate the CUT comes from the seed's own score
     // distribution too, so a mixture's inflated MAD cannot push the threshold
-    // out from under the contamination.
-    ResidTemplate seed;
-    double seedThrOn = inf, seedThrOff = inf;
+    // out from under the contamination.  Per time chunk, the seed is read in
+    // that chunk's reference window OF THE SEED: the seed's shape then, not its
+    // session median.
+    struct SeedEntry {
+        ResidTemplate tpl;
+        double thrOn  = std::numeric_limits<double>::infinity();
+        double thrOff = std::numeric_limits<double>::infinity();
+        std::vector<double> on, off;                 // the seed's own scores (scored spikes)
+    };
+    const bool haveSeed  = (templateCluster > 1);
+    const bool fixedTail = haveSeed && thresholdFromTemplate;
+    std::vector<std::vector<long>> seedBy;
+    long seedNeed = 0;
+    std::map<std::pair<int, int>, SeedEntry> seedCache;
     QList<int> scored = clusters;
-    if (templateCluster > 1) {
+    if (haveSeed) {
         scored.removeAll(templateCluster);          // the seed is never stripped
         SortableTable spos;
         if (!layer.spikePositions(templateCluster, spos)) {
@@ -869,43 +962,45 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
                            .arg(clusterLabel(templateCluster)).arg(sn);
             return R;
         }
-        seed = residBuildTemplate(spkSrc, spos, sn, nCh, nSamp, chans,
-                                  windowSamples, raw, wav);
-        if (!seed.ok) {
-            R.reason = tr("Template cluster %1 gives no usable median waveform "
-                          "on the selected channels (flat, or too few readable "
-                          "waveforms).").arg(clusterLabel(templateCluster));
-            return R;
-        }
-        if (thresholdFromTemplate) {
-            residScoreCluster(spkSrc, spos, sn, nCh, nSamp, chans, seed, minGain,
-                              onv, offv, rowv, noGain, raw, wav);
-            std::vector<double> sOn, sOff;
-            for (size_t i = 0; i < onv.size(); ++i) {
-                if (noGain[i]) continue;
-                sOn.push_back(onv[i]);
-                sOff.push_back(offv[i]);
-            }
-            seedThrOn  = (kOn  > 0.0) ? residRobustTail(sOn,  kOn)  : inf;
-            seedThrOff = (kOff > 0.0) ? residRobustTail(sOff, kOff) : inf;
-            R.perCluster.append(
-                tr("template %1: %2 spikes, median on=%3 off=%4, FIXED tail "
-                   "on>%5 off>%6 applied to every scored cluster")
-                    .arg(clusterLabel(templateCluster))
-                    .arg(sOn.size())
-                    .arg(residMedian(sOn),  0, 'g', 3)
-                    .arg(residMedian(sOff), 0, 'g', 3)
-                    .arg(seedThrOn  == inf ? QStringLiteral("off")
-                                           : QString::number(seedThrOn,  'g', 3))
-                    .arg(seedThrOff == inf ? QStringLiteral("off")
-                                           : QString::number(seedThrOff, 'g', 3)));
-        }
+        seedBy   = residRowsByChunk(layer, templateCluster, spos, sn, bounds, secPerUnit);
+        seedNeed = std::max(8L, std::min(minSpikes, sn));
         R.templateId = templateCluster;
-        if (seed.offMargin > 0.25) R.anyOffMargin = true;
         if (scored.isEmpty()) {
             R.reason = tr("Nothing to score: cluster %1 is the template and no "
                           "other cluster is selected.")
                            .arg(clusterLabel(templateCluster));
+            return R;
+        }
+    }
+    // The seed's template (and, for a fixed cut, its tails) for chunk k.
+    auto seedFor = [&](int k) -> const SeedEntry& {
+        const std::pair<int, int> win = residWindow(seedBy, k, seedNeed);
+        auto it = seedCache.find(win);
+        if (it != seedCache.end()) return it->second;
+        SeedEntry e;
+        const std::vector<long> rows = residWindowRows(seedBy, win, k, nullptr);
+        e.tpl = residBuildTemplate(spkSrc, rows, nCh, nSamp, chans, windowSamples, raw, wav);
+        if (e.tpl.ok && thresholdFromTemplate) {
+            residScoreRows(spkSrc, rows, nCh, nSamp, chans, e.tpl, minGain,
+                           onv, offv, state, raw, wav);
+            for (size_t i = 0; i < rows.size(); ++i) {
+                if (state[i] != 1) continue;
+                e.on.push_back(onv[i]);
+                e.off.push_back(offv[i]);
+            }
+            e.thrOn  = (kOn  > 0.0) ? residRobustTail(e.on,  kOn)  : inf;
+            e.thrOff = (kOff > 0.0) ? residRobustTail(e.off, kOff) : inf;
+        }
+        return seedCache.emplace(win, std::move(e)).first->second;
+    };
+    if (haveSeed) {
+        // Fail early, as before, when the seed gives no template at all.
+        bool any = false;
+        for (int k = 0; k < nChunks && !any; ++k) any = seedFor(k).tpl.ok;
+        if (!any) {
+            R.reason = tr("Template cluster %1 gives no usable median waveform "
+                          "on the selected channels (flat, or too few readable "
+                          "waveforms).").arg(clusterLabel(templateCluster));
             return R;
         }
     }
@@ -917,69 +1012,161 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
         const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(c)));
         if (n < minSpikes) continue;                // MAD too noisy below the floor
 
-        // The seed's template, or the cluster's own.  Without a seed this is
-        // exactly the self-referential form: the cluster supplies both the
-        // shape it is judged against and the spread it is judged by.
-        const ResidTemplate own =
-            seed.ok ? ResidTemplate()
-                    : residBuildTemplate(spkSrc, pos, n, nCh, nSamp, chans,
-                                         windowSamples, raw, wav);
-        const ResidTemplate& tpl = seed.ok ? seed : own;
-        if (!tpl.ok) continue;
-        // Off-channel margin: with only the template's own channel(s) selected
-        // every u_c is ~1, offr is identically ~0, and its tail cuts nothing.
-        // Recorded so the caller can say so instead of reporting a silent zero.
-        if (tpl.offMargin > 0.25) R.anyOffMargin = true;
+        const std::vector<std::vector<long>> by = residRowsByChunk(layer, c, pos, n, bounds, secPerUnit);
 
-        residScoreCluster(spkSrc, pos, n, nCh, nSamp, chans, tpl, minGain,
-                          onv, offv, rowv, noGain, raw, wav);
-        if (rowv.size() < static_cast<size_t>(minSpikes)) continue;
-
-        // ── a robust tail per term, over the SCORED spikes only ──
-        // The no-gain spikes are already flagged; leaving them in would drag
-        // the median and MAD of distributions they are not members of.
-        std::vector<double> onOk, offOk;
-        onOk.reserve(onv.size());
-        offOk.reserve(offv.size());
-        for (size_t i = 0; i < onv.size(); ++i) {
-            if (noGain[i]) continue;
-            onOk.push_back(onv[i]);
-            offOk.push_back(offv[i]);
-        }
-        const bool fixedTail = (seedThrOn != inf || seedThrOff != inf);
-        const double thrOn  = fixedTail ? seedThrOn
-                                        : ((kOn  > 0.0) ? residRobustTail(onOk,  kOn)  : inf);
-        const double thrOff = fixedTail ? seedThrOff
-                                        : ((kOff > 0.0) ? residRobustTail(offOk, kOff) : inf);
+        // The cluster's own template and scores, per reference window (no seed).
+        // Without a seed this is exactly the self-referential form: the window
+        // supplies both the shape its spikes are judged against and the spread
+        // they are judged by.
+        struct OwnEntry {
+            ResidTemplate tpl;
+            std::vector<long>   rows;
+            std::vector<double> on, off;
+            std::vector<char>   state;
+            double thrOn  = std::numeric_limits<double>::infinity();
+            double thrOff = std::numeric_limits<double>::infinity();
+            long   readable = 0;
+        };
+        std::map<std::pair<int, int>, OwnEntry> ownCache;
 
         QVector<ResidualFlag> flagged;
         long cOn = 0, cOff = 0, cBoth = 0, cNo = 0;
-        for (size_t i = 0; i < rowv.size(); ++i) {
-            ResidualFlag f;
-            f.index  = static_cast<int>(rowv[i]) - 1;     // -> 0-based .spk index
-            f.noGain = (noGain[i] != 0);
-            if (!f.noGain) {
-                f.on  = onv[i]  > thrOn;
-                f.off = offv[i] > thrOff;
-            }
-            if (!(f.on || f.off || f.noGain)) continue;
-            flagged.append(f);
-            if (f.noGain)           ++cNo;
-            else if (f.on && f.off) ++cBoth;
-            else if (f.on)          ++cOn;
-            else                    ++cOff;
-        }
+        std::vector<double> onAll, offAll;          // the scored spikes' terms, for the medians
+        double thrOnLo = inf, thrOnHi = -inf, thrOffLo = inf, thrOffHi = -inf;
+        int usedChunks = 0, pooledChunks = 0;
 
-        R.perCluster.append(
-            tr("%1: %2 scored, median on=%3 off=%4, tail on>%5 off>%6 "
-               "-> %7 flagged (%8 on, %9 off, %10 both, %11 no-gain)")
-                .arg(clusterLabel(c))
-                .arg(onOk.size())
-                .arg(residMedian(onOk),  0, 'g', 3)
-                .arg(residMedian(offOk), 0, 'g', 3)
-                .arg(thrOn  == inf ? QStringLiteral("off") : QString::number(thrOn,  'g', 3))
-                .arg(thrOff == inf ? QStringLiteral("off") : QString::number(thrOff, 'g', 3))
-                .arg(flagged.size()).arg(cOn).arg(cOff).arg(cBoth).arg(cNo));
+        for (int k = 0; k < nChunks; ++k) {
+            const std::vector<long>& mine = by[static_cast<size_t>(k)];
+            if (mine.empty()) continue;
+
+            const ResidTemplate* tpl = nullptr;
+            const std::vector<double>* sOn  = nullptr;
+            const std::vector<double>* sOff = nullptr;
+            const std::vector<char>*   sSt  = nullptr;
+            std::vector<double> kOnv, kOffv;
+            std::vector<char>   kState;
+            size_t offset = 0;
+            double thrOn = inf, thrOff = inf;
+            bool pooled = false;
+
+            if (fixedTail) {
+                // The seed's shape and the seed's cut: the chunk needs no
+                // statistic of its own, so it is scored as it stands.
+                const SeedEntry& se = seedFor(k);
+                if (!se.tpl.ok) continue;
+                tpl = &se.tpl;
+                residScoreRows(spkSrc, mine, nCh, nSamp, chans, se.tpl, minGain,
+                               kOnv, kOffv, kState, raw, wav);
+                sOn = &kOnv; sOff = &kOffv; sSt = &kState;
+                thrOn = se.thrOn; thrOff = se.thrOff;
+            } else {
+                const std::pair<int, int> win = residWindow(by, k, minSpikes);
+                pooled = (win.first != k || win.second != k);
+                auto it = haveSeed ? ownCache.end() : ownCache.find(win);
+                if (it == ownCache.end()) {
+                    OwnEntry e;
+                    size_t off0 = 0;
+                    e.rows = residWindowRows(by, win, k, &off0);
+                    const ResidTemplate* use = nullptr;
+                    if (haveSeed) {
+                        const SeedEntry& se = seedFor(k);   // the seed's shape in THIS chunk
+                        if (se.tpl.ok) { e.tpl = se.tpl; use = &e.tpl; }
+                    } else {
+                        e.tpl = residBuildTemplate(spkSrc, e.rows, nCh, nSamp, chans,
+                                                   windowSamples, raw, wav);
+                        if (e.tpl.ok) use = &e.tpl;
+                    }
+                    if (use) {
+                        residScoreRows(spkSrc, e.rows, nCh, nSamp, chans, *use, minGain,
+                                       e.on, e.off, e.state, raw, wav);
+                        // ── a robust tail per term, over the SCORED spikes only ──
+                        // The no-gain spikes are already flagged; leaving them in would
+                        // drag the median and MAD of distributions they are not members of.
+                        std::vector<double> onOk, offOk;
+                        for (size_t i = 0; i < e.rows.size(); ++i) {
+                            if (e.state[i] != 0) ++e.readable;
+                            if (e.state[i] != 1) continue;
+                            onOk.push_back(e.on[i]);
+                            offOk.push_back(e.off[i]);
+                        }
+                        e.thrOn  = (kOn  > 0.0) ? residRobustTail(onOk,  kOn)  : inf;
+                        e.thrOff = (kOff > 0.0) ? residRobustTail(offOk, kOff) : inf;
+                    }
+                    // With a seed the entry belongs to chunk k alone (its template is
+                    // the seed's there), so it is keyed apart from the shared windows.
+                    it = ownCache.emplace(haveSeed ? std::make_pair(-1 - k, -1 - k) : win,
+                                          std::move(e)).first;
+                }
+                const OwnEntry& e = it->second;
+                if (!e.tpl.ok) continue;
+                if (e.readable < minSpikes) continue;       // too few readable waveforms for a MAD
+                // Where chunk k's rows start inside the window's.
+                for (int cc = win.first; cc < k; ++cc) offset += by[static_cast<size_t>(cc)].size();
+                tpl = &e.tpl;
+                sOn = &e.on; sOff = &e.off; sSt = &e.state;
+                thrOn = e.thrOn; thrOff = e.thrOff;
+            }
+
+            // Off-channel margin: with only the template's own channel(s) selected
+            // every u_c is ~1, offr is identically ~0, and its tail cuts nothing.
+            // Recorded so the caller can say so instead of reporting a silent zero.
+            if (tpl->offMargin > 0.25) R.anyOffMargin = true;
+
+            ++usedChunks;
+            if (pooled) ++pooledChunks;
+            if (thrOn  != inf) { thrOnLo  = std::min(thrOnLo,  thrOn);  thrOnHi  = std::max(thrOnHi,  thrOn);  }
+            if (thrOff != inf) { thrOffLo = std::min(thrOffLo, thrOff); thrOffHi = std::max(thrOffHi, thrOff); }
+
+            for (size_t i = 0; i < mine.size(); ++i) {
+                const size_t at = offset + i;
+                const char st = (*sSt)[at];
+                if (st == 0) continue;                       // unreadable: no score, no flag
+                ResidualFlag f;
+                f.index  = static_cast<int>(mine[i]) - 1;    // -> 0-based .spk index
+                f.noGain = (st == 2);
+                if (!f.noGain) {
+                    onAll.push_back((*sOn)[at]);
+                    offAll.push_back((*sOff)[at]);
+                    f.on  = (*sOn)[at]  > thrOn;
+                    f.off = (*sOff)[at] > thrOff;
+                }
+                if (!(f.on || f.off || f.noGain)) continue;
+                flagged.append(f);
+                if (f.noGain)           ++cNo;
+                else if (f.on && f.off) ++cBoth;
+                else if (f.on)          ++cOn;
+                else                    ++cOff;
+            }
+        }
+        if (usedChunks == 0) continue;
+
+        auto range = [&](double lo, double hi) {
+            if (!(hi >= lo)) return QStringLiteral("off");
+            return lo == hi ? QString::number(lo, 'g', 3)
+                            : QString::number(lo, 'g', 3) + QStringLiteral("..") + QString::number(hi, 'g', 3);
+        };
+        if (nChunks == 1)
+            R.perCluster.append(
+                tr("%1: %2 scored, median on=%3 off=%4, tail on>%5 off>%6 "
+                   "-> %7 flagged (%8 on, %9 off, %10 both, %11 no-gain)")
+                    .arg(clusterLabel(c))
+                    .arg(onAll.size())
+                    .arg(residMedian(onAll),  0, 'g', 3)
+                    .arg(residMedian(offAll), 0, 'g', 3)
+                    .arg(range(thrOnLo, thrOnHi)).arg(range(thrOffLo, thrOffHi))
+                    .arg(flagged.size()).arg(cOn).arg(cOff).arg(cBoth).arg(cNo));
+        else
+            R.perCluster.append(
+                tr("%1: %2 scored in %3 time chunk(s), %4 of them pooled with "
+                   "neighbours; median on=%5 off=%6, tails on>%7 off>%8 "
+                   "-> %9 flagged (%10 on, %11 off, %12 both, %13 no-gain)")
+                    .arg(clusterLabel(c))
+                    .arg(onAll.size())
+                    .arg(usedChunks).arg(pooledChunks)
+                    .arg(residMedian(onAll),  0, 'g', 3)
+                    .arg(residMedian(offAll), 0, 'g', 3)
+                    .arg(range(thrOnLo, thrOnHi)).arg(range(thrOffLo, thrOffHi))
+                    .arg(flagged.size()).arg(cOn).arg(cOff).arg(cBoth).arg(cNo));
 
         if (!flagged.isEmpty()) {
             R.total   += flagged.size();
@@ -990,6 +1177,40 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
             R.byCluster.insert(c, flagged);
         }
         ++R.scored;
+    }
+
+    // The seed's own line, first: what every scored cluster was judged against.
+    if (haveSeed) {
+        std::vector<double> sOnAll, sOffAll;
+        double lo1 = inf, hi1 = -inf, lo2 = inf, hi2 = -inf;
+        int nTpl = 0;
+        for (const auto& kv : seedCache) {
+            const SeedEntry& e = kv.second;
+            if (!e.tpl.ok) continue;
+            ++nTpl;
+            if (e.tpl.offMargin > 0.25) R.anyOffMargin = true;
+            sOnAll.insert(sOnAll.end(), e.on.begin(), e.on.end());
+            sOffAll.insert(sOffAll.end(), e.off.begin(), e.off.end());
+            if (e.thrOn  != inf) { lo1 = std::min(lo1, e.thrOn);  hi1 = std::max(hi1, e.thrOn);  }
+            if (e.thrOff != inf) { lo2 = std::min(lo2, e.thrOff); hi2 = std::max(hi2, e.thrOff); }
+        }
+        auto range = [&](double lo, double hi) {
+            if (!(hi >= lo)) return QStringLiteral("off");
+            return lo == hi ? num(lo) : num(lo) + QStringLiteral("..") + num(hi);
+        };
+        if (thresholdFromTemplate)
+            R.perCluster.prepend(nChunks == 1
+                ? tr("template %1: %2 spikes, median on=%3 off=%4, FIXED tail "
+                     "on>%5 off>%6 applied to every scored cluster")
+                      .arg(clusterLabel(templateCluster)).arg(sOnAll.size())
+                      .arg(residMedian(sOnAll), 0, 'g', 3).arg(residMedian(sOffAll), 0, 'g', 3)
+                      .arg(range(lo1, hi1)).arg(range(lo2, hi2))
+                : tr("template %1: %2 template window(s) over %3 time chunks, "
+                     "median on=%4 off=%5, FIXED tails on>%6 off>%7, each applied "
+                     "to the scored spikes of its own chunks")
+                      .arg(clusterLabel(templateCluster)).arg(nTpl).arg(nChunks)
+                      .arg(residMedian(sOnAll), 0, 'g', 3).arg(residMedian(sOffAll), 0, 'g', 3)
+                      .arg(range(lo1, hi1)).arg(range(lo2, hi2)));
     }
 
     R.ok = true;

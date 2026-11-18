@@ -1004,6 +1004,10 @@ public:
      *  Backs time-chunk curation: the set of clusters present in one chunk. */
     QList<int> clustersInTimeWindow(long t0, long t1, int minSpikes = 1) const;
 
+    /** The timestamps (recording units) of cluster @p clusterId's spikes, in the
+     *  order spikePositions() lists them.  False when the cluster is unknown. */
+    bool spikeTimesInRecordingUnits(int clusterId, std::vector<long>& out) const;
+
     /** Largest spike timestamp in recording units (samples). */
     long maxTimeInRecordingUnits() const {return static_cast<long>(maxDimension(nbDimensions));}
 

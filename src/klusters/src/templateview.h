@@ -121,6 +121,11 @@ public:
     // (re)writes templates so an open display updates without being reopened.
     void reloadFromDisk();
 
+    /** The session drift partition this view shows -- its time regions, as
+     *  set by the curator or seeded at the default chunk length.  False when
+     *  the view has none (no open group, unreadable .res). */
+    bool driftPartition(neurosuite::drift::Partition& out) const;
+
 private:
     void loadFromDisk();                 // resolve paths, read .wti + .wtf
     void rebuildUnitList();              // fill the unit list from the .wti

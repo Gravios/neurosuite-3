@@ -65,6 +65,7 @@
 #include "templatematrixview.h"
 #include "residualmatrixview.h"
 #include "driftmatrixview.h"
+#include "neurosuite/core/drift_partition.hpp"   // uniformPartition (the strip's default chunks)
 #include "templateview.h"           // TemplateView::reloadFromDisk (refresh after native gen)
 #include "templatematrixthread.h"   // tmReadSpikeFloat (median-waveform NN sort)
 #include "array.h"
@@ -7195,7 +7196,34 @@ void KlustersApp::slotStripResidualOutliers()
     static bool   lastSeparate  = true;             // a test run wants them apart
     static int    lastSeed      = 0;                // 0 = no seed (self-referential)
     static bool   lastSeedThr   = true;             // a seed's point is a fixed cut
+    static int    lastChunking  = -1;               // -1 = not set; see the chunk choices below
     if (lastWindow < 0) lastWindow = std::max(1, nSamp / 2);
+
+    // ── The time chunks the scan can run in ──────────────────────────────
+    // 0  the Template view's drift partition, when a Template view is open and
+    //    has one: the regions the curator set (or the view seeded);
+    // 1  uniform chunks of the default template chunk length -- the grain a
+    //    fresh partition is seeded with (Preferences > Cluster view > Scope
+    //    granularity), tiled exactly as the Template view tiles it;
+    // 2  the whole session (one template per cluster, the action as first shipped).
+    const Data& stripLayer = doc->parentData();
+    const double sessionSec = static_cast<double>(stripLayer.maxTimeInRecordingUnits())
+                            * stripLayer.intervalOfSampling() / 1.0e6;
+    std::vector<double> partitionBounds;
+    bool havePartition = false;
+    for (TemplateView* tv : findChildren<TemplateView*>()) {
+        neurosuite::drift::Partition part;
+        if (tv && tv->driftPartition(part)) {
+            partitionBounds = part.bounds;
+            havePartition = true;
+            break;
+        }
+    }
+    const double grainMin = configuration().getProjectionScopeMinutes();
+    std::vector<double> uniformBounds;
+    if (grainMin > 0.0 && sessionSec > grainMin * 60.0)
+        uniformBounds = neurosuite::drift::uniformPartition(
+            sessionSec, static_cast<int>(std::ceil(sessionSec / (grainMin * 60.0)))).bounds;
 
     QDialog dlg(this);
     dlg.setWindowTitle(tr("Strip Residual Outliers"));
@@ -7306,14 +7334,38 @@ void KlustersApp::slotStripResidualOutliers()
                      .arg(parts.join(QStringLiteral(", ")));
     }
 
+    QComboBox* chunkBox = new QComboBox(&dlg);
+    if (havePartition)
+        chunkBox->addItem(tr("Template view partition — %1 region(s)")
+                              .arg(partitionBounds.size() + 1), 0);
+    chunkBox->addItem(tr("Uniform, %1 min — %2 chunk(s)")
+                          .arg(grainMin, 0, 'g', 4).arg(uniformBounds.size() + 1), 1);
+    chunkBox->addItem(tr("Whole session — one template per cluster"), 2);
+    {
+        // Default: the partition when there is one, else the uniform chunks; a
+        // remembered choice that is not on offer falls back the same way.
+        int want = lastChunking;
+        if (want < 0 || (want == 0 && !havePartition)) want = havePartition ? 0 : 1;
+        const int at = chunkBox->findData(want);
+        chunkBox->setCurrentIndex(at < 0 ? 0 : at);
+    }
+    chunkBox->setToolTip(tr("The time chunks the scan runs in.  A cell's waveform "
+        "drifts over a session, so each chunk of a cluster is judged against the "
+        "median waveform of that chunk and by the spread of that chunk.  A chunk "
+        "with fewer of the cluster's spikes than Min spikes borrows its "
+        "neighbouring chunks for the template and the tail; only its own spikes "
+        "are flagged.  The uniform length is Preferences > Cluster view > Scope "
+        "granularity, the length a new Template view partition is seeded with."));
+
     form->addRow(tr("On-channel tail k (0 = off):"),  onBox);
     form->addRow(tr("Off-channel tail k (0 = off):"), offBox);
     form->addRow(tr("Min gain:"),                     gainBox);
     form->addRow(tr("Taper window (samples, 0 = whole):"), winBox);
-    form->addRow(tr("Min spikes per cluster:"),       minBox);
+    form->addRow(tr("Min spikes per cluster or chunk:"), minBox);
     form->addRow(tr("Keep the terms apart:"),         sepBox);
     form->addRow(tr("Seed (template from):"),         seedBox);
     form->addRow(tr("Threshold from the seed too:"),  seedThrBox);
+    form->addRow(tr("Time chunks:"),                  chunkBox);
     form->addRow(tr("Clusters:"), new QLabel(
         tr("the %1 selected").arg(selected.size()), &dlg));
     form->addRow(tr("Restricted to:"), new QLabel(chText, &dlg));
@@ -7336,13 +7388,16 @@ void KlustersApp::slotStripResidualOutliers()
     const bool   seedThr  = seedThrBox->isChecked();
     lastKOn = kOn; lastKOff = kOff; lastMinGain = minGain;
     lastWindow = window; lastMinSpikes = minBox->value(); lastSeparate = separate;
-    lastSeed = seed; lastSeedThr = seedThr;
+    const int    chunking = chunkBox->currentData().toInt();
+    lastSeed = seed; lastSeedThr = seedThr; lastChunking = chunking;
+    const std::vector<double> chunkBounds =
+        chunking == 0 ? partitionBounds : (chunking == 1 ? uniformBounds : std::vector<double>());
 
     // ── Scan ─────────────────────────────────────────────────────────────
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const KlustersDoc::ResidualOutlierResult R =
         doc->detectResidualOutliers(selected, kOn, kOff, minGain, window, minSpk,
-                                    seed, seedThr);
+                                    seed, seedThr, chunkBounds);
     QApplication::restoreOverrideCursor();
 
     // The per-cluster diagnostic is the point of a test run: the medians and
@@ -7369,13 +7424,15 @@ void KlustersApp::slotStripResidualOutliers()
     QString detail = tr("Split %1 flagged spike(s) off into %2?\n\n"
                         "%3 by the on-channel term, %4 by the off-channel term, "
                         "%5 by both, %6 carrying no template-shaped signal.\n"
-                        "%7 of %8 selected cluster(s) contribute.  "
+                        "%7 of %8 selected cluster(s) contribute, scored in %9.  "
                         "This can be undone.")
                         .arg(R.total)
                         .arg(separate ? tr("up to three new clusters, one per term")
                                       : tr("one new cluster"))
                         .arg(R.nOn).arg(R.nOff).arg(R.nBoth).arg(R.nNoGain)
-                        .arg(R.byCluster.size()).arg(selected.size());
+                        .arg(R.byCluster.size()).arg(selected.size())
+                        .arg(R.chunks > 1 ? tr("%1 time chunks").arg(R.chunks)
+                                          : tr("one chunk, the whole session"));
     if (R.templateId > 1)
         detail += QStringLiteral("\n\n") + (seedThr
             ? tr("Template and threshold both from the seed %1, which is not "

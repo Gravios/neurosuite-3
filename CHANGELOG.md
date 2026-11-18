@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | [Klusters: Strip Residual Outliers runs per time chunk — the Template view's partition, or the default template chunk length](#2026-11-18--klusters-strip-residual-outliers-runs-per-time-chunk--the-template-views-partition-or-the-default-template-chunk-length) |
 | 2026-11-18 | [Input preferences: Reset restores the default, a second press unbinds — and an unbound command stays unbound](#2026-11-18--input-preferences-reset-restores-the-default-a-second-press-unbinds--and-an-unbound-command-stays-unbound) |
 | 2026-11-18 | [Klusters: the radial menu keeps an open ring while the cursor is moving](#2026-11-18--klusters-the-radial-menu-keeps-an-open-ring-while-the-cursor-is-moving) |
 | 2026-11-18 | [Klusters: the RMS recenter and the PCA refine run under the correlation window](#2026-11-18--klusters-the-rms-recenter-and-the-pca-refine-run-under-the-correlation-window) |
@@ -201,6 +202,69 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-18 — Klusters: Strip Residual Outliers runs per time chunk — the Template view's partition, or the default template chunk length
+
+<details>
+<summary>Details</summary>
+
+The strip judged each cluster against ONE median waveform over the whole session.  A cell that
+drifts has no such waveform: the session median is the shape of no moment in particular, and the
+spread around it is drift plus contamination — the tail is sited on the sum and the contaminants
+sit under it.
+
+The scan now runs **per time chunk**.  The dialog's new *Time chunks* row offers:
+
+- **Template view partition** — the session drift partition of an open Template view (the
+  regions set there, or the ones it seeded).  The default when there is one.
+- **Uniform, N min** — equal chunks of the default template chunk length (*Preferences ▸ Cluster
+  view ▸ Scope granularity*, 12 min as shipped), tiled exactly as the Template view seeds a fresh
+  partition (`ceil(T / N)` equal regions).  The default otherwise.
+- **Whole session** — one template per cluster, the action as first shipped.
+
+Per chunk, a cluster's template and its two tails come from its spikes in that chunk.  A chunk
+with fewer of the cluster's spikes than *Min spikes* borrows its neighbours: its reference window
+grows one chunk each way until it holds enough; template and tails come from the window, and
+only the chunk's own spikes are flagged from it, so every spike is judged once.  A **seed** is
+read per chunk the same way (in the seed's own window), and with *Threshold from the seed too*
+each chunk gets the seed's cut for that stretch of time.  The cluster as a whole must still reach
+*Min spikes*.  The confirmation and the log say how many chunks were used and how many pooled.
+
+Measured on a synthetic unit whose channel profile moves linearly across the probe over an 80 s
+session, 116 contaminants among 1200 spikes (8 % with a weak foreign waveform added, plus the
+other unit's spikes that fall inside a window), defaults (k 3 / 3, min 40), 10 s chunks:
+
+| drift | scan | contaminants found | clean spikes flagged |
+|---|---|---|---|
+| none | whole session | 100 % | 0.0 % |
+| none | 8 chunks | 100 % | 1.1 % |
+| half | whole session | 50 % | 0.6 % |
+| half | 8 chunks | 97 % | 1.0 % |
+| full | whole session | 11 % | 1.6 % |
+| full | 8 chunks | 57 % | 0.6 % |
+| half | 40 chunks of 2 s (39 pooled) | 96 % | 1.7 % |
+| half | seed, fixed cut, whole session | 56 % | 4.5 % |
+| half | seed, fixed cut, 8 chunks | 100 % | 1.3 % |
+
+What the table does not hide: **without drift, chunking costs** about a point of clean spikes
+(smaller samples, noisier tails), and more with shorter chunks (1.7 % at 5 s) — so *Whole
+session* stays on offer.  Under full drift the chunked scan still misses 43 %: the drift within
+a 10 s chunk is itself a tenth of the way across, and shorter chunks did not help (56 % at 5 s).
+Larger *Min spikes* with short chunks acts as a sliding window (at half drift, min 400 over 10 s
+chunks: 99 %, 0.0 %).  All of this is one synthetic fixture; nothing here was run on a recording.
+
+Limits: the partition is taken from an OPEN Template view; a `.wtl` on disk with no Template
+view open is not read, and the uniform chunks are used.  Chunk boundaries are in seconds of the
+shown space's time column.
+
+- `KlustersDoc::detectResidualOutliers(..., chunkBoundsSec)`; `Data::spikeTimesInRecordingUnits`;
+  `TemplateView::driftPartition`.
+- Selftest: the `residualScan` step (the scan with no dialog, nothing applied) and
+  `test_residual_strip_chunks.py` (10 checks).
+
+</details>
 
 ---
 

@@ -1376,6 +1376,7 @@ public:
         long long nBoth    = 0;      ///< flagged by both terms
         long long nNoGain  = 0;      ///< flagged for carrying no template-shaped signal
         int       templateId = 0;    ///< the designated seed cluster, 0 when each scored its own
+        int       chunks   = 1;      ///< time chunks the scan ran in (1 = the whole session)
         bool      anyOffMargin = false; ///< some template left the off term something to look at
         bool      offBlind = false;  ///< the channel selection left the off term nothing to see
         QMap<int, QVector<ResidualFlag>> byCluster;  ///< cluster id -> its flagged spikes
@@ -1454,7 +1455,20 @@ public:
      *  The tails are cut on a distribution of real spikes either way, so what
      *  is flagged is contamination only if the contamination is a minority of
      *  whichever cluster sites the tail -- judge a run by inspecting the
-     *  product. */
+     *  product.
+     *
+     *  TIME CHUNKS.  @p chunkBoundsSec are the interior boundaries, in seconds,
+     *  of the time chunks to run in (empty = one chunk, the whole session).  A
+     *  cell's waveform drifts, so a session-wide median is the template of no
+     *  moment in particular and the spread around it is drift plus
+     *  contamination.  Per chunk, the template and the tails come from the
+     *  cluster's spikes IN THAT CHUNK, and a seed is read in that chunk too.  A
+     *  chunk holding fewer than @p minSpikes of the cluster's spikes borrows
+     *  its neighbours: its reference window grows one chunk each way until it
+     *  holds enough; the template and tails come from the window and only the
+     *  chunk's own spikes are flagged from it.  With a fixed seed cut a chunk
+     *  needs no statistic of its own and is scored as it stands.  The cluster
+     *  as a whole must still reach @p minSpikes. */
     ResidualOutlierResult detectResidualOutliers(const QList<int>& clusters,
                                                  double            kOn,
                                                  double            kOff,
@@ -1462,7 +1476,8 @@ public:
                                                  int               windowSamples,
                                                  long              minSpikes,
                                                  int               templateCluster,
-                                                 bool              thresholdFromTemplate);
+                                                 bool              thresholdFromTemplate,
+                                                 const std::vector<double>& chunkBoundsSec = {});
 
     /** Result of computeResidualPreview (non-mutating).  All waveform traces are
      *  channel-major, length nChan*nSamp (channel c, sample s at c*nSamp + s),

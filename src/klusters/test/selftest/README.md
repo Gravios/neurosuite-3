@@ -30,7 +30,11 @@ realigned under the smoothing-spline preference: the file's interpolator is dete
 from steering the lag: more collided spikes on their true time than with the whole window),
 `test_realign_center_window.py` (the post-alignment centering under that window -- `realignMode`
 in the spec: 1 PCA refine, 2 RMS recenter -- the whole-window RMS recenter carries the collided
-cluster into the collision tail, the windowed one leaves it on its true time).
+cluster into the collision tail, the windowed one leaves it on its true time),
+`test_residual_strip_chunks.py` (Strip Residual Outliers per time chunk -- the `residualScan`
+step, `chunkSeconds` -- on a unit that drifts across the probe: the chunked scan finds the
+contaminants a session-wide template hides; small chunks borrow their neighbours; a seed is
+read per chunk).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

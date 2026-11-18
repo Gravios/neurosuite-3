@@ -2592,6 +2592,20 @@ QList<int> Data::clustersInTimeWindow(long t0, long t1, int minSpikes) const {
     return out;
 }
 
+bool Data::spikeTimesInRecordingUnits(int clusterId, std::vector<long>& out) const {
+    QMutexLocker lk(&mutex);
+    out.clear();
+    if (!clusterInfoMap->contains(static_cast<dataType>(clusterId))) return false;
+    const ClusterInfo info = clusterInfoMap->value(static_cast<dataType>(clusterId));
+    const dataType first = info.firstSpikePosition();
+    const dataType n     = info.nbSpikes();
+    const int td = nbDimensions;                      // timestamp = last feature dimension
+    out.reserve(static_cast<size_t>(n));
+    for (dataType s = first; s < first + n; ++s)
+        out.push_back(static_cast<long>(features(static_cast<int>((*spikesByCluster)(1, s)), td)));
+    return true;
+}
+
 dataType Data::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin, QList <int>& fromClusters,QList <int>& emptyClusters){
     // Entry self-heal: this builder tiles spikesByClusterTemp straight from the
     // current clusterInfoMap ranges, so a map that already disagrees with the row

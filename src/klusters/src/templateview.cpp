@@ -812,6 +812,13 @@ void TemplateView::loadLineage()
     rebuildLineageTree();
 }
 
+bool TemplateView::driftPartition(neurosuite::drift::Partition& out) const
+{
+    if (!lineageLoaded || !lineageStore.partitionReady()) return false;
+    out = lineageStore.partition();
+    return true;
+}
+
 void TemplateView::rebuildPartitionStrip()
 {
     if (!partitionStrip) return;
