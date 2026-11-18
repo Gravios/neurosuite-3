@@ -1355,6 +1355,81 @@ public:
                                                  double            kMad,
                                                  long              minSpikes);
 
+    /** One spike flagged by detectResidualOutliers, with the term that caught
+     *  it.  The two terms are complementary, so which one fired is part of the
+     *  finding, not bookkeeping: the caller can shed them together or keep
+     *  them apart for review. */
+    struct ResidualFlag {
+        int  index  = 0;      ///< 0-based .spk record index
+        bool on     = false;  ///< exceeded the on-channel term's robust tail
+        bool off    = false;  ///< exceeded the off-channel term's robust tail
+        bool noGain = false;  ///< carried no template-shaped signal (a < minGain)
+    };
+
+    /** Result of detectResidualOutliers (non-mutating scan). */
+    struct ResidualOutlierResult {
+        bool      ok       = false;  ///< true iff the scan ran to completion
+        long long total    = 0;      ///< flagged spikes, union of the terms
+        int       scored   = 0;      ///< clusters that carried a usable template
+        long long nOn      = 0;      ///< flagged by the on-channel term alone
+        long long nOff     = 0;      ///< flagged by the off-channel term alone
+        long long nBoth    = 0;      ///< flagged by both terms
+        long long nNoGain  = 0;      ///< flagged for carrying no template-shaped signal
+        bool      offBlind = false;  ///< the channel selection left the off term nothing to see
+        QMap<int, QVector<ResidualFlag>> byCluster;  ///< cluster id -> its flagged spikes
+        QStringList perCluster;      ///< one diagnostic line per scored cluster
+        QString     reason;          ///< user-facing summary, caveat or error
+    };
+
+    /** Residual self-outlier scan: detectWaveformOutliers with the per-spike
+     *  GAIN divided out and the residual power SPLIT by how much of the
+     *  template each channel carries.  Non-mutating; parent scope; same read
+     *  path and median-template construction.
+     *
+     *  Per cluster, over the document's channel selection (all channels when
+     *  none), with T the cluster's own per-point median waveform:
+     *    h[t]  = SQUARED Hamming taper of @p windowSamples centred on the
+     *            template's peak sample, zero outside it (1 everywhere when
+     *            0).  Squared because the taper is an AMPLITUDE weight and
+     *            every form it enters below is quadratic.  Unlike the |T|
+     *            point kernel of detectWaveformOutliers it is CHANNEL-FREE,
+     *            so it does not vanish off-template -- which is exactly
+     *            where a displaced intruder shows itself.
+     *    E_c   = sum_t h T^2                      per-channel template energy
+     *    u_c   = E_c / max_c E_c in [0,1]         the on-channel weight
+     *    Eon   = sum_c u_c E_c
+     *    a     = sum_c u_c sum_t h x T / Eon      per-spike gain, fitted
+     *            ON-channel only so an intruder's off-channel energy cannot
+     *            inflate it and shrink its own off-residual
+     *    q_c   = sum_t h (x - a T)^2              per-channel residual power
+     *    onr   = sum_c u_c       q_c / (a^2 Eon)
+     *    offr  = sum_c (1 - u_c) q_c / (a^2 Eon)
+     *  Both dimensionless and gain-free; 1 = residual as large as the
+     *  template, the same convention as D.  u_c weights rather than splits, so
+     *  a flank channel at half the energy feeds both terms in proportion.
+     *
+     *  Each term gets its OWN robust tail, median + k * 1.4826 * MAD
+     *  (@p kOn, @p kOff; 0 disables that term), and the flagged sets are
+     *  UNIONED -- they are complementary, and their sum scores below the
+     *  on-channel term alone on the unit this was measured on.  Spikes whose
+     *  gain falls below @p minGain carry no template-shaped signal, cannot be
+     *  normalized by a^2, and are flagged outright and counted apart.
+     *  Clusters below @p minSpikes, with a flat template, or with a
+     *  degenerate (zero-MAD) term are left untouched.
+     *
+     *  A channel selection holding only the template's own channels leaves
+     *  every u_c near 1 and the off-channel term nothing to see; that is
+     *  reported as ResidualOutlierResult::offBlind rather than as a silent
+     *  zero.  The tails are cut on the cluster's OWN distribution, so what is
+     *  flagged is contamination only if the contamination is a minority and
+     *  far enough out -- judge a run by inspecting the product. */
+    ResidualOutlierResult detectResidualOutliers(const QList<int>& clusters,
+                                                 double            kOn,
+                                                 double            kOff,
+                                                 double            minGain,
+                                                 int               windowSamples,
+                                                 long              minSpikes);
+
     /** Result of computeResidualPreview (non-mutating).  All waveform traces are
      *  channel-major, length nChan*nSamp (channel c, sample s at c*nSamp + s),
      *  in raw .spk amplitude units, over ALL channels so they map 1:1 onto the

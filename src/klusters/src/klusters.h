@@ -432,6 +432,12 @@ private Q_SLOTS:
      *  its median waveform, robust MAD tail) into the artefact cluster.  The
      *  waveform counterpart of slotStripFeatureOutliers; shortcut Shift+X. */
     void slotStripWaveformOutliers();
+    /** Actions: strip each selected cluster's residual outliers -- Shift+X's
+     *  metric with the per-spike gain divided out and the residual power split
+     *  into an on-channel and an off-channel term, each cut at its own robust
+     *  tail.  Dialog-driven; does not replace Shift+X, which stays calibrated
+     *  to fiber-kit's shed knee.  See KlustersDoc::detectResidualOutliers. */
+    void slotStripResidualOutliers();
     /** Actions: pin a basis for the oblique (template-axis) projection.  Prompts
      *  for the cluster ids whose templates become the fixed axes, so a different
      *  cluster can be examined against them with Shift+O; empty input clears the
@@ -1473,6 +1479,7 @@ private:
     QAction *mPurgeSmallClusters;   // move all clusters below N spikes to noise
     QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
     QAction *mStripWaveformOutliers; // split waveform-residual outliers of selected clusters into a new cluster
+    QAction *mStripResidualOutliers = nullptr; // gain-free on/off-channel residual strip (dialog)
     QAction *mSetObliqueBasis;       // pin the oblique projection's template axes (Set Oblique Basis…)
     QAction *mMarkAsTemplate = nullptr;  // toggle the selected cluster(s) as template units (.wtf on save)
     QAction *mGenerateTemplate = nullptr;  // run fiber-template now for the selected cluster(s) only

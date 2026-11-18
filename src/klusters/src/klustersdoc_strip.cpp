@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <cstring>          // memcpy — overlay patch in the coalesced sweep
+#include <limits>
 #include <vector>
 
 #include <QDebug>
@@ -528,6 +529,360 @@ KlustersDoc::detectWaveformOutliers(const QList<int>& clusters,
                        .arg(minSpikes);
     return R;
 }
+
+
+// ---------------------------------------------------------------------------
+// detectResidualOutliers — the gain-free, on/off-channel split of the strip.
+//
+// detectWaveformOutliers flags the robust tail of ONE distance: the
+// kernel-weighted residual of a spike against its cluster's median waveform,
+// with no per-spike gain.  Two things that costs it on a contaminated unit:
+//
+//   * amplitude counts as distance.  A bursting cell's own small spikes, or a
+//     drifting one's, sit in the tail beside genuine intruders.  Measured on
+//     the curated interneuron this was built for (jg05-20120312 group 6,
+//     cluster 785's parent in exp_psame), amplitude ALONE separates the unit
+//     from its siblings at AUC 0.635 — a gain-blind distance is partly an
+//     amplitude cut wearing a shape cut's clothes.
+//   * the |T| point kernel is blind exactly where an intruder shows itself.
+//     It weights each point by the template's own magnitude, so off-template
+//     channels — the ones a spatially displaced contaminant lands on — carry
+//     almost no weight in the pooled distance.
+//
+// So: fit a per-spike gain a on the template's own channels, take the residual
+// r = x - a*T, and split its power by how much of the template each channel
+// carries.  Per cluster, over the document's channel selection:
+//
+//   T[c,t]  median waveform of the cluster's own spikes        (as above)
+//   h[t]    Hamming taper centred on the template's peak sample, 0 outside
+//           its window (1 everywhere when the window is off), SQUARED -- the
+//           taper is an amplitude weight and every form below is quadratic.
+//           CHANNEL-FREE, unlike |T|, so it survives off-template; its job is
+//           to drop the baseline flanks, where the residual is pure noise.
+//   E_c     = sum_t h T^2                 per-channel template energy
+//   u_c     = E_c / max_c E_c in [0,1]    the on-channel weight: the central
+//                                         median waveform's energy, per
+//                                         channel, normalized to its own
+//                                         strongest
+//   Eon     = sum_c u_c E_c               the scale everything is read against
+//   a       = sum_c u_c sum_t h x T / Eon the gain, fitted ON-channel only so
+//                                         an intruder's off-channel energy
+//                                         cannot inflate it and shrink its
+//                                         own off-residual
+//   q_c     = sum_t h (x - a T)^2         per-channel residual power
+//   onr     = sum_c u_c       q_c / (a^2 Eon)
+//   offr    = sum_c (1 - u_c) q_c / (a^2 Eon)
+//
+// Both are dimensionless and gain-free: 1 means "residual as large as the
+// template", the same convention as detectWaveformOutliers's D.  u_c is a
+// WEIGHT, not a hard channel split, so a flank channel at half the energy
+// feeds both terms in proportion.  offr is normalized by the ON-channel
+// energy on purpose — it asks "how much signal is there where this cell has
+// none, relative to this cell's own size", which is the question, and it does
+// not blow up on a channel whose own template energy is near zero.
+//
+// The two terms are COMPLEMENTARY and are thresholded SEPARATELY, their
+// flagged sets unioned.  Held out on that unit (template from half of the
+// curated cluster, scored on the other half against its siblings), AUC
+// conditional on amplitude: on-channel 0.887, off-channel 0.791, half-against-
+// half sanity 0.504-0.511.  Per sibling they come apart — one sibling is a
+// shape difference (on 0.943, off lower), another is spatially displaced (off
+// 0.786 while amplitude is blind at 0.522) — and their SUM scores 0.869,
+// BELOW the on-channel term alone.  Summing dilutes whichever term carries
+// the signal for that intruder, hence two tails, not one.
+//
+// Caveat, stated because it decides how to read a run: those are RANKING
+// scores against labelled siblings.  This action has no labels — it cuts each
+// term's robust tail, so what it flags is the tail of the unit's own
+// distribution, which is the contamination only if the contamination is both
+// a minority and far enough out.  Judge a run by looking at the product.
+//
+// Non-mutating, parent scope, same read path and median-template construction
+// as detectWaveformOutliers.  (That construction is duplicated rather than
+// shared: folding both onto one helper is the obvious follow-up, deliberately
+// not done in the same patch that introduces an unproven metric, so a
+// calibrated action is not touched by it.)
+// ---------------------------------------------------------------------------
+namespace {
+// Robust one-sided upper tail: median + k * 1.4826 * MAD.  The residual terms
+// are non-negative and right-skewed, so a symmetric sigma would misread them
+// (the same reason detectWaveformOutliers uses this cut).  Takes its copy by
+// value — nth_element reorders.  A degenerate (zero-MAD) distribution has no
+// tail to cut and returns infinity, flagging nothing.
+static double residRobustTail(std::vector<double> v, double kMad)
+{
+    if (v.empty()) return std::numeric_limits<double>::infinity();
+    const size_t mid = v.size() / 2;
+    std::nth_element(v.begin(), v.begin() + mid, v.end());
+    const double med = v[mid];
+    for (size_t i = 0; i < v.size(); ++i) v[i] = std::fabs(v[i] - med);
+    std::nth_element(v.begin(), v.begin() + mid, v.end());
+    const double mad = v[mid];
+    if (!(mad > 0.0)) return std::numeric_limits<double>::infinity();
+    return med + kMad * 1.4826 * mad;
+}
+
+static double residMedian(std::vector<double> v)
+{
+    if (v.empty()) return 0.0;
+    const size_t mid = v.size() / 2;
+    std::nth_element(v.begin(), v.begin() + mid, v.end());
+    return v[mid];
+}
+}  // namespace
+
+KlustersDoc::ResidualOutlierResult
+KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
+                                    double            kOn,
+                                    double            kOff,
+                                    double            minGain,
+                                    int               windowSamples,
+                                    long              minSpikes)
+{
+    ResidualOutlierResult R;
+
+    Data& layer = parentData();                     // parent scope (see header)
+    const int nCh   = layer.nbOfChannels();
+    const int nSamp = layer.nbOfSampleInWaveform();
+    if (nCh <= 0 || nSamp <= 0) {
+        R.reason = tr("The document carries no waveform geometry.");
+        return R;
+    }
+    if (kOn <= 0.0 && kOff <= 0.0) {
+        R.reason = tr("Both residual terms are off.  Set a tail multiplier "
+                      "above zero for the on-channel term, the off-channel "
+                      "term, or both.");
+        return R;
+    }
+    QList<int> chans = selectedChannels();          // validated, sorted, unique
+    if (chans.isEmpty())
+        for (int c = 0; c < nCh; ++c) chans.append(c);
+    const int nSel = chans.size();
+    const int P    = nSel * nSamp;
+
+    const std::shared_ptr<const Data::ClusteringSnapshot> snap = layer.currentSnapshot();
+    const Data::ClusteringSnapshot& spkSrc = *snap;
+
+    std::vector<int16_t> raw;
+    std::vector<float>   wav;
+    bool anyOffMargin = false;
+
+    for (int c : clusters) {
+        if (c < 2) continue;                        // never strip artefact / noise
+        SortableTable pos;
+        if (!layer.spikePositions(c, pos)) continue;
+        const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(c)));
+        if (n < minSpikes) continue;                // MAD too noisy below the floor
+
+        // ── the cluster's own median template (<=1024 evenly-strided) ──
+        const long step = std::max(1L, n / 1024L);
+        std::vector<float> tplBuf;
+        tplBuf.reserve(static_cast<size_t>(P) * std::min(n, 1024L));
+        long used = 0;
+        for (long s = 0; s < n; s += step) {
+            const long row = static_cast<long>(pos(1, s + 1));
+            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+            for (int ci = 0; ci < nSel; ++ci) {
+                const float* src = &wav[static_cast<size_t>(chans[ci]) * nSamp];
+                tplBuf.insert(tplBuf.end(), src, src + nSamp);
+            }
+            ++used;
+        }
+        if (used < 8) continue;                      // too few readable waveforms
+        std::vector<float> T(static_cast<size_t>(P));
+        std::vector<float> col(static_cast<size_t>(used));
+        for (int p = 0; p < P; ++p) {
+            for (long i = 0; i < used; ++i)
+                col[static_cast<size_t>(i)] = tplBuf[static_cast<size_t>(i) * P + p];
+            std::nth_element(col.begin(), col.begin() + used / 2, col.end());
+            T[static_cast<size_t>(p)] = col[static_cast<size_t>(used / 2)];
+        }
+
+        // ── h[t]: the temporal taper, centred on the template's peak ──
+        // Pooled over the selected channels, so it lands on the dominant
+        // channel's trough in practice.  Channel-free by construction: the
+        // whole point is a weight that does NOT vanish off-template.
+        //
+        // h holds the taper SQUARED, because the taper belongs in the
+        // amplitude domain -- it tapers the waveform, h_amp * x -- and every
+        // place it is used below (h x T, h T^2, h r^2) is quadratic in
+        // amplitude.  Storing h_amp^2 once is the same statistic as tapering
+        // x and T and then squaring, which is what the offline measurement
+        // this metric comes from did; storing h_amp instead would be a
+        // DIFFERENT, untested weighting.
+        std::vector<double> h(static_cast<size_t>(nSamp), 1.0);
+        if (windowSamples > 0) {
+            int tPeak = 0;
+            double best = -1.0;
+            for (int t = 0; t < nSamp; ++t) {
+                double e = 0.0;
+                for (int ci = 0; ci < nSel; ++ci) {
+                    const double v = T[static_cast<size_t>(ci) * nSamp + t];
+                    e += v * v;
+                }
+                if (e > best) { best = e; tPeak = t; }
+            }
+            constexpr double twoPi = 6.283185307179586;
+            const int half = std::max(1, windowSamples / 2);
+            for (int t = 0; t < nSamp; ++t) {
+                const int d = t - tPeak;
+                if (d < -half || d > half) { h[static_cast<size_t>(t)] = 0.0; continue; }
+                const double x  = static_cast<double>(d + half) / (2.0 * half);
+                const double amp = 0.54 - 0.46 * std::cos(twoPi * x);
+                h[static_cast<size_t>(t)] = amp * amp;      // amplitude taper, squared
+            }
+        }
+
+        // ── per-channel template energy E_c -> the on-channel weight u_c ──
+        std::vector<double> Ec(static_cast<size_t>(nSel), 0.0);
+        double maxEc = 0.0;
+        for (int ci = 0; ci < nSel; ++ci) {
+            double e = 0.0;
+            for (int t = 0; t < nSamp; ++t) {
+                const double v = T[static_cast<size_t>(ci) * nSamp + t];
+                e += h[static_cast<size_t>(t)] * v * v;
+            }
+            Ec[static_cast<size_t>(ci)] = e;
+            maxEc = std::max(maxEc, e);
+        }
+        if (!(maxEc > 0.0)) continue;                // flat template on the selection
+        std::vector<double> u(static_cast<size_t>(nSel), 0.0);
+        double Eon = 0.0, offMargin = 0.0;
+        for (int ci = 0; ci < nSel; ++ci) {
+            u[static_cast<size_t>(ci)] = Ec[static_cast<size_t>(ci)] / maxEc;
+            Eon       += u[static_cast<size_t>(ci)] * Ec[static_cast<size_t>(ci)];
+            offMargin += 1.0 - u[static_cast<size_t>(ci)];
+        }
+        if (!(Eon > 0.0)) continue;
+        // Off-channel margin: with only the template's own channel(s) selected
+        // every u_c is ~1, offr is identically ~0, and its tail cuts nothing.
+        // Recorded so the caller can say so instead of reporting a silent zero.
+        if (offMargin > 0.25) anyOffMargin = true;
+
+        // ── the two terms, per spike ──
+        std::vector<double> onv, offv;
+        std::vector<long>   rows;
+        std::vector<char>   noGain;
+        onv.reserve(static_cast<size_t>(n));
+        offv.reserve(static_cast<size_t>(n));
+        rows.reserve(static_cast<size_t>(n));
+        noGain.reserve(static_cast<size_t>(n));
+        for (long s = 0; s < n; ++s) {
+            const long row = static_cast<long>(pos(1, s + 1));
+            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+
+            // a = sum_c u_c sum_t h x T / Eon  (Eon is that same sum with x=T).
+            double num = 0.0;
+            for (int ci = 0; ci < nSel; ++ci) {
+                const float* xw = &wav[static_cast<size_t>(chans[ci]) * nSamp];
+                const float* tp = &T[static_cast<size_t>(ci) * nSamp];
+                double na = 0.0;
+                for (int t = 0; t < nSamp; ++t)
+                    na += h[static_cast<size_t>(t)] * static_cast<double>(xw[t]) * tp[t];
+                num += u[static_cast<size_t>(ci)] * na;
+            }
+            const double a = num / Eon;
+
+            rows.push_back(row);
+            if (!(a >= minGain)) {
+                // No template-shaped signal, or anti-correlated with it: the
+                // ratios divide by a^2 and would be meaningless (or infinite).
+                // Flagged outright and counted apart, rather than scored.
+                onv.push_back(0.0);
+                offv.push_back(0.0);
+                noGain.push_back(1);
+                continue;
+            }
+            noGain.push_back(0);
+
+            double qOn = 0.0, qOff = 0.0;
+            for (int ci = 0; ci < nSel; ++ci) {
+                const float* xw = &wav[static_cast<size_t>(chans[ci]) * nSamp];
+                const float* tp = &T[static_cast<size_t>(ci) * nSamp];
+                double qc = 0.0;
+                for (int t = 0; t < nSamp; ++t) {
+                    const double r = static_cast<double>(xw[t]) - a * tp[t];
+                    qc += h[static_cast<size_t>(t)] * r * r;
+                }
+                qOn  += u[static_cast<size_t>(ci)]         * qc;
+                qOff += (1.0 - u[static_cast<size_t>(ci)]) * qc;
+            }
+            const double nrm = a * a * Eon;
+            onv.push_back(qOn  / nrm);
+            offv.push_back(qOff / nrm);
+        }
+        if (rows.size() < static_cast<size_t>(minSpikes)) continue;
+
+        // ── a robust tail per term, over the SCORED spikes only ──
+        // The no-gain spikes are already flagged; leaving them in would drag
+        // the median and MAD of distributions they are not members of.
+        std::vector<double> onOk, offOk;
+        onOk.reserve(onv.size());
+        offOk.reserve(offv.size());
+        for (size_t i = 0; i < onv.size(); ++i) {
+            if (noGain[i]) continue;
+            onOk.push_back(onv[i]);
+            offOk.push_back(offv[i]);
+        }
+        const double inf   = std::numeric_limits<double>::infinity();
+        const double thrOn  = (kOn  > 0.0) ? residRobustTail(onOk,  kOn)  : inf;
+        const double thrOff = (kOff > 0.0) ? residRobustTail(offOk, kOff) : inf;
+
+        QVector<ResidualFlag> flagged;
+        long cOn = 0, cOff = 0, cBoth = 0, cNo = 0;
+        for (size_t i = 0; i < rows.size(); ++i) {
+            ResidualFlag f;
+            f.index  = static_cast<int>(rows[i]) - 1;     // -> 0-based .spk index
+            f.noGain = (noGain[i] != 0);
+            if (!f.noGain) {
+                f.on  = onv[i]  > thrOn;
+                f.off = offv[i] > thrOff;
+            }
+            if (!(f.on || f.off || f.noGain)) continue;
+            flagged.append(f);
+            if (f.noGain)          ++cNo;
+            else if (f.on && f.off) ++cBoth;
+            else if (f.on)          ++cOn;
+            else                    ++cOff;
+        }
+
+        R.perCluster.append(
+            tr("%1: %2 scored, median on=%3 off=%4, tail on>%5 off>%6 "
+               "-> %7 flagged (%8 on, %9 off, %10 both, %11 no-gain)")
+                .arg(clusterLabel(c))
+                .arg(onOk.size())
+                .arg(residMedian(onOk),  0, 'g', 3)
+                .arg(residMedian(offOk), 0, 'g', 3)
+                .arg(thrOn  == inf ? QStringLiteral("off") : QString::number(thrOn,  'g', 3))
+                .arg(thrOff == inf ? QStringLiteral("off") : QString::number(thrOff, 'g', 3))
+                .arg(flagged.size()).arg(cOn).arg(cOff).arg(cBoth).arg(cNo));
+
+        if (!flagged.isEmpty()) {
+            R.total += flagged.size();
+            R.nOn   += cOn;
+            R.nOff  += cOff;
+            R.nBoth += cBoth;
+            R.nNoGain += cNo;
+            R.byCluster.insert(c, flagged);
+        }
+        ++R.scored;
+    }
+
+    R.ok = true;
+    R.offBlind = (kOff > 0.0 && !anyOffMargin);
+    if (R.scored == 0)
+        R.reason = tr("Strip residual outliers: no selected cluster carries "
+                      "enough spikes (>= %1) for a stable median waveform.")
+                       .arg(minSpikes);
+    else if (R.offBlind)
+        R.reason = tr("The channel selection carries no off-template margin — "
+                      "every selected channel holds nearly all of the "
+                      "template's energy, so the off-channel term has nothing "
+                      "to look at.  Clear the channel selection (or add the "
+                      "quiet channels) to use it.");
+    return R;
+}
+
 
 
 // ---------------------------------------------------------------------------

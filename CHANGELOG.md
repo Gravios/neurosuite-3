@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | [Klusters: Strip Residual Outliers -- the per-spike gain divided out, the residual split on-channel / off-channel](#2026-11-18--klusters-strip-residual-outliers--the-per-spike-gain-divided-out-the-residual-split-on-channel--off-channel) |
 | 2026-11-12 | [Klusters: a renumber-to-end (T) or a sort between an edit and its post-edit chain left the parked landing and the queued realign on the old ids -- a neighbouring cluster joined the selection](#2026-11-12--klusters-a-renumber-to-end-t-or-a-sort-between-an-edit-and-its-post-edit-chain-left-the-parked-landing-and-the-queued-realign-on-the-old-ids----a-neighbouring-cluster-joined-the-selection) |
 | 2026-11-12 | [Klusters: the Space box rescans the session's feature spaces when opened](#2026-11-12--klusters-the-space-box-rescans-the-sessions-feature-spaces-when-opened) |
 | 2026-11-11 | [Klusters: a super-sampled space is re-cut with the interpolator it was built with (detected from its rows), not the preference](#2026-11-11--klusters-a-super-sampled-space-is-re-cut-with-the-interpolator-it-was-built-with-detected-from-its-rows-not-the-preference) |
@@ -196,6 +197,97 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-18 — Klusters: Strip Residual Outliers — the per-spike gain divided out, the residual split on-channel / off-channel
+
+<details>
+<summary>Details</summary>
+
+`Strip Waveform Outliers` (Shift+X) flags the robust tail of one distance: the kernel-weighted
+residual of a spike against its cluster's median waveform, `D = sqrt(sum w (x-T)^2 / sum w T^2)`
+with `w[p] = |T[p]|`.  Two things that costs on a contaminated unit:
+
+* **amplitude counts as distance.**  There is no per-spike gain, so a bursting cell's own small
+  spikes sit in the tail beside genuine intruders.  Measured on the unit this was built for
+  (`jg05-20120312` group 6, the `exp_psame` parent of the curated cluster 785 — an interneuron at
+  3.3 Hz, medium-low waveform energy), amplitude ALONE separates the unit from its siblings at
+  held-out AUC 0.635.  A gain-blind distance is partly an amplitude cut wearing a shape cut's
+  clothes.
+* **the `|T|` point kernel is blind exactly where an intruder shows itself.**  It weights each
+  point by the template's own magnitude, so the off-template channels — where a spatially
+  displaced contaminant lands — carry almost no weight in the pooled `D`.
+
+The new action fits a per-spike gain on the template's own channels, takes `r = x - a*T`, and
+splits the residual's power by how much of the template each channel carries.  Per cluster, over
+the document's channel selection, with `T` the cluster's own per-point median waveform:
+
+```
+h[t]  = SQUARED Hamming taper of `window` samples centred on the template's peak,
+        0 outside (1 everywhere when 0).  Squared because the taper is an amplitude
+        weight and every form below is quadratic -- the same statistic as tapering
+        x and T and then squaring, which is what the offline measurement did.
+        CHANNEL-FREE, unlike |T|, so it survives off-template; its job is to drop
+        the baseline flanks, where the residual is pure noise.
+E_c   = sum_t h T^2                      per-channel template energy
+u_c   = E_c / max_c E_c in [0,1]         the on-channel weight
+Eon   = sum_c u_c E_c
+a     = sum_c u_c sum_t h x T / Eon      per-spike gain, fitted ON-channel only so an
+                                         intruder's off-channel energy cannot inflate it
+                                         and shrink its own off-residual
+q_c   = sum_t h (x - a T)^2              per-channel residual power
+onr   = sum_c u_c       q_c / (a^2 Eon)
+offr  = sum_c (1 - u_c) q_c / (a^2 Eon)
+```
+
+Both dimensionless and gain-free; 1 means "residual as large as the template", the same
+convention as `D`.  `u_c` *weights* rather than splits, so a flank channel at half the energy
+feeds both terms in proportion.  `offr` is normalized by the ON-channel energy on purpose: it
+asks how much signal there is where this cell has none, relative to this cell's own size, and so
+does not blow up on a channel whose own template energy is near zero.
+
+**The two terms are thresholded separately and the flagged sets union.**  Each gets its own
+robust tail `median + k*1.4826*MAD` (`kOn`, `kOff`; 0 disables that term).  They are
+complementary, not two views of one quantity.  Held out on that unit — template from half of the
+curated cluster, scored on the other half against its siblings — AUC conditional on amplitude:
+on-channel 0.887, off-channel 0.791, half-against-half sanity 0.504–0.511.  Per sibling they come
+apart: one is a shape difference (on-channel 0.943), another is spatially displaced (off-channel
+0.786 while amplitude alone is blind at 0.522).  Their **sum** scores 0.869, *below the
+on-channel term alone* — summing dilutes whichever term carries the signal for that intruder.
+Same statistic in PCA feature space (what `Data` holds, no waveform read): on 0.892, off 0.759,
+sanity 0.504.
+
+Spikes whose fitted gain falls below `minGain` carry no template-shaped signal, cannot be
+normalized by `a^2`, and are flagged outright and counted apart rather than scored.  A channel
+selection holding only the template's own channels leaves every `u_c` near 1 and the off-channel
+term nothing to see; that is reported (`offBlind`) rather than returned as a silent zero.
+
+A **sibling of Shift+X, not a replacement** — that gesture stays calibrated to fiber-kit's shed
+knee (`FK_CONS_SHED_K`), so the two can be run on the same cluster and compared.  Dialog-driven
+(five knobs, unit-dependent) and deliberately unbound; bind `action.stripResidualOutliers` in the
+input registry if it earns a chord.  Non-mutating scan → confirm (default No) → one undoable
+`createNewCluster` per product, the lasso's row-named builder.  "Keep the terms apart" makes up to
+three products — on-channel only, off-channel only, both-or-no-gain — each its own undo step, so a
+test run can judge the two terms separately.  The shed spikes land in a fresh cluster, not the
+artefact bin: a self-outlier strip is a hypothesis to review.  Per-cluster medians and sited
+thresholds go to the confirm dialog and to `qDebug` (`[residual-strip]`), because a flagged count
+alone does not say whether the thresholds are anywhere near the data.
+
+Caveat, stated because it decides how to read a run: those AUCs are *ranking* scores against
+labelled siblings.  The action has no labels — it cuts each term's robust tail, so what it flags
+is the tail of the unit's own distribution, which is the contamination only if the contamination
+is a minority and far enough out.  Judge a run by inspecting the product.
+
+The median-template construction is duplicated from `detectWaveformOutliers` rather than shared;
+folding both onto one helper is the obvious follow-up, deliberately not done in the same patch
+that introduces an unproven metric.
+
+`klustersdoc.h` (`ResidualFlag`, `ResidualOutlierResult`, `detectResidualOutliers`),
+`klustersdoc_strip.cpp`, `klusters.h`, `klusters.cpp` (`mStripResidualOutliers`,
+`slotStripResidualOutliers`, `action.stripResidualOutliers`).
+
+</details>
 
 ---
 

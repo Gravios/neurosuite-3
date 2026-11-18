@@ -528,6 +528,22 @@ void KlustersApp::createMenus()
     connect(mStripWaveformOutliers, &QAction::triggered,
             this, &KlustersApp::slotStripWaveformOutliers);
 
+    // The same strip with the per-spike GAIN divided out and the residual power
+    // split by how much of the template each channel carries: an on-channel
+    // term (wrong shape at the cell's own site) and an off-channel one (signal
+    // where this cell has none), each cut at its own robust tail and unioned.
+    // A sibling of Shift+X rather than a replacement -- that gesture is
+    // calibrated to fiber-kit's shed knee, so the two stay comparable on the
+    // same cluster.  Dialog-driven (five knobs, unit-dependent) and
+    // deliberately unbound: bind it in the input registry if it earns a chord.
+    mStripResidualOutliers = actionMenu->addAction(tr("Strip &Residual Outliers\u2026"));
+    mStripResidualOutliers->setToolTip(
+        tr("Split each selected cluster's gain-free residual outliers -- "
+           "on-channel (shape) and off-channel (position) terms, separately "
+           "thresholded -- off into new clusters.  Undoable."));
+    connect(mStripResidualOutliers, &QAction::triggered,
+            this, &KlustersApp::slotStripResidualOutliers);
+
     // Pin the oblique (template-axis) projection's basis.  The oblique view
     // (Shift+O) normally uses the SELECTED clusters as its axes; this fixes a
     // chosen pair (or more) as the axes so a DIFFERENT cluster can be examined
@@ -2610,6 +2626,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("action.purgeSmallClusters"),   QStringLiteral("Actions"), mPurgeSmallClusters);
     registerActionCommand(QStringLiteral("action.stripOutliers"),        QStringLiteral("Actions"), mStripOutliers);
     registerActionCommand(QStringLiteral("action.stripWaveformOutliers"),QStringLiteral("Actions"), mStripWaveformOutliers);
+    registerActionCommand(QStringLiteral("action.stripResidualOutliers"),QStringLiteral("Actions"), mStripResidualOutliers);
     registerActionCommand(QStringLiteral("action.setObliqueBasis"),      QStringLiteral("Actions"), mSetObliqueBasis);
     registerActionCommand(QStringLiteral("action.markAsTemplate"),       QStringLiteral("Actions"), mMarkAsTemplate);
     registerActionCommand(QStringLiteral("action.generateTemplate"),     QStringLiteral("Actions"), mGenerateTemplate);
@@ -7108,6 +7125,270 @@ void KlustersApp::slotStripWaveformOutliers()
     slotStatusMsg(tr("Stripped %1 waveform outlier spike(s) from %2 cluster(s) "
                      "into new cluster %3.")
                       .arg(R.total).arg(sources.size()).arg(newCluster));
+}
+
+// ---------------------------------------------------------------------------
+// slotStripResidualOutliers  --  gain-free, on/off-channel residual strip
+//
+// Shift+X's metric with two changes: the per-spike GAIN is divided out, and
+// the residual power is split by how much of the template each channel
+// carries -- an on-channel term (shape mismatch at the cell's own site) and an
+// off-channel term (signal where this cell has none).  Both are thresholded on
+// their own robust tail and the flagged sets union, because they are
+// complementary: on the unit this was measured on one sibling separates on
+// shape (on-channel AUC 0.943) and another on position (off-channel 0.786
+// while amplitude alone is blind at 0.522), and their SUM scores below the
+// on-channel term alone.  See KlustersDoc::detectResidualOutliers for the
+// metric and the held-out numbers.
+//
+// Dialog-driven rather than a bare shortcut: five knobs, and the sane values
+// depend on the unit.  It does NOT replace Shift+X -- that gesture is
+// calibrated to fiber-kit's shed knee (FK_CONS_SHED_K) and stays as it is, so
+// the two can be run on the same cluster and compared.
+//
+// Same shape as the waveform strip otherwise: a non-mutating scan, the user
+// confirms the exact count (default No), then one undoable createNewCluster
+// per product.  The shed spikes land in a fresh cluster, not the artefact bin
+// -- a self-outlier strip is a hypothesis, and parking it where the curator
+// can look at it keeps the gesture reversible in practice as well as by
+// Ctrl+Z.  "Keep the terms apart" makes up to three products (on-channel
+// only, off-channel only, both-or-no-gain), each its own undo step, so a test
+// run can judge the two terms separately.  Parent scope only: the scan reads
+// parentData() and the split runs on the active layer.
+// ---------------------------------------------------------------------------
+void KlustersApp::slotStripResidualOutliers()
+{
+    KlustersView* view = activeView();
+    if (!view) return;
+
+    if (doc->isChildClusteringActive()) {
+        slotStatusMsg(tr("Strip residual outliers: switch to the parent clustering "
+                         "first (the strip does not operate on atoms)."));
+        return;
+    }
+
+    QList<int> selected = view->clusters();
+    selected.removeAll(0);
+    selected.removeAll(1);
+    doc->leaveOutReserved(selected, tr("Strip residual outliers"));
+    if (selected.isEmpty()) {
+        slotStatusMsg(tr("Strip residual outliers: select one or more clusters first."));
+        return;
+    }
+
+    // ── Parameter dialog ─────────────────────────────────────────────────
+    const int nSamp = doc->parentData().nbOfSampleInWaveform();
+    static double lastKOn    = 3.0;                 // Shift+X's shed knee, per term
+    static double lastKOff   = 3.0;
+    static double lastMinGain = 0.25;
+    static int    lastWindow = -1;                  // -1 = not set; half the waveform
+    static int    lastMinSpikes = 40;
+    static bool   lastSeparate  = true;             // a test run wants them apart
+    if (lastWindow < 0) lastWindow = std::max(1, nSamp / 2);
+
+    QDialog dlg(this);
+    dlg.setWindowTitle(tr("Strip Residual Outliers"));
+    QVBoxLayout* outer = new QVBoxLayout(&dlg);
+    QLabel* intro = new QLabel(tr(
+        "<p>Each selected cluster's spikes are fitted to its <b>own median "
+        "waveform</b> with a per-spike gain, so amplitude is divided out "
+        "rather than counted as distance.  What is left — the residual — is "
+        "split by how much of the template each channel carries: an "
+        "<b>on-channel</b> term (the wrong shape where this cell lives) and an "
+        "<b>off-channel</b> term (signal where this cell has none).  Each term "
+        "is cut at its own robust tail, median + k·1.4826·MAD, and the flagged "
+        "spikes are split off into a new cluster to inspect — nothing is "
+        "discarded, and Ctrl+Z undoes it.</p>"
+        "<p>The terms are complementary: a contaminant of a different cell "
+        "type moves the on-channel term, one from a different site moves the "
+        "off-channel term.  Keep them apart to see which.</p>"), &dlg);
+    intro->setWordWrap(true);
+    outer->addWidget(intro);
+
+    QFormLayout* form = new QFormLayout();
+    QDoubleSpinBox* onBox = new QDoubleSpinBox(&dlg);
+    onBox->setRange(0.0, 20.0);
+    onBox->setSingleStep(0.5);
+    onBox->setDecimals(1);
+    onBox->setValue(lastKOn);
+    onBox->setToolTip(tr("Tail multiplier for the on-channel residual.  "
+        "0 disables the term.  Lower strips more."));
+    QDoubleSpinBox* offBox = new QDoubleSpinBox(&dlg);
+    offBox->setRange(0.0, 20.0);
+    offBox->setSingleStep(0.5);
+    offBox->setDecimals(1);
+    offBox->setValue(lastKOff);
+    offBox->setToolTip(tr("Tail multiplier for the off-channel residual.  "
+        "0 disables the term.  Needs channels the template does NOT dominate "
+        "— clear the channel selection if it holds only the cell's own site."));
+    QDoubleSpinBox* gainBox = new QDoubleSpinBox(&dlg);
+    gainBox->setRange(0.0, 1.0);
+    gainBox->setSingleStep(0.05);
+    gainBox->setDecimals(2);
+    gainBox->setValue(lastMinGain);
+    gainBox->setToolTip(tr("A spike whose fitted gain falls below this carries "
+        "no template-shaped signal (0 = none, 1 = template-sized) and cannot "
+        "be normalized by it, so it is flagged outright and counted apart."));
+    QSpinBox* winBox = new QSpinBox(&dlg);
+    winBox->setRange(0, std::max(1, nSamp));
+    winBox->setValue(lastWindow);
+    winBox->setToolTip(tr("Width in samples of the Hamming taper centred on "
+        "the template's peak.  The baseline flanks are pure noise, so tapering "
+        "them out is what makes the off-channel term readable.  0 = the whole "
+        "waveform, untapered."));
+    QSpinBox* minBox = new QSpinBox(&dlg);
+    minBox->setRange(8, 100000);
+    minBox->setValue(lastMinSpikes);
+    minBox->setToolTip(tr("Clusters smaller than this are skipped: the MAD of "
+        "their residual is too noisy to site a tail on."));
+    QCheckBox* sepBox = new QCheckBox(&dlg);
+    sepBox->setChecked(lastSeparate);
+    sepBox->setToolTip(tr("Checked: up to three new clusters — on-channel "
+        "only, off-channel only, and both-or-no-gain — each its own undo step, "
+        "so the two terms can be judged separately.  Unchecked: one cluster "
+        "for everything flagged, one undo step."));
+
+    const QList<int>& chSel = doc->selectedChannels();
+    QString chText;
+    if (chSel.isEmpty()) {
+        chText = tr("all %1 channels (no channel selection)")
+                     .arg(doc->parentData().nbOfChannels());
+    } else {
+        QStringList parts;
+        for (int c : chSel) parts.append(QString::number(c));
+        chText = tr("channels %1 (current selection)")
+                     .arg(parts.join(QStringLiteral(", ")));
+    }
+
+    form->addRow(tr("On-channel tail k (0 = off):"),  onBox);
+    form->addRow(tr("Off-channel tail k (0 = off):"), offBox);
+    form->addRow(tr("Min gain:"),                     gainBox);
+    form->addRow(tr("Taper window (samples, 0 = whole):"), winBox);
+    form->addRow(tr("Min spikes per cluster:"),       minBox);
+    form->addRow(tr("Keep the terms apart:"),         sepBox);
+    form->addRow(tr("Clusters:"), new QLabel(
+        tr("the %1 selected").arg(selected.size()), &dlg));
+    form->addRow(tr("Restricted to:"), new QLabel(chText, &dlg));
+    outer->addLayout(form);
+
+    QDialogButtonBox* buttons = new QDialogButtonBox(
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    outer->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    if (dlg.exec() != QDialog::Accepted) return;
+
+    const double kOn      = onBox->value();
+    const double kOff     = offBox->value();
+    const double minGain  = gainBox->value();
+    const int    window   = winBox->value();
+    const long   minSpk   = static_cast<long>(minBox->value());
+    const bool   separate = sepBox->isChecked();
+    lastKOn = kOn; lastKOff = kOff; lastMinGain = minGain;
+    lastWindow = window; lastMinSpikes = minBox->value(); lastSeparate = separate;
+
+    // ── Scan ─────────────────────────────────────────────────────────────
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::ResidualOutlierResult R =
+        doc->detectResidualOutliers(selected, kOn, kOff, minGain, window, minSpk);
+    QApplication::restoreOverrideCursor();
+
+    // The per-cluster diagnostic is the point of a test run: the medians and
+    // the sited tails say whether the thresholds are anywhere near the data,
+    // which the flagged count alone does not.  Always logged, run or not.
+    for (const QString& line : R.perCluster)
+        qDebug().noquote() << QStringLiteral("[residual-strip] ") + line;
+
+    if (!R.ok) {
+        QMessageBox::warning(this, tr("Strip Residual Outliers"),
+            R.reason.isEmpty() ? tr("The scan did not run.") : R.reason);
+        return;
+    }
+    if (R.total == 0) {
+        QString msg = tr("Nothing flagged in the %1 scored cluster(s): no spike "
+                         "lies beyond its cluster's own tail.").arg(R.scored);
+        if (!R.reason.isEmpty()) msg += QStringLiteral("\n\n") + R.reason;
+        if (!R.perCluster.isEmpty())
+            msg += QStringLiteral("\n\n") + R.perCluster.join(QStringLiteral("\n"));
+        QMessageBox::information(this, tr("Strip Residual Outliers"), msg);
+        return;
+    }
+
+    QString detail = tr("Split %1 flagged spike(s) off into %2?\n\n"
+                        "%3 by the on-channel term, %4 by the off-channel term, "
+                        "%5 by both, %6 carrying no template-shaped signal.\n"
+                        "%7 of %8 selected cluster(s) contribute.  "
+                        "This can be undone.")
+                        .arg(R.total)
+                        .arg(separate ? tr("up to three new clusters, one per term")
+                                      : tr("one new cluster"))
+                        .arg(R.nOn).arg(R.nOff).arg(R.nBoth).arg(R.nNoGain)
+                        .arg(R.byCluster.size()).arg(selected.size());
+    if (R.offBlind) detail += QStringLiteral("\n\n") + R.reason;
+    if (!R.perCluster.isEmpty())
+        detail += QStringLiteral("\n\n") + R.perCluster.join(QStringLiteral("\n"));
+
+    QMessageBox box(QMessageBox::Question, tr("Strip Residual Outliers"),
+                    detail, QMessageBox::Yes | QMessageBox::No, this);
+    box.setDefaultButton(QMessageBox::No);
+    if (box.exec() != QMessageBox::Yes) return;
+
+    // ── Apply ────────────────────────────────────────────────────────────
+    // createNewCluster, the row-named builder the t-SNE lasso's NEW_CLUSTER
+    // gesture uses -- NOT moveSpikeSubsetToCluster into a fresh id, which
+    // lands spikes in an id no view and no colour knows about (see the lasso
+    // note in clusterview.cpp).  detectResidualOutliers returns 0-based .spk
+    // indices; the builder speaks 1-based feature rows, so each is lifted
+    // by +1.
+    //
+    // Buckets: with the terms kept apart, on-only / off-only /
+    // both-or-no-gain, in that order; otherwise everything in one.  A bucket
+    // with no spikes is skipped, so a run that only moved one term makes one
+    // cluster.
+    struct Bucket { QString tag; QSet<dataType> rows; QList<int> sources; };
+    QVector<Bucket> buckets;
+    if (separate) {
+        buckets.append({ tr("on-channel"),  {}, {} });
+        buckets.append({ tr("off-channel"), {}, {} });
+        buckets.append({ tr("both/no-gain"), {}, {} });
+    } else {
+        buckets.append({ tr("residual"), {}, {} });
+    }
+    for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it) {
+        for (const KlustersDoc::ResidualFlag& f : it.value()) {
+            int b = 0;
+            if (separate) {
+                if (f.noGain || (f.on && f.off)) b = 2;
+                else if (f.off)                  b = 1;
+                else                             b = 0;
+            }
+            buckets[b].rows.insert(static_cast<dataType>(f.index + 1));
+            if (!buckets[b].sources.contains(it.key()))
+                buckets[b].sources.append(it.key());
+        }
+    }
+
+    QStringList made;
+    long long placed = 0;
+    for (const Bucket& b : buckets) {
+        if (b.rows.isEmpty()) continue;
+        const SpikeSelection selection(b.rows,
+                                       QStringLiteral("residual_outlier_strip"));
+        const int newCluster = doc->createNewCluster(selection, b.sources);
+        if (newCluster <= 1) continue;               // 0 = nothing; 1 = noise
+        made.append(tr("%1 -> %2 (%3 spikes)")
+                        .arg(b.tag).arg(clusterLabel(newCluster))
+                        .arg(b.rows.size()));
+        placed += b.rows.size();
+    }
+    if (made.isEmpty()) {
+        slotStatusMsg(tr("Strip residual outliers: the %1 flagged spike(s) could "
+                         "not be split into a new cluster.").arg(R.total));
+        return;
+    }
+    slotStatusMsg(tr("Stripped %1 residual outlier spike(s) from %2 cluster(s): %3.")
+                      .arg(placed).arg(R.byCluster.size())
+                      .arg(made.join(QStringLiteral(", "))));
 }
 
 // ---------------------------------------------------------------------------
