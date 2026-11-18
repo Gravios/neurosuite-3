@@ -1375,6 +1375,8 @@ public:
         long long nOff     = 0;      ///< flagged by the off-channel term alone
         long long nBoth    = 0;      ///< flagged by both terms
         long long nNoGain  = 0;      ///< flagged for carrying no template-shaped signal
+        int       templateId = 0;    ///< the designated seed cluster, 0 when each scored its own
+        bool      anyOffMargin = false; ///< some template left the off term something to look at
         bool      offBlind = false;  ///< the channel selection left the off term nothing to see
         QMap<int, QVector<ResidualFlag>> byCluster;  ///< cluster id -> its flagged spikes
         QStringList perCluster;      ///< one diagnostic line per scored cluster
@@ -1420,15 +1422,47 @@ public:
      *  A channel selection holding only the template's own channels leaves
      *  every u_c near 1 and the off-channel term nothing to see; that is
      *  reported as ResidualOutlierResult::offBlind rather than as a silent
-     *  zero.  The tails are cut on the cluster's OWN distribution, so what is
-     *  flagged is contamination only if the contamination is a minority and
-     *  far enough out -- judge a run by inspecting the product. */
+     *  zero.
+     *
+     *  @p templateCluster, when > 1, designates a SEED -- the clean core the
+     *  curator has already carved -- and changes both halves of the gesture.
+     *  The template comes from the seed's median instead of each scored
+     *  cluster's own, and with @p thresholdFromTemplate the CUT comes from the
+     *  seed's own score distribution too, fixed across every scored cluster.
+     *  The seed is removed from the scored list; it is never stripped.
+     *
+     *  Why both halves.  Without a seed the cluster supplies the shape it is
+     *  judged against AND the spread it is judged by, so a mixture poisons
+     *  them together.  Measured on the validated unit (template built from a
+     *  deliberately contaminated pool): the on/off AUCs degrade gracefully to
+     *  ~30% contamination (0.896/0.803 -> 0.807/0.720) and collapse at 50%
+     *  (0.624/0.622) -- the breakdown point of the per-point median, past
+     *  which the median waveform is no longer the dominant cell's.  Iterating
+     *  the self-template recovers about half the loss in the 10-30% band but
+     *  nothing at all at 50%, and sheds 16% of a CLEAN pool for no gain, so it
+     *  is not the fix.  The threshold is the half an AUC cannot see: with a
+     *  clean seed template but the scored cluster's own MAD, the cut climbs
+     *  with the contamination (thr 0.147 -> 0.344 as junk goes 5% -> 50%) and
+     *  the action quietly under-strips (precision 0.96, recall 0.32 at 50%).
+     *  Taking the tail from the seed instead holds it flat, for a stable
+     *  recall of 0.69 and a stable ~8.4% loss of real keepers at k=3 -- k on
+     *  the seed's own distribution is a direct false-positive rate, which is a
+     *  better-behaved knob than k on a mixture.  The seed's threshold never
+     *  looks at the scored cluster, so a CONTAMINATED seed inflates the cut and
+     *  under-strips silently; the seed has to be the clean one.
+     *
+     *  The tails are cut on a distribution of real spikes either way, so what
+     *  is flagged is contamination only if the contamination is a minority of
+     *  whichever cluster sites the tail -- judge a run by inspecting the
+     *  product. */
     ResidualOutlierResult detectResidualOutliers(const QList<int>& clusters,
                                                  double            kOn,
                                                  double            kOff,
                                                  double            minGain,
                                                  int               windowSamples,
-                                                 long              minSpikes);
+                                                 long              minSpikes,
+                                                 int               templateCluster,
+                                                 bool              thresholdFromTemplate);
 
     /** Result of computeResidualPreview (non-mutating).  All waveform traces are
      *  channel-major, length nChan*nSamp (channel c, sample s at c*nSamp + s),

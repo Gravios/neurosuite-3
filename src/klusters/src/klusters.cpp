@@ -7184,6 +7184,8 @@ void KlustersApp::slotStripResidualOutliers()
     static int    lastWindow = -1;                  // -1 = not set; half the waveform
     static int    lastMinSpikes = 40;
     static bool   lastSeparate  = true;             // a test run wants them apart
+    static int    lastSeed      = 0;                // 0 = no seed (self-referential)
+    static bool   lastSeedThr   = true;             // a seed's point is a fixed cut
     if (lastWindow < 0) lastWindow = std::max(1, nSamp / 2);
 
     QDialog dlg(this);
@@ -7201,7 +7203,13 @@ void KlustersApp::slotStripResidualOutliers()
         "discarded, and Ctrl+Z undoes it.</p>"
         "<p>The terms are complementary: a contaminant of a different cell "
         "type moves the on-channel term, one from a different site moves the "
-        "off-channel term.  Keep them apart to see which.</p>"), &dlg);
+        "off-channel term.  Keep them apart to see which.</p>"
+        "<p>With no <b>seed</b>, each cluster supplies both the shape it is "
+        "judged against and the spread it is judged by — which works while the "
+        "cluster is a mostly-clean unit, and fails once it is a mixture.  "
+        "Designate a seed (a core already carved out) and the template comes "
+        "from it instead; take the threshold from it too and the cut stops "
+        "drifting outwards as the scored cluster gets dirtier.</p>"), &dlg);
     intro->setWordWrap(true);
     outer->addWidget(intro);
 
@@ -7248,6 +7256,35 @@ void KlustersApp::slotStripResidualOutliers()
         "so the two terms can be judged separately.  Unchecked: one cluster "
         "for everything flagged, one undo step."));
 
+    // The seed.  Offered from the current selection, as slotStripByTemplate
+    // offers its template: a seed only means anything if the curator can see
+    // it next to what it will be scored against.  "(none)" is the
+    // self-referential form, which is the right default -- a seed is a claim
+    // that one of these clusters is clean.
+    QComboBox* seedBox = new QComboBox(&dlg);
+    seedBox->addItem(tr("(none) — each cluster scores against itself"), 0);
+    for (int id : selected)
+        seedBox->addItem(clusterLabel(id), id);
+    int seedAt = 0;
+    for (int i = 0; i < seedBox->count(); ++i)
+        if (seedBox->itemData(i).toInt() == lastSeed) { seedAt = i; break; }
+    seedBox->setCurrentIndex(seedAt);
+    seedBox->setToolTip(tr("The clean core to judge the others against.  Its "
+        "median waveform becomes the template for every scored cluster, and it "
+        "is never stripped itself."));
+    QCheckBox* seedThrBox = new QCheckBox(&dlg);
+    seedThrBox->setChecked(lastSeedThr);
+    seedThrBox->setToolTip(tr("Checked: the cut is the seed's own tail, the "
+        "same value for every scored cluster.  Unchecked: each scored cluster "
+        "sites its own tail, which climbs as the cluster gets dirtier -- "
+        "precision stays high but recall falls away.  Ignored without a seed."));
+    seedThrBox->setEnabled(seedBox->currentIndex() != 0);
+    connect(seedBox, &QComboBox::currentIndexChanged, &dlg,
+            [seedBox, seedThrBox](int i) {
+                Q_UNUSED(i);
+                seedThrBox->setEnabled(seedBox->currentIndex() != 0);
+            });
+
     const QList<int>& chSel = doc->selectedChannels();
     QString chText;
     if (chSel.isEmpty()) {
@@ -7266,6 +7303,8 @@ void KlustersApp::slotStripResidualOutliers()
     form->addRow(tr("Taper window (samples, 0 = whole):"), winBox);
     form->addRow(tr("Min spikes per cluster:"),       minBox);
     form->addRow(tr("Keep the terms apart:"),         sepBox);
+    form->addRow(tr("Seed (template from):"),         seedBox);
+    form->addRow(tr("Threshold from the seed too:"),  seedThrBox);
     form->addRow(tr("Clusters:"), new QLabel(
         tr("the %1 selected").arg(selected.size()), &dlg));
     form->addRow(tr("Restricted to:"), new QLabel(chText, &dlg));
@@ -7284,13 +7323,17 @@ void KlustersApp::slotStripResidualOutliers()
     const int    window   = winBox->value();
     const long   minSpk   = static_cast<long>(minBox->value());
     const bool   separate = sepBox->isChecked();
+    const int    seed     = seedBox->currentData().toInt();
+    const bool   seedThr  = seedThrBox->isChecked();
     lastKOn = kOn; lastKOff = kOff; lastMinGain = minGain;
     lastWindow = window; lastMinSpikes = minBox->value(); lastSeparate = separate;
+    lastSeed = seed; lastSeedThr = seedThr;
 
     // ── Scan ─────────────────────────────────────────────────────────────
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const KlustersDoc::ResidualOutlierResult R =
-        doc->detectResidualOutliers(selected, kOn, kOff, minGain, window, minSpk);
+        doc->detectResidualOutliers(selected, kOn, kOff, minGain, window, minSpk,
+                                    seed, seedThr);
     QApplication::restoreOverrideCursor();
 
     // The per-cluster diagnostic is the point of a test run: the medians and
@@ -7324,6 +7367,14 @@ void KlustersApp::slotStripResidualOutliers()
                                       : tr("one new cluster"))
                         .arg(R.nOn).arg(R.nOff).arg(R.nBoth).arg(R.nNoGain)
                         .arg(R.byCluster.size()).arg(selected.size());
+    if (R.templateId > 1)
+        detail += QStringLiteral("\n\n") + (seedThr
+            ? tr("Template and threshold both from the seed %1, which is not "
+                 "itself stripped — so the cut is the same value for every "
+                 "scored cluster.").arg(clusterLabel(R.templateId))
+            : tr("Template from the seed %1, which is not itself stripped; "
+                 "each scored cluster still sites its own cut.")
+                  .arg(clusterLabel(R.templateId)));
     if (R.offBlind) detail += QStringLiteral("\n\n") + R.reason;
     if (!R.perCluster.isEmpty())
         detail += QStringLiteral("\n\n") + R.perCluster.join(QStringLiteral("\n"));

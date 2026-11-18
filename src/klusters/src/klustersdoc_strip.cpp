@@ -629,6 +629,179 @@ static double residMedian(std::vector<double> v)
     std::nth_element(v.begin(), v.begin() + mid, v.end());
     return v[mid];
 }
+
+// A median waveform and everything derived from it.  Built from the scored
+// cluster's own spikes, or — when the curator designates a SEED, the clean core
+// they have already carved — once from that cluster and reused for every scored
+// one.  Which it is decides whether the statistic survives a mixture; see the
+// breakdown note above detectResidualOutliers.
+struct ResidTemplate {
+    std::vector<float>  T;           ///< [nSel*nSamp] channel-major median waveform
+    std::vector<double> h;           ///< [nSamp] squared amplitude taper
+    std::vector<double> u;           ///< [nSel] on-channel weight, in [0,1]
+    double Eon       = 0.0;          ///< sum_c u_c E_c — the scale every score is read against
+    double offMargin = 0.0;          ///< sum_c (1-u_c) — what the off-channel term has to look at
+    long   used      = 0;            ///< waveforms that went into the median
+    bool   ok        = false;
+};
+
+static ResidTemplate residBuildTemplate(const Data::ClusteringSnapshot& spkSrc,
+                                        const SortableTable& pos, long n,
+                                        int nCh, int nSamp, const QList<int>& chans,
+                                        int windowSamples,
+                                        std::vector<int16_t>& raw,
+                                        std::vector<float>& wav)
+{
+    ResidTemplate tpl;
+    const int nSel = chans.size();
+    const int P    = nSel * nSamp;
+    if (nSel <= 0 || nSamp <= 0 || n <= 0) return tpl;
+
+    // ── the per-point median over <=1024 evenly-strided spikes ──
+    const long step = std::max(1L, n / 1024L);
+    std::vector<float> tplBuf;
+    tplBuf.reserve(static_cast<size_t>(P) * std::min(n, 1024L));
+    long used = 0;
+    for (long s = 0; s < n; s += step) {
+        const long row = static_cast<long>(pos(1, s + 1));
+        if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+        for (int ci = 0; ci < nSel; ++ci) {
+            const float* src = &wav[static_cast<size_t>(chans[ci]) * nSamp];
+            tplBuf.insert(tplBuf.end(), src, src + nSamp);
+        }
+        ++used;
+    }
+    if (used < 8) return tpl;                     // too few readable waveforms
+    tpl.used = used;
+    tpl.T.assign(static_cast<size_t>(P), 0.0f);
+    std::vector<float> col(static_cast<size_t>(used));
+    for (int p = 0; p < P; ++p) {
+        for (long i = 0; i < used; ++i)
+            col[static_cast<size_t>(i)] = tplBuf[static_cast<size_t>(i) * P + p];
+        std::nth_element(col.begin(), col.begin() + used / 2, col.end());
+        tpl.T[static_cast<size_t>(p)] = col[static_cast<size_t>(used / 2)];
+    }
+
+    // ── h[t]: the temporal taper, centred on the template's peak ──
+    // Pooled over the selected channels, so it lands on the dominant channel's
+    // trough in practice.  Channel-free by construction: the whole point is a
+    // weight that does NOT vanish off-template.
+    //
+    // h holds the taper SQUARED, because the taper belongs in the amplitude
+    // domain -- it tapers the waveform, h_amp * x -- and every place it is used
+    // below (h x T, h T^2, h r^2) is quadratic in amplitude.  Storing h_amp^2
+    // once is the same statistic as tapering x and T and then squaring, which is
+    // what the offline measurement this metric comes from did; storing h_amp
+    // instead would be a DIFFERENT, untested weighting.
+    tpl.h.assign(static_cast<size_t>(nSamp), 1.0);
+    if (windowSamples > 0) {
+        int tPeak = 0;
+        double best = -1.0;
+        for (int t = 0; t < nSamp; ++t) {
+            double e = 0.0;
+            for (int ci = 0; ci < nSel; ++ci) {
+                const double v = tpl.T[static_cast<size_t>(ci) * nSamp + t];
+                e += v * v;
+            }
+            if (e > best) { best = e; tPeak = t; }
+        }
+        constexpr double twoPi = 6.283185307179586;
+        const int half = std::max(1, windowSamples / 2);
+        for (int t = 0; t < nSamp; ++t) {
+            const int d = t - tPeak;
+            if (d < -half || d > half) { tpl.h[static_cast<size_t>(t)] = 0.0; continue; }
+            const double x   = static_cast<double>(d + half) / (2.0 * half);
+            const double amp = 0.54 - 0.46 * std::cos(twoPi * x);
+            tpl.h[static_cast<size_t>(t)] = amp * amp;   // amplitude taper, squared
+        }
+    }
+
+    // ── per-channel template energy E_c -> the on-channel weight u_c ──
+    std::vector<double> Ec(static_cast<size_t>(nSel), 0.0);
+    double maxEc = 0.0;
+    for (int ci = 0; ci < nSel; ++ci) {
+        double e = 0.0;
+        for (int t = 0; t < nSamp; ++t) {
+            const double v = tpl.T[static_cast<size_t>(ci) * nSamp + t];
+            e += tpl.h[static_cast<size_t>(t)] * v * v;
+        }
+        Ec[static_cast<size_t>(ci)] = e;
+        maxEc = std::max(maxEc, e);
+    }
+    if (!(maxEc > 0.0)) return tpl;               // flat template on the selection
+    tpl.u.assign(static_cast<size_t>(nSel), 0.0);
+    for (int ci = 0; ci < nSel; ++ci) {
+        tpl.u[static_cast<size_t>(ci)] = Ec[static_cast<size_t>(ci)] / maxEc;
+        tpl.Eon       += tpl.u[static_cast<size_t>(ci)] * Ec[static_cast<size_t>(ci)];
+        tpl.offMargin += 1.0 - tpl.u[static_cast<size_t>(ci)];
+    }
+    if (!(tpl.Eon > 0.0)) return tpl;
+    tpl.ok = true;
+    return tpl;
+}
+
+// Score every spike of one cluster against a built template.  Appends in the
+// cluster's own spike order; a spike that cannot be read is skipped entirely
+// (no row, no score), exactly as detectWaveformOutliers skips a short read.
+static void residScoreCluster(const Data::ClusteringSnapshot& spkSrc,
+                              const SortableTable& pos, long n,
+                              int nCh, int nSamp, const QList<int>& chans,
+                              const ResidTemplate& tpl, double minGain,
+                              std::vector<double>& onv, std::vector<double>& offv,
+                              std::vector<long>& rows, std::vector<char>& noGain,
+                              std::vector<int16_t>& raw, std::vector<float>& wav)
+{
+    const int nSel = chans.size();
+    onv.clear(); offv.clear(); rows.clear(); noGain.clear();
+    onv.reserve(static_cast<size_t>(n));
+    offv.reserve(static_cast<size_t>(n));
+    rows.reserve(static_cast<size_t>(n));
+    noGain.reserve(static_cast<size_t>(n));
+    for (long s = 0; s < n; ++s) {
+        const long row = static_cast<long>(pos(1, s + 1));
+        if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
+
+        // a = sum_c u_c sum_t h x T / Eon  (Eon is that same sum with x=T).
+        double num = 0.0;
+        for (int ci = 0; ci < nSel; ++ci) {
+            const float* xw = &wav[static_cast<size_t>(chans[ci]) * nSamp];
+            const float* tp = &tpl.T[static_cast<size_t>(ci) * nSamp];
+            double na = 0.0;
+            for (int t = 0; t < nSamp; ++t)
+                na += tpl.h[static_cast<size_t>(t)] * static_cast<double>(xw[t]) * tp[t];
+            num += tpl.u[static_cast<size_t>(ci)] * na;
+        }
+        const double a = num / tpl.Eon;
+
+        rows.push_back(row);
+        if (!(a >= minGain)) {
+            // No template-shaped signal, or anti-correlated with it: the ratios
+            // divide by a^2 and would be meaningless (or infinite).  Flagged
+            // outright and counted apart, rather than scored.
+            onv.push_back(0.0);
+            offv.push_back(0.0);
+            noGain.push_back(1);
+            continue;
+        }
+        noGain.push_back(0);
+
+        double qOn = 0.0, qOff = 0.0;
+        for (int ci = 0; ci < nSel; ++ci) {
+            const float* xw = &wav[static_cast<size_t>(chans[ci]) * nSamp];
+            const float* tp = &tpl.T[static_cast<size_t>(ci) * nSamp];
+            double qc = 0.0;
+            for (int t = 0; t < nSamp; ++t) {
+                const double r = static_cast<double>(xw[t]) - a * tp[t];
+                qc += tpl.h[static_cast<size_t>(t)] * r * r;
+            }
+            qOn  += tpl.u[static_cast<size_t>(ci)]         * qc;
+            qOff += (1.0 - tpl.u[static_cast<size_t>(ci)]) * qc;
+        }
+        const double nrm = a * a * tpl.Eon;
+        onv.push_back(qOn  / nrm);
+        offv.push_back(qOff / nrm);
+    }
+}
 }  // namespace
 
 KlustersDoc::ResidualOutlierResult
@@ -637,7 +810,9 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
                                     double            kOff,
                                     double            minGain,
                                     int               windowSamples,
-                                    long              minSpikes)
+                                    long              minSpikes,
+                                    int               templateCluster,
+                                    bool              thresholdFromTemplate)
 {
     ResidualOutlierResult R;
 
@@ -657,161 +832,108 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
     QList<int> chans = selectedChannels();          // validated, sorted, unique
     if (chans.isEmpty())
         for (int c = 0; c < nCh; ++c) chans.append(c);
-    const int nSel = chans.size();
-    const int P    = nSel * nSamp;
 
     const std::shared_ptr<const Data::ClusteringSnapshot> snap = layer.currentSnapshot();
     const Data::ClusteringSnapshot& spkSrc = *snap;
 
     std::vector<int16_t> raw;
     std::vector<float>   wav;
-    bool anyOffMargin = false;
+    std::vector<double>  onv, offv;
+    std::vector<long>    rowv;
+    std::vector<char>    noGain;
+    const double inf = std::numeric_limits<double>::infinity();
 
-    for (int c : clusters) {
+    // ── the seed, when one is designated ────────────────────────────────
+    // A designated seed changes BOTH halves of the gesture, and the second is
+    // the one that matters on a dirty cluster: the template comes from the seed
+    // (so the shape is the clean cell's, not the mixture's), and with
+    // @p thresholdFromTemplate the CUT comes from the seed's own score
+    // distribution too, so a mixture's inflated MAD cannot push the threshold
+    // out from under the contamination.
+    ResidTemplate seed;
+    double seedThrOn = inf, seedThrOff = inf;
+    QList<int> scored = clusters;
+    if (templateCluster > 1) {
+        scored.removeAll(templateCluster);          // the seed is never stripped
+        SortableTable spos;
+        if (!layer.spikePositions(templateCluster, spos)) {
+            R.reason = tr("Template cluster %1 has no spike-position table.")
+                           .arg(clusterLabel(templateCluster));
+            return R;
+        }
+        const long sn = static_cast<long>(
+            layer.nbOfSpikes(static_cast<dataType>(templateCluster)));
+        if (sn < 8) {
+            R.reason = tr("Template cluster %1 has only %2 spikes; at least 8 "
+                          "are needed for a stable median waveform.")
+                           .arg(clusterLabel(templateCluster)).arg(sn);
+            return R;
+        }
+        seed = residBuildTemplate(spkSrc, spos, sn, nCh, nSamp, chans,
+                                  windowSamples, raw, wav);
+        if (!seed.ok) {
+            R.reason = tr("Template cluster %1 gives no usable median waveform "
+                          "on the selected channels (flat, or too few readable "
+                          "waveforms).").arg(clusterLabel(templateCluster));
+            return R;
+        }
+        if (thresholdFromTemplate) {
+            residScoreCluster(spkSrc, spos, sn, nCh, nSamp, chans, seed, minGain,
+                              onv, offv, rowv, noGain, raw, wav);
+            std::vector<double> sOn, sOff;
+            for (size_t i = 0; i < onv.size(); ++i) {
+                if (noGain[i]) continue;
+                sOn.push_back(onv[i]);
+                sOff.push_back(offv[i]);
+            }
+            seedThrOn  = (kOn  > 0.0) ? residRobustTail(sOn,  kOn)  : inf;
+            seedThrOff = (kOff > 0.0) ? residRobustTail(sOff, kOff) : inf;
+            R.perCluster.append(
+                tr("template %1: %2 spikes, median on=%3 off=%4, FIXED tail "
+                   "on>%5 off>%6 applied to every scored cluster")
+                    .arg(clusterLabel(templateCluster))
+                    .arg(sOn.size())
+                    .arg(residMedian(sOn),  0, 'g', 3)
+                    .arg(residMedian(sOff), 0, 'g', 3)
+                    .arg(seedThrOn  == inf ? QStringLiteral("off")
+                                           : QString::number(seedThrOn,  'g', 3))
+                    .arg(seedThrOff == inf ? QStringLiteral("off")
+                                           : QString::number(seedThrOff, 'g', 3)));
+        }
+        R.templateId = templateCluster;
+        if (seed.offMargin > 0.25) R.anyOffMargin = true;
+        if (scored.isEmpty()) {
+            R.reason = tr("Nothing to score: cluster %1 is the template and no "
+                          "other cluster is selected.")
+                           .arg(clusterLabel(templateCluster));
+            return R;
+        }
+    }
+
+    for (int c : scored) {
         if (c < 2) continue;                        // never strip artefact / noise
         SortableTable pos;
         if (!layer.spikePositions(c, pos)) continue;
         const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(c)));
         if (n < minSpikes) continue;                // MAD too noisy below the floor
 
-        // ── the cluster's own median template (<=1024 evenly-strided) ──
-        const long step = std::max(1L, n / 1024L);
-        std::vector<float> tplBuf;
-        tplBuf.reserve(static_cast<size_t>(P) * std::min(n, 1024L));
-        long used = 0;
-        for (long s = 0; s < n; s += step) {
-            const long row = static_cast<long>(pos(1, s + 1));
-            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
-            for (int ci = 0; ci < nSel; ++ci) {
-                const float* src = &wav[static_cast<size_t>(chans[ci]) * nSamp];
-                tplBuf.insert(tplBuf.end(), src, src + nSamp);
-            }
-            ++used;
-        }
-        if (used < 8) continue;                      // too few readable waveforms
-        std::vector<float> T(static_cast<size_t>(P));
-        std::vector<float> col(static_cast<size_t>(used));
-        for (int p = 0; p < P; ++p) {
-            for (long i = 0; i < used; ++i)
-                col[static_cast<size_t>(i)] = tplBuf[static_cast<size_t>(i) * P + p];
-            std::nth_element(col.begin(), col.begin() + used / 2, col.end());
-            T[static_cast<size_t>(p)] = col[static_cast<size_t>(used / 2)];
-        }
-
-        // ── h[t]: the temporal taper, centred on the template's peak ──
-        // Pooled over the selected channels, so it lands on the dominant
-        // channel's trough in practice.  Channel-free by construction: the
-        // whole point is a weight that does NOT vanish off-template.
-        //
-        // h holds the taper SQUARED, because the taper belongs in the
-        // amplitude domain -- it tapers the waveform, h_amp * x -- and every
-        // place it is used below (h x T, h T^2, h r^2) is quadratic in
-        // amplitude.  Storing h_amp^2 once is the same statistic as tapering
-        // x and T and then squaring, which is what the offline measurement
-        // this metric comes from did; storing h_amp instead would be a
-        // DIFFERENT, untested weighting.
-        std::vector<double> h(static_cast<size_t>(nSamp), 1.0);
-        if (windowSamples > 0) {
-            int tPeak = 0;
-            double best = -1.0;
-            for (int t = 0; t < nSamp; ++t) {
-                double e = 0.0;
-                for (int ci = 0; ci < nSel; ++ci) {
-                    const double v = T[static_cast<size_t>(ci) * nSamp + t];
-                    e += v * v;
-                }
-                if (e > best) { best = e; tPeak = t; }
-            }
-            constexpr double twoPi = 6.283185307179586;
-            const int half = std::max(1, windowSamples / 2);
-            for (int t = 0; t < nSamp; ++t) {
-                const int d = t - tPeak;
-                if (d < -half || d > half) { h[static_cast<size_t>(t)] = 0.0; continue; }
-                const double x  = static_cast<double>(d + half) / (2.0 * half);
-                const double amp = 0.54 - 0.46 * std::cos(twoPi * x);
-                h[static_cast<size_t>(t)] = amp * amp;      // amplitude taper, squared
-            }
-        }
-
-        // ── per-channel template energy E_c -> the on-channel weight u_c ──
-        std::vector<double> Ec(static_cast<size_t>(nSel), 0.0);
-        double maxEc = 0.0;
-        for (int ci = 0; ci < nSel; ++ci) {
-            double e = 0.0;
-            for (int t = 0; t < nSamp; ++t) {
-                const double v = T[static_cast<size_t>(ci) * nSamp + t];
-                e += h[static_cast<size_t>(t)] * v * v;
-            }
-            Ec[static_cast<size_t>(ci)] = e;
-            maxEc = std::max(maxEc, e);
-        }
-        if (!(maxEc > 0.0)) continue;                // flat template on the selection
-        std::vector<double> u(static_cast<size_t>(nSel), 0.0);
-        double Eon = 0.0, offMargin = 0.0;
-        for (int ci = 0; ci < nSel; ++ci) {
-            u[static_cast<size_t>(ci)] = Ec[static_cast<size_t>(ci)] / maxEc;
-            Eon       += u[static_cast<size_t>(ci)] * Ec[static_cast<size_t>(ci)];
-            offMargin += 1.0 - u[static_cast<size_t>(ci)];
-        }
-        if (!(Eon > 0.0)) continue;
+        // The seed's template, or the cluster's own.  Without a seed this is
+        // exactly the self-referential form: the cluster supplies both the
+        // shape it is judged against and the spread it is judged by.
+        const ResidTemplate own =
+            seed.ok ? ResidTemplate()
+                    : residBuildTemplate(spkSrc, pos, n, nCh, nSamp, chans,
+                                         windowSamples, raw, wav);
+        const ResidTemplate& tpl = seed.ok ? seed : own;
+        if (!tpl.ok) continue;
         // Off-channel margin: with only the template's own channel(s) selected
         // every u_c is ~1, offr is identically ~0, and its tail cuts nothing.
         // Recorded so the caller can say so instead of reporting a silent zero.
-        if (offMargin > 0.25) anyOffMargin = true;
+        if (tpl.offMargin > 0.25) R.anyOffMargin = true;
 
-        // ── the two terms, per spike ──
-        std::vector<double> onv, offv;
-        std::vector<long>   rows;
-        std::vector<char>   noGain;
-        onv.reserve(static_cast<size_t>(n));
-        offv.reserve(static_cast<size_t>(n));
-        rows.reserve(static_cast<size_t>(n));
-        noGain.reserve(static_cast<size_t>(n));
-        for (long s = 0; s < n; ++s) {
-            const long row = static_cast<long>(pos(1, s + 1));
-            if (!tmReadSpikeFloat(spkSrc, row - 1, nCh, nSamp, raw, wav)) continue;
-
-            // a = sum_c u_c sum_t h x T / Eon  (Eon is that same sum with x=T).
-            double num = 0.0;
-            for (int ci = 0; ci < nSel; ++ci) {
-                const float* xw = &wav[static_cast<size_t>(chans[ci]) * nSamp];
-                const float* tp = &T[static_cast<size_t>(ci) * nSamp];
-                double na = 0.0;
-                for (int t = 0; t < nSamp; ++t)
-                    na += h[static_cast<size_t>(t)] * static_cast<double>(xw[t]) * tp[t];
-                num += u[static_cast<size_t>(ci)] * na;
-            }
-            const double a = num / Eon;
-
-            rows.push_back(row);
-            if (!(a >= minGain)) {
-                // No template-shaped signal, or anti-correlated with it: the
-                // ratios divide by a^2 and would be meaningless (or infinite).
-                // Flagged outright and counted apart, rather than scored.
-                onv.push_back(0.0);
-                offv.push_back(0.0);
-                noGain.push_back(1);
-                continue;
-            }
-            noGain.push_back(0);
-
-            double qOn = 0.0, qOff = 0.0;
-            for (int ci = 0; ci < nSel; ++ci) {
-                const float* xw = &wav[static_cast<size_t>(chans[ci]) * nSamp];
-                const float* tp = &T[static_cast<size_t>(ci) * nSamp];
-                double qc = 0.0;
-                for (int t = 0; t < nSamp; ++t) {
-                    const double r = static_cast<double>(xw[t]) - a * tp[t];
-                    qc += h[static_cast<size_t>(t)] * r * r;
-                }
-                qOn  += u[static_cast<size_t>(ci)]         * qc;
-                qOff += (1.0 - u[static_cast<size_t>(ci)]) * qc;
-            }
-            const double nrm = a * a * Eon;
-            onv.push_back(qOn  / nrm);
-            offv.push_back(qOff / nrm);
-        }
-        if (rows.size() < static_cast<size_t>(minSpikes)) continue;
+        residScoreCluster(spkSrc, pos, n, nCh, nSamp, chans, tpl, minGain,
+                          onv, offv, rowv, noGain, raw, wav);
+        if (rowv.size() < static_cast<size_t>(minSpikes)) continue;
 
         // ── a robust tail per term, over the SCORED spikes only ──
         // The no-gain spikes are already flagged; leaving them in would drag
@@ -824,15 +946,17 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
             onOk.push_back(onv[i]);
             offOk.push_back(offv[i]);
         }
-        const double inf   = std::numeric_limits<double>::infinity();
-        const double thrOn  = (kOn  > 0.0) ? residRobustTail(onOk,  kOn)  : inf;
-        const double thrOff = (kOff > 0.0) ? residRobustTail(offOk, kOff) : inf;
+        const bool fixedTail = (seedThrOn != inf || seedThrOff != inf);
+        const double thrOn  = fixedTail ? seedThrOn
+                                        : ((kOn  > 0.0) ? residRobustTail(onOk,  kOn)  : inf);
+        const double thrOff = fixedTail ? seedThrOff
+                                        : ((kOff > 0.0) ? residRobustTail(offOk, kOff) : inf);
 
         QVector<ResidualFlag> flagged;
         long cOn = 0, cOff = 0, cBoth = 0, cNo = 0;
-        for (size_t i = 0; i < rows.size(); ++i) {
+        for (size_t i = 0; i < rowv.size(); ++i) {
             ResidualFlag f;
-            f.index  = static_cast<int>(rows[i]) - 1;     // -> 0-based .spk index
+            f.index  = static_cast<int>(rowv[i]) - 1;     // -> 0-based .spk index
             f.noGain = (noGain[i] != 0);
             if (!f.noGain) {
                 f.on  = onv[i]  > thrOn;
@@ -840,7 +964,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
             }
             if (!(f.on || f.off || f.noGain)) continue;
             flagged.append(f);
-            if (f.noGain)          ++cNo;
+            if (f.noGain)           ++cNo;
             else if (f.on && f.off) ++cBoth;
             else if (f.on)          ++cOn;
             else                    ++cOff;
@@ -858,10 +982,10 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
                 .arg(flagged.size()).arg(cOn).arg(cOff).arg(cBoth).arg(cNo));
 
         if (!flagged.isEmpty()) {
-            R.total += flagged.size();
-            R.nOn   += cOn;
-            R.nOff  += cOff;
-            R.nBoth += cBoth;
+            R.total   += flagged.size();
+            R.nOn     += cOn;
+            R.nOff    += cOff;
+            R.nBoth   += cBoth;
             R.nNoGain += cNo;
             R.byCluster.insert(c, flagged);
         }
@@ -869,7 +993,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
     }
 
     R.ok = true;
-    R.offBlind = (kOff > 0.0 && !anyOffMargin);
+    R.offBlind = (kOff > 0.0 && !R.anyOffMargin);
     if (R.scored == 0)
         R.reason = tr("Strip residual outliers: no selected cluster carries "
                       "enough spikes (>= %1) for a stable median waveform.")

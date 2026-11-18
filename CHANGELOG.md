@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | [Klusters: a seed cluster for the residual strip -- the template AND the threshold from a carved core](#2026-11-18--klusters-a-seed-cluster-for-the-residual-strip--the-template-and-the-threshold-from-a-carved-core) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers -- the per-spike gain divided out, the residual split on-channel / off-channel](#2026-11-18--klusters-strip-residual-outliers--the-per-spike-gain-divided-out-the-residual-split-on-channel--off-channel) |
 | 2026-11-12 | [Klusters: a renumber-to-end (T) or a sort between an edit and its post-edit chain left the parked landing and the queued realign on the old ids -- a neighbouring cluster joined the selection](#2026-11-12--klusters-a-renumber-to-end-t-or-a-sort-between-an-edit-and-its-post-edit-chain-left-the-parked-landing-and-the-queued-realign-on-the-old-ids----a-neighbouring-cluster-joined-the-selection) |
 | 2026-11-12 | [Klusters: the Space box rescans the session's feature spaces when opened](#2026-11-12--klusters-the-space-box-rescans-the-sessions-feature-spaces-when-opened) |
@@ -197,6 +198,95 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-18 — Klusters: a seed cluster for the residual strip — the template AND the threshold from a carved core
+
+<details>
+<summary>Details</summary>
+
+`Strip Residual Outliers` as first shipped is self-referential: each cluster supplies both the
+shape it is judged against (its own median waveform) and the spread it is judged by (its own
+median + k·1.4826·MAD).  Tested in the GUI it "works really well, so long as the initial cluster
+is well defined" — which is exactly the predicted boundary, because a mixture poisons both halves
+at once.  Measured on the validated unit (`jg05-20120312` group 6, exp_psame cluster 3, the parent
+of the curated 785), with the template built from a deliberately contaminated pool:
+
+| contamination of the pool | `onr` | `offr` |
+|---|---|---|
+| 0 % | 0.896 | 0.803 |
+| 10 % | 0.881 | 0.783 |
+| 20 % | 0.852 | 0.754 |
+| 30 % | 0.807 | 0.720 |
+| **50 %** | **0.624** | **0.622** |
+
+Graceful to ~30 %, gone at 50 % — and that is not a coincidence.  The template is a per-point
+**median**, whose breakdown point is exactly 50 %; past it the median waveform is no longer the
+dominant cell's, and the statistic is measuring the wrong template.
+
+**Iterating the self-template is not the fix.**  Score the pool against its own median, drop the
+union of the two tails at k=3, re-median the survivors, repeat: that recovers about half the lost
+ground in the 10–30 % band (at 30 %, 0.807 → 0.866 after three passes against a clean ceiling of
+0.896) but **nothing at all at 50 %** (0.624 → 0.626) — once the median is on the wrong side of the
+breakdown point, iterating strips the tail of the wrong distribution, which is the real cell.  It
+also sheds 14–24 % of the pool, and 16.4 % of a *clean* pool for a gain of +0.000 `onr`.  Not
+built.
+
+**The threshold is the half an AUC cannot see.**  AUC is threshold-free, so the table above
+measures only the ranking.  With a clean seed template but each scored cluster still siting its own
+MAD tail, on 4,176 real keepers plus a varying fraction of junk:
+
+| junk | rule | thr (on) | flagged | precision | recall | keepers lost |
+|---|---|---|---|---|---|---|
+| 10 % | own | 0.159 | 586 | 0.54 | 0.68 | 6.5 % |
+| 10 % | seed | 0.143 | 686 | 0.49 | 0.72 | 8.4 % |
+| 30 % | own | 0.224 | 1049 | 0.88 | 0.52 | 2.9 % |
+| 30 % | seed | 0.143 | 1590 | 0.78 | 0.69 | 8.4 % |
+| 50 % | own | 0.344 | 1408 | **0.96** | **0.32** | 1.5 % |
+| 50 % | seed | 0.143 | 3221 | 0.89 | **0.69** | 8.4 % |
+
+The own-cluster rule does not *misfire* on a dirty cluster once the template is clean — it gets
+**conservative**.  The cut climbs 0.147 → 0.344 as the junk goes 5 % → 50 %, precision climbs to
+0.96, recall collapses to 0.32.  A benign failure that converges under repeated passes, but it
+leaves two thirds of the contamination in place.  Taking the tail from the seed holds it flat by
+construction, for a stable recall of 0.69 and a stable ~8.4 % loss of real keepers at k=3 — and on
+the seed's own distribution k *is* a direct false-positive rate, a better-behaved knob than k on a
+mixture.
+
+So `detectResidualOutliers` takes two more arguments.  `templateCluster > 1` designates a **seed**
+— the clean core the curator has already carved, which is how they work — and its median becomes
+the template for every scored cluster; the seed is removed from the scored list and is never
+stripped itself.  `thresholdFromTemplate` additionally sites both cuts on the seed's own score
+distribution, fixed across every scored cluster.  Seeding the template fixes the ranking; seeding
+the threshold is what restores recall on a cluster that is half junk.
+
+In the dialog: **Seed (template from)** — a combo over the current selection, defaulting to
+"(none) — each cluster scores against itself", which keeps the shipped behaviour as the default
+because a seed is a *claim* that one of those clusters is clean; and **Threshold from the seed
+too**, on by default and disabled until a seed is picked.  The confirm dialog names the seed and
+says whether the cut is fixed.  Per-cluster diagnostics gain a `template …` line carrying the
+seed's medians and the fixed tail.
+
+The caveat that comes with it, stated in the header: the seed's threshold never looks at the
+scored cluster, so a **contaminated seed** inflates the cut and the action quietly under-strips.
+The seed has to be the clean one — which is the assumption the curator is already making by
+designating it.
+
+Internals: the median-template build, the taper, the per-channel weights and the per-spike scoring
+move into a file-local `ResidTemplate` plus `residBuildTemplate` / `residScoreCluster`, since the
+template is now built either once from the seed or per scored cluster and the scoring runs on both
+the seed and the scored clusters.  That also pays off part of the duplication debt the previous
+patch recorded, though `detectWaveformOutliers` still has its own copy.
+
+Built: `ninja -C build klusters` compiles and links clean (Qt6 available); `-Wall -Wextra
+-Wshadow` report nothing in the new code.  The metric itself is unchanged, so the 2e-13 agreement
+with the offline Python still holds.
+
+`src/klusters/src/klustersdoc.h`, `src/klusters/src/klustersdoc_strip.cpp`,
+`src/klusters/src/klusters.cpp`.
+
+</details>
 
 ---
 
