@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <vector>
 
 namespace realign_center {
 
@@ -46,6 +47,47 @@ RecenterResult circularRecenterShift(const double* energy, int nSamp,
     return out;
 }
 
+
+RecenterResult circularRecenterShiftWindowed(const double* energy, const float* weights,
+                                             int nSamp, int peakPos, double rMin, bool follow)
+{
+    if (!weights) return circularRecenterShift(energy, nSamp, peakPos, rMin);
+    RecenterResult out;
+    if (!energy || nSamp <= 0) return out;
+
+    // The window offset is kept FRACTIONAL (the window is read by circular linear interpolation):
+    // rolled by whole samples, the mean shift stalls up to a sample short of the lobe as soon as a
+    // pedestal dilutes the last step below half a sample.
+    const double Nd = static_cast<double>(nSamp);
+    std::vector<double> prod(static_cast<size_t>(nSamp), 0.0);
+    double offset = 0.0;                                        // the window sits on peakPos + offset
+    const int maxPass = follow ? 200 : 1;
+    for (int pass = 0; pass < maxPass; ++pass) {
+        double W = 0.0;
+        for (int s = 0; s < nSamp; ++s) {
+            double x = std::fmod(static_cast<double>(s) - offset, Nd);
+            if (x < 0.0) x += Nd;
+            const int    i0 = static_cast<int>(x) % nSamp;
+            const int    i1 = (i0 + 1) % nSamp;
+            const double f  = x - std::floor(x);
+            const double wv = (1.0 - f) * static_cast<double>(weights[i0]) + f * static_cast<double>(weights[i1]);
+            const double v  = wv * energy[s];
+            prod[static_cast<size_t>(s)] = v;
+            W += v;
+        }
+        if (!(W > 0.0)) return RecenterResult{};                // nothing under the window
+        // rMin 0 here: the guard is applied once, to the pass that is kept.
+        out = circularRecenterShift(prod.data(), nSamp, peakPos, 0.0);
+        double d = std::fmod(out.centroid - static_cast<double>(peakPos), Nd);
+        if (d >  Nd / 2.0) d -= Nd;
+        if (d < -Nd / 2.0) d += Nd;
+        const bool settled = std::abs(d - offset) < 1e-3;
+        offset = d;
+        if (settled) break;
+    }
+    if (out.R < rMin) { out.shift = 0; out.applied = false; }
+    return out;
+}
 
 void perSpikeCentroidShifts(const double* energy, int nSpikes, int nSamp,
                             std::vector<int>& shiftOut) {

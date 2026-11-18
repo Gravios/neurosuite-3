@@ -157,7 +157,7 @@
           <item>
            <widget class="QComboBox" name="realignKernelCombo">
             <property name="toolTip">
-             <string>The part of the waveform window the cross-correlation scores and normalises on.  None: the whole window (every sample, the classic behaviour).  Gaussian / Hann: a bell of the given half-width centred on the alignment target (peak sample), so a second spike in the tail or the lead-in -- a collision -- neither feeds the score nor its normalisation and cannot pull the lag toward itself.  Template energy: the cluster template's own energy profile (self-calibrating, no width; works in derivative and super-sampled spaces).  A window runs on the CPU kernel.</string>
+             <string>The part of the waveform window the cross-correlation scores and normalises on.  None: the whole window (every sample, the classic behaviour).  Gaussian / Hann: a bell of the given half-width centred on the alignment target (peak sample), so a second spike in the tail or the lead-in -- a collision -- neither feeds the score nor its normalisation and cannot pull the lag toward itself.  Template energy: the cluster template's own energy profile (self-calibrating, no width; works in derivative and super-sampled spaces).  A window runs on the CPU kernel.  The post-alignment PCA refine and RMS recenter run under the same window.</string>
             </property>
             <item><property name="text"><string>None (whole window)</string></property></item>
             <item><property name="text"><string>Gaussian</string></property></item>
@@ -244,7 +244,7 @@
              <string>PCA projection refine</string>
             </property>
             <property name="toolTip">
-             <string>Per-spike refine maximising PCA-projection energy (--pca-refine).</string>
+             <string>Per-spike refine maximising PCA-projection energy (--pca-refine).  Under a correlation window the projection is weighted by it.</string>
             </property>
            </widget>
           </item>
@@ -254,7 +254,7 @@
              <string>RMS circular recenter</string>
             </property>
             <property name="toolTip">
-             <string>Recenter the whole cluster on its circular RMS-energy centroid (--recenter-rms).</string>
+             <string>Recenter the whole cluster on its circular RMS-energy centroid (--recenter-rms).  Under a correlation window the centroid is that of the windowed energy, so a second spike in the tail does not move the cluster.</string>
             </property>
            </widget>
           </item>

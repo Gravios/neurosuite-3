@@ -27,7 +27,10 @@ in it is refused), `test_supersample_interp_detect.py` (a `_U4` built with the e
 realigned under the smoothing-spline preference: the file's interpolator is detected and used),
 `test_realign_kernel.py` (a correlation window -- Preferences > Realignment > Correlation window,
 `realignKernel` / `realignKernelWidth` in the spec -- keeps a collision in the tail of the window
-from steering the lag: more collided spikes on their true time than with the whole window).
+from steering the lag: more collided spikes on their true time than with the whole window),
+`test_realign_center_window.py` (the post-alignment centering under that window -- `realignMode`
+in the spec: 1 PCA refine, 2 RMS recenter -- the whole-window RMS recenter carries the collided
+cluster into the collision tail, the windowed one leaves it on its true time).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

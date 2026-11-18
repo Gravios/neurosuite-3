@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | [Klusters: the RMS recenter and the PCA refine run under the correlation window](#2026-11-18--klusters-the-rms-recenter-and-the-pca-refine-run-under-the-correlation-window) |
 | 2026-11-18 | [Klusters: a seed cluster for the residual strip -- the template AND the threshold from a carved core](#2026-11-18--klusters-a-seed-cluster-for-the-residual-strip--the-template-and-the-threshold-from-a-carved-core) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers -- the per-spike gain divided out, the residual split on-channel / off-channel](#2026-11-18--klusters-strip-residual-outliers--the-per-spike-gain-divided-out-the-residual-split-on-channel--off-channel) |
 | 2026-11-12 | [Klusters: a renumber-to-end (T) or a sort between an edit and its post-edit chain left the parked landing and the queued realign on the old ids -- a neighbouring cluster joined the selection](#2026-11-12--klusters-a-renumber-to-end-t-or-a-sort-between-an-edit-and-its-post-edit-chain-left-the-parked-landing-and-the-queued-realign-on-the-old-ids----a-neighbouring-cluster-joined-the-selection) |
@@ -198,6 +199,73 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-18 — Klusters: the RMS recenter and the PCA refine run under the correlation window
+
+<details>
+<summary>Details</summary>
+
+The correlation window (`--kernel`, Preferences > Realignment > Correlation window) weighted the
+cross-correlation passes and nothing after them.  The two post-alignment modes that centre a
+cluster then measured on the whole window again, so what the passes had been told to ignore voted
+on the final position.
+
+**RMS circular recenter.**  The centroid is now that of the windowed energy `w[t]·E[t]` (the
+window weights quadratic forms in the correlation, so it multiplies the energy as it stands).
+On the selftest's collided unit (40 % of the cluster's spikes carry a second, 2.5× larger spike
+6–12 samples after their peak), share of spikes within one sample of their true time:
+
+| window | before (collided / clean) | after (collided / clean) |
+|---|---|---|
+| none | 0 % / 0 % | 0 % / 0 % (unchanged: no window) |
+| Gaussian ±5 | 0 % / 0 % | 100 % / 100 % |
+| template energy | 0 % / 0 % | 16 % / 2 % |
+
+Before, the whole-window centroid sat at sample 22 (target 15, R 0.57) and the recenter moved
+every spike of the cluster 6–7 samples into the collision tail — the clean ones included, after
+the windowed passes had aligned them.  The same holds with the cluster cut 3 samples early or
+late.  The template-energy window only halves the error (median +2): the collisions are in the
+mean waveform it is built from, so its weight in the tail is small but not zero, against an
+energy there that is larger than the spike's own.  For a cluster with collisions, use a bell.
+
+A bell is **followed**: measured once under a window sitting on the target, the centroid is
+pulled toward the window's centre (a lobe at offset d reads d·σw²/(σw²+σe²)), so the window is
+moved onto the centroid it measured until it settles — a mean shift from the peak sample, with a
+fractional offset (rolled by whole samples it stalls up to a sample short as soon as a pedestal
+dilutes the last step).  At the fixed point a uniform noise floor is symmetric about the answer
+and cancels, as it does without a window.  A lobe the window cannot see from the target is not
+followed.  The log prints the whole-window centroid, R and shift beside the windowed ones.
+R under a bell is high by construction (0.95 vs 0.57 above), so `--rmin` is a weaker two-lobe
+guard there; read the whole-window R in the log for that.
+
+Without collisions the two agree to a sample: the whole-window recenter shifts the fixture's
+cluster +1 (the unit's late positive phase is in its centroid), the windowed one 0; 99–100 % of
+spikes are within one sample either way.
+
+**PCA projection refine.**  The projection is taken under the window, `Σ w·ev·(x − mean)`, by
+scaling the refine's private copy of the basis — where the channel restriction already goes, so
+the CPU loop and the GPU kernel both honour it and the basis the features are recomputed through
+is untouched.  **No accuracy gain is claimed for this half.**  On the selftest fixture the refine
+misplaces the cluster with or without a window (0 % within a sample; clean spikes at −6 samples
+unwindowed, +4/+5 windowed), collisions or none: with a centred basis it maximises the energy of
+the deviation from the basis mean, which on a two-unit session grows as a spike is slid AWAY
+from where the mean has it (projection energy at shift 0 is the minimum, 0.49 of the value at
+−6).  That is the refine's own criterion, not the window, and it is not addressed here.  The
+shifts the binary picks under the window are consistent with an independent computation of
+the windowed energy (median +5 samples in both).  Unlike the correlation, the refine is not normalised by the windowed spike energy, so
+a larger second spike slid onto the window's centre still scores high.
+
+The per-spike centroid mode (`--align-centroid`) skips the correlation passes and does not use
+the window.  KiloKlustaKwik's RMS recenter calls the unwindowed function and is unchanged.
+
+- `realign_center::circularRecenterShiftWindowed` (libklustersshared), 6 new checks in
+  `realign_kernels_test.cpp` (28/28).
+- `klustersdoc_realign.cpp`: `realignRmsRecenter` and the refine take the window.
+- Selftest: `realignMode` in the spec; `test_realign_center_window.py`.
+
+</details>
 
 ---
 

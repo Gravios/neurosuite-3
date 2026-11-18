@@ -52,6 +52,29 @@ struct RecenterResult {
 RecenterResult circularRecenterShift(const double* energy, int nSamp,
                                      int peakPos, double rMin);
 
+/* The same recentre UNDER A WINDOW: the centroid of weights[s] * energy[s].
+ *   weights  per-sample window (>= 0), length nSamp, laid out for a target at peakPos (the realign's
+ *            correlation window: a weight on quadratic forms, so it multiplies the energy as it stands).
+ *            nullptr = no window: this is circularRecenterShift.
+ *   follow   true  -- the window is a bell on peakPos (gauss / hann).  One pass under a window that
+ *                     sits on the target under-corrects: the window pulls the centroid toward its own
+ *                     centre, so a lobe at offset d reads d * sw^2 / (sw^2 + se^2).  The window is
+ *                     therefore rolled onto the centroid it just measured and the measurement repeated
+ *                     until it settles (a mean shift from peakPos; the offset is fractional).  At the fixed
+ *                     point the window is centred on the lobe and a uniform pedestal under it is
+ *                     symmetric about the answer, so the noise floor still cancels -- as it does
+ *                     without a window, and as it does NOT in a single windowed pass.  A lobe the
+ *                     window cannot see from peakPos (a second spike in the tail) is not followed:
+ *                     that is the point of the window.
+ *            false -- the window rides with the data (the template's own energy profile): one pass,
+ *                     nothing to follow.
+ * R is the mean resultant length of the WINDOWED energy at the last pass.  A bell concentrates the
+ * mass by construction, so R is higher than the whole-window R and rMin is a weaker guard here; the
+ * caller that wants the two-lobe test should read circularRecenterShift's R as well.
+ * Nothing under the window (all-zero product) -> { applied=false, shift=0 }. */
+RecenterResult circularRecenterShiftWindowed(const double* energy, const float* weights,
+                                             int nSamp, int peakPos, double rMin, bool follow);
+
 /* Per-spike reference-free centroid de-jitter -- the fiber-kit fiber_realign method='centroid'.
  *   energy    per-spike channel-summed per-sample energy, nSpikes*nSamp row-major (>= 0)
  *   nSpikes   number of spikes

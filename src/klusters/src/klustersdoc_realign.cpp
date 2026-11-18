@@ -428,15 +428,53 @@ static std::vector<float> realignKernelWeights(RealignKernel kernel, int kernelW
     return w;
 }
 
+// The mean waveform of the in-memory buffer (channel-major, spkElems wide): what
+// a post-alignment pass builds its correlation window from.
+static std::vector<int16_t> realignMeanWaveform(const std::vector<int16_t>& wavBuf,
+                                                int64_t N, size_t spkElems)
+{
+    std::vector<int16_t> mean(spkElems, 0);
+    if (N <= 0) return mean;
+    std::vector<int64_t> acc(spkElems, 0);
+    for (int64_t i = 0; i < N; ++i) {
+        const int16_t* w = wavBuf.data()
+            + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+        for (size_t e = 0; e < spkElems; ++e) acc[e] += static_cast<int64_t>(w[e]);
+    }
+    for (size_t e = 0; e < spkElems; ++e) mean[e] = static_cast<int16_t>(acc[e] / N);
+    return mean;
+}
+
+static QString realignKernelName(RealignKernel kernel, int kernelWidth)
+{
+    switch (kernel) {
+    case RealignKernel::Gauss:    return QStringLiteral("gauss +-%1").arg(kernelWidth);
+    case RealignKernel::Hann:     return QStringLiteral("hann +-%1").arg(kernelWidth);
+    case RealignKernel::Template: return QStringLiteral("template energy");
+    default:                      return QStringLiteral("none");
+    }
+}
+
 // Phase-0 decomposition of realignSpikes: optional post-alignment RMS circular
 // group-recenter (--recenter-rms).  Lifted verbatim out of realignSpikes; it
 // touches no member state -- it transforms the in-memory waveform buffer and
 // shift bookkeeping in place and logs through the caller-supplied stream and
 // flush -- so it is a free function in this TU (no header change).
+//
+// Under a correlation window (--kernel) the centroid is that of the WINDOWED
+// energy, w[t] * E[t] -- the window weights quadratic forms in the correlation
+// (sum w t x, sum w x^2), so it multiplies the energy as it stands.  Without it
+// the recenter undid part of what the window bought: the passes kept a second
+// spike in the tail out of every lag, and then the group shift was measured on
+// the whole window, the tail included.  A bell is followed onto the lobe it
+// finds from the target (see circularRecenterShiftWindowed: one pass under a
+// window sitting on the target under-corrects); the template-energy window is
+// the cluster's own profile and rides with the data, one pass.
 static void realignRmsRecenter(std::vector<int16_t>& wavBuf,
                                std::vector<int>& cumShift, int& nShifted,
                                int64_t N, int nChan, int nSamp,
                                size_t spkElems, int peakSamp0, float rMin,
+                               RealignKernel kernel, int kernelWidth,
                                QTextStream& log,
                                const std::function<void()>& emitFlush)
 {
@@ -454,10 +492,28 @@ static void realignRmsRecenter(std::vector<int16_t>& wavBuf,
         }
     }
 
-    // Circular weighted mean of the energy profile (shared math).
-    const realign_center::RecenterResult rc =
+    // Circular weighted mean of the energy profile (shared math), under the
+    // correlation window when there is one.  `whole` is the unwindowed result:
+    // the recenter itself without a window, a line in the log with one.
+    const realign_center::RecenterResult whole =
         realign_center::circularRecenterShift(energy.data(), nSamp,
                                               peakSamp0, rMin);
+    std::vector<float> kw;
+    if (kernel != RealignKernel::None) {
+        const std::vector<int16_t> mean = realignMeanWaveform(wavBuf, N, spkElems);
+        kw = realignKernelWeights(kernel, kernelWidth, peakSamp0, nSamp, nChan, mean.data());
+    }
+    const realign_center::RecenterResult rc = kw.empty() ? whole
+        : realign_center::circularRecenterShiftWindowed(
+              energy.data(), kw.data(), nSamp, peakSamp0, rMin,
+              kernel != RealignKernel::Template);
+    if (!kw.empty()) {
+        log << "RMS recenter: under the " << realignKernelName(kernel, kernelWidth)
+            << " window (whole window: centroid="
+            << QString::number(whole.centroid, 'f', 2)
+            << " R=" << QString::number(whole.R, 'f', 3)
+            << " shift=" << whole.shift << ").\n";
+    }
 
     if (!rc.applied) {
         log << "RMS recenter: R=" << QString::number(rc.R, 'f', 3)
@@ -1443,6 +1499,43 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             }
         }
 
+        // ── Correlation window ────────────────────────────────────────────────
+        // Under --kernel the xcorr passes score sum_t w[t] T[t] x[t+lag]; the
+        // refine scored sum_u ev[u] (x[u] - mu[u]) over the basis' whole window,
+        // so a second spike the passes had been told to ignore voted again on
+        // where each spike lands.  The windowed projection is the same inner
+        // product under the same weight, sum_u w[u] ev[u] (x[u] - mu[u]), and it
+        // goes where the channel restriction goes and for the same reasons: into
+        // the COPY of the basis, ev'[k][u] = ev[k][u] * w[recShift + u].  The CPU
+        // loop and the GPU kernel both read pcaRef.evec, so both honour it; the
+        // means are untouched (w multiplies the centred sample), and `pca`, the
+        // basis the features are recomputed through, never sees the window.
+        // Candidates are cut with their target on peakSamp0, which is where the
+        // window sits.  NOT normalised by the windowed spike energy, unlike the
+        // correlation: the refine maximises an energy, so a larger second spike
+        // slid onto the window's centre still scores high -- the window narrows
+        // what votes, it does not make the refine a collision guard.
+        if (kernel != RealignKernel::None) {
+            const std::vector<int16_t> mean = realignMeanWaveform(wavBuf, N, spkElems);
+            const std::vector<float> kw = realignKernelWeights(kernel, kernelWidth, peakSamp0,
+                                                               nSamp, nChan, mean.data());
+            if (!kw.empty()) {
+                for (int ch = 0; ch < pcaRef.nCh; ++ch) {
+                    std::vector<double>& ev = pcaRef.evec[static_cast<size_t>(ch)];
+                    for (int k = 0; k < pcaRef.nComp; ++k)
+                        for (int u = 0; u < pcaRef.data2use; ++u) {
+                            const int s = pcaRef.recShift + u;
+                            const double w = (s >= 0 && s < nSamp)
+                                ? static_cast<double>(kw[static_cast<size_t>(s)]) : 0.0;
+                            ev[static_cast<size_t>(k) * static_cast<size_t>(pcaRef.data2use)
+                               + static_cast<size_t>(u)] *= w;
+                        }
+                }
+                log << "PCA-projection refine under the "
+                    << realignKernelName(kernel, kernelWidth) << " window.\n";
+            }
+        }
+
         log << "PCA-projection refine pass: search ±" << maxShift
             << " samples, "
             << pca.nCh << " channels × " << pca.nComp << " components\n";
@@ -1861,7 +1954,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // measured circularly but realised as a clean unwrapped window.
     if (rmsRecenter)
         realignRmsRecenter(wavBuf, cumShift, nShifted, N, nChan, nSamp,
-                           spkElems, peakSamp0, rMin, log, emitFlush);
+                           spkElems, peakSamp0, rMin, kernel, kernelWidth,
+                           log, emitFlush);
 
     // -----------------------------------------------------------------------
     // Score / shift statistics

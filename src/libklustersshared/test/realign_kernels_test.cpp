@@ -144,7 +144,62 @@ static void testCentroidZeroSpike() {
     }
 }
 
+// realign_center::circularRecenterShiftWindowed (Klusters --recenter-rms under --kernel).
+static void testWindowedRecenter() {
+    const int N = 32, peak = 16;
+    auto lobe = [&](std::vector<double>& e, double at, double sigma, double amp) {
+        for (int s = 0; s < N; ++s)
+            e[static_cast<size_t>(s)] += amp * std::exp(-0.5 * (s - at) * (s - at) / (sigma * sigma));
+    };
+    auto gauss = [&](double hw) {
+        std::vector<float> w(static_cast<size_t>(N));
+        for (int s = 0; s < N; ++s)
+            w[static_cast<size_t>(s)] = static_cast<float>(std::exp(-0.5 * (s - peak) * (s - peak) / ((hw / 2) * (hw / 2))));
+        return w;
+    };
+    const std::vector<float> w = gauss(6.0);
+
+    // No window: the function IS circularRecenterShift.
+    {
+        std::vector<double> e(N, 0.0); lobe(e, 20.0, 2.5, 1.0);
+        const auto a = realign_center::circularRecenterShift(e.data(), N, peak, 0.5);
+        const auto b = realign_center::circularRecenterShiftWindowed(e.data(), nullptr, N, peak, 0.5, true);
+        check(a.shift == b.shift && a.applied == b.applied && a.R == b.R, "windowed: null weights = the whole-window recentre");
+        check(a.shift == 4, "whole window: a clean lobe at 20 -> shift 4 (got " + std::to_string(a.shift) + ")");
+    }
+    // A clean lobe 4 samples late, on a pedestal: one pass under the bell under-corrects, the
+    // followed window lands on it.
+    {
+        std::vector<double> e(N, 0.2); lobe(e, 20.0, 2.5, 1.0);
+        const auto one = realign_center::circularRecenterShiftWindowed(e.data(), w.data(), N, peak, 0.0, false);
+        const auto fol = realign_center::circularRecenterShiftWindowed(e.data(), w.data(), N, peak, 0.0, true);
+        check(one.applied && one.shift > 0 && one.shift < 4,
+              "windowed, one pass: under-corrects (got " + std::to_string(one.shift) + ", lobe at +4)");
+        check(fol.applied && fol.shift == 4,
+              "windowed, followed: lands on the lobe through a pedestal (got " + std::to_string(fol.shift) + ")");
+    }
+    // A second lobe in the tail (the smear a set of collisions leaves in the group energy) drags
+    // the whole-window centroid; the followed window stays on the lobe next to the target.
+    {
+        std::vector<double> e(N, 0.0); lobe(e, 18.0, 2.0, 1.0); lobe(e, 27.0, 2.5, 0.7);
+        const auto whole = realign_center::circularRecenterShift(e.data(), N, peak, 0.0);
+        const auto fol   = realign_center::circularRecenterShiftWindowed(e.data(), w.data(), N, peak, 0.0, true);
+        check(whole.shift >= 4, "whole window: the tail lobe drags the centroid (got " + std::to_string(whole.shift) + ", lobe at +2)");
+        check(fol.shift == 2, "windowed, followed: stays on the near lobe (got " + std::to_string(fol.shift) + ")");
+    }
+    // Nothing under a compact window: not applied, shift 0 (never atan2(0,0) -> -peak).
+    {
+        std::vector<double> e(N, 0.0); e[2] = 1.0;
+        std::vector<float> hann(N, 0.0f);
+        for (int s = peak - 3; s <= peak + 3; ++s)
+            hann[static_cast<size_t>(s)] = static_cast<float>(0.5 * (1.0 + std::cos(3.14159265358979 * (s - peak) / 3.0)));
+        const auto r = realign_center::circularRecenterShiftWindowed(e.data(), hann.data(), N, peak, 0.0, true);
+        check(!r.applied && r.shift == 0, "windowed: nothing under the window -> not applied");
+    }
+}
+
 int main() {
+    testWindowedRecenter();
     testXcorrUndefined();
     testXcorrTie();
     testCentroidZeroSpike();

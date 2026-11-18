@@ -71,6 +71,8 @@ void KlustersApp::startSelfTest(const QString& specPath)
         configuration().setRealignKernel(spec.value(QStringLiteral("realignKernel")).toInt());
     if (spec.contains(QStringLiteral("realignKernelWidth")))      // samples each side of the peak, 0 = auto
         configuration().setRealignKernelWidth(spec.value(QStringLiteral("realignKernelWidth")).toInt());
+    if (spec.contains(QStringLiteral("realignMode")))             // 0 xcorr only, 1 PCA refine, 2 RMS recenter, 3 centroid
+        configuration().setRealignMode(spec.value(QStringLiteral("realignMode")).toInt());
     if (spec.contains(QStringLiteral("realignThreshold")))
         configuration().setRealignThreshold(spec.value(QStringLiteral("realignThreshold")).toDouble());
     realignArgs = buildRealignArgs();
