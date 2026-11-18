@@ -52,6 +52,23 @@ Chord Chord::fromString(const QString& s)
     return c;
 }
 
+QString Chord::toStored() const
+{
+    return isValid() ? toString() : QStringLiteral("unbound");
+}
+
+bool Chord::fromStored(const QString& s, Chord* out)
+{
+    if (s.trimmed() == QLatin1String("unbound")) {
+        if (out) *out = Chord{};
+        return true;
+    }
+    const Chord c = fromString(s);
+    if (!c.isValid()) return false;
+    if (out) *out = c;
+    return true;
+}
+
 static QString modsText(Qt::KeyboardModifiers m)
 {
     QStringList out;

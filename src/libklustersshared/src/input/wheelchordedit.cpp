@@ -28,6 +28,8 @@ WheelChordEdit::WheelChordEdit(QWidget* parent)
     dir_ = new QComboBox(this);
     dir_->addItem(tr("Wheel up"),   +1);
     dir_->addItem(tr("Wheel down"), -1);
+    // The unbound state (data 0): chord() is then the invalid chord.
+    dir_->addItem(tr("(none)"), 0);
     h->addWidget(dir_);
     connect(dir_, &QComboBox::currentIndexChanged, this, [this](int){ Q_EMIT chordChanged(); });
 }
@@ -38,6 +40,12 @@ void WheelChordEdit::setChord(const input::Chord& c)
     // QSignalBlocker the key rows use around a programmatic setKeySequence).
     const QSignalBlocker b0(this),  b1(dir_), b2(ctrl_),
                          b3(alt_),  b4(shift_), b5(meta_);
+
+    // Unbound: select "(none)" and keep the policy and modifiers loaded before it.
+    if (!c.isValid()) {
+        dir_->setCurrentIndex(dir_->findData(0));
+        return;
+    }
 
     phase_    = c.phase;
     modMatch_ = c.modMatch;
@@ -65,7 +73,9 @@ input::Chord WheelChordEdit::chord() const
     if (alt_->isChecked())   m |= Qt::AltModifier;
     if (shift_->isChecked()) m |= Qt::ShiftModifier;
     if (meta_->isChecked())  m |= Qt::MetaModifier;
-    return input::Chord::wheel(dir_->currentData().toInt(), m, modMatch_);
+    const int dir = dir_->currentData().toInt();
+    if (dir == 0) return {};                             // "(none)": unbound
+    return input::Chord::wheel(dir, m, modMatch_);
 }
 
 void WheelChordEdit::setConflict(bool on)

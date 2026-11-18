@@ -403,6 +403,11 @@ black instead of transparent.
 including the ones you have changed. Bindings are edited in **Settings →
 Preferences → Input**, which also saves and loads named keymap layouts
 (*Keymap layout*: Apply, Save As…, Rename, Delete, Reset all to defaults).
+Each row's **Reset** restores that command's shipped binding. On a row that is
+already at its default the button reads **Unbind**: a press clears the binding
+and the command keeps none (mouse rows show *(none)*) — so pressing twice goes
+default, then unbound; a third press brings the default back. An unbound
+command is saved as such, in the settings and in a keymap layout.
 The defaults for the most-used actions:
 
 | Key | Action |

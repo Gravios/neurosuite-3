@@ -1367,7 +1367,7 @@ For a <emphasis>mouse</emphasis> command, choose the button (or wheel direction)
 If two commands that apply in the same context are given the same binding, both fields are highlighted so you can resolve the clash. A few bindings belong to a temporary mode and are shown read-only.
 </para>
 <para>
-Each row has a <guibutton>Reset</guibutton> that restores that command's shipped default. To undo all of your changes at once, use <guibutton>Reset all to defaults</guibutton> at the top of the page. Changes take effect when you click <guibutton>Apply</guibutton> or <guibutton>OK</guibutton>, and are remembered across sessions.
+Each row has a <guibutton>Reset</guibutton> that restores that command's shipped default. On a row that is already at its default the button reads <guibutton>Unbind</guibutton>: pressing it clears the binding and the command keeps none. To undo all of your changes at once, use <guibutton>Reset all to defaults</guibutton> at the top of the page. Changes take effect when you click <guibutton>Apply</guibutton> or <guibutton>OK</guibutton>, and are remembered across sessions.
 </para>
 </sect2>
 

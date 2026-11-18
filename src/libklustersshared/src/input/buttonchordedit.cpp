@@ -31,6 +31,8 @@ ButtonChordEdit::ButtonChordEdit(QWidget* parent)
     button_->addItem(tr("Middle-button"),  int(Qt::MiddleButton));
     button_->addItem(tr("Back-button"),    int(Qt::BackButton));
     button_->addItem(tr("Forward-button"), int(Qt::ForwardButton));
+    // The unbound state (data 0 = Qt::NoButton): chord() is then the invalid chord.
+    button_->addItem(tr("(none)"), int(Qt::NoButton));
     h->addWidget(button_);
     connect(button_, &QComboBox::currentIndexChanged, this, [this](int){ Q_EMIT chordChanged(); });
 }
@@ -41,6 +43,13 @@ void ButtonChordEdit::setChord(const input::Chord& c)
     // QSignalBlocker the key rows use around a programmatic setKeySequence).
     const QSignalBlocker b0(this),  b1(button_), b2(ctrl_),
                          b3(alt_),  b4(shift_),  b5(meta_);
+
+    // Unbound: select "(none)" and keep the phase, policy and modifiers of the chord
+    // loaded before it, so choosing a button again rebuilds the same kind of gesture.
+    if (!c.isValid()) {
+        button_->setCurrentIndex(button_->findData(int(Qt::NoButton)));
+        return;
+    }
 
     phase_    = c.phase;
     modMatch_ = c.modMatch;
@@ -72,6 +81,7 @@ input::Chord ButtonChordEdit::chord() const
     if (shift_->isChecked()) m |= Qt::ShiftModifier;
     if (meta_->isChecked())  m |= Qt::MetaModifier;
     const auto b = static_cast<Qt::MouseButton>(button_->currentData().toInt());
+    if (b == Qt::NoButton) return {};                    // "(none)": unbound
     return input::Chord::button(b, m, phase_, modMatch_);
 }
 

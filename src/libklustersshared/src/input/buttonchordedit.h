@@ -24,6 +24,7 @@ public:
     explicit ButtonChordEdit(QWidget* parent = nullptr);
 
     void         setChord(const input::Chord& c);   ///< load button + modifiers; remember phase + modMatch
+    // An invalid chord selects "(none)" -- unbound -- and chord() then returns the invalid chord.
     input::Chord chord() const;                      ///< rebuild with the remembered phase + modMatch
 
     void setConflict(bool on);   ///< tint when this binding clashes within its scope

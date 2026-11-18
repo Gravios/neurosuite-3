@@ -8,7 +8,8 @@
 // automatically, with no edits to this file — the extensibility the plan is built for.
 // Editing a binding writes an OVERRIDE (a diff from the shipped default) to the registry
 // and to Configuration (persisted); clearing an edit back to the default drops the
-// override.  Per-row Reset and the dialog's global Default restore shipped bindings.
+// override.  Per-row Reset restores the shipped binding and, pressed again on a row that
+// is at its default, unbinds the command; the dialog's global Default restores them all.
 // Within-scope conflicts are tinted live.
 //
 // Key commands use a QKeySequenceEdit; button commands use a ButtonChordEdit (the
@@ -57,11 +58,17 @@ private:
         QLabel*           fixed      = nullptr;   // any other device (read-only fallback)
         QToolButton*      section      = nullptr; // the collapsible section holding the row
         QToolButton*      scopeSection = nullptr; // and its scope's
+        QToolButton*      reset        = nullptr; // Reset / Unbind (editable rows)
     };
 
     void build();                ///< construct the UI from the registry (once, in the ctor)
     void recomputeConflicts();   ///< tint editors that collide within a scope
     input::Chord rowChord(const Row& r) const;   ///< the row's current chord from its editor
+    void setRowChord(Row& r, const input::Chord& c);   ///< chord -> editor, no change signal (invalid = unbound)
+    /// The row's button, pressed: a row off its default goes back to it; a row ON its
+    /// default is unbound.  So the first press restores and the second clears.
+    void resetOrUnbindRow(int idx);
+    void refreshResetButtons();  ///< each button's label / tooltip / enabled state says what a press does
 
     // ── Keymap layouts (profiles) ────────────────────────────────────────────
     // A layout is a named set of binding overrides (input/keymapprofile.h).  The bar at

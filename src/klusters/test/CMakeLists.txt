@@ -230,6 +230,28 @@ if(TARGET Qt6::Widgets)
     target_link_libraries(klusters_test_radialmenu PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
     add_test(NAME klusters_test_radialmenu COMMAND klusters_test_radialmenu)
     set_tests_properties(klusters_test_radialmenu PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+    # Input preferences page (input/prefinput.h): the per-row Reset button -- the
+    # first press restores the shipped default, the second unbinds -- and the unbound
+    # override's round trip through commit, the store and a reload.  Compiles the page
+    # and the binding core directly, like the input tests above.
+    add_executable(klusters_test_prefinput
+        prefinput_test.cpp
+        "${_shared_root}/input/prefinput.cpp"       "${_shared_root}/input/prefinput.h"
+        "${_shared_root}/input/buttonchordedit.cpp" "${_shared_root}/input/buttonchordedit.h"
+        "${_shared_root}/input/wheelchordedit.cpp"  "${_shared_root}/input/wheelchordedit.h"
+        "${_shared_root}/input/chord.cpp"
+        "${_shared_root}/input/bindingregistry.cpp"
+        "${_shared_root}/input/inputdispatcher.cpp"
+        "${_shared_root}/input/keymapprofile.cpp")
+    set_target_properties(klusters_test_prefinput PROPERTIES AUTOMOC ON)
+    target_compile_features(klusters_test_prefinput PRIVATE cxx_std_20)
+    target_compile_definitions(klusters_test_prefinput PRIVATE KLUSTERSSHARED_STATICLIB)
+    target_include_directories(klusters_test_prefinput
+        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_shared_root}/input" "${_core}")
+    target_link_libraries(klusters_test_prefinput PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+    add_test(NAME klusters_test_prefinput COMMAND klusters_test_prefinput)
+    set_tests_properties(klusters_test_prefinput PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
 # The Grouping Assistant's Metal FP32 error matrix against an FP64 reference

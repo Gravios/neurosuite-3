@@ -1591,6 +1591,7 @@ private:
     /** command id -> the mirrored menu/toolbar QAction, for pushing a rebind back
      *  onto the action's shortcut (input-remapping plan P0c). */
     QHash<QString, QAction*> appActionCommands_;
+    QSet<QString> appActionsRebound_;   ///< ids whose QAction carries an override's shortcut (applyInputOverridesToActions)
     QAction *mUpdateErrorMatrix;
     QAction *mNewResidualMatrix;
     QAction *mNewDriftMatrix;

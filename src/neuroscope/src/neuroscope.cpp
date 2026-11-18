@@ -882,8 +882,9 @@ void NeuroscopeApp::registerInputBindings()
     // chords onto the live menu/toolbar actions so the UI reflects the user's rebindings.
     const QMap<QString,QString> ov = configuration().getInputBindingOverrides();
     for(QMap<QString,QString>::const_iterator it = ov.constBegin(); it != ov.constEnd(); ++it){
-        const input::Chord c = input::Chord::fromString(it.value());
-        if(c.isValid() && reg.command(it.key())) reg.setOverride(it.key(), c);
+        // A valid chord, or "unbound" (the command keeps no binding, not even its default).
+        input::Chord c;
+        if(input::Chord::fromStored(it.value(), &c) && reg.command(it.key())) reg.setOverride(it.key(), c);
     }
     applyInputOverridesToActions();
 }
@@ -894,8 +895,15 @@ void NeuroscopeApp::applyInputOverridesToActions()
     for(QHash<QString,QAction*>::const_iterator it = mActionCommands.constBegin();
         it != mActionCommands.constEnd(); ++it){
         // Only touch actions the user actually rebound; the rest keep the shipped shortcut.
-        if(it.value() && reg.hasOverride(it.key()))
+        // An "unbound" override leaves the action without one; an action whose override is
+        // gone (reset to the default) gets its shipped chord back.
+        if(!it.value()) continue;
+        if(reg.hasOverride(it.key())){
             it.value()->setShortcut(input::keySequenceFromChord(reg.effectiveChord(it.key())));
+            mActionsRebound.insert(it.key());
+        } else if(mActionsRebound.remove(it.key())){
+            it.value()->setShortcut(input::keySequenceFromChord(reg.effectiveChord(it.key())));
+        }
     }
 }
 

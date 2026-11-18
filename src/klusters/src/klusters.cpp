@@ -3268,8 +3268,9 @@ void KlustersApp::registerInputBindings()
     // startup).  Only ids we actually registered and that parse to a valid chord.
     const QMap<QString,QString> ov = configuration().getInputBindingOverrides();
     for(QMap<QString,QString>::const_iterator it = ov.constBegin(); it != ov.constEnd(); ++it){
-        const input::Chord c = input::Chord::fromString(it.value());
-        if(c.isValid() && reg.command(it.key())) reg.setOverride(it.key(), c);
+        // A valid chord, or "unbound" (the command keeps no binding, not even its default).
+        input::Chord c;
+        if(input::Chord::fromStored(it.value(), &c) && reg.command(it.key())) reg.setOverride(it.key(), c);
     }
     applyInputOverridesToActions();
 }
@@ -3280,9 +3281,17 @@ void KlustersApp::applyInputOverridesToActions()
     for(QHash<QString,QAction*>::const_iterator it = appActionCommands_.constBegin();
         it != appActionCommands_.constEnd(); ++it){
         // Only touch actions the user actually rebound; the rest keep the shipped
-        // shortcut the menu set.
-        if(it.value() && reg.hasOverride(it.key()))
+        // shortcut the menu set.  An override may be "unbound" (an invalid chord): the
+        // action then has no shortcut.  An action whose override is GONE -- reset to the
+        // default in the Input page -- gets its shipped chord back here; it used to keep
+        // the rebound key until the next start.
+        if(!it.value()) continue;
+        if(reg.hasOverride(it.key())){
             it.value()->setShortcut(input::keySequenceFromChord(reg.effectiveChord(it.key())));
+            appActionsRebound_.insert(it.key());
+        } else if(appActionsRebound_.remove(it.key())){
+            it.value()->setShortcut(input::keySequenceFromChord(reg.effectiveChord(it.key())));
+        }
     }
 }
 

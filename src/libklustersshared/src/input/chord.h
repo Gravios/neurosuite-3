@@ -84,6 +84,17 @@ struct KLUSTERSSHARED_EXPORT Chord {
     QString       toString() const;
     static Chord  fromString(const QString& s);   // invalid Chord if malformed
 
+    // The stored form of a binding OVERRIDE.  An override may be "explicitly unbound"
+    // (an invalid chord set on purpose: the command keeps no key at all, its default
+    // included), and that must survive a round trip as itself -- fromString() cannot
+    // carry it, since a malformed string is an invalid chord too and means "ignore this
+    // line".  toStored() writes the token "unbound" for it; fromStored() is true for a
+    // valid chord or that token (then *out is the invalid chord) and false for anything
+    // unreadable.  A build that predates the token reads it as unreadable and falls
+    // back to the default.
+    QString       toStored() const;
+    static bool   fromStored(const QString& s, Chord* out);
+
     // One-way, human-readable label for the UI / cheat-sheet (e.g. "Ctrl+Shift+S",
     // "Right-button", "Ctrl+Wheel up").  Never parsed back.
     QString displayString() const;

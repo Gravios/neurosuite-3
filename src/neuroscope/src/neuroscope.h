@@ -29,6 +29,7 @@
 #include <QCheckBox>
 
 #include <QList>
+#include <QSet>
 
 #include <QTabWidget>
 #include <QMainWindow>
@@ -738,6 +739,7 @@ private:
     /** input-overhaul S6: commandId -> the mirrored QAction, so applyInputOverridesToActions()
      *  can push a rebound chord onto the live menu/toolbar shortcut (populated in registerActionCommand). */
     QHash<QString,QAction*> mActionCommands;
+    QSet<QString> mActionsRebound;   ///< ids whose QAction carries an override's shortcut (applyInputOverridesToActions)
     QMenu* addEventPopup;
     QAction* addEventToolBarAction;
     QAction* positionViewToggle;

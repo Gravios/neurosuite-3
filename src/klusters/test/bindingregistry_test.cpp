@@ -57,6 +57,16 @@ int main()
         CHECK(!Chord::fromString(QStringLiteral("garbage")).isValid());
         CHECK(!Chord::fromString(QStringLiteral("1/2/3")).isValid());   // too few fields
         CHECK(!Chord::fromString(QString()).isValid());
+
+        // The stored form of an override: "unbound" is a value, not a parse failure.
+        Chord out = Chord::key(Qt::Key_Z);
+        CHECK(Chord{}.toStored() == QStringLiteral("unbound"));
+        CHECK(Chord::fromStored(QStringLiteral("unbound"), &out) && !out.isValid());
+        CHECK(Chord::fromStored(k.toStored(), &out) && out == k);
+        out = Chord::key(Qt::Key_Z);
+        CHECK(!Chord::fromStored(QStringLiteral("garbage"), &out));
+        CHECK(out == Chord::key(Qt::Key_Z));                 // unreadable: *out is left alone
+        CHECK(!Chord::fromStored(Chord{}.toString(), &out)); // "0/0/0/0/0" is not the token
     }
 
     // ── Chord: equality + modifier normalization ─────────────────────────

@@ -56,6 +56,36 @@ int main()
               == p.bindings.value(QStringLiteral("cluster.wheelZoomIn")));
     }
 
+    // ── an unbound command is a binding of the layout and survives the round trip ──
+    {
+        KeymapProfile p;
+        p.name = QStringLiteral("No prefs key");
+        p.bindings.insert(QStringLiteral("app.prefs"), Chord{});
+        p.bindings.insert(QStringLiteral("app.quit"), Chord::key(Qt::Key_Q, Qt::ControlModifier));
+        const QString text = serializeKeymap(p);
+        CHECK(text.contains(QStringLiteral("app.prefs = unbound")));
+        bool ok = false;
+        const KeymapProfile r = parseKeymap(text, &ok);
+        CHECK(ok);
+        CHECK(r.bindings.size() == 2);
+        CHECK(r.bindings.contains(QStringLiteral("app.prefs")));
+        CHECK(!r.bindings.value(QStringLiteral("app.prefs"), Chord::key(Qt::Key_A)).isValid());
+
+        // Applied, the registry's effective chord is invalid -- not the default.
+        BindingRegistry reg;
+        InputScope s; s.id = QStringLiteral("app");
+        reg.addScope(s);
+        Command c; c.id = QStringLiteral("app.prefs"); c.scopeId = s.id;
+        c.defaultChord = Chord::key(Qt::Key_P, Qt::ControlModifier);
+        reg.addCommand(c);
+        applyKeymap(reg, r);
+        CHECK(reg.hasOverride(QStringLiteral("app.prefs")));
+        CHECK(!reg.effectiveChord(QStringLiteral("app.prefs")).isValid());
+        Ctx ctx;
+        CHECK(reg.resolve(c.defaultChord, ctx) == nullptr);   // the default no longer fires it
+        CHECK(captureKeymap(reg, QStringLiteral("x")).bindings.contains(QStringLiteral("app.prefs")));
+    }
+
     // ── parse robustness: comments, blanks, trimming, bad lines ──────────
     {
         const QString text =

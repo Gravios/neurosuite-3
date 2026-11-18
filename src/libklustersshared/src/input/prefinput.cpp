@@ -45,6 +45,57 @@ input::Chord PrefInput::rowChord(const Row& r) const
     return r.defaultChord;   // read-only rows keep their default
 }
 
+void PrefInput::setRowChord(Row& r, const input::Chord& c)
+{
+    if (r.edit) {
+        QSignalBlocker block(r.edit);   // programmatic load must not light Apply
+        r.edit->setKeySequence(input::keySequenceFromChord(c));
+    } else if (r.buttonEdit) {
+        // Unbound keeps the editor's phase / policy / modifiers, so load the default's
+        // first: a row opened unbound then rebuilds the command's own kind of gesture.
+        if (!c.isValid()) r.buttonEdit->setChord(r.defaultChord);
+        r.buttonEdit->setChord(c);      // self-blocking: no chordChanged emitted
+    } else if (r.wheelEdit) {
+        if (!c.isValid()) r.wheelEdit->setChord(r.defaultChord);
+        r.wheelEdit->setChord(c);       // self-blocking: no chordChanged emitted
+    }
+}
+
+void PrefInput::resetOrUnbindRow(int idx)
+{
+    if (idx < 0 || idx >= rows_.size()) return;
+    Row& r = rows_[idx];
+    if (rowChord(r) == r.defaultChord) setRowChord(r, input::Chord{});   // at the default: unbind
+    else                               setRowChord(r, r.defaultChord);   // off it: restore
+    recomputeConflicts();
+    Q_EMIT changed();
+}
+
+void PrefInput::refreshResetButtons()
+{
+    for (Row& r : rows_) {
+        if (!r.reset) continue;
+        const bool atDefault = (rowChord(r) == r.defaultChord);
+        if (!atDefault) {
+            r.reset->setText(tr("Reset"));
+            r.reset->setToolTip(r.defaultChord.isValid()
+                ? tr("Restore the shipped default (%1).  Press again to unbind the command.")
+                      .arg(r.defaultChord.displayString())
+                : tr("Clear this binding (the command ships unbound)."));
+            r.reset->setEnabled(true);
+        } else if (r.defaultChord.isValid()) {
+            r.reset->setText(tr("Unbind"));
+            r.reset->setToolTip(tr("This is the shipped default.  Press to clear it and leave the "
+                                   "command without a binding."));
+            r.reset->setEnabled(true);
+        } else {
+            r.reset->setText(tr("Reset"));
+            r.reset->setToolTip(tr("The command ships unbound and is unbound."));
+            r.reset->setEnabled(false);
+        }
+    }
+}
+
 void PrefInput::build()
 {
     using namespace input;
@@ -190,7 +241,9 @@ void PrefInput::build()
     auto* intro = new QLabel(
         tr("Editable keyboard shortcuts and mouse buttons / wheel.  For a key, click the "
            "field and press the new combination; for a mouse button or wheel, choose it and "
-           "its modifiers.  Reset restores the shipped default.  Fields that clash within "
+           "its modifiers.  Reset restores the shipped default; pressed again on a command "
+           "that is at its default (the button then reads Unbind) it clears the binding, "
+           "and the command keeps none.  Fields that clash within "
            "the same context are highlighted, and their section opens."), body);
     intro->setWordWrap(true);
     v->addWidget(intro);
@@ -358,23 +411,13 @@ void PrefInput::build()
             if (editable) {
                 auto* reset = new QToolButton(body);
                 reset->setText(tr("Reset"));
-                reset->setToolTip(tr("Restore the shipped default for this command."));
+                // Sized for the wider of its two labels, so the row does not jump.
+                reset->setMinimumWidth(std::max(reset->fontMetrics().horizontalAdvance(tr("Reset")),
+                                                reset->fontMetrics().horizontalAdvance(tr("Unbind"))) + 18);
                 rowLayout->addWidget(reset);
                 const int idx = rows_.size();   // the row we are about to append
-                connect(reset, &QToolButton::clicked, this, [this, idx]{
-                    if (idx < 0 || idx >= rows_.size()) return;
-                    Row& rr = rows_[idx];
-                    if (rr.edit) {
-                        QSignalBlocker block(rr.edit);
-                        rr.edit->setKeySequence(input::keySequenceFromChord(rr.defaultChord));
-                    } else if (rr.buttonEdit) {
-                        rr.buttonEdit->setChord(rr.defaultChord);   // self-blocking
-                    } else if (rr.wheelEdit) {
-                        rr.wheelEdit->setChord(rr.defaultChord);    // self-blocking
-                    }
-                    recomputeConflicts();
-                    Q_EMIT changed();
-                });
+                connect(reset, &QToolButton::clicked, this, [this, idx]{ resetOrUnbindRow(idx); });
+                row.reset = reset;
             }
 
             sectionLayout->addLayout(rowLayout);
@@ -390,15 +433,7 @@ void PrefInput::updateFromRegistry()
 {
     const input::BindingRegistry& reg = input::registry();
     for (Row& r : rows_) {
-        const input::Chord eff = reg.effectiveChord(r.commandId);
-        if (r.edit) {
-            QSignalBlocker block(r.edit);   // programmatic load must not light Apply
-            r.edit->setKeySequence(input::keySequenceFromChord(eff));
-        } else if (r.buttonEdit) {
-            r.buttonEdit->setChord(eff);    // self-blocking: no chordChanged emitted
-        } else if (r.wheelEdit) {
-            r.wheelEdit->setChord(eff);     // self-blocking: no chordChanged emitted
-        }
+        setRowChord(r, reg.effectiveChord(r.commandId));
     }
     recomputeConflicts();
 
@@ -412,20 +447,22 @@ void PrefInput::commitToRegistry()
 {
     input::BindingRegistry& reg = input::registry();
 
-    // Editors -> overrides: store a diff only where the chord differs from default;
-    // an edit cleared back to the default (or emptied) drops the override.
+    // Editors -> overrides: store a diff only where the chord differs from default; an
+    // edit back at the default drops the override.  An EMPTY editor on a command that
+    // ships with a binding is a diff too -- the command is unbound (an invalid chord as
+    // the override) -- and it used to be dropped, so the default came back on reopen.
     for (const Row& r : rows_) {
         if (!r.edit && !r.buttonEdit && !r.wheelEdit) continue;   // read-only rows: nothing to commit
         const input::Chord c = rowChord(r);
-        if (!c.isValid() || c == r.defaultChord) reg.clearOverride(r.commandId);
+        if (c == r.defaultChord) reg.clearOverride(r.commandId);
         else                                     reg.setOverride(r.commandId, c);
     }
 
-    // Persist the diff map (command id -> Chord::toString()).  KlustersApp pushes the
+    // Persist the diff map (command id -> Chord::toStored(): "unbound" for an unbound one).  KlustersApp pushes the
     // QAction shortcuts in applyPreferences() via applyInputOverridesToActions().
     QMap<QString, QString> ov;
     const QList<QPair<QString, input::Chord>> diffs = reg.overrides();
-    for (const auto& kv : diffs) ov.insert(kv.first, kv.second.toString());
+    for (const auto& kv : diffs) ov.insert(kv.first, kv.second.toStored());
     store_.setInputBindingOverrides(ov);
 
     // Persist the user's saved keymap layouts alongside the overrides, so the whole page
@@ -435,22 +472,15 @@ void PrefInput::commitToRegistry()
 
 void PrefInput::restoreDefaults()
 {
-    for (Row& r : rows_) {
-        if (r.edit) {
-            QSignalBlocker block(r.edit);
-            r.edit->setKeySequence(input::keySequenceFromChord(r.defaultChord));
-        } else if (r.buttonEdit) {
-            r.buttonEdit->setChord(r.defaultChord);   // self-blocking
-        } else if (r.wheelEdit) {
-            r.wheelEdit->setChord(r.defaultChord);    // self-blocking
-        }
-    }
+    for (Row& r : rows_) setRowChord(r, r.defaultChord);
     recomputeConflicts();
     Q_EMIT changed();
 }
 
 void PrefInput::recomputeConflicts()
 {
+    refreshResetButtons();   // every edit and every load ends here
+
     // Group editable rows by scope + current chord; a chord shared by >1 command in
     // the SAME scope is a real conflict (one shadows the other).  Cross-scope repeats
     // are legal and not flagged (matches BindingRegistry::conflicts()).
@@ -556,15 +586,7 @@ void PrefInput::applyProfileToRows(const input::KeymapProfile& p)
     // visible state).  Mirrors restoreDefaults, but to the layout's chords.  Signals blocked
     // on load; the single changed() at the end lights the dialog's Apply.
     for (Row& r : rows_) {
-        const input::Chord c = p.bindings.value(r.commandId, r.defaultChord);
-        if (r.edit) {
-            QSignalBlocker block(r.edit);
-            r.edit->setKeySequence(input::keySequenceFromChord(c));
-        } else if (r.buttonEdit) {
-            r.buttonEdit->setChord(c);   // self-blocking
-        } else if (r.wheelEdit) {
-            r.wheelEdit->setChord(c);    // self-blocking
-        }
+        setRowChord(r, p.bindings.value(r.commandId, r.defaultChord));
     }
     recomputeConflicts();
     Q_EMIT changed();
@@ -573,13 +595,14 @@ void PrefInput::applyProfileToRows(const input::KeymapProfile& p)
 input::KeymapProfile PrefInput::captureRowsAsProfile(const QString& name) const
 {
     // Capture the diff from the shipped defaults — exactly what commitToRegistry decides to
-    // store: an editor left at (or cleared to) its default contributes no binding.
+    // store: an editor left at its default contributes no binding; an emptied one on a
+    // command that ships bound contributes "unbound".
     input::KeymapProfile p;
     p.name = name;
     for (const Row& r : rows_) {
         if (!r.edit && !r.buttonEdit && !r.wheelEdit) continue;   // read-only rows
         const input::Chord c = rowChord(r);
-        if (c.isValid() && !(c == r.defaultChord))
+        if (!(c == r.defaultChord))
             p.bindings.insert(r.commandId, c);
     }
     return p;

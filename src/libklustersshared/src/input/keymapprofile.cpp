@@ -19,7 +19,7 @@ QString serializeKeymap(const KeymapProfile& profile)
     out += QLatin1Char('\n');
     // QMap iterates sorted by key, so the binding block is stable and diffable.
     for (auto it = profile.bindings.constBegin(); it != profile.bindings.constEnd(); ++it)
-        out += it.key() + QStringLiteral(" = ") + it.value().toString() + QLatin1Char('\n');
+        out += it.key() + QStringLiteral(" = ") + it.value().toStored() + QLatin1Char('\n');
     return out;
 }
 
@@ -43,8 +43,9 @@ KeymapProfile parseKeymap(const QString& text, bool* ok)
         // Any other key is a command id; its value is a Chord::toString().  An
         // unparseable chord (a command this build lacks, or an encoding a newer build
         // changed) is skipped so one bad line never discards the whole profile.
-        const Chord c = Chord::fromString(val);
-        if (c.isValid())
+        // "unbound" is a binding too: the layout leaves that command without a key.
+        Chord c;
+        if (Chord::fromStored(val, &c))
             profile.bindings.insert(key, c);
     }
     if (ok)

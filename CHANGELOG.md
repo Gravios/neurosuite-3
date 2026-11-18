@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | [Input preferences: Reset restores the default, a second press unbinds — and an unbound command stays unbound](#2026-11-18--input-preferences-reset-restores-the-default-a-second-press-unbinds--and-an-unbound-command-stays-unbound) |
 | 2026-11-18 | [Klusters: the radial menu keeps an open ring while the cursor is moving](#2026-11-18--klusters-the-radial-menu-keeps-an-open-ring-while-the-cursor-is-moving) |
 | 2026-11-18 | [Klusters: the RMS recenter and the PCA refine run under the correlation window](#2026-11-18--klusters-the-rms-recenter-and-the-pca-refine-run-under-the-correlation-window) |
 | 2026-11-18 | [Klusters: a seed cluster for the residual strip -- the template AND the threshold from a carved core](#2026-11-18--klusters-a-seed-cluster-for-the-residual-strip--the-template-and-the-threshold-from-a-carved-core) |
@@ -200,6 +201,47 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-18 — Input preferences: Reset restores the default, a second press unbinds — and an unbound command stays unbound
+
+<details>
+<summary>Details</summary>
+
+Preferences ▸ Input (the page Klusters and NeuroScope share).  A row's **Reset** could only put
+the shipped binding back; there was no way to leave a command that ships with a key without
+one.  Emptying the field looked like it worked and did not: an empty editor was committed as
+"no override", so the default was live again and showed again when the page reopened.
+
+- **One button, two steps.**  On a row that is off its default a press restores the default.
+  On a row that is at its default the button reads **Unbind**, and a press clears the binding.
+  So: Reset, then Unbind; a third press brings the default back.  The label and tooltip always
+  say what the next press does.  A command that ships unbound has one step only (clear a custom
+  key); its button is disabled while there is nothing to clear.
+- **Unbound is a binding.**  It is an override holding the invalid chord: the registry already
+  resolved nothing for one and listed it as *(unbound)*; what dropped it was the page's commit
+  and the persistence.  It is stored as `unbound` (`Chord::toStored` / `fromStored` — a
+  malformed string is an invalid chord too, so `fromString` cannot carry it), in the settings
+  and in keymap layouts (`app.prefs = unbound`).  A build that predates the token reads it as
+  unreadable and falls back to the default.
+- **Mouse rows** get a *(none)* choice in the button / wheel list.  Unbinding keeps the row's
+  modifiers, phase and modifier-match policy, so choosing a button again — or Reset — rebuilds
+  the command's own kind of gesture, also on a page opened with the row already unbound.
+- **A menu action follows a reset at once.**  `applyInputOverridesToActions` only touched
+  actions that HAVE an override, so an action reset to its default kept the rebound key until
+  the next start.  It now puts the shipped chord back on an action whose override is gone
+  (Klusters and NeuroScope).  An unbound action has no shortcut.
+
+Behaviour change to know: clearing a key field by hand now unbinds the command (it used to
+revert silently to the default on Apply).
+
+Tests: `prefinput_test.cpp` (27 checks on the real page, offscreen: key / button / wheel rows
+through custom → default → unbound → default, commit, the stored form, reload, a command that
+ships unbound); the stored form in `bindingregistry_test.cpp`; a layout with an unbound command
+in `keymapprofile_test.cpp`.  Both applications build.  Not exercised by hand in the GUI.
+
+</details>
 
 ---
 
