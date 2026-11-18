@@ -879,11 +879,30 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
                                     long              minSpikes,
                                     int               templateCluster,
                                     bool              thresholdFromTemplate,
-                                    const std::vector<double>& chunkBoundsSec)
+                                    const std::vector<double>& chunkBoundsSec,
+                                    bool              onChildLayer)
 {
     ResidualOutlierResult R;
 
-    Data& layer = parentData();                     // parent scope (see header)
+    // The layer the ids name: the parent (.clu) clustering, or -- for a scan of
+    // one or more children -- the child (.clc) clustering.  Named by the caller
+    // rather than read off data(): the two numberings overlap, so an id checked
+    // against the wrong layer is a different unit that happens to share a number.
+    if (onChildLayer && !childData) {
+        R.reason = tr("This session has no child layer.");
+        return R;
+    }
+    Data& layer = onChildLayer ? *childData : parentData();
+    idsBelongTo(layer, clusters, "detectResidualOutliers");
+    // A child is named as such in the report; a parent by its palette label.
+    auto name = [this, onChildLayer](int id) {
+        return onChildLayer ? tr("child %1").arg(id) : clusterLabel(id);
+    };
+    // The artefact / noise bins are never stripped: ids 0 and 1 in the parent
+    // layer, and in the child layer the children OF those two.
+    auto isBin = [this, onChildLayer](int id) {
+        return onChildLayer ? (parentOfChild(id) < 2) : (id < 2);
+    };
     const int nCh   = layer.nbOfChannels();
     const int nSamp = layer.nbOfSampleInWaveform();
     if (nCh <= 0 || nSamp <= 0) {
@@ -940,7 +959,8 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
         double thrOff = std::numeric_limits<double>::infinity();
         std::vector<double> on, off;                 // the seed's own scores (scored spikes)
     };
-    const bool haveSeed  = (templateCluster > 1);
+    const bool haveSeed  = onChildLayer ? (templateCluster > 0 && !isBin(templateCluster))
+                                        : (templateCluster > 1);
     const bool fixedTail = haveSeed && thresholdFromTemplate;
     std::vector<std::vector<long>> seedBy;
     long seedNeed = 0;
@@ -951,7 +971,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
         SortableTable spos;
         if (!layer.spikePositions(templateCluster, spos)) {
             R.reason = tr("Template cluster %1 has no spike-position table.")
-                           .arg(clusterLabel(templateCluster));
+                           .arg(name(templateCluster));
             return R;
         }
         const long sn = static_cast<long>(
@@ -959,7 +979,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
         if (sn < 8) {
             R.reason = tr("Template cluster %1 has only %2 spikes; at least 8 "
                           "are needed for a stable median waveform.")
-                           .arg(clusterLabel(templateCluster)).arg(sn);
+                           .arg(name(templateCluster)).arg(sn);
             return R;
         }
         seedBy   = residRowsByChunk(layer, templateCluster, spos, sn, bounds, secPerUnit);
@@ -968,7 +988,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
         if (scored.isEmpty()) {
             R.reason = tr("Nothing to score: cluster %1 is the template and no "
                           "other cluster is selected.")
-                           .arg(clusterLabel(templateCluster));
+                           .arg(name(templateCluster));
             return R;
         }
     }
@@ -1000,13 +1020,13 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
         if (!any) {
             R.reason = tr("Template cluster %1 gives no usable median waveform "
                           "on the selected channels (flat, or too few readable "
-                          "waveforms).").arg(clusterLabel(templateCluster));
+                          "waveforms).").arg(name(templateCluster));
             return R;
         }
     }
 
     for (int c : scored) {
-        if (c < 2) continue;                        // never strip artefact / noise
+        if (isBin(c)) continue;                     // never strip artefact / noise
         SortableTable pos;
         if (!layer.spikePositions(c, pos)) continue;
         const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(c)));
@@ -1149,7 +1169,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
             R.perCluster.append(
                 tr("%1: %2 scored, median on=%3 off=%4, tail on>%5 off>%6 "
                    "-> %7 flagged (%8 on, %9 off, %10 both, %11 no-gain)")
-                    .arg(clusterLabel(c))
+                    .arg(name(c))
                     .arg(onAll.size())
                     .arg(residMedian(onAll),  0, 'g', 3)
                     .arg(residMedian(offAll), 0, 'g', 3)
@@ -1160,7 +1180,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
                 tr("%1: %2 scored in %3 time chunk(s), %4 of them pooled with "
                    "neighbours; median on=%5 off=%6, tails on>%7 off>%8 "
                    "-> %9 flagged (%10 on, %11 off, %12 both, %13 no-gain)")
-                    .arg(clusterLabel(c))
+                    .arg(name(c))
                     .arg(onAll.size())
                     .arg(usedChunks).arg(pooledChunks)
                     .arg(residMedian(onAll),  0, 'g', 3)
@@ -1202,13 +1222,13 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
             R.perCluster.prepend(nChunks == 1
                 ? tr("template %1: %2 spikes, median on=%3 off=%4, FIXED tail "
                      "on>%5 off>%6 applied to every scored cluster")
-                      .arg(clusterLabel(templateCluster)).arg(sOnAll.size())
+                      .arg(name(templateCluster)).arg(sOnAll.size())
                       .arg(residMedian(sOnAll), 0, 'g', 3).arg(residMedian(sOffAll), 0, 'g', 3)
                       .arg(range(lo1, hi1)).arg(range(lo2, hi2))
                 : tr("template %1: %2 template window(s) over %3 time chunks, "
                      "median on=%4 off=%5, FIXED tails on>%6 off>%7, each applied "
                      "to the scored spikes of its own chunks")
-                      .arg(clusterLabel(templateCluster)).arg(nTpl).arg(nChunks)
+                      .arg(name(templateCluster)).arg(nTpl).arg(nChunks)
                       .arg(residMedian(sOnAll), 0, 'g', 3).arg(residMedian(sOffAll), 0, 'g', 3)
                       .arg(range(lo1, hi1)).arg(range(lo2, hi2)));
     }

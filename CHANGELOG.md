@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | [Klusters: Strip Residual Outliers works on children — scored whole, split into a sibling child](#2026-11-18--klusters-strip-residual-outliers-works-on-children--scored-whole-split-into-a-sibling-child) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers runs per time chunk — the Template view's partition, or the default template chunk length](#2026-11-18--klusters-strip-residual-outliers-runs-per-time-chunk--the-template-views-partition-or-the-default-template-chunk-length) |
 | 2026-11-18 | [Input preferences: Reset restores the default, a second press unbinds — and an unbound command stays unbound](#2026-11-18--input-preferences-reset-restores-the-default-a-second-press-unbinds--and-an-unbound-command-stays-unbound) |
 | 2026-11-18 | [Klusters: the radial menu keeps an open ring while the cursor is moving](#2026-11-18--klusters-the-radial-menu-keeps-an-open-ring-while-the-cursor-is-moving) |
@@ -202,6 +203,54 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-18 — Klusters: Strip Residual Outliers works on children — scored whole, split into a sibling child
+
+<details>
+<summary>Details</summary>
+
+With children selected in the child palette the action refused ("switch to the parent clustering
+first (the strip does not operate on atoms)").  It now runs on **one or more children**:
+
+- **The scan reads the child (.clc) layer.**  The ids, the seed and the report are children
+  (`child 4`); the children of the artefact and noise bins are skipped as the bins are, and the
+  children of reserved chunk clusters are left out.
+- **No time chunks.**  Each selected child is scored whole, against its own median waveform (or
+  the seed child's) and its own tails.  The *Time chunks* row shows "None — each child is scored
+  whole" and is fixed: a child is already one piece of its parent, and cutting it again by the
+  session's chunks would judge a piece of a piece on a handful of spikes.  The parent-scope
+  choice is remembered separately and is not changed by a run on children.
+- **The split makes a sibling child.**  The flagged spikes become a new child under the SAME
+  parent (three with *Keep the terms apart*); the parent's membership does not change.  Children
+  of different parents are never pooled into one new child — a child belongs to one parent — so
+  each bucket is cut per parent.  Undo is the child layer's (Ctrl+Shift+Z).
+
+Two faults in the apply step, found by driving it headless and fixed here (both could bite the
+parent scope too, with *Keep the terms apart*):
+
+- the sources of each new cluster were the ids the SCAN saw.  A split can be followed by an
+  auto-renumber, and a stale id makes the builder cut the wrong cluster and drop the bucket; the
+  sources are now re-read from the layer for each bucket;
+- the layer was not re-asserted between buckets.  After the first split of children the landing
+  can leave the PARENT active, and the next bucket was then cut out of the parent: in the test,
+  the flagged spikes of parent 3's only child became a new PARENT cluster (parent 3: 1200 → 1154).
+  Child scope is now re-asserted before every bucket.
+
+Measured on the drifting synthetic unit of the time-chunk entry, parent 2's 1200 spikes cut by
+time into three children: scored as one parent over the whole session 50 % of the 116
+contaminants are found (0.6 % of the clean spikes flagged); scored as its three children, 95 %
+(0.6 %) — each child spans a third of the drift.  Applied: one new child of 116 spikes, parent 2;
+parent 2 still 1200; its four children add up to 1200.  Synthetic fixture; the dialog path with a
+real child-palette selection was not exercised by hand.
+
+- `KlustersDoc::detectResidualOutliers(..., onChildLayer)`; `KlustersApp::applyResidualStrip`
+  (the apply step, out of the slot, shared with the selftest).
+- Selftest: `residualScan` takes `"children"` and `"apply"`; `test_residual_strip_children.py`
+  (18 checks).
+
+</details>
 
 ---
 

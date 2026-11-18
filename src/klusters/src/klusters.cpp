@@ -7171,20 +7171,36 @@ void KlustersApp::slotStripResidualOutliers()
     KlustersView* view = activeView();
     if (!view) return;
 
-    if (doc->isChildClusteringActive()) {
-        slotStatusMsg(tr("Strip residual outliers: switch to the parent clustering "
-                         "first (the strip does not operate on atoms)."));
-        return;
+    // Two scopes.  With children selected in the child palette the child
+    // clustering is the active layer: the scan reads it, the ids are children,
+    // and the split (createNewCluster, which runs on the ACTIVE layer) makes a
+    // sibling child under the same parent -- the parent's membership does not
+    // change.  Otherwise the selection is parent clusters, as before.
+    const bool childScope = doc->isChildClusteringActive();
+    QList<int> selected;
+    if (childScope) {
+        // The child palette's selection is what put the document in this scope
+        // (slotChildSelectionChanged); read it there rather than off the view.
+        selected = childPaletteA ? childPaletteA->selectedClusters() : view->clusters();
+        doc->leaveOutChildrenOfReserved(selected, tr("Strip residual outliers"));
+        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artefact / noise bins
+            if (doc->parentOfChild(selected.at(k)) < 2) selected.removeAt(k);
+    } else {
+        selected = view->clusters();
+        selected.removeAll(0);
+        selected.removeAll(1);
+        doc->leaveOutReserved(selected, tr("Strip residual outliers"));
     }
-
-    QList<int> selected = view->clusters();
-    selected.removeAll(0);
-    selected.removeAll(1);
-    doc->leaveOutReserved(selected, tr("Strip residual outliers"));
     if (selected.isEmpty()) {
-        slotStatusMsg(tr("Strip residual outliers: select one or more clusters first."));
+        slotStatusMsg(childScope
+            ? tr("Strip residual outliers: select one or more children first.")
+            : tr("Strip residual outliers: select one or more clusters first."));
         return;
     }
+    // A child is named as such; a parent by its palette label.
+    auto unitName = [childScope](int id) {
+        return childScope ? tr("child %1").arg(id) : clusterLabel(id);
+    };
 
     // ── Parameter dialog ─────────────────────────────────────────────────
     const int nSamp = doc->parentData().nbOfSampleInWaveform();
@@ -7301,7 +7317,7 @@ void KlustersApp::slotStripResidualOutliers()
     QComboBox* seedBox = new QComboBox(&dlg);
     seedBox->addItem(tr("(none) — each cluster scores against itself"), 0);
     for (int id : selected)
-        seedBox->addItem(clusterLabel(id), id);
+        seedBox->addItem(unitName(id), id);
     int seedAt = 0;
     for (int i = 0; i < seedBox->count(); ++i)
         if (seedBox->itemData(i).toInt() == lastSeed) { seedAt = i; break; }
@@ -7334,7 +7350,15 @@ void KlustersApp::slotStripResidualOutliers()
                      .arg(parts.join(QStringLiteral(", ")));
     }
 
+    // Children are scored WHOLE: a child is already one piece of its parent,
+    // and cutting it again by the session's time chunks would judge a piece of
+    // a piece against a template of a handful of spikes.  The choice is shown,
+    // fixed, so the dialog says what will happen.
     QComboBox* chunkBox = new QComboBox(&dlg);
+    if (childScope) {
+        chunkBox->addItem(tr("None — each child is scored whole"), 2);
+        chunkBox->setEnabled(false);
+    } else {
     if (havePartition)
         chunkBox->addItem(tr("Template view partition — %1 region(s)")
                               .arg(partitionBounds.size() + 1), 0);
@@ -7349,13 +7373,19 @@ void KlustersApp::slotStripResidualOutliers()
         const int at = chunkBox->findData(want);
         chunkBox->setCurrentIndex(at < 0 ? 0 : at);
     }
-    chunkBox->setToolTip(tr("The time chunks the scan runs in.  A cell's waveform "
+    }
+    chunkBox->setToolTip(childScope
+        ? tr("Children are scored whole, with no time chunks: each selected child "
+             "is judged against its own median waveform (or the seed's) over all "
+             "of its spikes.")
+        : tr("The time chunks the scan runs in.  A cell's waveform "
         "drifts over a session, so each chunk of a cluster is judged against the "
         "median waveform of that chunk and by the spread of that chunk.  A chunk "
         "with fewer of the cluster's spikes than Min spikes borrows its "
         "neighbouring chunks for the template and the tail; only its own spikes "
         "are flagged.  The uniform length is Preferences > Cluster view > Scope "
-        "granularity, the length a new Template view partition is seeded with."));
+        "granularity, the length a new Template view partition is seeded with.")
+        );
 
     form->addRow(tr("On-channel tail k (0 = off):"),  onBox);
     form->addRow(tr("Off-channel tail k (0 = off):"), offBox);
@@ -7366,7 +7396,7 @@ void KlustersApp::slotStripResidualOutliers()
     form->addRow(tr("Seed (template from):"),         seedBox);
     form->addRow(tr("Threshold from the seed too:"),  seedThrBox);
     form->addRow(tr("Time chunks:"),                  chunkBox);
-    form->addRow(tr("Clusters:"), new QLabel(
+    form->addRow(childScope ? tr("Children:") : tr("Clusters:"), new QLabel(
         tr("the %1 selected").arg(selected.size()), &dlg));
     form->addRow(tr("Restricted to:"), new QLabel(chText, &dlg));
     outer->addLayout(form);
@@ -7389,15 +7419,16 @@ void KlustersApp::slotStripResidualOutliers()
     lastKOn = kOn; lastKOff = kOff; lastMinGain = minGain;
     lastWindow = window; lastMinSpikes = minBox->value(); lastSeparate = separate;
     const int    chunking = chunkBox->currentData().toInt();
-    lastSeed = seed; lastSeedThr = seedThr; lastChunking = chunking;
-    const std::vector<double> chunkBounds =
-        chunking == 0 ? partitionBounds : (chunking == 1 ? uniformBounds : std::vector<double>());
+    lastSeed = seed; lastSeedThr = seedThr;
+    if (!childScope) lastChunking = chunking;       // the children's fixed "none" is not a preference
+    const std::vector<double> chunkBounds = childScope ? std::vector<double>()
+        : (chunking == 0 ? partitionBounds : (chunking == 1 ? uniformBounds : std::vector<double>()));
 
     // ── Scan ─────────────────────────────────────────────────────────────
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const KlustersDoc::ResidualOutlierResult R =
         doc->detectResidualOutliers(selected, kOn, kOff, minGain, window, minSpk,
-                                    seed, seedThr, chunkBounds);
+                                    seed, seedThr, chunkBounds, childScope);
     QApplication::restoreOverrideCursor();
 
     // The per-cluster diagnostic is the point of a test run: the medians and
@@ -7427,8 +7458,11 @@ void KlustersApp::slotStripResidualOutliers()
                         "%7 of %8 selected cluster(s) contribute, scored in %9.  "
                         "This can be undone.")
                         .arg(R.total)
-                        .arg(separate ? tr("up to three new clusters, one per term")
-                                      : tr("one new cluster"))
+                        .arg(childScope
+                             ? (separate ? tr("up to three new sibling children per parent, one per term")
+                                         : tr("one new sibling child per parent"))
+                             : (separate ? tr("up to three new clusters, one per term")
+                                         : tr("one new cluster")))
                         .arg(R.nOn).arg(R.nOff).arg(R.nBoth).arg(R.nNoGain)
                         .arg(R.byCluster.size()).arg(selected.size())
                         .arg(R.chunks > 1 ? tr("%1 time chunks").arg(R.chunks)
@@ -7437,10 +7471,10 @@ void KlustersApp::slotStripResidualOutliers()
         detail += QStringLiteral("\n\n") + (seedThr
             ? tr("Template and threshold both from the seed %1, which is not "
                  "itself stripped — so the cut is the same value for every "
-                 "scored cluster.").arg(clusterLabel(R.templateId))
+                 "scored cluster.").arg(unitName(R.templateId))
             : tr("Template from the seed %1, which is not itself stripped; "
                  "each scored cluster still sites its own cut.")
-                  .arg(clusterLabel(R.templateId)));
+                  .arg(unitName(R.templateId)));
     if (R.offBlind) detail += QStringLiteral("\n\n") + R.reason;
     if (!R.perCluster.isEmpty())
         detail += QStringLiteral("\n\n") + R.perCluster.join(QStringLiteral("\n"));
@@ -7451,37 +7485,70 @@ void KlustersApp::slotStripResidualOutliers()
     if (box.exec() != QMessageBox::Yes) return;
 
     // ── Apply ────────────────────────────────────────────────────────────
-    // createNewCluster, the row-named builder the t-SNE lasso's NEW_CLUSTER
-    // gesture uses -- NOT moveSpikeSubsetToCluster into a fresh id, which
-    // lands spikes in an id no view and no colour knows about (see the lasso
-    // note in clusterview.cpp).  detectResidualOutliers returns 0-based .spk
-    // indices; the builder speaks 1-based feature rows, so each is lifted
-    // by +1.
-    //
-    // Buckets: with the terms kept apart, on-only / off-only /
-    // both-or-no-gain, in that order; otherwise everything in one.  A bucket
-    // with no spikes is skipped, so a run that only moved one term makes one
-    // cluster.
-    struct Bucket { QString tag; QSet<dataType> rows; QList<int> sources; };
-    QVector<Bucket> buckets;
-    if (separate) {
-        buckets.append({ tr("on-channel"),  {}, {} });
-        buckets.append({ tr("off-channel"), {}, {} });
-        buckets.append({ tr("both/no-gain"), {}, {} });
-    } else {
-        buckets.append({ tr("residual"), {}, {} });
+    long long placed = 0;
+    const QStringList made = applyResidualStrip(R, separate, childScope, &placed);
+    if (made.isEmpty()) {
+        slotStatusMsg(tr("Strip residual outliers: the %1 flagged spike(s) could "
+                         "not be split into a new cluster.").arg(R.total));
+        return;
     }
-    for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it) {
-        for (const KlustersDoc::ResidualFlag& f : it.value()) {
-            int b = 0;
-            if (separate) {
-                if (f.noGain || (f.on && f.off)) b = 2;
-                else if (f.off)                  b = 1;
-                else                             b = 0;
+    slotStatusMsg(tr("Stripped %1 residual outlier spike(s) from %2 %3: %4.")
+                      .arg(placed).arg(R.byCluster.size())
+                      .arg(childScope ? tr("child(ren)") : tr("cluster(s)"))
+                      .arg(made.join(QStringLiteral(", "))));
+}
+
+// ---------------------------------------------------------------------------
+// applyResidualStrip -- split what detectResidualOutliers flagged into new
+// clusters on the ACTIVE layer.
+//
+// createNewCluster, the row-named builder the t-SNE lasso's NEW_CLUSTER gesture
+// uses -- NOT moveSpikeSubsetToCluster into a fresh id, which lands spikes in an
+// id no view and no colour knows about (see the lasso note in clusterview.cpp).
+// detectResidualOutliers returns 0-based .spk indices; the builder speaks
+// 1-based feature rows, so each is lifted by +1.
+//
+// Buckets: with the terms kept apart, on-only / off-only / both-or-no-gain, in
+// that order; otherwise everything in one.  A bucket with no spikes is skipped,
+// so a run that only moved one term makes one cluster.
+//
+// In CHILD scope the builder makes a sibling child, and a child belongs to
+// exactly one parent (the nesting invariant: the parent of a child is read off
+// its spikes).  The flagged spikes of children of different parents therefore
+// never share a new child: each bucket is cut per parent.
+// ---------------------------------------------------------------------------
+QStringList KlustersApp::applyResidualStrip(const KlustersDoc::ResidualOutlierResult& R,
+                                            bool separate, bool childScope,
+                                            long long* placedOut, QList<int>* createdOut)
+{
+    struct Bucket { QString tag; int parent; QSet<dataType> rows; QList<int> sources; };
+    QVector<Bucket> buckets;
+    const QStringList tags = separate
+        ? QStringList{ tr("on-channel"), tr("off-channel"), tr("both/no-gain") }
+        : QStringList{ tr("residual") };
+    // (term, parent) -> bucket; in parent scope every source shares parent 0.
+    auto bucketFor = [&](int term, int parent) -> Bucket& {
+        for (Bucket& b : buckets)
+            if (b.tag == tags.at(term) && b.parent == parent) return b;
+        buckets.append({ tags.at(term), parent, {}, {} });
+        return buckets.last();
+    };
+    // Term order first, then parent, so the new ids come out in a stable order.
+    for (int term = 0; term < tags.size(); ++term) {
+        for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it) {
+            const int parent = childScope ? doc->parentOfChild(it.key()) : 0;
+            for (const KlustersDoc::ResidualFlag& f : it.value()) {
+                int b = 0;
+                if (separate) {
+                    if (f.noGain || (f.on && f.off)) b = 2;
+                    else if (f.off)                  b = 1;
+                    else                             b = 0;
+                }
+                if (b != term) continue;
+                Bucket& bk = bucketFor(term, parent);
+                bk.rows.insert(static_cast<dataType>(f.index + 1));
+                if (!bk.sources.contains(it.key())) bk.sources.append(it.key());
             }
-            buckets[b].rows.insert(static_cast<dataType>(f.index + 1));
-            if (!buckets[b].sources.contains(it.key()))
-                buckets[b].sources.append(it.key());
         }
     }
 
@@ -7491,21 +7558,42 @@ void KlustersApp::slotStripResidualOutliers()
         if (b.rows.isEmpty()) continue;
         const SpikeSelection selection(b.rows,
                                        QStringLiteral("residual_outlier_strip"));
-        const int newCluster = doc->createNewCluster(selection, b.sources);
-        if (newCluster <= 1) continue;               // 0 = nothing; 1 = noise
-        made.append(tr("%1 -> %2 (%3 spikes)")
-                        .arg(b.tag).arg(clusterLabel(newCluster))
-                        .arg(b.rows.size()));
+        // Child scope is re-asserted for each bucket.  createNewCluster edits
+        // the ACTIVE layer, and the landing of the previous split can leave the
+        // parent active (an emptied child selection drops the scope): the next
+        // bucket's rows would then be cut out of the PARENT -- a new parent
+        // cluster, which is exactly what a strip of children must not make.
+        if (childScope && !doc->isChildClusteringActive()) doc->setActiveClustering(true);
+        // The sources are re-read from the layer for each bucket rather than
+        // taken from the scan: a split can be followed by an auto-renumber,
+        // which renames clusters, and a stale id makes the builder scan the
+        // wrong cluster and silently drop the whole bucket (the same hazard the
+        // time partition guards against).  The rows do not move.
+        QList<int> sources;
+        {
+            const QVector<dataType> labelByRow = doc->data().labelByFeatureRow();
+            for (dataType row : b.rows) {
+                if (row <= 0 || row >= labelByRow.size()) continue;
+                const int src = static_cast<int>(labelByRow.at(static_cast<int>(row)));
+                if (!sources.contains(src)) sources.append(src);
+            }
+        }
+        if (sources.isEmpty()) continue;
+        const int newCluster = doc->createNewCluster(selection, sources);
+        if (newCluster <= 0) continue;               // nothing was split
+        if (!childScope && newCluster == 1) continue;   // parent scope: 1 is the noise bin
+        if (createdOut) createdOut->append(newCluster);
+        // The parent as the document has it now, not as the scan saw it.
+        const int parentNow = childScope ? doc->parentOfChild(newCluster) : 0;
+        made.append(childScope
+            ? tr("%1 -> child %2 of %3 (%4 spikes)")
+                  .arg(b.tag).arg(newCluster).arg(clusterLabel(parentNow)).arg(b.rows.size())
+            : tr("%1 -> %2 (%3 spikes)")
+                  .arg(b.tag).arg(clusterLabel(newCluster)).arg(b.rows.size()));
         placed += b.rows.size();
     }
-    if (made.isEmpty()) {
-        slotStatusMsg(tr("Strip residual outliers: the %1 flagged spike(s) could "
-                         "not be split into a new cluster.").arg(R.total));
-        return;
-    }
-    slotStatusMsg(tr("Stripped %1 residual outlier spike(s) from %2 cluster(s): %3.")
-                      .arg(placed).arg(R.byCluster.size())
-                      .arg(made.join(QStringLiteral(", "))));
+    if (placedOut) *placedOut = placed;
+    return made;
 }
 
 // ---------------------------------------------------------------------------

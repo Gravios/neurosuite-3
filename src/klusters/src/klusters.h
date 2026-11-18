@@ -904,6 +904,13 @@ private:
      *  shortcut, so Qt dispatches the rebound key.  Non-overridden actions keep their
      *  shipped shortcut.  Called at startup and (later) after a Preferences rebind. */
     void applyInputOverridesToActions();
+    /** Split what KlustersDoc::detectResidualOutliers flagged into new clusters on
+     *  the ACTIVE layer: one per term when @p separate, and in child scope one
+     *  per parent as well (a child belongs to one parent).  Returns a line per
+     *  cluster made; @p placedOut the spikes placed, @p createdOut the new ids. */
+    QStringList applyResidualStrip(const KlustersDoc::ResidualOutlierResult& R,
+                                   bool separate, bool childScope,
+                                   long long* placedOut, QList<int>* createdOut = nullptr);
     /** Resolve a key against the registry's resolver-dispatched commands (skips the
      *  external QAction mirrors).  On ShortcutOverride a match only claims the key
      *  (accept), on KeyPress it is invoked.  Returns true if a command claimed the key.

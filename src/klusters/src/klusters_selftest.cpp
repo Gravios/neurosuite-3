@@ -209,15 +209,27 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         //  "minSpikes", "seed", "seedThreshold", "chunkSeconds"}} -> the flagged 0-based
         // .spk indices per cluster.  chunkSeconds > 0 tiles the session as the dialog's
         // "Uniform" choice does (ceil(T / chunk) equal chunks); 0 = the whole session.
+        // "children": true reads the ids as children (the .clc layer), scored whole, as
+        // the action does with children selected.  "apply": true then splits the flagged
+        // spikes off as the action would ("separate": one cluster per term), in that
+        // scope, and reports the layer afterwards.
         const QJsonObject o = step.value(QStringLiteral("residualScan")).toObject();
         QList<int> ids;
         for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
+        const bool children = o.value(QStringLiteral("children")).toBool(false);
+        if (children) {
+            QString err;
+            if (!doc->loadChildClustering(err)) {
+                result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err);
+                return false;
+            }
+        }
         const Data& layer = doc->parentData();
         const double sessionSec = static_cast<double>(layer.maxTimeInRecordingUnits())
                                 * layer.intervalOfSampling() / 1.0e6;
         const double chunkSec = o.value(QStringLiteral("chunkSeconds")).toDouble(0.0);
         std::vector<double> bounds;
-        if (chunkSec > 0.0 && sessionSec > chunkSec)
+        if (!children && chunkSec > 0.0 && sessionSec > chunkSec)
             bounds = neurosuite::drift::uniformPartition(
                 sessionSec, static_cast<int>(std::ceil(sessionSec / chunkSec))).bounds;
         const KlustersDoc::ResidualOutlierResult R = doc->detectResidualOutliers(
@@ -229,7 +241,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             static_cast<long>(o.value(QStringLiteral("minSpikes")).toInt(40)),
             o.value(QStringLiteral("seed")).toInt(0),
             o.value(QStringLiteral("seedThreshold")).toBool(true),
-            bounds);
+            bounds, children);
         QJsonObject flagged;
         for (auto it = R.byCluster.constBegin(); it != R.byCluster.constEnd(); ++it) {
             QJsonArray idx;
@@ -246,6 +258,40 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("flagged"), flagged);
         result.insert(QStringLiteral("lines"), lines);
         result.insert(QStringLiteral("reason"), R.reason);
+        if (R.ok && o.value(QStringLiteral("apply")).toBool(false)) {
+            // As the action applies it: on the active layer, which for children is the
+            // child clustering.
+            if (children) doc->setActiveClustering(true);
+            long long placed = 0;
+            QList<int> created;
+            const QStringList made = applyResidualStrip(
+                R, o.value(QStringLiteral("separate")).toBool(false), children, &placed, &created);
+            QJsonArray madeLines, createdIds;
+            for (const QString& l : made) madeLines.append(l);
+            QJsonObject parents;
+            for (int id : created) {
+                createdIds.append(id);
+                if (children) parents.insert(QString::number(id), doc->parentOfChild(id));
+            }
+            auto sizes = [](Data& d) {
+                QJsonObject s;
+                for (dataType id : d.clusterIds()) s.insert(QString::number(id), static_cast<qint64>(d.nbOfSpikes(id)));
+                return s;
+            };
+            result.insert(QStringLiteral("placed"), static_cast<qint64>(placed));
+            result.insert(QStringLiteral("made"), madeLines);
+            result.insert(QStringLiteral("created"), createdIds);
+            result.insert(QStringLiteral("createdParent"), parents);
+            result.insert(QStringLiteral("parentSizes"), sizes(doc->parentData()));
+            if (children) {
+                result.insert(QStringLiteral("childSizes"), sizes(doc->childClusterData()));
+                QJsonObject all;                     // every child's parent, as the document has it now
+                for (dataType id : doc->childClusterData().clusterIds())
+                    all.insert(QString::number(id), doc->parentOfChild(static_cast<int>(id)));
+                result.insert(QStringLiteral("childParents"), all);
+            }
+            if (children) doc->setActiveClustering(false);
+        }
         return R.ok;
     }
     if (step.contains(QStringLiteral("dump"))) {

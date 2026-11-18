@@ -1468,7 +1468,13 @@ public:
      *  holds enough; the template and tails come from the window and only the
      *  chunk's own spikes are flagged from it.  With a fixed seed cut a chunk
      *  needs no statistic of its own and is scored as it stands.  The cluster
-     *  as a whole must still reach @p minSpikes. */
+     *  as a whole must still reach @p minSpikes.
+     *
+     *  CHILDREN.  With @p onChildLayer the ids (and the seed) name children --
+     *  the .clc layer -- and the scan reads that layer; the children of the
+     *  artefact and noise bins are skipped as the bins themselves are.  The
+     *  returned indices are .spk rows either way.  The caller passes no chunk
+     *  boundaries for children: a child is scored whole. */
     ResidualOutlierResult detectResidualOutliers(const QList<int>& clusters,
                                                  double            kOn,
                                                  double            kOff,
@@ -1477,7 +1483,8 @@ public:
                                                  long              minSpikes,
                                                  int               templateCluster,
                                                  bool              thresholdFromTemplate,
-                                                 const std::vector<double>& chunkBoundsSec = {});
+                                                 const std::vector<double>& chunkBoundsSec = {},
+                                                 bool              onChildLayer = false);
 
     /** Result of computeResidualPreview (non-mutating).  All waveform traces are
      *  channel-major, length nChan*nSamp (channel c, sample s at c*nSamp + s),
