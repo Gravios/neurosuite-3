@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-18 | [Klusters: the radial menu keeps an open ring while the cursor is moving](#2026-11-18--klusters-the-radial-menu-keeps-an-open-ring-while-the-cursor-is-moving) |
 | 2026-11-18 | [Klusters: the RMS recenter and the PCA refine run under the correlation window](#2026-11-18--klusters-the-rms-recenter-and-the-pca-refine-run-under-the-correlation-window) |
 | 2026-11-18 | [Klusters: a seed cluster for the residual strip -- the template AND the threshold from a carved core](#2026-11-18--klusters-a-seed-cluster-for-the-residual-strip--the-template-and-the-threshold-from-a-carved-core) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers -- the per-spike gain divided out, the residual split on-channel / off-channel](#2026-11-18--klusters-strip-residual-outliers--the-per-spike-gain-divided-out-the-residual-split-on-channel--off-channel) |
@@ -199,6 +200,40 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-18 — Klusters: the radial menu keeps an open ring while the cursor is moving
+
+<details>
+<summary>Details</summary>
+
+Hovering a group wedge opens its entries as the next ring out, centred on the wedge and widened
+to a minimum wedge angle — so the child ring is wider than its parent, and the straight path
+from the parent to most of its children runs over a neighbouring parent wedge.  Every mouse move
+retargeted the rings at once, so that crossing closed the ring being aimed at and opened the
+neighbour's: the hand had to go radially out first and then around.
+
+A move that would **close an open ring** is now held until the cursor settles:
+
+- onto a different parent wedge, back onto an ancestor ring (its grandchildren would close), or
+  into the hub;
+- *settled* = the cursor stays within 4 px of where the dwell began for 100 ms.  The dwell
+  restarts whenever it has travelled further, so a moving cursor never completes one and a
+  creeping one (under ~40 px/s) does;
+- reaching the open ring first drops the held move — nothing happened;
+- a press, a release or a wheel step acts on the wedge under the cursor at once, so a
+  press-drag-release flick onto a root leaf and a click are never delayed;
+- moves that close nothing (along a ring, outward into a new ring) are immediate as before.
+
+`radialmenu_test.cpp` (15 checks, offscreen): a continuous move from a parent across its
+neighbour to the far child of the parent's own ring never retargets and lands on that child;
+stopping on the neighbour hands over to it; passing through the hub keeps the rings, stopping
+there collapses them; a click on a held wedge picks it.  With the hold disabled, 7 of the 15
+fail.  The two constants (`kSettleRadius`, `kSettleMs`) are compiled in; they are a first
+guess, not tuned by hand on a real pointer — the test drives synthetic events.
+
+</details>
 
 ---
 

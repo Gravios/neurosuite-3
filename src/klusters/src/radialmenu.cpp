@@ -31,6 +31,8 @@ constexpr double kRingWidth = 82.0;   ///< radial thickness of one ring (px)
 constexpr double kRingGap   = 3.0;    ///< gap between rings (px)
 constexpr double kMargin    = 6.0;    ///< widget border around the outermost ring (px)
 constexpr int    kDepthCap  = 4;      ///< rings never nest deeper than this
+constexpr double kSettleRadius = 4.0; ///< the cursor is "still" while it stays within this of where the dwell began (px)
+constexpr int    kSettleMs  = 100;    ///< ... for this long (ms): below ~40 px/s counts as stopped
 constexpr double kPi        = 3.14159265358979323846;
 
 /** Fold an angle into [0, 360). */
@@ -59,6 +61,11 @@ RadialMenu::RadialMenu(QWidget* parent, Mode m)
         setFocusPolicy(Qt::StrongFocus);
     }
     setMouseTracking(true);
+    settleTimer = new QTimer(this);
+    settleTimer->setSingleShot(true);
+    connect(settleTimer, &QTimer::timeout, this, [this]{
+        if (hoverHeld) updateHover(heldPos, true);
+    });
 }
 
 void RadialMenu::setDepthLimit(int ringCount)
@@ -204,6 +211,7 @@ void RadialMenu::resetRings()
     rings.clear();
     if (root) rings.append(makeRing(root, 90.0, 360.0, 0));
     lastHovered = nullptr;
+    dropHeldHover();
     update();
 }
 
@@ -261,11 +269,41 @@ RadialMenu::Hit RadialMenu::hitTest(const QPointF& p) const
     return hit;
 }
 
-bool RadialMenu::updateHover(const QPointF& p)
+bool RadialMenu::wouldCloseRing(const Hit& hit, double radius) const
+{
+    const int open = static_cast<int>(rings.size());
+    if (open <= 1) return false;                        // nothing open to close
+    if (hit.ring < 0) return radius < kHubRadius;       // the hub collapses to the root ring
+    if (hit.ring >= open - 1) return false;             // on the outermost open ring
+    if (rings.at(hit.ring).hovered != hit.item) return true;   // a different parent wedge
+    return open > hit.ring + 2;                         // back on an ancestor: its grandchildren would close
+}
+
+void RadialMenu::dropHeldHover()
+{
+    hoverHeld = false;
+    if (settleTimer) settleTimer->stop();
+}
+
+bool RadialMenu::updateHover(const QPointF& p, bool immediate)
 {
     if (rings.isEmpty()) return false;
     const Hit hit = hitTest(p);
     const double r = std::hypot(p.x() - centre.x(), p.y() - centre.y());
+
+    // A retarget that closes an open ring waits for the cursor to settle.  The dwell
+    // restarts whenever the cursor has travelled kSettleRadius from where it began, so
+    // a moving cursor never completes one and a creeping one (under ~40 px/s) does.
+    if (!immediate && wouldCloseRing(hit, r)) {
+        if (!hoverHeld || std::hypot(p.x() - settleAnchor.x(), p.y() - settleAnchor.y()) > kSettleRadius) {
+            settleAnchor = p;
+            settleTimer->start(kSettleMs);
+        }
+        hoverHeld = true;
+        heldPos = p;
+        return false;
+    }
+    dropHeldHover();
 
     if (hit.ring < 0) {
         if (r < kHubRadius) {                           // back in the hub: collapse
@@ -363,7 +401,7 @@ void RadialMenu::mousePressEvent(QMouseEvent* event)
     if (mode == Mode::Embedded) { event->ignore(); return; }   // a preview never picks
     // Reached in click mode (a press outside the widget closes a Qt::Popup by itself).
     const QPointF p = event->position();
-    updateHover(p);
+    updateHover(p, true);                // act on what is under the cursor, settled or not
     const Hit hit = hitTest(p);
     if (hit.ring < 0) { close(); return; }               // hub or empty corner: cancel
     clickPressed = true;
@@ -373,7 +411,7 @@ void RadialMenu::mouseReleaseEvent(QMouseEvent* event)
 {
     if (mode == Mode::Embedded) { event->ignore(); return; }
     const QPointF p = event->position();
-    updateHover(p);
+    updateHover(p, true);                // act on what is under the cursor, settled or not
 
     if (gestureArmed) {
         // The release that ends the opening press.  A drag that ends on an enabled leaf
@@ -395,7 +433,7 @@ void RadialMenu::wheelEvent(QWheelEvent* event)
 {
     if (mode == Mode::Embedded) { event->ignore(); return; }   // let a scroll area scroll
     const QPointF p = event->position();
-    updateHover(p);
+    updateHover(p, true);                // act on what is under the cursor, settled or not
     const Hit hit = hitTest(p);
     QAction* a = (hit.ring >= 0) ? rings.at(hit.ring).items.at(hit.item) : nullptr;
     if (!a || !a->isEnabled() || !adjustable.contains(a)) {
@@ -418,6 +456,7 @@ void RadialMenu::keyPressEvent(QKeyEvent* event)
 {
     if (event->key() == Qt::Key_Escape) {
         // Esc backs out one ring at a time, then closes.
+        dropHeldHover();
         if (rings.size() > 1) {
             rings.removeLast();
             rings.last().hovered = -1;

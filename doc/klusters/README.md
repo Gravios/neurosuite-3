@@ -335,7 +335,7 @@ matrices) opens a ring menu centred on the cursor. Two right-clicks keep their
 own meaning: while a lasso is being drawn, Right still removes the last point,
 and with the lineage overlay engaged it opens the overlay's menu. By default the root ring holds Tools,
 Clusters, Recluster, Undo, Redo, Hierarchy, Sort, the two feature axes
-**X: n** and **Y: n**, and **N: n**; hovering a group opens its actions as the next ring out. Sort holds the Actions ▸ Sort Clusters entries
+**X: n** and **Y: n**, and **N: n**; hovering a group opens its actions as the next ring out. An open ring is not closed by a cursor that is still moving: its ring is wider than the group's own wedge, so the straight way to most of its entries crosses a neighbouring group, and that crossing is ignored. Another group takes over once the cursor **stops** on it (stays within 4 px for 100 ms); the same holds for going back to an inner ring or to the hub. A click, a release or a wheel step always acts on the wedge under the cursor at once. Sort holds the Actions ▸ Sort Clusters entries
 under short labels (Count, Time, SNR, Spectral, …); the status bar shows each
 one's full name. Recluster holds the Recluster action and a **Plugin** wedge
 whose ring chooses the **active engine** -- **KlustaKwik** (the built-in

@@ -217,6 +217,21 @@ if(Qt6_FOUND)
     add_test(NAME klusters_test_actionicons COMMAND klusters_test_actionicons)
 endif()
 
+# Radial menu widget (radialmenu.h): the rings' response to cursor movement -- a
+# ring-closing retarget is held until the cursor settles.  Needs Qt Widgets; runs
+# on the offscreen platform.
+find_package(Qt6 COMPONENTS Widgets QUIET)
+if(TARGET Qt6::Widgets)
+    add_executable(klusters_test_radialmenu
+        radialmenu_test.cpp "${_klu_src}/radialmenu.cpp" "${_klu_src}/radialmenu.h")
+    set_target_properties(klusters_test_radialmenu PROPERTIES AUTOMOC ON)
+    target_compile_features(klusters_test_radialmenu PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_radialmenu PRIVATE "${_klu_src}")
+    target_link_libraries(klusters_test_radialmenu PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
+    add_test(NAME klusters_test_radialmenu COMMAND klusters_test_radialmenu)
+    set_tests_properties(klusters_test_radialmenu PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 # The Grouping Assistant's Metal FP32 error matrix against an FP64 reference
 # (macOS with USE_METAL; SKIPPED without a Metal device).
 if(TARGET Neurosuite::metal)

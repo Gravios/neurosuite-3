@@ -9,6 +9,14 @@
  *   - hovering a submenu wedge opens its children as the next ring out,
  *     centred on the parent wedge (widened to a minimum wedge angle, up to
  *     the full circle);
+ *   - an open ring is never closed by a cursor that is still MOVING.  A child
+ *     ring is wider than its parent wedge, so the straight path to most of its
+ *     wedges crosses a neighbouring parent; closing on that crossing forces the
+ *     hand to go radially out first and then around.  A move that would close a
+ *     ring (onto a different parent wedge, back onto an ancestor, into the hub)
+ *     is held until the cursor SETTLES there -- stays within a few pixels for a
+ *     short dwell -- and dropped if it reaches the open ring first.  A press, a
+ *     release or a wheel step acts on what is under the cursor at once;
  *   - the hub is a dead zone: releasing or clicking there cancels.
  *
  * Two ways to pick, as in Maya-style marking menus:
@@ -45,6 +53,7 @@
 
 class QAction;
 class QMenu;
+class QTimer;
 
 class RadialMenu : public QWidget
 {
@@ -120,7 +129,12 @@ private:
     double outerRadius(int ringIndex) const;
     double angleAt(const QPointF& p) const;
     Hit   hitTest(const QPointF& p) const;
-    bool  updateHover(const QPointF& p);   ///< true when the hovered wedge changed
+    /** Retarget the rings to @p p.  A retarget that would close an open ring is
+     *  held until the cursor settles (see the header) unless @p immediate.  True when
+     *  the hovered wedge changed. */
+    bool  updateHover(const QPointF& p, bool immediate = false);
+    bool  wouldCloseRing(const Hit& hit, double radius) const;
+    void  dropHeldHover();
     QAction* hoveredAction() const;
     QAction* leafAt(const QPointF& p);
     void  activate(QAction* a);
@@ -141,6 +155,10 @@ private:
     QHash<const QAction*, QString> labels;   ///< setLabel() overrides
     QSet<const QAction*> adjustable;         ///< setAdjustable() value wedges
     int wheelRemainder = 0;                  ///< sub-notch wheel delta (touchpads)
+    QTimer* settleTimer = nullptr;           ///< fires when the cursor has settled on a held retarget
+    bool    hoverHeld = false;               ///< a ring-closing retarget is waiting for the cursor to settle
+    QPointF heldPos;                         ///< where the cursor is now (the retarget to apply)
+    QPointF settleAnchor;                    ///< where the current dwell started
 };
 
 #endif // RADIALMENU_H
