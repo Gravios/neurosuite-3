@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-19 | [Klusters: Strip Residual Outliers applies without a confirmation box](#2026-11-19--klusters-strip-residual-outliers-applies-without-a-confirmation-box) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers works on children — scored whole, split into a sibling child](#2026-11-18--klusters-strip-residual-outliers-works-on-children--scored-whole-split-into-a-sibling-child) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers runs per time chunk — the Template view's partition, or the default template chunk length](#2026-11-18--klusters-strip-residual-outliers-runs-per-time-chunk--the-template-views-partition-or-the-default-template-chunk-length) |
 | 2026-11-18 | [Input preferences: Reset restores the default, a second press unbinds — and an unbound command stays unbound](#2026-11-18--input-preferences-reset-restores-the-default-a-second-press-unbinds--and-an-unbound-command-stays-unbound) |
@@ -205,6 +206,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-19 — Klusters: Strip Residual Outliers applies without a confirmation box
+
+<details>
+<summary>Details</summary>
+
+After the options dialog and the scan, the action asked "Split N flagged spike(s) off into …?" with
+*No* as the default button.  That question is gone: OK in the options dialog scans and splits in one
+go.  The split is one undo step, as before.
+
+- What the box reported is kept.  The status line names the new cluster(s) and the count by term
+  ("… (412 on-channel, 96 off-channel, 31 both, 4 no signal).  Undo restores them."); the breakdown,
+  the seed, an off-channel term with nothing to read and the per-cluster medians and tails go to the
+  log under `[residual-strip]`, where the per-cluster lines already went.
+- Two boxes remain, because neither is a question: the warning when the scan could not run, and the
+  note when nothing was flagged (with the per-cluster diagnostics that say how far the thresholds are
+  from the data).
+- Cancel in the options dialog is now the only way to back out before the split.
+
+Checked: builds; the two residual-strip self-tests pass (they drive the scan and the apply step, not
+the dialog, so the removed box itself was not exercised by a test).
+
+</details>
 
 ## 2026-11-18 — Klusters: Strip Residual Outliers works on children — scored whole, split into a sibling child
 

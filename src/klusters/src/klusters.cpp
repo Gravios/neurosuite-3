@@ -7452,37 +7452,21 @@ void KlustersApp::slotStripResidualOutliers()
         return;
     }
 
-    QString detail = tr("Split %1 flagged spike(s) off into %2?\n\n"
-                        "%3 by the on-channel term, %4 by the off-channel term, "
-                        "%5 by both, %6 carrying no template-shaped signal.\n"
-                        "%7 of %8 selected cluster(s) contribute, scored in %9.  "
-                        "This can be undone.")
-                        .arg(R.total)
-                        .arg(childScope
-                             ? (separate ? tr("up to three new sibling children per parent, one per term")
-                                         : tr("one new sibling child per parent"))
-                             : (separate ? tr("up to three new clusters, one per term")
-                                         : tr("one new cluster")))
-                        .arg(R.nOn).arg(R.nOff).arg(R.nBoth).arg(R.nNoGain)
-                        .arg(R.byCluster.size()).arg(selected.size())
-                        .arg(R.chunks > 1 ? tr("%1 time chunks").arg(R.chunks)
-                                          : tr("one chunk, the whole session"));
+    // No confirmation: the dialog above already set the cut, and the split is
+    // one undo step.  What the question box used to say goes to the log (the
+    // breakdown by term, the seed, an off-channel term that had nothing to
+    // read) and, in short, to the status line below.
+    qDebug().noquote() << QStringLiteral("[residual-strip] %1 flagged: %2 on-channel, %3 off-channel, "
+                                         "%4 both, %5 without template-shaped signal; %6 of %7 selected "
+                                         "contribute; %8 time chunk(s)")
+                              .arg(R.total).arg(R.nOn).arg(R.nOff).arg(R.nBoth).arg(R.nNoGain)
+                              .arg(R.byCluster.size()).arg(selected.size()).arg(R.chunks > 1 ? R.chunks : 1);
     if (R.templateId > 1)
-        detail += QStringLiteral("\n\n") + (seedThr
-            ? tr("Template and threshold both from the seed %1, which is not "
-                 "itself stripped — so the cut is the same value for every "
-                 "scored cluster.").arg(unitName(R.templateId))
-            : tr("Template from the seed %1, which is not itself stripped; "
-                 "each scored cluster still sites its own cut.")
-                  .arg(unitName(R.templateId)));
-    if (R.offBlind) detail += QStringLiteral("\n\n") + R.reason;
-    if (!R.perCluster.isEmpty())
-        detail += QStringLiteral("\n\n") + R.perCluster.join(QStringLiteral("\n"));
-
-    QMessageBox box(QMessageBox::Question, tr("Strip Residual Outliers"),
-                    detail, QMessageBox::Yes | QMessageBox::No, this);
-    box.setDefaultButton(QMessageBox::No);
-    if (box.exec() != QMessageBox::Yes) return;
+        qDebug().noquote() << QStringLiteral("[residual-strip] template%1 from the seed %2, which is not stripped")
+                                  .arg(seedThr ? QStringLiteral(" and threshold") : QString())
+                                  .arg(unitName(R.templateId));
+    if (R.offBlind && !R.reason.isEmpty())
+        qDebug().noquote() << QStringLiteral("[residual-strip] ") + R.reason;
 
     // ── Apply ────────────────────────────────────────────────────────────
     long long placed = 0;
@@ -7492,10 +7476,12 @@ void KlustersApp::slotStripResidualOutliers()
                          "not be split into a new cluster.").arg(R.total));
         return;
     }
-    slotStatusMsg(tr("Stripped %1 residual outlier spike(s) from %2 %3: %4.")
+    slotStatusMsg(tr("Stripped %1 residual outlier spike(s) from %2 %3 into %4 "
+                     "(%5 on-channel, %6 off-channel, %7 both, %8 no signal).  Undo restores them.")
                       .arg(placed).arg(R.byCluster.size())
                       .arg(childScope ? tr("child(ren)") : tr("cluster(s)"))
-                      .arg(made.join(QStringLiteral(", "))));
+                      .arg(made.join(QStringLiteral(", ")))
+                      .arg(R.nOn).arg(R.nOff).arg(R.nBoth).arg(R.nNoGain));
 }
 
 // ---------------------------------------------------------------------------
