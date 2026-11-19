@@ -185,6 +185,14 @@ public:
     QList<int> selectedClusters();
     /** The ids in list order, top to bottom. */
     QList<int> listedClusters() const;
+    /** The ids whose items lie inside the list's viewport, in list order. */
+    QList<int> visibleClusters() const;
+    /** Scrolls the list so the selection is in view: its first item, then its last
+     *  (so a selection taller than the list ends on its tail).  No selection change.
+     *  The request holds through the rebuilds that follow (a renumber clears and
+     *  refills the list, which sends it back to the top) until the user scrolls or
+     *  selects something. */
+    void scrollToSelection();
     /**The cluster id of the palette's current item (the one last clicked or
      * reached with the keyboard), -1 when there is none.*/
     int currentClusterId() const;
@@ -285,6 +293,10 @@ private:
      * that react to a GESTURE -- leaving the child view because a parent was
      * clicked over the children -- read it (selectionIsProgrammatic).*/
     bool emittingProgrammatic = false;
+    /// scrollToSelection() was asked for and nothing the user did has replaced it.
+    bool followSelection = false;
+    void bringSelectionIntoView();     ///< the scroll itself
+    void followSelectionSoon();        ///< after a rebuild / a programmatic selection
 
     /**Prevent from emitting a signal of update if the selection had not changed.*/
     bool isUpToDate;

@@ -33,6 +33,8 @@
 #include <QMouseEvent>
 #include <QFocusEvent>     // focusInEvent() reads event->reason()
 #include <QDebug>
+#include <QTimer>
+#include <QScrollBar>
 #include <climits>
 
 #include <QPixmap>
@@ -374,6 +376,10 @@ ClusterPalette::ClusterPalette(const QColor& bgColor,QWidget* parent,QStatusBar 
     palette.setColor(QPalette::HighlightedText, legendColor);
 
     iconView->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    // A scroll the user makes ends any pending "follow the selection" request
+    // (actionTriggered is the user's wheel / drag / key, not a programmatic scroll).
+    connect(iconView->verticalScrollBar(), &QAbstractSlider::actionTriggered,
+            this, [this](int) { followSelection = false; });
     iconView->setSpacing(4);
 
     iconView->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -596,6 +602,7 @@ void ClusterPalette::updateClusterList(){
     // Single repaint for the whole rebuild; restore the caller's prior state so a
     // nested updates-disabled window (if any) is left intact.
     iconView->setUpdatesEnabled(prevUpdates);
+    followSelectionSoon();
 }
 
 void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
@@ -674,6 +681,49 @@ QList<int> ClusterPalette::listedClusters() const {
     for (int i = 0; i < iconView->count(); ++i)
         if (const QListWidgetItem* it = iconView->item(i)) ids.append(it->data(CLUSTER_ID).toInt());
     return ids;
+}
+
+QList<int> ClusterPalette::visibleClusters() const {
+    QList<int> ids;
+    const QRect port = iconView->viewport()->rect();
+    for (int i = 0; i < iconView->count(); ++i) {
+        const QListWidgetItem* it = iconView->item(i);
+        if (it && !it->isHidden() && port.contains(iconView->visualItemRect(it).center()))
+            ids.append(it->data(CLUSTER_ID).toInt());
+    }
+    return ids;
+}
+
+void ClusterPalette::scrollToSelection() {
+    followSelection = true;
+    bringSelectionIntoView();
+}
+
+void ClusterPalette::followSelectionSoon() {
+    if (!followSelection) return;
+    // Queued: the rebuild's caller puts the selection back after it returns.
+    QTimer::singleShot(0, this, [this]() { if (followSelection) bringSelectionIntoView(); });
+}
+
+void ClusterPalette::bringSelectionIntoView() {
+    QListWidgetItem* first = nullptr;
+    QListWidgetItem* last = nullptr;
+    for (int i = 0; i < iconView->count(); ++i) {
+        QListWidgetItem* it = iconView->item(i);
+        if (!it || !it->isSelected()) continue;
+        if (!first) first = it;
+        last = it;
+    }
+    if (!first) return;
+    // A list just rebuilt (a renumber) lays its items out lazily and in batches:
+    // scrolled before that, the tail has no geometry yet and the scroll stops at
+    // the last batch laid out, or goes nowhere.  Lay the whole list out once.
+    const QListView::LayoutMode batching = iconView->layoutMode();
+    iconView->setLayoutMode(QListView::SinglePass);
+    iconView->doItemsLayout();
+    iconView->setLayoutMode(batching);
+    iconView->scrollToItem(first, QAbstractItemView::EnsureVisible);
+    iconView->scrollToItem(last, QAbstractItemView::EnsureVisible);
 }
 
 QList<int> ClusterPalette::selectedClusters() {
@@ -767,6 +817,10 @@ void ClusterPalette::toggleCurrentSelection(){
 void ClusterPalette::slotClickRedraw (){
     //If mode == DELAY nothing is done before a call to update
     isUpToDate = false;
+
+    // A selection the user makes is where they are looking now.
+    if(!isInSelectItems && !emittingProgrammatic && iconView->updatesEnabled())
+        followSelection = false;
 
     if(mode == IMMEDIATE && !isInSelectItems){
         QList<int> selection = selectedClusters();
@@ -905,6 +959,7 @@ void ClusterPalette::selectItems(const QList<int>& selectedClusters){
     emittingProgrammatic = true;
     slotClickRedraw();
     emittingProgrammatic = false;
+    followSelectionSoon();
 }
 
 void ClusterPalette::reset(){

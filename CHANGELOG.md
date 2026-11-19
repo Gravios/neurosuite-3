@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-19 | [Klusters: the cluster palette follows clusters moved to the end](#2026-11-19--klusters-the-cluster-palette-follows-clusters-moved-to-the-end) |
 | 2026-11-19 | [Klusters: a multi-lasso split no longer selects a neighbouring cluster](#2026-11-19--klusters-a-multi-lasso-split-no-longer-selects-a-neighbouring-cluster) |
 | 2026-11-19 | [Klusters: Strip Residual Outliers applies without a confirmation box](#2026-11-19--klusters-strip-residual-outliers-applies-without-a-confirmation-box) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers works on children — scored whole, split into a sibling child](#2026-11-18--klusters-strip-residual-outliers-works-on-children--scored-whole-split-into-a-sibling-child) |
@@ -207,6 +208,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-19 — Klusters: the cluster palette follows clusters moved to the end
+
+<details>
+<summary>Details</summary>
+
+**T** (move the selected clusters to the end) renumbers them to the highest ids and keeps them
+selected, but the list did not move: it stayed on the gap they came from, or -- once the post-edit
+renumber had rebuilt it -- jumped back to the top.  With more clusters than the palette shows, the
+selection was out of view.
+
+- The palette now scrolls to the moved clusters (`ClusterPalette::scrollToSelection`: the first
+  selected item, then the last, so a selection taller than the list ends on its tail).  The same
+  for children moved to the end in the child palette.
+- **The request holds through the rebuilds that follow.**  The post-edit automation clears and
+  refills the list (its renumber), which resets the scroll; the palette repeats the scroll after
+  each rebuild and each programmatic selection until the user scrolls or selects something.
+- Two reasons a plain `scrollToItem` did nothing, both handled: a rebuilt list lays its items out
+  lazily, and in batches, so the tail has no geometry yet -- the whole list is laid out once
+  before the scroll.
+
+Tested headlessly: `moveToEnd` step, and `palette` now reports the ids inside the viewport.
+`test_move_to_end_follows.py`: 18 checks over 120 clusters -- one cluster, three adjacent, two far
+apart, with the automation on and all off.  Before the change the outcome depended on timing (5 of
+12 probe runs left the selection out of view).  Not checked by hand in the GUI; the child palette's
+path is called but has no test.
+
+</details>
 
 ## 2026-11-19 — Klusters: a multi-lasso split no longer selects a neighbouring cluster
 

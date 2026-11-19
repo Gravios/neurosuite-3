@@ -711,6 +711,7 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
             return;
         }
         doc->renumberChildrenToEnd(kids);
+        cp->scrollToSelection();                 // the moved children are at the tail now: follow them
         statusBar()->showMessage(
             kids.size() == 1
                 ? tr("Child cluster %1 moved to end.").arg(clusterLabel(kids.first()))
@@ -777,6 +778,11 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
     // notification + palette refresh.
     doc->renumberClustersToEnd(sel);
     clusterPalette->setFocusToList();
+    // The moved clusters keep the selection but now sit at the tail of the list:
+    // scroll to them, or the curator is left looking at the gap they came from.
+    // The palette holds the request through the rebuilds the post-edit automation
+    // still has to make (its renumber clears and refills the list).
+    clusterPalette->scrollToSelection();
 
     // Treat "move to end" as a set-changing cluster edit, like delete/split/new:
     // run the configured post-edit automation (Preferences > Refinement) —

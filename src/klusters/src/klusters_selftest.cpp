@@ -235,14 +235,23 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         cv->applyMultiLasso();
         return true;
     }
+    if (step.contains(QStringLiteral("moveToEnd"))) {
+        // {"moveToEnd": true}: the T key on the current parent-palette selection.
+        slotMoveSelectedClustersToEnd();
+        return true;
+    }
     if (step.contains(QStringLiteral("palette"))) {
         // {"palette": true}: the parent palette as the curator sees it -- the ids in
-        // list order, which of them are selected, and each cluster's spike count.
+        // list order, which of them are selected, which are scrolled into view, and
+        // each cluster's spike count.
         QJsonArray order, selected;
         QJsonObject counts;
         if (clusterPalette) {
             for (int id : clusterPalette->selectedClusters()) selected.append(id);
             for (int id : clusterPalette->listedClusters()) order.append(id);
+            QJsonArray visible;                       // the ids the list's viewport shows
+            for (int id : clusterPalette->visibleClusters()) visible.append(id);
+            result.insert(QStringLiteral("visible"), visible);
         }
         const QVector<dataType> labels = doc->parentData().labelByFeatureRow();
         QHash<int, int> n;
