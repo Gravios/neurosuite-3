@@ -668,6 +668,14 @@ void ClusterPalette::slotOnItem(QListWidgetItem* item){
     }
 }
 
+QList<int> ClusterPalette::listedClusters() const {
+    QList<int> ids;
+    ids.reserve(iconView->count());
+    for (int i = 0; i < iconView->count(); ++i)
+        if (const QListWidgetItem* it = iconView->item(i)) ids.append(it->data(CLUSTER_ID).toInt());
+    return ids;
+}
+
 QList<int> ClusterPalette::selectedClusters() {
     //Get the list of clusters with their color
     if(!doc) {

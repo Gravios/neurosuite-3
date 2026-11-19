@@ -29,6 +29,8 @@
 #include "klusters.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
+#include "clusterview.h"
+#include "clusterPalette.h"
 #include "data.h"
 #include "savethread.h"
 #include "serialjobqueue.h"
@@ -79,6 +81,13 @@ void KlustersApp::startSelfTest(const QString& specPath)
     if (spec.contains(QStringLiteral("realignThreshold")))
         configuration().setRealignThreshold(spec.value(QStringLiteral("realignThreshold")).toDouble());
     realignArgs = buildRealignArgs();
+    // The three automatic steps after a cluster edit (Preferences > Clustering).
+    if (spec.contains(QStringLiteral("autoRealign")))
+        configuration().setAutoRealignAfterMerge(spec.value(QStringLiteral("autoRealign")).toBool());
+    if (spec.contains(QStringLiteral("autoRenumber")))
+        configuration().setAutoRenumberAfterMerge(spec.value(QStringLiteral("autoRenumber")).toBool());
+    if (spec.contains(QStringLiteral("autoMatrices")))
+        configuration().setAutoUpdateMatricesAfterMerge(spec.value(QStringLiteral("autoMatrices")).toBool());
     if (spec.contains(QStringLiteral("realignVerbose")))
         configuration().setRealignVerbose(spec.value(QStringLiteral("realignVerbose")).toBool());
     if (spec.contains(QStringLiteral("supersampleMode")))
@@ -201,6 +210,47 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // File > Save As to the given .clu path (a token naming an existing space
         // adopts it and the document reopens there -- the next step waits).
         startSave(step.value(QStringLiteral("saveas")).toString(), /*isSaveAs*/ true);
+        return true;
+    }
+    if (step.contains(QStringLiteral("select"))) {
+        // {"select": [ids]}: the parent palette's selection, as a click would set it.
+        QList<int> ids;
+        for (const QJsonValue& v : step.value(QStringLiteral("select")).toArray()) ids.append(v.toInt());
+        if (!clusterPalette || !activeView()) { result.insert(QStringLiteral("error"), QStringLiteral("no palette")); return false; }
+        doc->setActiveClustering(false);
+        clusterPalette->selectItems(ids);
+        doc->shownClustersUpdate(ids, *activeView());
+        return true;
+    }
+    if (step.contains(QStringLiteral("multiLasso"))) {
+        // {"multiLasso": [[rows], [rows], ...]}: keeps one lasso per list (0-based .spk
+        // indices) in the active cluster view and splits them, as Enter does.
+        ClusterView* cv = activeClusterView();
+        if (!cv) { result.insert(QStringLiteral("error"), QStringLiteral("no cluster view")); return false; }
+        for (const QJsonValue& lv : step.value(QStringLiteral("multiLasso")).toArray()) {
+            QSet<dataType> rows;
+            for (const QJsonValue& v : lv.toArray()) rows.insert(static_cast<dataType>(v.toInt() + 1));
+            cv->keepMultiLassoRows(rows);
+        }
+        cv->applyMultiLasso();
+        return true;
+    }
+    if (step.contains(QStringLiteral("palette"))) {
+        // {"palette": true}: the parent palette as the curator sees it -- the ids in
+        // list order, which of them are selected, and each cluster's spike count.
+        QJsonArray order, selected;
+        QJsonObject counts;
+        if (clusterPalette) {
+            for (int id : clusterPalette->selectedClusters()) selected.append(id);
+            for (int id : clusterPalette->listedClusters()) order.append(id);
+        }
+        const QVector<dataType> labels = doc->parentData().labelByFeatureRow();
+        QHash<int, int> n;
+        for (int r = 1; r < labels.size(); ++r) ++n[static_cast<int>(labels[r])];
+        for (auto it = n.cbegin(); it != n.cend(); ++it) counts.insert(QString::number(it.key()), it.value());
+        result.insert(QStringLiteral("order"), order);
+        result.insert(QStringLiteral("selected"), selected);
+        result.insert(QStringLiteral("counts"), counts);
         return true;
     }
     if (step.contains(QStringLiteral("residualScan"))) {

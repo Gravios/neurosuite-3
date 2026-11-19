@@ -261,9 +261,16 @@ int KlustersDoc::neighbourAfterRemoval(const QList<int>& removed) const
 
 void KlustersDoc::setPendingParentSelection(const QList<int>& parents)
 {
+    // Only ids that hold spikes NOW.  A source the edit emptied (a multi-lasso
+    // whose remainder was carved out, a basin split that consumed its cluster) is
+    // gone, and the renumber that follows hands its number to the next cluster
+    // up: parked, it rode through renumberPendingParentSelection untouched -- no
+    // old id to translate -- and the landing then selected that neighbour along
+    // with the pieces.  "The landing drops anything emptied" was true only when
+    // nothing was renumbered in between.
     pendingParentSelection.clear();
     for (int f : parents)
-        if (f > 1 && !pendingParentSelection.contains(f))
+        if (f > 1 && !pendingParentSelection.contains(f) && clusterHasMembers(f))
             pendingParentSelection.append(f);   // keep order; first stays primary
 }
 

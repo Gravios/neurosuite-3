@@ -183,6 +183,8 @@ public:
     void reset();
     /**Returns the list of selected clusters*/
     QList<int> selectedClusters();
+    /** The ids in list order, top to bottom. */
+    QList<int> listedClusters() const;
     /**The cluster id of the palette's current item (the one last clicked or
      * reached with the keyboard), -1 when there is none.*/
     int currentClusterId() const;

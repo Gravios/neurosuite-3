@@ -144,6 +144,9 @@ public:
     void applyMultiLasso();
     void clearMultiLassos();
     void removeLastMultiLasso();
+    /** Keeps a lasso given as the spikes it encloses (1-based feature rows), with no
+     *  outline: the headless self-test's way to drive applyMultiLasso. */
+    void keepMultiLassoRows(const QSet<dataType>& rows);
 
     /** Toggles autoscale-to-visible-clusters.  Public for the same reason:
      *  the A key is dispatched by the application filter. */

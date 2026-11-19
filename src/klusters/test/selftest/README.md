@@ -36,7 +36,9 @@ step, `chunkSeconds` -- on a unit that drifts across the probe: the chunked scan
 contaminants a session-wide template hides; small chunks borrow their neighbours; a seed is
 read per chunk), `test_residual_strip_children.py` (the same action on children -- `"children":
 true`, `"apply": true` -- over a `.clc` / `.clp` the test writes: children are scored whole on
-the child layer, the split makes one sibling child per parent, and the parents keep their spikes).
+the child layer, the split makes one sibling child per parent, and the parents keep their spikes),
+`test_multilasso_landing.py` (the selection after a multi-lasso split -- the `select`, `multiLasso` and
+`palette` steps, `autoRenumber` in the spec -- is the pieces and never a neighbouring cluster)).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

@@ -1255,6 +1255,18 @@ void ClusterView::keepMultiLasso()
             .arg(multiLassos_.size()).arg(l.rows.size()).arg(multiLassoRegionCount()), 0);
 }
 
+void ClusterView::keepMultiLassoRows(const QSet<dataType>& rows)
+{
+    if (rows.isEmpty() || multiLassos_.size() >= maxMultiLassos) return;
+    MultiLasso l;
+    l.dimX = dimensionX;
+    l.dimY = dimensionY;
+    l.rows = rows;
+    if (multiLassos_.isEmpty())
+        multiLassoSpikeCount_ = doc.data().labelByFeatureRow().size();
+    multiLassos_.append(l);
+}
+
 int ClusterView::multiLassoRegionCount() const
 {
     QHash<dataType, quint32> sig;

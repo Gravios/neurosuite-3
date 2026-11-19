@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-19 | [Klusters: a multi-lasso split no longer selects a neighbouring cluster](#2026-11-19--klusters-a-multi-lasso-split-no-longer-selects-a-neighbouring-cluster) |
 | 2026-11-19 | [Klusters: Strip Residual Outliers applies without a confirmation box](#2026-11-19--klusters-strip-residual-outliers-applies-without-a-confirmation-box) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers works on children — scored whole, split into a sibling child](#2026-11-18--klusters-strip-residual-outliers-works-on-children--scored-whole-split-into-a-sibling-child) |
 | 2026-11-18 | [Klusters: Strip Residual Outliers runs per time chunk — the Template view's partition, or the default template chunk length](#2026-11-18--klusters-strip-residual-outliers-runs-per-time-chunk--the-template-views-partition-or-the-default-template-chunk-length) |
@@ -206,6 +207,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-19 — Klusters: a multi-lasso split no longer selects a neighbouring cluster
+
+<details>
+<summary>Details</summary>
+
+After *Split by Lassos* the selection was the new pieces **plus one untouched cluster** -- the one
+just above the cluster the lassos were drawn in.  It happened whenever auto-renumber was on (the
+default) and the source was not the last cluster in the list, which is why it looked occasional.
+
+- **Cause.**  A multi-lasso split carves each lassoed region *and* each source's remainder out as
+  new clusters, so the source is emptied and its id disappears.  The landing parked that id along
+  with the pieces, on the note that "the landing drops anything emptied".  The auto-renumber that
+  runs first compacts the ids: the emptied number is handed to the next cluster up, the parked id
+  has no old id to translate from, and the landing then finds a cluster under it -- the neighbour.
+- **Fix.**  `KlustersDoc::setPendingParentSelection` parks only ids that hold spikes at the moment
+  of parking.  This is the one place every landing goes through, so the watershed commit on an
+  embedding and the residual strip, which build their landing the same way, are covered too.
+- With auto-renumber off the old behaviour was already right (the emptied id stays empty and is
+  dropped); it is unchanged.
+
+Tested headlessly: new self-test steps `select`, `multiLasso` (lassos given as spike sets) and
+`palette` (ids in list order, the selected ones, spike counts), and `autoRealign` / `autoRenumber` /
+`autoMatrices` in the spec.  `test_multilasso_landing.py`: 12 checks -- two lassos in a middle, the
+first and the last cluster, overlapping lassos, lassos that consume the cluster, a lasso across two
+clusters, each with auto-renumber on and off.  Before the fix 5 of the 6 failed with it on.  Not
+checked by hand in the GUI, and not on a child-layer (atom) multi-lasso: that landing goes through
+the child palette's own queue, which this patch does not touch.
+
+</details>
 
 ## 2026-11-19 — Klusters: Strip Residual Outliers applies without a confirmation box
 
