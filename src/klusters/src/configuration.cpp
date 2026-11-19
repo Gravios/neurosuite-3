@@ -38,6 +38,9 @@ const bool Configuration::reclusterChannelVarianceDefault = false;
 const bool Configuration::reclusterMedianWaveformResidualDefault = false;
 // Suppressed by default: a recluster opens no output tab unless it fails.
 const bool Configuration::suppressReclusterOutputTabDefault = true;
+// Unchanged behaviour by default: no chunking flag, so KiloKlustaKwik uses its own 7 minutes.
+const int Configuration::reclusterChunkingDefault = Configuration::ReclusterChunkSorterDefault;
+const double Configuration::reclusterChunkMinutesDefault = 7.0;
 // patch79 — opt-in: off by default
 const bool Configuration::autoShowMatricesOnOpenDefault = true;
 // Template Library display: open by default (on)
@@ -197,6 +200,9 @@ void Configuration::read() {
     suppressReclusterOutputTab = settings.value(
         "suppressReclusterOutputTab",
         suppressReclusterOutputTabDefault).toBool();
+    reclusterChunking = qBound(0, settings.value("reclusterChunking", reclusterChunkingDefault).toInt(), 3);
+    reclusterChunkMinutes = settings.value("reclusterChunkMinutes", reclusterChunkMinutesDefault).toDouble();
+    if (!(reclusterChunkMinutes > 0.0)) reclusterChunkMinutes = reclusterChunkMinutesDefault;
     // patch79 — auto-show error & template matrices on document open
     autoShowMatricesOnOpen = settings.value(
         "autoShowMatricesOnOpen",
@@ -364,6 +370,8 @@ void Configuration::write() const {
                       reclusterMedianWaveformResidual);
     settings.setValue("suppressReclusterOutputTab",
                       suppressReclusterOutputTab);
+    settings.setValue("reclusterChunking", reclusterChunking);
+    settings.setValue("reclusterChunkMinutes", reclusterChunkMinutes);
     // patch79
     settings.setValue("autoShowMatricesOnOpen",
                       autoShowMatricesOnOpen);

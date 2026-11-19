@@ -2,8 +2,11 @@
 #include "pluginsettings.h"
 #include "configuration.h"
 
+#include <QBoxLayout>
 #include <QComboBox>
+#include <QDoubleSpinBox>
 #include <QFileDialog>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QIcon>
@@ -47,6 +50,48 @@ PrefReclustering::PrefReclustering(QWidget* parent)
 
     // ── The KlustaKwik group is the layout's: retitle it as the engine's parameters ──
     groupBox2_2->setTitle(tr("KlustaKwik engine"));
+
+    // ── KlustaKwik: how the recluster is cut in time ──
+    {
+        QHBoxLayout* crow = new QHBoxLayout();
+        crow->addWidget(new QLabel(tr("Time chunks"), groupBox2_2));
+        chunkingCombo = new QComboBox(groupBox2_2);
+        chunkingCombo->addItem(tr("As the sorter decides  (7-minute chunks)"), Configuration::ReclusterChunkSorterDefault);
+        chunkingCombo->addItem(tr("One chunk: the whole selection"), Configuration::ReclusterChunkWholeSelection);
+        chunkingCombo->addItem(tr("Chunks of"), Configuration::ReclusterChunkMinutes);
+        chunkingCombo->addItem(tr("Off: classic two-phase pass"), Configuration::ReclusterChunkOff);
+        chunkingCombo->setToolTip(tr(
+            "KiloKlustaKwik sorts a recluster in time chunks and merges across them; -MaxClusters then applies to each chunk.\n"
+            "• As the sorter decides: no flag is passed (its default is 7 minutes), so a cluster that spans a long session "
+            "is sorted as many short chunks.\n"
+            "• One chunk: the chunked sorter on the selection as a whole.\n"
+            "• Chunks of N minutes: -ChunkMinutes N.\n"
+            "• Off: -ChunkMinutes 0, the classic two-phase KlustaKwik pass.\n"
+            "Used when the executable is KiloKlustaKwik* and the Arguments name neither -ChunkMinutes nor -ChunkFile "
+            "(a flag written there wins)."));
+        crow->addWidget(chunkingCombo);
+        chunkMinutesSpin = new QDoubleSpinBox(groupBox2_2);
+        chunkMinutesSpin->setRange(0.1, 1440.0);
+        chunkMinutesSpin->setDecimals(1);
+        chunkMinutesSpin->setSingleStep(1.0);
+        chunkMinutesSpin->setSuffix(tr(" min"));
+        chunkMinutesSpin->setValue(configuration().getReclusterChunkMinutesDefault());
+        crow->addWidget(chunkMinutesSpin);
+        crow->addStretch(1);
+        // Under the Arguments row: the group's grid holds one column of rows.
+        QLayout* outer = groupBox2_2->layout();
+        QBoxLayout* rows = qobject_cast<QBoxLayout*>(outer);
+        if (!rows && outer && outer->count() > 0 && outer->itemAt(0))
+            rows = qobject_cast<QBoxLayout*>(outer->itemAt(0)->layout());
+        if (rows) rows->insertLayout(qMin(2, rows->count()), crow);
+        else if (QGridLayout* grid = qobject_cast<QGridLayout*>(outer)) grid->addLayout(crow, grid->rowCount(), 0, 1, -1);
+        connect(chunkingCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+            chunkMinutesSpin->setEnabled(getReclusterChunking() == Configuration::ReclusterChunkMinutes);
+            emit changed();
+        });
+        connect(chunkMinutesSpin, &QDoubleSpinBox::valueChanged, this, [this](double) { emit changed(); });
+        chunkMinutesSpin->setEnabled(false);
+    }
 
     // ── fiber-kit without its descriptor: the fallback command ──
     fiberKitBox = new QGroupBox(tr("fiber-kit engine"), this);
@@ -180,6 +225,21 @@ void PrefReclustering::setReclusterMeanSubtractedSubdim(bool c)     { reclusterM
 void PrefReclustering::setReclusterChannelVariance(bool c)         { reclusterChannelVarianceCheckBox->setChecked(c); }
 void PrefReclustering::setReclusterMedianWaveformResidual(bool c)  { reclusterMedianWaveformResidualCheckBox->setChecked(c); }
 void PrefReclustering::setSuppressReclusterOutputTab(bool c)       { suppressReclusterOutputTabCheckBox->setChecked(c); }
+
+void PrefReclustering::setReclusterChunking(int mode)
+{
+    const int i = chunkingCombo->findData(mode);
+    const QSignalBlocker block(chunkingCombo);
+    chunkingCombo->setCurrentIndex(i < 0 ? 0 : i);
+    chunkMinutesSpin->setEnabled(getReclusterChunking() == Configuration::ReclusterChunkMinutes);
+}
+int PrefReclustering::getReclusterChunking() const { return chunkingCombo->currentData().toInt(); }
+void PrefReclustering::setReclusterChunkMinutes(double minutes)
+{
+    const QSignalBlocker block(chunkMinutesSpin);
+    chunkMinutesSpin->setValue(minutes);
+}
+double PrefReclustering::getReclusterChunkMinutes() const { return chunkMinutesSpin->value(); }
 
 QString PrefReclustering::getReclusteringExecutable() const    { return reclusteringExecutableLineEdit->text(); }
 QString PrefReclustering::getReclusteringArguments() const     { return reclusteringArgsLineEdit->text(); }

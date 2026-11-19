@@ -1426,6 +1426,26 @@ Settings saved by earlier versions name `KlustaKwik`, which neurosuite-3 does
 not install; when no `KlustaKwik` is on the PATH, Klusters uses
 `KiloKlustaKwik_cpu` instead.
 
+**Time chunks.** KiloKlustaKwik sorts in time chunks and merges across them,
+and `-MaxClusters` applies to each chunk. *Time chunks* sets how a recluster
+is cut:
+
+| Setting | Passed to the sorter | What runs |
+|---|---|---|
+| As the sorter decides (default) | nothing | 7-minute chunks: a cluster spanning a long session is sorted as many short chunks |
+| One chunk: the whole selection | `-ChunkMinutes 1000000` | the chunked sorter on the selection as a whole |
+| Chunks of *N* min | `-ChunkMinutes N` | chunks of that length |
+| Off: classic two-phase pass | `-ChunkMinutes 0` | the original KlustaKwik-style pass, no chunks |
+
+The flag is added only when the executable is `KiloKlustaKwik*` (the classic
+KlustaKwik has no such option) and the Arguments name neither `-ChunkMinutes`
+nor `-ChunkFile`; a flag written there wins.
+
+The feature file's last column, the spike time, is always the sorter's time
+axis. The toolbar's **time** box and the `Shift+M` / `Shift+C` modes may leave
+its bit off in `-UseFeatures`; KiloKlustaKwik selects it regardless and
+clusters on the feature columns chosen.
+
 ### Automatic feature selection
 
 When **Auto-select features** is enabled in the Preferences (and the **N feat** spinbox appears in the Parameters toolbar), klusters computes per-feature variance across all spikes in the selected clusters and passes only the top-N high-variance features to KiloKlustaKwik via the `UseFeatures` parameter.

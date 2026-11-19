@@ -23,6 +23,7 @@
 #include <QList>
 
 class QComboBox;
+class QDoubleSpinBox;
 class QLabel;
 class QPushButton;
 class QGroupBox;
@@ -61,6 +62,10 @@ public:
     bool    getReclusterChannelVariance() const;
     bool    getReclusterMedianWaveformResidual() const;
     bool    getSuppressReclusterOutputTab() const;
+    void   setReclusterChunking(int mode);              // Configuration::ReclusterChunking
+    int    getReclusterChunking() const;
+    void   setReclusterChunkMinutes(double minutes);
+    double getReclusterChunkMinutes() const;
 
 Q_SIGNALS:
     /** The user wants the Preferences page of this plugin (its parameters). */
@@ -84,6 +89,9 @@ private:
     QLineEdit*   fiberKitCommandEdit = nullptr;
     QLabel*      fiberKitNote = nullptr;
     QPushButton* fiberKitDefault = nullptr;
+    // KlustaKwik: time chunking
+    QComboBox*      chunkingCombo = nullptr;
+    QDoubleSpinBox* chunkMinutesSpin = nullptr;
 };
 
 #endif

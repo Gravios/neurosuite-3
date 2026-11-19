@@ -161,6 +161,32 @@ void KlustersApp::startSubsessionRecluster(const KlustersPlugin& plugin, const Q
     slotRecluster();
 }
 
+// The chunking flag a KlustaKwik recluster adds to its command line.  Nothing
+// when the program is not KiloKlustaKwik (the classic KlustaKwik has no such
+// flag and would stop on it), when the argument template already says how to
+// chunk, or when the preference leaves it to the sorter.
+QStringList KlustersApp::reclusterChunkArguments(const QString& executable, const QStringList& args,
+                                                 int chunking, double minutes)
+{
+    if (!QFileInfo(executable).completeBaseName().startsWith(QLatin1String("KiloKlustaKwik"), Qt::CaseInsensitive))
+        return {};
+    for (const QString& a : args)
+        if (a.compare(QLatin1String("-ChunkMinutes"), Qt::CaseInsensitive) == 0
+            || a.compare(QLatin1String("-ChunkFile"), Qt::CaseInsensitive) == 0)
+            return {};
+    switch (chunking) {
+    case Configuration::ReclusterChunkWholeSelection:
+        // Longer than any recording: the chunked sorter with a single chunk.
+        return {QStringLiteral("-ChunkMinutes"), QStringLiteral("1000000")};
+    case Configuration::ReclusterChunkMinutes:
+        return {QStringLiteral("-ChunkMinutes"), QString::number(minutes > 0.0 ? minutes : 7.0, 'g', 6)};
+    case Configuration::ReclusterChunkOff:
+        return {QStringLiteral("-ChunkMinutes"), QStringLiteral("0")};
+    default:
+        return {};
+    }
+}
+
 void KlustersApp::slotRecluster(){
     // If a recluster job is still in flight, schedule a retry and return.
     // We use a single stoppable QTimer rather than repeated QTimer::singleShot,
@@ -615,6 +641,10 @@ void KlustersApp::slotRecluster(){
             arg.replace(QLatin1String("%fileBaseName"),     fileBaseName);
             arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
         }
+        // KlustaKwik: the time chunking chosen in Preferences > Reclustering.
+        if (!fiberKit)
+            argList += reclusterChunkArguments(reclusteringExecutable, argList, configuration().getReclusterChunking(),
+                                               configuration().getReclusterChunkMinutes());
     }
 
     // The temporary feature file goes where the reclustering program reads it.

@@ -31,6 +31,7 @@
 #include "klustersview.h"
 #include "clusterview.h"
 #include "clusterPalette.h"
+#include "processwidget.h"
 #include "data.h"
 #include "savethread.h"
 #include "serialjobqueue.h"
@@ -123,7 +124,7 @@ void KlustersApp::selfTestTick()
         }
         return;
     }
-    const bool busy = fileJobRunning() || isInit
+    const bool busy = fileJobRunning() || isInit || !(processFinished && processOutputsFinished)
                    || (nudgeFollowTimer && nudgeFollowTimer->isActive());
     if (busy) { selfTestIdleTicks_ = 0; }
     else      { ++selfTestIdleTicks_; }
@@ -233,6 +234,54 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             cv->keepMultiLassoRows(rows);
         }
         cv->applyMultiLasso();
+        return true;
+    }
+    if (step.contains(QStringLiteral("recluster"))) {
+        // {"recluster": "" | "median" | "channel"}: Recluster on the current selection, with the
+        // active engine and the preferences as they are ("median" / "channel": the one-shot modes).
+        // {"recluster": ..., "exe": "<path>", "args": "<template>", "autoSelect": bool, "nFeatures": n}
+        // override the executable, its argument template and the toolbar's feature controls;
+        // "chunking": 0-3 (Configuration::ReclusterChunking) and "chunkMinutes" set the time chunking.
+        const QJsonObject o = step.value(QStringLiteral("opts")).toObject();
+        if (o.contains(QStringLiteral("exe")))  reclusteringExecutable = o.value(QStringLiteral("exe")).toString();
+        if (o.contains(QStringLiteral("args"))) reclusteringArgs = o.value(QStringLiteral("args")).toString();
+        if (o.contains(QStringLiteral("autoSelect"))) autoSelectFeatures = o.value(QStringLiteral("autoSelect")).toBool();
+        if (o.contains(QStringLiteral("nFeatures")))  autoSelectNFeatures = o.value(QStringLiteral("nFeatures")).toInt();
+        if (o.contains(QStringLiteral("chunking")))
+            configuration().setReclusterChunking(o.value(QStringLiteral("chunking")).toInt());
+        if (o.contains(QStringLiteral("chunkMinutes")))
+            configuration().setReclusterChunkMinutes(o.value(QStringLiteral("chunkMinutes")).toDouble());
+        result.insert(QStringLiteral("engine"), activeReclusterEngine());
+        result.insert(QStringLiteral("exe"), reclusteringExecutable);
+        result.insert(QStringLiteral("argsTemplate"), reclusteringArgs);
+        result.insert(QStringLiteral("autoSelect"), autoSelectFeatures);
+        result.insert(QStringLiteral("nFeatures"), autoSelectNFeatures);
+        const QString m = step.value(QStringLiteral("recluster")).toString();
+        if (m == QLatin1String("median")) slotReclusterMedianResidual();
+        else if (m == QLatin1String("channel")) slotReclusterChannelVariance();
+        else slotRecluster();
+        return true;
+    }
+    if (step.contains(QStringLiteral("reclusterChunkArgs"))) {
+        // {"reclusterChunkArgs": {"exe": ..., "args": [...], "chunking": 0-3, "minutes": n}}:
+        // the chunking flag a recluster would add to that command line (nothing is run).
+        const QJsonObject o = step.value(QStringLiteral("reclusterChunkArgs")).toObject();
+        QStringList args;
+        for (const QJsonValue& v : o.value(QStringLiteral("args")).toArray()) args.append(v.toString());
+        QJsonArray out;
+        for (const QString& a : reclusterChunkArguments(o.value(QStringLiteral("exe")).toString(), args,
+                                                        o.value(QStringLiteral("chunking")).toInt(),
+                                                        o.value(QStringLiteral("minutes")).toDouble(7.0)))
+            out.append(a);
+        result.insert(QStringLiteral("chunkArgs"), out);
+        return true;
+    }
+    if (step.contains(QStringLiteral("reclusterLog"))) {
+        // {"reclusterLog": true}: the recluster output pane's lines (the command first).
+        QJsonArray lines;
+        if (processWidget)
+            for (int i = 0; i < processWidget->count(); ++i) lines.append(processWidget->item(i)->text());
+        result.insert(QStringLiteral("lines"), lines);
         return true;
     }
     if (step.contains(QStringLiteral("moveToEnd"))) {

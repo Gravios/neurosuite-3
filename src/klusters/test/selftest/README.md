@@ -40,7 +40,11 @@ the child layer, the split makes one sibling child per parent, and the parents k
 `test_multilasso_landing.py` (the selection after a multi-lasso split -- the `select`, `multiLasso` and
 `palette` steps, `autoRenumber` in the spec -- is the pieces and never a neighbouring cluster),
 `test_move_to_end_follows.py` (after T -- the `moveToEnd` step -- the parent palette scrolls to the moved
-clusters; `palette` reports the ids inside the list's viewport)).
+clusters; `palette` reports the ids inside the list's viewport),
+`test_recluster_klustakwik.py` (a KlustaKwik recluster through the `recluster`, `reclusterLog` and
+`reclusterChunkArgs` steps: the time column is the sorter's time axis whatever `-UseFeatures` says, and
+the *Time chunks* preference reaches the command line; needs `KiloKlustaKwik_cpu` -- `KKK_BIN`, else the
+build tree's -- and skips without it)).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

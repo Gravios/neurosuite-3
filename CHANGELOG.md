@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-19 | [Klusters: a Time chunks preference for KlustaKwik reclusters](#2026-11-19--klusters-a-time-chunks-preference-for-klustakwik-reclusters) |
 | 2026-11-19 | [KiloKlustaKwik: the time column is always the time axis](#2026-11-19--kiloklustakwik-the-time-column-is-always-the-time-axis) |
 | 2026-11-19 | [Klusters: the cluster palette follows clusters moved to the end](#2026-11-19--klusters-the-cluster-palette-follows-clusters-moved-to-the-end) |
 | 2026-11-19 | [Klusters: a multi-lasso split no longer selects a neighbouring cluster](#2026-11-19--klusters-a-multi-lasso-split-no-longer-selects-a-neighbouring-cluster) |
@@ -209,6 +210,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-19 — Klusters: a Time chunks preference for KlustaKwik reclusters
+
+<details>
+<summary>Details</summary>
+
+A recluster never said how KiloKlustaKwik should chunk, so the sorter used its own default of 7
+minutes: a cluster spanning a six-hour session was sorted as about fifty chunks and merged across
+them, with `-MaxClusters` applying to each chunk.  *Preferences > Curation > Reclustering > Time
+chunks* now chooses:
+
+| Setting | Flag | |
+|---|---|---|
+| As the sorter decides | none | the default: behaviour unchanged |
+| One chunk: the whole selection | `-ChunkMinutes 1000000` | the chunked sorter, uncut |
+| Chunks of *N* min | `-ChunkMinutes N` | 0.1 to 1440 |
+| Off: classic two-phase pass | `-ChunkMinutes 0` | |
+
+- The flag is added only for a `KiloKlustaKwik*` executable (the classic KlustaKwik has no such
+  option and would stop on it), and only when the Arguments name neither `-ChunkMinutes` nor
+  `-ChunkFile`: a flag written there wins.  `Shift+M` / `Shift+C` use it too; fiber-kit and plugin
+  engines do not.
+- Settings: `reclusterChunking` (0-3) and `reclusterChunkMinutes`.
+- On the two-unit fixture the single chunk recovers both units (381 / 381); the classic pass
+  splits them into nine clusters, and 0.1-minute chunks into six.  The fixture is 20 seconds
+  long, so it says nothing about which setting suits a long recording.
+
+Self-test steps `recluster` (`""` / `"median"` / `"channel"`, with `opts` for the executable, the
+argument template, the feature controls and the chunking), `reclusterLog` (the command and the
+sorter's output) and `reclusterChunkArgs` (the flag for a given command line, nothing run); a
+recluster in progress now counts as busy for the harness.  `test_recluster_klustakwik.py`: 11
+checks covering the previous entry's time axis and this preference; it needs `KiloKlustaKwik_cpu`
+(`KKK_BIN`, else the build tree's) and skips without it.  The preferences page was rendered
+off-screen and looked at; the dialog was not driven by hand.
+
+</details>
 
 ## 2026-11-19 — KiloKlustaKwik: the time column is always the time axis
 

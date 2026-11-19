@@ -348,6 +348,8 @@ void PrefDialog::updateDialog()
     prefReclustering->setReclusterChannelVariance(configuration().getReclusterChannelVariance());
     prefReclustering->setReclusterMedianWaveformResidual(configuration().getReclusterMedianWaveformResidual());
     prefReclustering->setSuppressReclusterOutputTab(configuration().getSuppressReclusterOutputTab());
+    prefReclustering->setReclusterChunking(configuration().getReclusterChunking());
+    prefReclustering->setReclusterChunkMinutes(configuration().getReclusterChunkMinutes());
 
     // Refinement
     prefRealignment->setRealignThreshold(configuration().getRealignThreshold());
@@ -465,6 +467,8 @@ void PrefDialog::updateConfiguration()
     configuration().setReclusterChannelVariance(prefReclustering->getReclusterChannelVariance());
     configuration().setReclusterMedianWaveformResidual(prefReclustering->getReclusterMedianWaveformResidual());
     configuration().setSuppressReclusterOutputTab(prefReclustering->getSuppressReclusterOutputTab());
+    configuration().setReclusterChunking(prefReclustering->getReclusterChunking());
+    configuration().setReclusterChunkMinutes(prefReclustering->getReclusterChunkMinutes());
 
     // Refinement
     configuration().setRealignThreshold(prefRealignment->getRealignThreshold());
@@ -590,6 +594,8 @@ void PrefDialog::slotDefault()
     prefReclustering->setFiberKitReclusterCommand(configuration().getFiberKitReclusterCommandDefault());
     prefReclustering->setReclusteringExecutable(configuration().getReclusteringExecutableDefault());
     prefReclustering->setReclusteringArguments(configuration().getReclusteringArgumentsDefault());
+    prefReclustering->setReclusterChunking(configuration().getReclusterChunkingDefault());
+    prefReclustering->setReclusterChunkMinutes(configuration().getReclusterChunkMinutesDefault());
     prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
     prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
     prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());

@@ -553,6 +553,23 @@ public:
     void setSuppressReclusterOutputTab(bool b)
         { suppressReclusterOutputTab = b; }
 
+    /// How a KlustaKwik recluster is cut in time (Preferences > Reclustering).
+    /// KiloKlustaKwik sorts in time chunks and merges across them; the classic
+    /// program made one pass.  Applies when the executable is KiloKlustaKwik* and
+    /// the argument template names no chunking flag of its own.
+    enum ReclusterChunking {
+        ReclusterChunkSorterDefault = 0,   ///< pass nothing: the sorter's own chunk length (7 min)
+        ReclusterChunkWholeSelection = 1,  ///< one chunk spanning the selection
+        ReclusterChunkMinutes = 2,         ///< chunks of getReclusterChunkMinutes()
+        ReclusterChunkOff = 3              ///< -ChunkMinutes 0: the classic two-phase pass
+    };
+    int getReclusterChunking() const { return reclusterChunking; }
+    int getReclusterChunkingDefault() const { return reclusterChunkingDefault; }
+    void setReclusterChunking(int mode) { reclusterChunking = mode; }
+    double getReclusterChunkMinutes() const { return reclusterChunkMinutes; }
+    double getReclusterChunkMinutesDefault() const { return reclusterChunkMinutesDefault; }
+    void setReclusterChunkMinutes(double minutes) { reclusterChunkMinutes = minutes; }
+
     // patch79 — auto-show the error & template matrices when a document
     // is opened.  Saves the user from manually triggering a new Grouping
     // Assistant Display + Error Matrix dock + Template Matrix dock +
@@ -734,6 +751,10 @@ private:
     static const bool reclusterMedianWaveformResidualDefault;
     bool suppressReclusterOutputTab;
     static const bool suppressReclusterOutputTabDefault;
+    int reclusterChunking;
+    static const int reclusterChunkingDefault;
+    double reclusterChunkMinutes;
+    static const double reclusterChunkMinutesDefault;
 
     // patch79 — auto-show error & template matrices on document open
     bool autoShowMatricesOnOpen;

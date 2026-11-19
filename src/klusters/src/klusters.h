@@ -724,6 +724,10 @@ public:
 
     /**Launchs a separate process to recluster the selected clusters.*/
     void slotRecluster();
+    /** The time-chunking flag a KlustaKwik recluster adds to @p args (empty: none).
+     *  @p chunking is a Configuration::ReclusterChunking. */
+    static QStringList reclusterChunkArguments(const QString& executable, const QStringList& args,
+                                               int chunking, double minutes);
 
     /** Recluster the selected cluster(s) forcing the raw-waveform
      *  median-residual feature path (pooled median) for this run only (Shift+M). */
