@@ -31,6 +31,38 @@ extern "C" {
 
 
 // ---------------------------------------------------------------------------
+// The .fet's LAST column is the spike time, and it is this sorter's time axis:
+// the chunker, the refractory tests and the drift model all read it at
+// Data[*, nDims-1], and every CEM here clusters on the first nDims-1 columns.
+// -UseFeatures only picks which feature columns those are.
+//
+// So the time column is always selected.  A caller that switched it off
+// (...110, or a string shorter than the file) used to hand the role to
+// whatever feature column came last in its selection: that feature dropped
+// out of the clustering and was read as time -- a "session" as long as the
+// feature's numeric range, chunked by the feature's value.  Klusters does
+// exactly that in its auto-select, channel-variance and residual recluster
+// modes.
+//
+// Returns true when the string had to be changed.
+// ---------------------------------------------------------------------------
+static bool SelectTimeColumn(char* useFeatures, int nFeatures)
+{
+    if (nFeatures < 1 || nFeatures >= STRLEN) return false;
+    const int len = static_cast<int>(strlen(useFeatures));
+    if (len >= nFeatures && useFeatures[nFeatures - 1] == '1') return false;
+    for (int i = len; i < nFeatures; i++) useFeatures[i] = '0';   // unlisted columns stay excluded
+    if (len < nFeatures) useFeatures[nFeatures] = '\0';
+    useFeatures[nFeatures - 1] = '1';
+    Output("NOTE: -UseFeatures left the time column (the last of %d) unselected; it is "
+           "selected anyway.  It is the time axis, not a clustering dimension: the "
+           "%d feature column(s) chosen are clustered as given.\n",
+           nFeatures, static_cast<int>(std::count(useFeatures, useFeatures + nFeatures - 1, '1')));
+    return true;
+}
+
+
+// ---------------------------------------------------------------------------
 // LoadData — reads .fet file (auto-detects binary vs legacy text format)
 //
 // Binary format: int32_t nDimensions; nSpikes * nDimensions * int64_t (row-major)
@@ -90,6 +122,7 @@ void KK::LoadData() {
             for (int i = 0; i < nFeatures; i++) UseFeatures[i] = '1';
             UseFeatures[nFeatures] = '\0';
         }
+        SelectTimeColumn(UseFeatures, nFeatures);
         const int UseLen = static_cast<int>(strlen(UseFeatures));
         if (UseLen != nFeatures)
             Output("WARNING: UseFeatures length (%d) != nFeatures (%d). "
@@ -154,6 +187,7 @@ void KK::LoadData() {
             for (int i = 0; i < nFeatures; i++) UseFeatures[i] = '1';
             UseFeatures[nFeatures] = '\0';
         }
+        SelectTimeColumn(UseFeatures, nFeatures);
         const int UseLen = static_cast<int>(strlen(UseFeatures));
         if (UseLen != nFeatures)
             Output("WARNING: UseFeatures length (%d) != nFeatures (%d). "

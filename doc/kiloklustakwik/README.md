@@ -184,7 +184,7 @@ running `KiloKlustaKwik` with no arguments.
 | `-nRuns N` | `20` | Chunked mode: independent CEM runs **per chunk**; each chunk keeps its best-scoring run (`0` is treated as `1`). Not used in non-chunked mode. |
 | `-nStarts N` | `1` | Non-chunked mode: random starts per K in the `MinClusters…MaxClusters` sweep |
 | `-RandomSeed N` | `1` | Random seed |
-| `-UseFeatures STR` | `all` | Feature selection. `all` uses every feature in the `.fet` file; a bit string (`"11111111111111110"`) skips dimensions. |
+| `-UseFeatures STR` | `all` | Feature selection. `all` uses every feature in the `.fet` file; a bit string (`"11011111111111111"`) skips feature columns. The **last column is the spike time** and is always selected, whatever the string says: it is the sorter's time axis (chunking, refractory tests, drift), and the clustering runs on the columns before it. |
 | `-PenaltyMix F` | `0.0` | Model-order penalty: `0` = AIC, `1` = BIC, in between a linear blend; clamped to [0, 1] |
 | `-PriorFile PATH` | — | Empirical prior YAML (see above) |
 

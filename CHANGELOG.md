@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-19 | [KiloKlustaKwik: the time column is always the time axis](#2026-11-19--kiloklustakwik-the-time-column-is-always-the-time-axis) |
 | 2026-11-19 | [Klusters: the cluster palette follows clusters moved to the end](#2026-11-19--klusters-the-cluster-palette-follows-clusters-moved-to-the-end) |
 | 2026-11-19 | [Klusters: a multi-lasso split no longer selects a neighbouring cluster](#2026-11-19--klusters-a-multi-lasso-split-no-longer-selects-a-neighbouring-cluster) |
 | 2026-11-19 | [Klusters: Strip Residual Outliers applies without a confirmation box](#2026-11-19--klusters-strip-residual-outliers-applies-without-a-confirmation-box) |
@@ -208,6 +209,43 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-19 — KiloKlustaKwik: the time column is always the time axis
+
+<details>
+<summary>Details</summary>
+
+KiloKlustaKwik reads spike time at the **last selected** column (`timeDimIdx = nDims - 1`, some
+seventy sites: the chunker, the refractory tests, the drift model) and clusters on the columns
+before it.  That holds only if `-UseFeatures` ends in `1`.  A caller that switched the time
+column off handed its role to the last feature it had selected: that feature dropped out of the
+clustering and was read as time.
+
+Klusters does this in every recluster mode but the plain one -- auto-select with the toolbar's
+**time** box unticked, `Shift+C`, `Shift+M`, the mean-subtracted sub-dimensions.  On two clean
+units (400 spikes each) merged into one cluster:
+
+| `-UseFeatures` | before | now |
+|---|---|---|
+| 12 features + time | 381 / 381 / 38 | the same |
+| 12 features, time off | 7 clusters (381, 223, 81, 77, 19, 17, 2) | 381 / 381 / 38 |
+| `Shift+C` | (as above) | 381 / 381 / 38 |
+| `Shift+M` | 30 clusters: 800 spikes "spanning 426 min", cut into 24 chunks by a residual component | 2 clusters, one chunk |
+
+**Fix** (`KK_io.cpp`, both the binary and the text loader): the `.fet`'s last column is always
+selected, with a NOTE in the log when the string had left it out; a string shorter than the file
+is padded with `0` first, as before.  `-UseFeatures` now only chooses the feature columns.
+
+- In the chunked sorter the time column was never a clustering dimension, so nothing else changes
+  there.  In the two-phase pass (`-ChunkMinutes 0`) time takes part in phase 2, as it always did
+  when selected; there is no way to keep it out of that pass, and there was none that worked before.
+- Auto-select with 6 of 12 features still over-splits this fixture (8 clusters, with or without the
+  time bit): that is the feature choice, not this fault.
+
+Tested through Klusters (`test_recluster_klustakwik.py`, next entry).  The GPU builds share this
+loader; only the CPU build was run.
+
+</details>
 
 ## 2026-11-19 — Klusters: the cluster palette follows clusters moved to the end
 
