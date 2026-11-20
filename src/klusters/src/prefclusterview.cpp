@@ -17,6 +17,13 @@
 
 #include "prefclusterview.h"
 
+#include <QBoxLayout>
+#include <QCheckBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QGridLayout>
+#include <QGroupBox>
+#include <QSignalBlocker>
 #include <QIntValidator>
 #include <QDoubleValidator>
 
@@ -84,6 +91,56 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
     showClassMembersCheckBox->setToolTip(tr(
         "Ring the .eap members of the template class selected in the template-library\n"
         "view — a class's membership footprint across the feature view, over .clu colours."));
+
+    // ── The spike under the cursor ──
+    QGroupBox* hoverBox = new QGroupBox(tr("Spike under the cursor"), this);
+    hoverBox->setToolTip(tr(
+        "Moving the cursor over a feature view rings the nearest spike and draws its waveform over\n"
+        "the waveform view, in a colour that stands off the cluster's."));
+    QFormLayout* hform = new QFormLayout(hoverBox);
+    hform->setFieldGrowthPolicy(QFormLayout::FieldsStayAtSizeHint);
+    hoverEnabledCheck = new QCheckBox(tr("Ring the spike under the cursor and draw its waveform"), hoverBox);
+    hoverEnabledCheck->setToolTip(tr(
+        "Off: no feature view tracks the cursor.  Shift+V still turns the tracking on or off in the\n"
+        "view it is pressed in, until the next Apply."));
+    hform->addRow(hoverEnabledCheck);
+    hoverRingMarginSpin = new QSpinBox(hoverBox);
+    hoverRingMarginSpin->setRange(0, 64); hoverRingMarginSpin->setPrefix(tr("point size + ")); hoverRingMarginSpin->setSuffix(tr(" px"));
+    hoverRingMarginSpin->setToolTip(tr("The ring's radius in the feature view: the size the points are drawn at, plus this."));
+    hform->addRow(tr("Ring radius"), hoverRingMarginSpin);
+    const auto width = [hoverBox]() {
+        QDoubleSpinBox* s = new QDoubleSpinBox(hoverBox);
+        s->setRange(0.5, 12.0); s->setDecimals(1); s->setSingleStep(0.5); s->setSuffix(tr(" px"));
+        return s;
+    };
+    hoverRingWidthSpin = width();
+    hform->addRow(tr("Ring line width"), hoverRingWidthSpin);
+    hoverTraceWidthSpin = width();
+    hoverTraceWidthSpin->setToolTip(tr("The spike's waveform drawn over the waveform view.  Screen pixels at any zoom."));
+    hform->addRow(tr("Waveform trace width"), hoverTraceWidthSpin);
+    // Under the Density heatmap group, in the grid that holds the page's groups.
+    QGridLayout* groups = nullptr;
+    if (QLayout* outer = layout())
+        for (int i = 0; i < outer->count() && !groups; ++i)
+            if (QGridLayout* g = qobject_cast<QGridLayout*>(outer->itemAt(i)->layout()))
+                if (g->indexOf(densityGroupBox) >= 0) groups = g;
+    if (groups) {
+        int row = 0, column = 0, rowSpan = 1, columnSpan = 1;
+        groups->getItemPosition(groups->indexOf(densityGroupBox), &row, &column, &rowSpan, &columnSpan);
+        groups->addWidget(hoverBox, groups->rowCount(), column, 1, columnSpan);
+    } else if (QGridLayout* grid = qobject_cast<QGridLayout*>(layout())) {
+        grid->addWidget(hoverBox, grid->rowCount(), 0, 1, -1);
+    } else if (QBoxLayout* rows = qobject_cast<QBoxLayout*>(layout())) {
+        rows->addWidget(hoverBox);
+    }
+    setHoverSpike(configuration().getHoverSpikeDefault());
+    connect(hoverEnabledCheck, &QCheckBox::toggled, this, [this](bool on) {
+        hoverRingMarginSpin->setEnabled(on); hoverRingWidthSpin->setEnabled(on); hoverTraceWidthSpin->setEnabled(on);
+        Q_EMIT hoverSpikeChanged();
+    });
+    connect(hoverRingMarginSpin, &QSpinBox::valueChanged, this, [this](int) { Q_EMIT hoverSpikeChanged(); });
+    connect(hoverRingWidthSpin, &QDoubleSpinBox::valueChanged, this, [this](double) { Q_EMIT hoverSpikeChanged(); });
+    connect(hoverTraceWidthSpin, &QDoubleSpinBox::valueChanged, this, [this](double) { Q_EMIT hoverSpikeChanged(); });
 }
 PrefClusterView::~PrefClusterView(){
 }
@@ -250,4 +307,24 @@ void PrefClusterView::setDensitySigmaPx(double v){
 
 double PrefClusterView::getDensitySigmaPx() const{
     return densitySigmaSpinBox->value();
+}
+
+void PrefClusterView::setHoverSpike(const Configuration::HoverSpike& h)
+{
+    const QSignalBlocker b1(hoverEnabledCheck), b2(hoverRingMarginSpin), b3(hoverRingWidthSpin), b4(hoverTraceWidthSpin);
+    hoverEnabledCheck->setChecked(h.enabled);
+    hoverRingMarginSpin->setValue(h.ringMarginPx);
+    hoverRingWidthSpin->setValue(h.ringWidthPx);
+    hoverTraceWidthSpin->setValue(h.traceWidthPx);
+    hoverRingMarginSpin->setEnabled(h.enabled); hoverRingWidthSpin->setEnabled(h.enabled); hoverTraceWidthSpin->setEnabled(h.enabled);
+}
+
+Configuration::HoverSpike PrefClusterView::getHoverSpike() const
+{
+    Configuration::HoverSpike h;
+    h.enabled      = hoverEnabledCheck->isChecked();
+    h.ringMarginPx = hoverRingMarginSpin->value();
+    h.ringWidthPx  = hoverRingWidthSpin->value();
+    h.traceWidthPx = hoverTraceWidthSpin->value();
+    return h;
 }

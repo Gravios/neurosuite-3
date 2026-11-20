@@ -177,6 +177,15 @@ void Configuration::read() {
         c.useGpu      = settings.value("coreCutUseGpu",      d.useGpu).toBool();
         setCoreCut(c);
     }
+    {
+        const HoverSpike d;
+        HoverSpike h;
+        h.enabled      = settings.value("hoverSpikeEnabled",      d.enabled).toBool();
+        h.ringMarginPx = settings.value("hoverSpikeRingMarginPx", d.ringMarginPx).toInt();
+        h.ringWidthPx  = settings.value("hoverSpikeRingWidthPx",  d.ringWidthPx).toDouble();
+        h.traceWidthPx = settings.value("hoverSpikeTraceWidthPx", d.traceWidthPx).toDouble();
+        setHoverSpike(h);
+    }
 
     // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
     autoMergeAlgorithm           = settings.value("autoMergeAlgorithm",           1).toInt();
@@ -364,6 +373,10 @@ void Configuration::write() const {
     settings.setValue("coreCutMaxOrdered",  coreCut.maxOrdered);
     settings.setValue("coreCutMinSpikes",   coreCut.minSpikes);
     settings.setValue("coreCutUseGpu",      coreCut.useGpu);
+    settings.setValue("hoverSpikeEnabled",      hoverSpike.enabled);
+    settings.setValue("hoverSpikeRingMarginPx", hoverSpike.ringMarginPx);
+    settings.setValue("hoverSpikeRingWidthPx",  hoverSpike.ringWidthPx);
+    settings.setValue("hoverSpikeTraceWidthPx", hoverSpike.traceWidthPx);
 
     // Auto-Merge (patch 0068)
     settings.setValue("autoMergeAlgorithm",           autoMergeAlgorithm);
@@ -478,4 +491,13 @@ void Configuration::setCoreCut(const CoreCut& c)
         coreCut.riseStartMs = d.riseStartMs; coreCut.flatStartMs = d.flatStartMs;
         coreCut.flatEndMs   = d.flatEndMs;   coreCut.fallEndMs   = d.fallEndMs;
     }
+}
+
+void Configuration::setHoverSpike(const HoverSpike& h)
+{
+    const HoverSpike d;
+    hoverSpike.enabled      = h.enabled;
+    hoverSpike.ringMarginPx = qBound(0, h.ringMarginPx, 64);
+    hoverSpike.ringWidthPx  = std::isfinite(h.ringWidthPx)  ? qBound(0.5, h.ringWidthPx, 12.0)  : d.ringWidthPx;
+    hoverSpike.traceWidthPx = std::isfinite(h.traceWidthPx) ? qBound(0.5, h.traceWidthPx, 12.0) : d.traceWidthPx;
 }

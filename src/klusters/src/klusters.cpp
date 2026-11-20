@@ -2031,6 +2031,9 @@ void KlustersApp::applyPreferences() {
     // Templates mode toggled -> show/hide + (re)load the template palette live.
     if (templatePanel) { reloadTemplatePalette(); updateTemplatePanelVisibility(); }
 
+    // The spike under the cursor: tracked or not, and how it is drawn.
+    applyHoverSpikePreference();
+
     // A new density-heatmap kernel: repaint the views showing the heatmap; each
     // notices the changed sigma and rebuilds its image.
     for (ClusterView* cv : findChildren<ClusterView*>())
@@ -3003,7 +3006,7 @@ void KlustersApp::registerInputBindings()
             if(ClusterView* cv = activeClusterView()){
                 cv->toggleHoverSpike();
                 if(statusBar()) statusBar()->showMessage(cv->hoverSpikeActive()
-                    ? tr("Spike under the cursor shown in the waveform view (Shift+V to stop)")
+                    ? tr("Spike under the cursor shown in the waveform view (Shift+V to stop; Preferences > Cluster view for all views)")
                     : tr("Spike under the cursor no longer tracked"), 3000);
             }
         };
@@ -7418,6 +7421,16 @@ int KlustersApp::splitOffSpurious(int cluster, QString& summary, bool children)
     summary = (children ? tr("%1: %2 -> new child %3 of %4").arg(name, found).arg(made).arg(clusterLabel(doc->parentOfChild(made)))
                         : tr("%1: %2 -> new cluster %3").arg(name, found).arg(made));
     return made;
+}
+
+void KlustersApp::applyHoverSpikePreference()
+{
+    const bool on = configuration().getHoverSpike().enabled;
+    for (ClusterView* cv : findChildren<ClusterView*>()) {
+        cv->setHoverSpikeActive(on);
+        cv->update();
+    }
+    for (WaveformView* wv : findChildren<WaveformView*>()) wv->update();
 }
 
 void KlustersApp::slotSplitOffSpurious()

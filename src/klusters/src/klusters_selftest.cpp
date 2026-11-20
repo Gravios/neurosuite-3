@@ -306,7 +306,9 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // {"hover": {"spike": i}}   move the cursor onto the spike with 0-based .spk index i in the
         //                           active cluster view (where it is drawn), as a mouse move does;
         // {"hover": {"at": [x, y]}} move it to that viewport point;
-        // {"hover": {"leave": true}} the cursor leaves the view;   {"hover": {"toggle": true}} Shift+V.
+        // {"hover": {"leave": true}} the cursor leaves the view;   {"hover": {"toggle": true}} Shift+V;
+        // {"hover": {"prefs": {"enabled", "ringMargin", "ringWidth", "traceWidth"}}} sets the
+        // Preferences > Cluster view knobs named and applies them as the dialog's Apply does.
         // Reports what the cluster view tracks (and where that spike is drawn) and what every waveform
         // view overlays: the spike, its
         // cluster, the samples drawn, the overlay / cluster / background colours, and how many pixels
@@ -315,6 +317,16 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         ClusterView* cv = activeClusterView();
         if (!cv || !activeView()) { result.insert(QStringLiteral("error"), QStringLiteral("no cluster view")); return false; }
         const QJsonObject o = step.value(QStringLiteral("hover")).toObject();
+        if (o.contains(QStringLiteral("prefs"))) {
+            const QJsonObject pr = o.value(QStringLiteral("prefs")).toObject();
+            Configuration::HoverSpike h = configuration().getHoverSpike();
+            if (pr.contains(QStringLiteral("enabled")))    h.enabled      = pr.value(QStringLiteral("enabled")).toBool();
+            if (pr.contains(QStringLiteral("ringMargin"))) h.ringMarginPx = pr.value(QStringLiteral("ringMargin")).toInt();
+            if (pr.contains(QStringLiteral("ringWidth")))  h.ringWidthPx  = pr.value(QStringLiteral("ringWidth")).toDouble();
+            if (pr.contains(QStringLiteral("traceWidth"))) h.traceWidthPx = pr.value(QStringLiteral("traceWidth")).toDouble();
+            configuration().setHoverSpike(h);
+            applyHoverSpikePreference();
+        }
         if (o.value(QStringLiteral("toggle")).toBool()) cv->toggleHoverSpike();
         if (o.contains(QStringLiteral("spike"))) {
             QPoint px;
@@ -328,6 +340,25 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         if (o.value(QStringLiteral("leave")).toBool()) cv->clearHoverSpike();
         result.insert(QStringLiteral("active"), cv->hoverSpikeActive());
+        {   // the ring: pixels of the overlay colour on the grabbed cluster view
+            const Configuration::HoverSpike& look = configuration().getHoverSpike();
+            result.insert(QStringLiteral("prefEnabled"), look.enabled);
+            result.insert(QStringLiteral("ringMargin"), look.ringMarginPx);
+            result.insert(QStringLiteral("ringWidth"), look.ringWidthPx);
+            result.insert(QStringLiteral("traceWidth"), look.traceWidthPx);
+            if (cv->hoveredSpike() >= 0) {
+                const QColor rc = WaveformView::contrastingColor(doc->clusterColors().color(cv->hoveredCluster()),
+                                                                 cv->palette().color(cv->backgroundRole()));
+                cv->repaint();
+                const QImage img = cv->grab().toImage();
+                int n = 0, xMin = img.width(), xMax = -1;
+                for (int y = 0; y < img.height(); ++y)
+                    for (int x = 0; x < img.width(); ++x)
+                        if (QColor(img.pixel(x, y)).rgb() == rc.rgb()) { ++n; xMin = qMin(xMin, x); xMax = qMax(xMax, x); }
+                result.insert(QStringLiteral("ringPixels"), n);
+                if (n) result.insert(QStringLiteral("ringSpan"), xMax - xMin + 1);
+            }
+        }
         result.insert(QStringLiteral("spike"), static_cast<int>(cv->hoveredSpike()));
         result.insert(QStringLiteral("cluster"), cv->hoveredCluster());
         if (cv->hoveredSpike() >= 0) {                // where the tracked spike itself is drawn

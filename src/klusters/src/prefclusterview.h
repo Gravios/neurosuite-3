@@ -24,6 +24,10 @@
 
 //include files for the application
 #include <prefclusterviewlayout.h>
+#include "configuration.h"
+
+class QCheckBox;
+class QDoubleSpinBox;
 
 
 /**
@@ -34,6 +38,9 @@
 class PrefClusterView : public PrefClusterViewLayout  {
     Q_OBJECT
 public: 
+    /** The spike under the cursor: the group built in the constructor. */
+    void setHoverSpike(const Configuration::HoverSpike& h);
+    Configuration::HoverSpike getHoverSpike() const;
     explicit PrefClusterView(QWidget *parent=nullptr);
     ~PrefClusterView();
 
@@ -108,6 +115,15 @@ public:
     void setDensitySigmaPx(double v);
     double getDensitySigmaPx() const;
 
+Q_SIGNALS:
+    /** A spike-under-the-cursor knob was edited. */
+    void hoverSpikeChanged();
+
+private:
+    QCheckBox*      hoverEnabledCheck = nullptr;
+    QSpinBox*       hoverRingMarginSpin = nullptr;
+    QDoubleSpinBox* hoverRingWidthSpin = nullptr;
+    QDoubleSpinBox* hoverTraceWidthSpin = nullptr;
 };
 
 #endif

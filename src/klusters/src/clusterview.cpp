@@ -79,6 +79,7 @@ ClusterView::ClusterView(KlustersDoc& klustersDoc,KlustersView& klustersView,con
     nbSelectionPoints(0),
     polygonClosed(false)
 {
+    hoverSpike_ = configuration().getHoverSpike().enabled;   // Preferences > Cluster view; Shift+V toggles this view
     //Set the default mode
     mode = NONE;
     pointSize = 2;
@@ -1147,8 +1148,9 @@ void ClusterView::paintWidgetOverlays(QPainter& p){
         p.save();
         p.setRenderHint(QPainter::Antialiasing, true);
         p.setBrush(Qt::NoBrush);
-        p.setPen(QPen(ring, 2));
-        const int rr = qMax(pointSize, 1) + 4;
+        const Configuration::HoverSpike& look = configuration().getHoverSpike();   // Preferences > Cluster view
+        p.setPen(QPen(ring, look.ringWidthPx));
+        const int rr = qMax(pointSize, 1) + look.ringMarginPx;
         p.drawEllipse(px, rr, rr);
         p.restore();
     }
@@ -1471,6 +1473,13 @@ void ClusterView::paintMultiLassos(QPainter& p, bool embedding)
 }
 
 // ── Density heatmap overlay (Shift+H) ────────────────────────────────────────
+
+void ClusterView::setHoverSpikeActive(bool on)
+{
+    if (hoverSpike_ == on) return;
+    hoverSpike_ = on;
+    if (!hoverSpike_) clearHoverSpike();
+}
 
 void ClusterView::toggleHoverSpike()
 {

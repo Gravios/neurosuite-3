@@ -357,6 +357,18 @@ public:
         int    minSpikes    =  200;
         bool   useGpu       =  true;   ///< order on the GPU when the build has one
     };
+    /// The spike under the cursor (Preferences > Cluster view): a ring on it in the
+    /// feature view and its waveform drawn over the waveform view.
+    struct HoverSpike {
+        bool   enabled      = true;   ///< tracked in every feature view (Shift+V still toggles one view)
+        int    ringMarginPx = 4;      ///< the ring's radius is the point size plus this
+        double ringWidthPx  = 2.0;    ///< the ring's line
+        double traceWidthPx = 2.0;    ///< the waveform drawn over the waveform view
+    };
+    const HoverSpike& getHoverSpike() const { return hoverSpike; }
+    HoverSpike getHoverSpikeDefault() const { return HoverSpike(); }
+    void setHoverSpike(const HoverSpike& h);   ///< clamped: margin 0-64 px, widths 0.5-12 px
+
     const CoreCut& getCoreCut() const { return coreCut; }
     CoreCut getCoreCutDefault() const { return CoreCut(); }
     /// Out-of-range values are clamped; a window whose edges are not in order is replaced by the default one.
@@ -726,6 +738,7 @@ private:
     int     knnMinNew;             ///< min size for a new cluster to be kept (1-10000)
     int     knnMinRef;             ///< min "good" reference-cluster size (10-100000)
     CoreCut coreCut;               ///< Split Off Spurious Spikes
+    HoverSpike hoverSpike;         ///< the spike under the cursor
 
     // Auto-Merge (patch 0068) — settings for the upcoming Auto-Merge action.
     // Mirrors KKE's WithinChunkTemplateMatch / MedianKnn parameters so

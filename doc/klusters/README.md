@@ -1013,7 +1013,10 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
   pixels): a ring marks it, the status bar names it, and the waveform view
   draws that spike over its cluster's waveforms in a colour that contrasts
   with the cluster's. It works in the scatter and in the oblique / t-SNE
-  embedding, pauses while a button is held, and `Shift+V` turns it off and on.
+  embedding, pauses while a button is held, and `Shift+V` turns it off and on in the
+  view it is pressed in. **Preferences → Cluster view → Spike under the cursor** turns
+  it off or on for every view and sets the ring's radius (the point size plus a margin)
+  and line width and the width of the trace drawn over the waveform view.
 - `Shift+E` toggles the lineage overlay (edit mode), in which a left click
   marks lineage nodes. It needs Templates mode (**Preferences → Views → Display**).
 

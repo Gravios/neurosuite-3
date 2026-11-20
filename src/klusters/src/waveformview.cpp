@@ -26,6 +26,7 @@
 #include "waveformview.h"
 #include <QThread>   // msleep for the synchronous job quiesce
 #include "waveformthread.h"
+#include "configuration.h"          // the hovered spike's trace width
 #include "templatematrixthread.h"   // tmReadSpikeFloat: the hovered spike's waveform
 #include "types.h"
 #include "input/bindingregistry.h"   // registerInput: the channel-pick press trigger (seam)
@@ -480,8 +481,8 @@ void WaveformView::paintWidgetOverlays(QPainter& widget)
     widget.save();
     setupWorldTransform(widget);
     QPen pen(contrastingColor(doc.clusterColors().color(hoverCluster_), palette().color(backgroundRole())));
-    pen.setCosmetic(true);          // a fixed two device pixels at any zoom
-    pen.setWidth(2);
+    pen.setCosmetic(true);          // device pixels at any zoom; the width is Preferences > Cluster view
+    pen.setWidthF(configuration().getHoverSpike().traceWidthPx);
     widget.setPen(pen);
     QPolygon line(nbSamplesInWaveform);
     for (int ch = 0; ch < nbchannels; ++ch) {

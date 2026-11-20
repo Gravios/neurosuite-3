@@ -276,6 +276,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
 
     // Cluster + Waveform views (unchanged)
     connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
+    connect(prefclusterView, &PrefClusterView::hoverSpikeChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneCapLineEdit,  &QLineEdit::textChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneStepLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->tsneStartPerpLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
@@ -426,6 +427,7 @@ void PrefDialog::updateDialog()
     prefclusterView->setTsneExaggeration(configuration().getTsneExaggeration());
     prefclusterView->setTsneExaggerationIterations(configuration().getTsneExaggerationIterations());
     prefclusterView->setTsneSubsampleOverCap(configuration().getTsneSubsampleOverCap());
+    prefclusterView->setHoverSpike(configuration().getHoverSpike());
     prefclusterView->setTsneRandomSeed(configuration().getTsneRandomSeed());
     prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeMode());
     prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutes());
@@ -546,6 +548,7 @@ void PrefDialog::updateConfiguration()
     configuration().setTsneExaggeration(prefclusterView->getTsneExaggeration());
     configuration().setTsneExaggerationIterations(prefclusterView->getTsneExaggerationIterations());
     configuration().setTsneSubsampleOverCap(prefclusterView->getTsneSubsampleOverCap());
+    configuration().setHoverSpike(prefclusterView->getHoverSpike());
     configuration().setTsneRandomSeed(prefclusterView->getTsneRandomSeed());
     configuration().setProjectionScopeMode(prefclusterView->getProjectionScopeMode());
     configuration().setProjectionScopeMinutes(prefclusterView->getProjectionScopeMinutes());
@@ -677,6 +680,7 @@ void PrefDialog::slotDefault()
     prefclusterView->setTsneExaggeration(configuration().getTsneExaggerationDefault());
     prefclusterView->setTsneExaggerationIterations(configuration().getTsneExaggerationIterationsDefault());
     prefclusterView->setTsneSubsampleOverCap(configuration().getTsneSubsampleOverCapDefault());
+    prefclusterView->setHoverSpike(configuration().getHoverSpikeDefault());
     prefclusterView->setTsneRandomSeed(configuration().getTsneRandomSeedDefault());
     prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeModeDefault());
     prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutesDefault());

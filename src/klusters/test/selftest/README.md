@@ -59,7 +59,9 @@ per reference; with `"children": true` on the child layer, the new child placed 
 spikes came from and the `.clu` unchanged),
 `test_hover_spike.py` (the `hover` step puts the cursor on a spike in the cluster view: the spike tracked
 is one drawn there, every waveform view overlays its `.spk` samples in a contrasting colour in its cluster's
-column, and the overlay goes when the cursor leaves or `Shift+V` turns the tracking off)).
+column, and the overlay goes when the cursor leaves or `Shift+V` turns the tracking off; the
+Preferences > Cluster view knobs -- on/off, ring radius and line width, trace width -- change what is
+painted, through the step's `prefs` key)).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

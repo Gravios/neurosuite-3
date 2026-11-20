@@ -467,6 +467,9 @@ private Q_SLOTS:
      *  from).  The core stays where it is.  No confirmation; each new cluster is
      *  one undo step. */
     void slotSplitOffSpurious();
+    /** The spike-under-the-cursor preference onto the open views: the tracking on or
+     *  off in every feature view, and a repaint for the ring and the overlaid trace. */
+    void applyHoverSpikePreference();
     /** The body of the action for one cluster: the id of the new cluster, 0 when
      *  nothing was split off; what was found in @p summary. */
     int splitOffSpurious(int cluster, QString& summary, bool children = false);

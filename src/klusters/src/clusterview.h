@@ -174,6 +174,8 @@ public:
      *  cluster's.  Only a spike within hoverRadiusPx of the cursor counts, and nothing
      *  is tracked while a button is held (a lasso or a pan in progress). */
     void toggleHoverSpike();
+    /** The tracking on or off, as the preference sets it for every view. */
+    void setHoverSpikeActive(bool on);
     bool hoverSpikeActive() const { return hoverSpike_; }
     /** The tracked spike's 0-based .spk index, -1 when there is none. */
     long hoveredSpike() const { return hoverRow0_; }
@@ -713,7 +715,7 @@ private:
     // Hover tracking: the spike nearest the cursor.  The scatter keeps the spike's world
     // point (mapped every repaint, so the ring follows a zoom or a pan), the embedding
     // its point index.
-    bool                         hoverSpike_ = true;
+    bool                         hoverSpike_ = true;    ///< set from the preference in the constructor
     long                         hoverRow0_ = -1;       ///< 0-based .spk index, -1 = none
     int                          hoverCluster_ = -1;
     QPoint                       hoverWorld_;           ///< scatter: the spike's world point

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: the spike under the cursor is a preference — on or off, the ring's radius and line, the trace's width](#2026-11-20--klusters-the-spike-under-the-cursor-is-a-preference--on-or-off-the-rings-radius-and-line-the-traces-width) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes on Ctrl+Space, its knobs in Preferences ▸ Splitting](#2026-11-20--klusters-split-off-spurious-spikes-on-ctrlspace-its-knobs-in-preferences--splitting) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes orders on the GPU (CUDA)](#2026-11-20--klusters-split-off-spurious-spikes-orders-on-the-gpu-cuda) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes — a cluster's core kept, the rest split off](#2026-11-20--klusters-split-off-spurious-spikes--a-clusters-core-kept-the-rest-split-off) |
@@ -220,6 +221,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: the spike under the cursor is a preference — on or off, the ring's radius and line, the trace's width
+
+<details>
+<summary>Details</summary>
+
+**Preferences ▸ Cluster view ▸ Spike under the cursor**:
+
+| Knob | Default | |
+|---|---|---|
+| Ring the spike under the cursor and draw its waveform | on | off: no feature view tracks the cursor |
+| Ring radius | point size + 4 px | the ring in the feature view |
+| Ring line width | 2.0 px | |
+| Waveform trace width | 2.0 px | the spike drawn over the waveform view; screen pixels at any zoom |
+
+The defaults draw what was drawn before.  Apply sets the tracking in every open feature view and
+repaints; a view opened later starts from the preference.  Shift+V is unchanged: it toggles the
+view it is pressed in, and the next Apply sets every view back to the preference.
+
+Self-test `test_hover_spike.py`: the defaults; a 6 px trace paints three times the pixels of a
+2 px one; a larger radius widens the ring and a wider line paints more of it; off, a view tracks
+nothing; the page has the group and writing the dialog back changes nothing.  The page was looked
+at as an off-screen render only.
+
+</details>
 
 ## 2026-11-20 — Klusters: Split Off Spurious Spikes on Ctrl+Space, its knobs in Preferences ▸ Splitting
 
