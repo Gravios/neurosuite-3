@@ -26,6 +26,7 @@
 #include "waveformview.h"
 #include <QThread>   // msleep for the synchronous job quiesce
 #include "waveformthread.h"
+#include "templatematrixthread.h"   // tmReadSpikeFloat: the hovered spike's waveform
 #include "types.h"
 #include "input/bindingregistry.h"   // registerInput: the channel-pick press trigger (seam)
 
@@ -428,6 +429,69 @@ void WaveformView::paintBufferDeviceLayer(QPainter& painter){
     //Draw the cluster Ids below the waveforms if they are not in overlay presentation.
     if(!overLayPresentation && !hasResidualPreview_)
         drawClusterIds(painter);
+}
+
+QColor WaveformView::contrastingColor(const QColor& cluster, const QColor& background)
+{
+    static const QColor candidates[] = { QColor(255, 255, 255), QColor(255, 255, 0), QColor(0, 255, 255),
+                                         QColor(255, 0, 255), QColor(255, 128, 0), QColor(0, 255, 0) };
+    auto dist2 = [](const QColor& a, const QColor& b) {
+        const int dr = a.red() - b.red(), dg = a.green() - b.green(), db = a.blue() - b.blue();
+        return dr * dr + dg * dg + db * db;
+    };
+    QColor best = candidates[0]; int bestScore = -1;
+    for (const QColor& c : candidates) {
+        const int score = qMin(dist2(c, cluster), dist2(c, background));
+        if (score > bestScore) { bestScore = score; best = c; }
+    }
+    return best;
+}
+
+void WaveformView::setHoverSpike(int clusterId, long row0)
+{
+    if (clusterId == hoverCluster_ && row0 == hoverRow0_) return;
+    hoverCluster_ = -1; hoverRow0_ = -1; hoverWave_.clear();
+    const std::shared_ptr<const Data::ClusteringSnapshot> snap = doc.data().currentSnapshot();
+    if (snap && row0 >= 0 && nbchannels > 0 && nbSamplesInWaveform > 0 &&
+        tmReadSpikeFloat(*snap, row0, nbchannels, nbSamplesInWaveform, hoverScratch_, hoverWave_)) {
+        hoverCluster_ = clusterId; hoverRow0_ = row0;
+    } else
+        hoverWave_.clear();
+    update();                       // the overlay is live: no redraw of the cached waveforms
+}
+
+void WaveformView::clearHoverSpike()
+{
+    if (hoverRow0_ < 0) return;
+    hoverCluster_ = -1; hoverRow0_ = -1; hoverWave_.clear();
+    update();
+}
+
+void WaveformView::paintWidgetOverlays(QPainter& widget)
+{
+    if (hoverRow0_ < 0 || hasResidualPreview_ || !dataReady) return;
+    if (static_cast<int>(hoverWave_.size()) != nbchannels * nbSamplesInWaveform) return;
+    // The cluster's column: side by side the shown clusters are laid out by increasing id.
+    QList<int> shown = view.clusters();
+    std::sort(shown.begin(), shown.end());
+    const int index = shown.indexOf(hoverCluster_);
+    if (index < 0) return;
+    const long X = overLayPresentation ? X0 : X0 + static_cast<long>(index) * shift;
+    widget.save();
+    setupWorldTransform(widget);
+    QPen pen(contrastingColor(doc.clusterColors().color(hoverCluster_), palette().color(backgroundRole())));
+    pen.setCosmetic(true);          // a fixed two device pixels at any zoom
+    pen.setWidth(2);
+    widget.setPen(pen);
+    QPolygon line(nbSamplesInWaveform);
+    for (int ch = 0; ch < nbchannels; ++ch) {
+        const long Y = channelBaselineY(ch);
+        for (int s = 0; s < nbSamplesInWaveform; ++s)   // Qt's y grows downwards: the sample is negated, as drawWaveforms does
+            line.setPoint(s, static_cast<int>(X + static_cast<long>(s) * Xstep),
+                          static_cast<int>(-Y + static_cast<long>(-hoverWave_[static_cast<size_t>(ch) * nbSamplesInWaveform + s] * Yfactor)));
+        widget.drawPolyline(line);
+    }
+    widget.restore();
 }
 
 void WaveformView::afterPaint(QPainter&){

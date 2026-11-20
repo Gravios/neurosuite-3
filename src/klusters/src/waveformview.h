@@ -254,6 +254,21 @@ public Q_SLOTS:
      *  data gain while the residual still reads small relative to the mean.
      *  @p canDecollide adds the "D — decollide" line to the review panel (true only
      *  when a 2-cluster oblique basis is pinned, matching the key handler). */
+    /** Draw the waveform of the spike with 0-based .spk index @p row0, a member of the
+     *  shown cluster @p clusterId, over that cluster's waveforms in a colour that
+     *  contrasts with the cluster's (see contrastingColor).  Called by the feature view
+     *  as the cursor moves over its points; costs one positioned read of the .spk. */
+    void setHoverSpike(int clusterId, long row0);
+    /** Remove the hovered spike's waveform. */
+    void clearHoverSpike();
+    int  hoverSpikeCluster() const { return hoverCluster_; }
+    long hoverSpikeRow() const { return hoverRow0_; }
+    /** The hovered spike's samples as drawn (channel-major, raw .spk units); empty when none. */
+    const std::vector<float>& hoverSpikeWaveform() const { return hoverWave_; }
+    /** A colour that stands out from both @p cluster and @p background: of white, yellow,
+     *  cyan, magenta, orange and green, the one furthest (in RGB) from the nearer of the two. */
+    static QColor contrastingColor(const QColor& cluster, const QColor& background);
+
     void setResidualPreview(int nChan, int nSamp,
                             const std::vector<float>& meanWave,
                             const std::vector<float>& fit,
@@ -331,6 +346,8 @@ protected:
     void paintBufferDeviceLayer(QPainter& painter) override;
     /**Restore the zoom cursor after every paint.*/
     void afterPaint(QPainter& widget) override;
+    /**Live overlay on the widget every paint: the spike hovered in the feature view.*/
+    void paintWidgetOverlays(QPainter& widget) override;
     /**Treat the events sent by the WaveformThread instances*/
     void customEvent(QEvent* event) override;
     /**The view responds to a double click.
@@ -591,6 +608,13 @@ private:
     std::vector<std::vector<float>> tpTemplates_;
     std::vector<std::vector<float>> tpStds_;      // per-template std (±band), parallel to tpTemplates_; may be empty
     std::vector<QColor>             tpColors_;
+
+    // The spike hovered in a feature view (ClusterView::hoverAt): its waveform, read
+    // once when the hover changes, is drawn over its cluster's waveforms on every paint.
+    int                hoverCluster_ = -1;
+    long               hoverRow0_ = -1;          ///< 0-based .spk index, -1 = none
+    std::vector<float> hoverWave_;               ///< channel-major, nbchannels x nbSamplesInWaveform
+    std::vector<int16_t> hoverScratch_;
 
     /**Updates the dimension of the window.*/
     void updateWindow();

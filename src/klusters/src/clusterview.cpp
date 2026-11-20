@@ -142,6 +142,7 @@ void ClusterView::tsneInvalidate(){
 }
 
 void ClusterView::exitTsne(const QString& reason){
+    clearHoverSpike();                   // its point index belongs to the embedding being dropped
     clearPendingLasso();                 // a pending residual preview does not outlive the embedding
     tsneCancel = true;
     // Do NOT wait here.  The flag is polled inside the neighbour and bandwidth
@@ -1136,6 +1137,22 @@ void ClusterView::paintWidgetOverlays(QPainter& p){
     if (densityOverlay_)
         paintDensityOverlay(p, false);
 
+    // Hover tracking: a ring on the spike whose waveform the waveform views are
+    // showing, in the same contrasting colour.  Device pixels, so it keeps its size.
+    if (hoverRow0_ >= 0) {
+        const QPoint px = (tsneMode && hoverTsneIndex_ >= 0 && 2 * hoverTsneIndex_ + 1 < static_cast<int>(tsneXY.size()))
+                          ? tsneViewportPos(hoverTsneIndex_) : worldToViewport(hoverWorld_);
+        const QColor ring = WaveformView::contrastingColor(doc.clusterColors().color(hoverCluster_),
+                                                           palette().color(backgroundRole()));
+        p.save();
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setBrush(Qt::NoBrush);
+        p.setPen(QPen(ring, 2));
+        const int rr = qMax(pointSize, 1) + 4;
+        p.drawEllipse(px, rr, rr);
+        p.restore();
+    }
+
     // Computing over the scatter: the first embedding of a selection runs with
     // the feature view still showing, and without this the only sign that F did
     // anything is a status line that scrolls away.
@@ -1454,6 +1471,90 @@ void ClusterView::paintMultiLassos(QPainter& p, bool embedding)
 }
 
 // ── Density heatmap overlay (Shift+H) ────────────────────────────────────────
+
+void ClusterView::toggleHoverSpike()
+{
+    hoverSpike_ = !hoverSpike_;
+    if (!hoverSpike_) clearHoverSpike();
+}
+
+void ClusterView::publishHoverSpike()
+{
+    for (ViewWidget* w : view.getViewList())
+        if (WaveformView* wv = qobject_cast<WaveformView*>(w)) {
+            if (hoverRow0_ >= 0) wv->setHoverSpike(hoverCluster_, hoverRow0_);
+            else wv->clearHoverSpike();
+        }
+    update();
+}
+
+void ClusterView::clearHoverSpike()
+{
+    if (hoverRow0_ < 0) return;
+    hoverRow0_ = -1; hoverCluster_ = -1; hoverTsneIndex_ = -1;
+    publishHoverSpike();
+}
+
+void ClusterView::leaveEvent(QEvent* event)
+{
+    clearHoverSpike();
+    ViewWidget::leaveEvent(event);
+}
+
+void ClusterView::hoverAt(const QPoint& vp)
+{
+    if (!hoverSpike_) return;
+    long bestRow = -1; int bestCluster = -1, bestIndex = -1; QPoint bestWorld;
+    double best = static_cast<double>(hoverRadiusPx) * hoverRadiusPx;   // squared pixels; beyond the radius is no hover
+    if (tsneMode) {
+        const int n = qMin(static_cast<int>(tsneXY.size() / 2), qMin(tsneRowSpike.size(), tsneRowCluster.size()));
+        for (int i = 0; i < n; ++i) {
+            const QPoint q = tsneViewportPos(i);
+            const double dx = q.x() - vp.x(), dy = q.y() - vp.y(), d = dx * dx + dy * dy;
+            if (d < best) { best = d; bestIndex = i; }
+        }
+        if (bestIndex >= 0) { bestRow = tsneRowSpike.at(bestIndex); bestCluster = tsneRowCluster.at(bestIndex); }
+    } else {
+        // The scatter is searched in world units scaled to pixels: one multiply per
+        // spike instead of a worldToViewport() each, so a 250,000-spike cluster costs
+        // about a millisecond per mouse move.
+        const QPoint cw = viewportToWorld(vp.x(), vp.y());
+        const QRect  wr = static_cast<QRect>(window);
+        const int kx = qMax(1, wr.width() / 4), ky = qMax(1, wr.height() / 4);
+        const QPoint p0 = worldToViewport(cw), p1 = worldToViewport(QPoint(cw.x() + kx, cw.y() + ky));
+        const double ax = static_cast<double>(p1.x() - p0.x()) / kx, ay = static_cast<double>(p1.y() - p0.y()) / ky;
+        const bool gate = projScopeActive();
+        const bool hideOOS = gate && configuration().getProjectionOutOfScopeHidden();
+        Data& clusteringData = doc.data();
+        for (int clustId : view.clusters()) {
+            for (Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId)); it.hasNext(); it.next()) {
+                const QPoint w = it(dimensionX, dimensionY);
+                const double dx = (w.x() - cw.x()) * ax, dy = (w.y() - cw.y()) * ay, d = dx * dx + dy * dy;
+                if (d >= best) continue;
+                if (hideOOS && !spikeTimeInScope(static_cast<double>(it(static_cast<dataType>(timeDimension))))) continue;
+                best = d; bestRow = static_cast<long>(it.featureRow()) - 1; bestCluster = clustId; bestWorld = w;
+            }
+        }
+    }
+    if (bestRow == hoverRow0_ && bestCluster == hoverCluster_) return;
+    hoverRow0_ = bestRow; hoverCluster_ = bestCluster; hoverTsneIndex_ = bestIndex; hoverWorld_ = bestWorld;
+    publishHoverSpike();
+}
+
+bool ClusterView::spikeViewportPos(long row0, QPoint& px)
+{
+    if (tsneMode) {
+        const int n = qMin(static_cast<int>(tsneXY.size() / 2), tsneRowSpike.size());
+        for (int i = 0; i < n; ++i)
+            if (tsneRowSpike.at(i) == row0) { px = tsneViewportPos(i); return true; }
+        return false;
+    }
+    Data& clusteringData = doc.data();
+    for (int clustId : view.clusters())
+        for (Data::Iterator it = clusteringData.iterator(static_cast<dataType>(clustId)); it.hasNext(); it.next())
+            if (static_cast<long>(it.featureRow()) - 1 == row0) { px = worldToViewport(it(dimensionX, dimensionY)); return true; }
+    return false;
+}
 
 void ClusterView::toggleDensityOverlay()
 {
@@ -1799,6 +1900,7 @@ void ClusterView::worldBoundsFromExtrema(long& aMin, long& aMax,
 }
 
 void ClusterView::updatedDimensions(int dimX, int dimY){
+    clearHoverSpike();                   // its world point is in the old projection
     this->dimensionX = dimX;
     this->dimensionY = dimY;
 
@@ -3696,6 +3798,12 @@ void ClusterView::autoscaleToVisibleClusters()
 }
 
 void ClusterView::mouseMoveEvent(QMouseEvent* e){
+    // Hover tracking: only a free cursor tracks -- a held button is a lasso, a pan or a
+    // boundary drag, and the nearest spike is not what that gesture is about.
+    if (hoverSpike_) {
+        if (e->buttons() == Qt::NoButton) hoverAt(e->position().toPoint());
+        else clearHoverSpike();
+    }
     // Lineage overlay (§11.3): live-preview a boundary being Shift+left-dragged.
     if (lineageDragBoundary_ >= 0) {
         lineageDragBoundaryT_ = timeAtViewport(e->position().toPoint());
@@ -3735,7 +3843,9 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
         // Same tracking-vertex behaviour as the scatter, in embedding pixels:
         // the polygon carries the point under the cursor and it is committed
         // by the next click.  No coordinate read-out -- embedding axes have no
-        // units to report.
+        // units to report; the hovered spike is named instead.
+        if(hoverRow0_ >= 0 && statusBar)
+            statusBar->showMessage(tr("Spike %1 of cluster %2").arg(hoverRow0_ + 1).arg(hoverCluster_));
         if(!polygonClosed &&
            (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
             mode == NEW_CLUSTER  || mode == NEW_CLUSTERS || mode == MULTI_LASSO) &&
@@ -3778,16 +3888,20 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
     //Write the current coordinates in the statusbar.
     QPoint current = viewportToWorld(e->position().toPoint().x(),e->position().toPoint().y());
 
+    QString coordinates;
     if(dimensionX == timeDimension){
         int timeInS = static_cast<int>(current.x() * samplingInterval / 1000000.0);
-        statusBar->showMessage("Coordinates: (" + QString::fromLatin1("%1").arg(timeInS) + ", " + QString::fromLatin1("%1").arg(-current.y()) + ")");
+        coordinates = "Coordinates: (" + QString::fromLatin1("%1").arg(timeInS) + ", " + QString::fromLatin1("%1").arg(-current.y()) + ")";
     }
     else if(dimensionY == timeDimension){
         int timeInS = static_cast<int>(current.y() * samplingInterval / 1000000.0);
-        statusBar->showMessage("Coordinates: (" + QString::number(current.x()) + ", " + QString::fromLatin1("%1").arg(-timeInS) + ")");
+        coordinates = "Coordinates: (" + QString::number(current.x()) + ", " + QString::fromLatin1("%1").arg(-timeInS) + ")";
     }
     else
-        statusBar->showMessage("Coordinates: (" + QString::number(current.x()) + ", " + QString::fromLatin1("%1").arg(-current.y()) + ")");
+        coordinates = "Coordinates: (" + QString::number(current.x()) + ", " + QString::fromLatin1("%1").arg(-current.y()) + ")";
+    if(hoverRow0_ >= 0)
+        coordinates += tr("   spike %1 of cluster %2").arg(hoverRow0_ + 1).arg(hoverCluster_);
+    statusBar->showMessage(coordinates);
 
 
 

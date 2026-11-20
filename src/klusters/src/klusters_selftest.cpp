@@ -30,6 +30,7 @@
 #include "klustersdoc.h"
 #include "klustersview.h"
 #include "clusterview.h"
+#include "waveformview.h"
 #include "clusterPalette.h"
 #include "processwidget.h"
 #include "data.h"
@@ -282,6 +283,72 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (processWidget)
             for (int i = 0; i < processWidget->count(); ++i) lines.append(processWidget->item(i)->text());
         result.insert(QStringLiteral("lines"), lines);
+        return true;
+    }
+    if (step.contains(QStringLiteral("hover"))) {
+        // {"hover": {"spike": i}}   move the cursor onto the spike with 0-based .spk index i in the
+        //                           active cluster view (where it is drawn), as a mouse move does;
+        // {"hover": {"at": [x, y]}} move it to that viewport point;
+        // {"hover": {"leave": true}} the cursor leaves the view;   {"hover": {"toggle": true}} Shift+V.
+        // Reports what the cluster view tracks (and where that spike is drawn) and what every waveform
+        // view overlays: the spike, its
+        // cluster, the samples drawn, the overlay / cluster / background colours, and how many pixels
+        // of the grabbed waveform view carry the overlay colour and the columns they span ("saveTo": a
+        // path the grabbed image is written to).
+        ClusterView* cv = activeClusterView();
+        if (!cv || !activeView()) { result.insert(QStringLiteral("error"), QStringLiteral("no cluster view")); return false; }
+        const QJsonObject o = step.value(QStringLiteral("hover")).toObject();
+        if (o.value(QStringLiteral("toggle")).toBool()) cv->toggleHoverSpike();
+        if (o.contains(QStringLiteral("spike"))) {
+            QPoint px;
+            const bool found = cv->spikeViewportPos(o.value(QStringLiteral("spike")).toInt(), px);
+            result.insert(QStringLiteral("drawn"), found);
+            if (found) { cv->hoverAt(px); result.insert(QStringLiteral("x"), px.x()); result.insert(QStringLiteral("y"), px.y()); }
+        }
+        if (o.contains(QStringLiteral("at"))) {
+            const QJsonArray a = o.value(QStringLiteral("at")).toArray();
+            cv->hoverAt(QPoint(a.at(0).toInt(), a.at(1).toInt()));
+        }
+        if (o.value(QStringLiteral("leave")).toBool()) cv->clearHoverSpike();
+        result.insert(QStringLiteral("active"), cv->hoverSpikeActive());
+        result.insert(QStringLiteral("spike"), static_cast<int>(cv->hoveredSpike()));
+        result.insert(QStringLiteral("cluster"), cv->hoveredCluster());
+        if (cv->hoveredSpike() >= 0) {                // where the tracked spike itself is drawn
+            QPoint tp;
+            if (cv->spikeViewportPos(cv->hoveredSpike(), tp)) {
+                result.insert(QStringLiteral("trackedX"), tp.x()); result.insert(QStringLiteral("trackedY"), tp.y());
+            }
+        }
+        QJsonArray views;
+        for (ViewWidget* w : activeView()->getViewList())
+            if (WaveformView* wv = qobject_cast<WaveformView*>(w)) {
+                QJsonObject v;
+                v.insert(QStringLiteral("spike"), static_cast<int>(wv->hoverSpikeRow()));
+                v.insert(QStringLiteral("cluster"), wv->hoverSpikeCluster());
+                QJsonArray wave;
+                for (float f : wv->hoverSpikeWaveform()) wave.append(static_cast<double>(f));
+                v.insert(QStringLiteral("wave"), wave);
+                const QColor bg = wv->palette().color(wv->backgroundRole());
+                const int cid = wv->hoverSpikeCluster() >= 0 ? wv->hoverSpikeCluster() : o.value(QStringLiteral("colourOf")).toInt(-1);
+                if (cid >= 0) {
+                    const QColor cc = doc->clusterColors().color(cid), oc = WaveformView::contrastingColor(cc, bg);
+                    v.insert(QStringLiteral("clusterColour"), cc.name());
+                    v.insert(QStringLiteral("overlayColour"), oc.name());
+                    v.insert(QStringLiteral("background"), bg.name());
+                    wv->repaint();
+                    const QImage img = wv->grab().toImage();
+                    int n = 0, xMin = img.width(), xMax = -1;
+                    for (int y = 0; y < img.height(); ++y)
+                        for (int x = 0; x < img.width(); ++x)
+                            if (QColor(img.pixel(x, y)).rgb() == oc.rgb()) { ++n; xMin = qMin(xMin, x); xMax = qMax(xMax, x); }
+                    v.insert(QStringLiteral("overlayPixels"), n);
+                    if (n) { v.insert(QStringLiteral("overlayXMin"), xMin); v.insert(QStringLiteral("overlayXMax"), xMax); }
+                    v.insert(QStringLiteral("width"), img.width());
+                    if (o.contains(QStringLiteral("saveTo"))) img.save(o.value(QStringLiteral("saveTo")).toString());
+                }
+                views.append(v);
+            }
+        result.insert(QStringLiteral("waveformViews"), views);
         return true;
     }
     if (step.contains(QStringLiteral("moveToEnd"))) {

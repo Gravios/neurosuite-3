@@ -2952,6 +2952,26 @@ void KlustersApp::registerInputBindings()
         };
         reg.addCommand(c);
     }
+    {   // Shift+V — hover tracking: the spike nearest the cursor in the feature view is
+        // drawn over the waveform view.  Falls through when there is no cluster view.
+        input::Command c;
+        c.id       = QStringLiteral("cluster.hoverSpike");
+        c.scopeId  = QStringLiteral("view.cluster");
+        c.label    = tr("Show the spike under the cursor in the waveform view");
+        c.category = tr("Cluster view");
+        c.kind     = input::Kind::Action;
+        c.defaultChord = input::Chord::key(Qt::Key_V, Qt::ShiftModifier);
+        c.enabled  = [this](const input::Ctx&){ return activeClusterView() != nullptr; };
+        c.invoke   = [this](const input::Ctx&){
+            if(ClusterView* cv = activeClusterView()){
+                cv->toggleHoverSpike();
+                if(statusBar()) statusBar()->showMessage(cv->hoverSpikeActive()
+                    ? tr("Spike under the cursor shown in the waveform view (Shift+V to stop)")
+                    : tr("Spike under the cursor no longer tracked"), 3000);
+            }
+        };
+        reg.addCommand(c);
+    }
     {   // F — toggle the t-SNE alternate presentation of the selection.  A bare letter,
         // so it is claimed at ShortcutOverride too (tryViewKeyCommand), keeping it from
         // the palette type-ahead.  Falls through when there is no cluster view.

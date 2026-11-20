@@ -168,6 +168,26 @@ public:
     void toggleDensityOverlay();
     bool densityOverlayActive() const { return densityOverlay_; }
 
+    /** Hover tracking (Shift+V, on by default): the spike drawn nearest the cursor --
+     *  in the feature scatter or in the oblique / t-SNE embedding -- is ringed here and
+     *  its waveform drawn over the waveform views in a colour that contrasts with its
+     *  cluster's.  Only a spike within hoverRadiusPx of the cursor counts, and nothing
+     *  is tracked while a button is held (a lasso or a pan in progress). */
+    void toggleHoverSpike();
+    bool hoverSpikeActive() const { return hoverSpike_; }
+    /** The tracked spike's 0-based .spk index, -1 when there is none. */
+    long hoveredSpike() const { return hoverRow0_; }
+    /** The cluster the tracked spike is drawn in (the active layer's id), -1 when none. */
+    int hoveredCluster() const { return hoverCluster_; }
+    /** Track the spike nearest the viewport point @p vp, as a mouse move there does. */
+    void hoverAt(const QPoint& vp);
+    /** Drop the tracked spike (the cursor left, or the points it was found among changed). */
+    void clearHoverSpike();
+    /** Where the spike with 0-based .spk index @p row0 is drawn in the current
+     *  presentation.  False when it is not among the shown points. */
+    bool spikeViewportPos(long row0, QPoint& px);
+    static constexpr int hoverRadiusPx = 32;
+
     // ── Input-binding seam (input-remapping plan P0d-4) ──────────────────────
     /** Register ClusterView's resolver-dispatched mouse GESTURES into the one app-wide
      *  registry (called once from KlustersApp::registerInputBindings).  The press
@@ -536,6 +556,8 @@ protected:
      *  (Input-remapping plan P0d-z.) */
     bool managesOwnPrimaryPress() const override { return true; }
     void mouseMoveEvent(QMouseEvent* event) override;
+    /**The cursor left the view: the hovered spike is dropped.*/
+    void leaveEvent(QEvent* event) override;
     /**Ctrl+wheel zooms toward the cursor (Ctrl+drag pans).  Without Ctrl the
      * event defers to the base ViewWidget/BaseFrame handling.*/
     void wheelEvent(QWheelEvent* event) override;
@@ -688,6 +710,15 @@ private:
     // dirty); the embedding rebuilds it when the embedding, its bounds or the
     // widget size change (densityKey_).  Mouse-move repaints reuse the image.
     bool                         densityOverlay_ = false;
+    // Hover tracking: the spike nearest the cursor.  The scatter keeps the spike's world
+    // point (mapped every repaint, so the ring follows a zoom or a pan), the embedding
+    // its point index.
+    bool                         hoverSpike_ = true;
+    long                         hoverRow0_ = -1;       ///< 0-based .spk index, -1 = none
+    int                          hoverCluster_ = -1;
+    QPoint                       hoverWorld_;           ///< scatter: the spike's world point
+    int                          hoverTsneIndex_ = -1;  ///< embedding: the point's index
+    void                         publishHoverSpike();
     bool                         densityDirty_ = true;
     QImage                       densityImage_;
     QRect                        densityRect_;   ///< widget rect the image covers
@@ -992,6 +1023,9 @@ private:
   is called*/
     void redraw(){
         drawContentsMode = REDRAW;
+
+        //The points changed under the cursor: the hovered spike may be gone or elsewhere.
+        clearHoverSpike();
 
         //Clear the update list
         clusterUpdateList.clear();

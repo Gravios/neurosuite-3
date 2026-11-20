@@ -44,7 +44,10 @@ clusters; `palette` reports the ids inside the list's viewport),
 `test_recluster_klustakwik.py` (a KlustaKwik recluster through the `recluster`, `reclusterLog` and
 `reclusterChunkArgs` steps: the time column is the sorter's time axis whatever `-UseFeatures` says, and
 the *Time chunks* preference reaches the command line; needs `KiloKlustaKwik_cpu` -- `KKK_BIN`, else the
-build tree's -- and skips without it)).
+build tree's -- and skips without it)),
+`test_hover_spike.py` (the `hover` step puts the cursor on a spike in the cluster view: the spike tracked
+is one drawn there, every waveform view overlays its `.spk` samples in a contrasting colour in its cluster's
+column, and the overlay goes when the cursor leaves or `Shift+V` turns the tracking off)).
 
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the

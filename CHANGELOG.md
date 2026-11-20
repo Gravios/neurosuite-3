@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: the spike under the cursor in the feature view is drawn over the waveform view](#2026-11-20--klusters-the-spike-under-the-cursor-in-the-feature-view-is-drawn-over-the-waveform-view) |
 | 2026-11-19 | [Klusters: a Time chunks preference for KlustaKwik reclusters](#2026-11-19--klusters-a-time-chunks-preference-for-klustakwik-reclusters) |
 | 2026-11-19 | [KiloKlustaKwik: the time column is always the time axis](#2026-11-19--kiloklustakwik-the-time-column-is-always-the-time-axis) |
 | 2026-11-19 | [Klusters: the cluster palette follows clusters moved to the end](#2026-11-19--klusters-the-cluster-palette-follows-clusters-moved-to-the-end) |
@@ -210,6 +211,41 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: the spike under the cursor in the feature view is drawn over the waveform view
+
+<details>
+<summary>Details</summary>
+
+Finding out what a point in the feature view looks like meant lassoing it into a cluster of its own.
+Now the feature view tracks the spike drawn nearest the cursor and the waveform views draw that one
+spike over its cluster's waveforms.
+
+- **What is tracked.**  The nearest drawn point within 32 pixels of the cursor, in the feature scatter
+  and in the oblique / t-SNE embedding alike; spikes hidden by the temporally-restricted projection
+  are passed over.  A ring marks the spike in the feature view, and the status bar names it
+  (`spike 4012 of cluster 37`, the number being its row in the `.spk` / `.fet`).  Nothing is tracked
+  while a button is held (a lasso, a pan or a boundary drag), and the spike is dropped when the
+  cursor leaves the view or the points change (an edit, another projection, the embedding closed).
+- **How it is drawn.**  Two pixels wide, in the cluster's column (or over the stack in the overlay
+  presentation), in the colour that stands out most from both the cluster's colour and the
+  background: of white, yellow, cyan, magenta, orange and green, the one furthest in RGB from the
+  nearer of the two.  The ring uses the same colour.  It is a live overlay: the cached waveform
+  drawing is not redone, so following the cursor costs one positioned read of the `.spk` per spike
+  and a repaint.
+- **Cost of the search.**  The scatter is searched in world units scaled to pixels, one multiply per
+  spike, so a 250,000-spike cluster costs about a millisecond per mouse move.
+- **Toggle.**  `Shift+V` (command `cluster.hoverSpike`, rebindable in *Preferences > Input*), on by
+  default.
+
+`test_hover_spike.py` drives it through the self-test's new `hover` step: the tracked spike is one
+drawn under the cursor, the overlay's samples are that spike's `.spk` row, its colour is at least 150
+RGB units from the cluster's and the background's, it is painted in its cluster's column, it is gone
+when the cursor leaves, a cluster that is not shown cannot be hovered, and the toggle stops and
+restarts it.  Not exercised by a test: the embedding (the search there is over the embedding's own
+points) and the temporally-restricted projection.
+
+</details>
 
 ## 2026-11-19 — Klusters: a Time chunks preference for KlustaKwik reclusters
 

@@ -1000,6 +1000,11 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 
 - `Shift+H` shows a point-density heatmap over the scatter, the oblique view
   or the t-SNE embedding.
+- Moving the cursor over the points tracks the nearest spike (within 32
+  pixels): a ring marks it, the status bar names it, and the waveform view
+  draws that spike over its cluster's waveforms in a colour that contrasts
+  with the cluster's. It works in the scatter and in the oblique / t-SNE
+  embedding, pauses while a button is held, and `Shift+V` turns it off and on.
 - `Shift+E` toggles the lineage overlay (edit mode), in which a left click
   marks lineage nodes. It needs Templates mode (**Preferences → Views → Display**).
 
