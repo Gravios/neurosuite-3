@@ -29,6 +29,8 @@ extern "C" {
 #include "param.h"
 }
 
+#include <neurosuite/core/neurofileio.h>   // isBinaryCountHeader
+
 
 // ---------------------------------------------------------------------------
 // The .fet's LAST column is the spike time, and it is this sorter's time axis:
@@ -69,11 +71,10 @@ static bool SelectTimeColumn(char* useFeatures, int nFeatures)
 // Text format  : "%d\n" nDimensions; then nSpikes lines of nDimensions space-
 //                separated integers (legacy ndmanager-plugins output)
 //
-// Detection: if the first byte is an ASCII digit (0x30–0x39) the file is text;
-// otherwise it is binary.  Note: this heuristic misclassifies binary files where
-// nDimensions & 0xFF falls in 48–57 (e.g., 48–57 or 304–313 dimensions).  For
-// typical probe configurations (< 48 dims) this is safe; higher-density arrays
-// may need a magic-number format extension.
+// Detection: neurofileio::isBinaryCountHeader -- binary iff one of the first 4
+// bytes cannot occur in the text form.  (The former test, "the first byte is
+// not an ASCII digit", read a binary file of 48-57 or 304-313 dimensions as
+// text: 16 channels x 3 PCs + time is 49.)
 // ---------------------------------------------------------------------------
 void KK::LoadData() {
     char fname[STRLEN + 16];
@@ -89,7 +90,7 @@ void KK::LoadData() {
     unsigned char firstByte = 0;
     if (fread(&firstByte, 1, 1, fp) != 1) Error("Empty .fet file");
     fseeko(fp, 0, SEEK_SET);
-    const bool isBinary = (firstByte < 0x30 || firstByte > 0x39); // not ASCII digit
+    const bool isBinary = neurofileio::isBinaryCountHeader(fname);
 
     int nFeatures = 0;
 
@@ -377,7 +378,7 @@ void KK::LoadClu(const char *CluFile) {
     unsigned char firstByte = 0;
     if (fread(&firstByte, 1, 1, fp) != 1) Error("Empty .clu file");
     fseeko(fp, 0, SEEK_SET);
-    const bool isBinary = (firstByte < 0x30 || firstByte > 0x39);
+    const bool isBinary = neurofileio::isBinaryCountHeader(CluFile);
 
     if (isBinary) {
         int32_t nclu32 = 0;

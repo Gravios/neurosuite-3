@@ -36,8 +36,11 @@ column: `nDimensions = C × dims + 1`. It has no peak columns.
 
 A plain-text form (first line `nDimensions`, then one whitespace-separated row
 per spike) is still read by `neurofileio::readFet` and by KiloKlustaKwik, which
-tells the two apart by the first byte. Nothing in the pipeline writes it, and
-Klusters reads binary only.
+tells the two apart with `neurofileio::isBinaryCountHeader`: binary when one of
+the first four bytes cannot occur in text. (Until 2026-11-20 KiloKlustaKwik
+looked at the first byte only and read a binary file of 48–57 or 304–313
+columns as text.) Nothing in the pipeline writes it, and Klusters reads binary
+only.
 
 ## Naming
 

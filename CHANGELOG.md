@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [KiloKlustaKwik, process_denoiseuniform: a binary `.fet` or `.clu` whose count has a low byte of 0x30–0x39 is no longer read as text](#2026-11-20--kiloklustakwik-process_denoiseuniform-a-binary-fet-or-clu-whose-count-has-a-low-byte-of-0x300x39-is-no-longer-read-as-text) |
 | 2026-11-20 | [Klusters: Split Burst Followers — two similarly shaped cells told apart by their bursts](#2026-11-20--klusters-split-burst-followers--two-similarly-shaped-cells-told-apart-by-their-bursts) |
 | 2026-11-20 | [Klusters: a super-sampled space is read when it is first shown, not at open; super-sample mode no longer shows it](#2026-11-20--klusters-a-super-sampled-space-is-read-when-it-is-first-shown-not-at-open-super-sample-mode-no-longer-shows-it) |
 | 2026-11-20 | [Klusters: the spike under the cursor in the feature view is drawn over the waveform view](#2026-11-20--klusters-the-spike-under-the-cursor-in-the-feature-view-is-drawn-over-the-waveform-view) |
@@ -213,6 +214,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — KiloKlustaKwik, process_denoiseuniform: a binary `.fet` or `.clu` whose count has a low byte of 0x30–0x39 is no longer read as text
+
+<details>
+<summary>Details</summary>
+
+KiloKlustaKwik's `.fet` and `.clu` loaders, and `process_denoiseuniform`'s `.clu` reader, decided
+text or binary from the file's first byte: an ASCII digit meant text.  The first byte of a binary
+file is the low byte of its int32 count, so 48 to 57 columns or clusters (and 304 to 313, and so
+on) were read as text.  A binary `.fet` of 49 columns -- 16 channels with 3 components each, plus
+time -- stopped KiloKlustaKwik at load with `Array::SetSize: n == 0`.
+
+- **One detector.**  `neurofileio::isBinaryCountHeader`: binary when the file holds at least four
+  bytes and one of the first four cannot occur in the text form (digits, a sign, `.`, `e`, `E`,
+  whitespace).  A count below 2^24 has a zero high byte, so every plausible binary header is
+  detected.  The three readers call it; their text paths are unchanged.
+- **`process_denoiseuniform`** now links `Neurosuite::core` for it.
+- **Checked.**  `core_test_neurofileio_robust` (62 checks): counts 48–57, 304, 313, 560 and 12592
+  are binary, the text forms are text.  KiloKlustaKwik on a 600-spike binary `.fet` of 49 columns
+  now gets past the load.
+- **Not fixed here.**  That run, and the same one with 25 columns (which loaded before as well),
+  then aborts in stage 2.1 with a heap error (`free(): invalid next size`, `munmap_chunk(): invalid
+  pointer`) on 600 random spikes in 2 chunks.  It is older than this change and not yet looked into.
+
+Found by the pipeline audit of 2026-11-20 (H3).
+
+</details>
 
 ## 2026-11-20 — Klusters: Split Burst Followers — two similarly shaped cells told apart by their bursts
 

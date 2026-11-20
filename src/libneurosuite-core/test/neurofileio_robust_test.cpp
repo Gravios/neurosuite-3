@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <iterator>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -335,9 +336,42 @@ static void testTcl()
     std::remove(tp.c_str());
 }
 
+// ── 7. text/binary detection of a file that starts with an int32 count ───────
+static void testCountHeaderDetection()
+{
+    using namespace neurofileio;
+    const std::string p = "robust_count_header.bin";
+    const auto binaryHeader = [&p](int32_t count, int bodyBytes) {
+        std::string bytes(reinterpret_cast<const char*>(&count), 4);   // the header as stored
+        bytes.append(static_cast<std::size_t>(bodyBytes), '\0');
+        writeBytes(p, bytes);
+        return isBinaryCountHeader(p);
+    };
+    // The counts the first-byte rule read as text: low byte '0'..'9'.
+    bool all = true;
+    for (int32_t count : {48, 49, 53, 57, 304, 313, 560, 12592})
+        if (!binaryHeader(count, 64)) { all = false; std::printf("  count %d read as text\n", count); }
+    check(all, "count header: 48-57, 304-313, ... columns or clusters are binary");
+    all = true;
+    for (int32_t count : {0, 1, 2, 25, 47, 58, 255, 256, 65536, 16777136})
+        if (!binaryHeader(count, 64)) { all = false; std::printf("  count %d read as text\n", count); }
+    check(all, "count header: other plausible counts are binary");
+    check(binaryHeader(49, 0), "count header: a header with no rows is binary");
+
+    for (const char* text : {"49\n1\n2\n", "5\n0.25 1e3 -2\n", "3\n-1 2 3\n", "  12\n7\n", "1590\n2\n"}) {
+        writeBytes(p, text);
+        check(!isBinaryCountHeader(p), std::string("count header: text form is text: ") + std::to_string(std::strlen(text)) + " bytes");
+    }
+    writeBytes(p, "7\n");
+    check(!isBinaryCountHeader(p), "count header: a file shorter than 4 bytes is not binary");
+    check(!isBinaryCountHeader("robust_no_such_file.bin"), "count header: a missing file is not binary");
+    std::remove(p.c_str());
+}
+
 int main()
 {
     testResDetection();
+    testCountHeaderDetection();
     testEvtPrecision();
     testColTruncation();
     testCraftedHeaders();

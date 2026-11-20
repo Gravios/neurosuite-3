@@ -97,6 +97,17 @@ NEUROSUITE_CORE_EXPORT bool writeResBinary(const std::string& path, const std::v
 // whose first spike sat at e.g. sample 50, low byte '2', as text).
 NEUROSUITE_CORE_EXPORT bool isBinaryClusterRes(const std::string& resPath);
 
+// Text or binary, for a file that starts with an int32 count: a .clu / .clc /
+// .clp (number of ids) or a .fet (number of columns).  Binary iff the file
+// holds at least 4 bytes and one of the first 4 cannot occur in the text form
+// (ASCII digits, a sign, '.', 'e', 'E' and whitespace).  A count below 2^24
+// has a zero high byte, so every plausible binary header is detected, whatever
+// its low byte.  The former rule in KiloKlustaKwik and process_denoiseuniform
+// -- "the first byte is not an ASCII digit" -- read a binary file whose count
+// had a low byte of 0x30-0x39 as text: 48 to 57 columns or clusters, 304 to
+// 313, and so on.  A file shorter than 4 bytes is not binary.
+NEUROSUITE_CORE_EXPORT bool isBinaryCountHeader(const std::string& path);
+
 // Read a .res in whichever format isBinaryClusterRes detects, and verify the
 // result is self-consistent before reporting success:
 //   text   — every non-blank line must be exactly one integer (strict: a line

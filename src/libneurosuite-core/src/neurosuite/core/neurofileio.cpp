@@ -222,6 +222,18 @@ bool isBinaryClusterRes(const std::string& resPath)
     return false;
 }
 
+bool isBinaryCountHeader(const std::string& path)
+{
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return false;
+    unsigned char head[4] = {0, 0, 0, 0};
+    in.read(reinterpret_cast<char*>(head), 4);          // raw bytes of the file, read as such
+    if (in.gcount() != 4) return false;
+    for (const unsigned char c : head)
+        if (!isResTextByte(c) && c != '.' && c != 'e' && c != 'E') return true;
+    return false;
+}
+
 // Strict text .res parse: every non-blank line must hold exactly ONE integer
 // (optional sign, digits, surrounding whitespace).  Anything else fails, so a
 // binary file that slipped past detection cannot come back as garbage.

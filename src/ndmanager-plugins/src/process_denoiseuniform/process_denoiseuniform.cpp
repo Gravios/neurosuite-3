@@ -109,6 +109,7 @@
 #include <iostream>
 #include <neurosuite/core/fileio64.hpp>
 #include <neurosuite/core/fileops.hpp>
+#include <neurosuite/core/neurofileio.h>   // isBinaryCountHeader
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -379,8 +380,9 @@ int main(int argc, char *argv[])
     //   Text (legacy / klusters):  ASCII first line = nClusters, one int per spike per line
     //   Binary (KlustaKwik):       int32_t nClusters header; nSpikes × int32_t clusterIDs
     //
-    // Detection: if the first byte is an ASCII digit (0x30–0x39) the file is text.
-    // Otherwise it is the KlustaKwik binary format.
+    // Detection: neurofileio::isBinaryCountHeader (one of the first 4 bytes cannot
+    // occur in text).  The former "first byte is not an ASCII digit" read a
+    // binary .clu of 48-57 clusters as text.
     //
     // Historically this code only handled text.  When KlustaKwik writes binary
     // and this plugin is run afterward (e.g. to remove newly-detected noise),
@@ -395,7 +397,7 @@ int main(int argc, char *argv[])
     if (cluIn) {
         unsigned char firstByte = 0;
         if (fread(&firstByte, 1, 1, cluIn) == 1) {
-            cluIsBinary = (firstByte < 0x30 || firstByte > 0x39);
+            cluIsBinary = neurofileio::isBinaryCountHeader(cluPath);
             neurosuite::core::fseek64(cluIn, 0, SEEK_SET);
 
             if (cluIsBinary) {
