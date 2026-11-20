@@ -30,6 +30,7 @@
 
 #include "klustersdoc.h"
 #include "burstfollowers.h"
+#include "corecut.h"
 #include "data.h"
 #include "clusterlabel.h"
 #include "klustersview.h"
@@ -1511,5 +1512,84 @@ KlustersDoc::BurstFollowerResult KlustersDoc::detectBurstFollowers(int clusterA,
     R.mixed    = r.mixed;
     R.collided = r.collided;
     R.ok = true;
+    return R;
+}
+
+// ---------------------------------------------------------------------------
+// detectCoreCut  --  the core of a cluster, and the spikes that are not it
+//
+// The analysis is corecut.h (Qt-free, unit-tested); this reads the cluster's
+// waveforms off the layer the id names, in the space that is shown, and
+// carries the spikes past the cut back as feature rows.  Every channel of the
+// group is used whatever the channel selection: a weak channel is where a
+// neighbouring cell shows itself.
+// ---------------------------------------------------------------------------
+KlustersDoc::CoreCutResult KlustersDoc::detectCoreCut(int cluster, bool onChildLayer)
+{
+    CoreCutResult R;
+    R.cluster = cluster;
+    if (!clusteringData) { R.reason = tr("No document is open."); return R; }
+    if (onChildLayer && !childData) { R.reason = tr("This session has no child layer."); return R; }
+    Data& layer = onChildLayer ? *childData : parentData();
+    const auto name = [onChildLayer](int id) { return onChildLayer ? tr("child %1").arg(id) : clusterLabel(id); };
+    if (onChildLayer ? (parentOfChild(cluster) < 2) : (cluster < 2)) {
+        R.reason = tr("Split off spurious spikes: the artefact and noise clusters are left alone.");
+        return R;
+    }
+    const int nCh   = layer.nbOfChannels();
+    const int nSamp = layer.nbOfSampleInWaveform();
+    const double rate = layer.getSamplingRate() * std::max(1, layer.supersampleFactor());
+    if (nCh <= 0 || nSamp <= 0 || rate <= 0.0) {
+        R.reason = tr("The document carries no waveform geometry.");
+        return R;
+    }
+    SortableTable pos;
+    if (!layer.spikePositions(cluster, pos)) {
+        R.reason = tr("Split off spurious spikes: %1 does not exist.").arg(name(cluster));
+        return R;
+    }
+    const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(cluster)));
+    corecut::Params p;
+    p.sampleRateHz = rate;
+    if (n < p.minSpikes) {
+        R.reason = tr("Split off spurious spikes: %1 has %2 spikes; at least %3 are needed.").arg(name(cluster)).arg(n).arg(p.minSpikes);
+        return R;
+    }
+    // One float per sample of every spike: refuse a cluster that would not fit in memory.
+    constexpr long kMaxSpikes = 400000;
+    if (n > kMaxSpikes) {
+        R.reason = tr("Split off spurious spikes: %1 has %2 spikes; over %3 it has to be split in time first.").arg(name(cluster)).arg(n).arg(kMaxSpikes);
+        return R;
+    }
+
+    const std::shared_ptr<const Data::ClusteringSnapshot> snap = layer.currentSnapshot();
+    const std::size_t rec = static_cast<std::size_t>(nCh) * nSamp;
+    std::vector<float>    wav;
+    std::vector<dataType> rows;
+    wav.reserve(static_cast<std::size_t>(n) * rec);
+    rows.reserve(static_cast<std::size_t>(n));
+    std::vector<int16_t> raw;
+    std::vector<float>   one;
+    for (long s = 0; s < n; ++s) {
+        const long row = static_cast<long>(pos(1, s + 1));
+        if (!tmReadSpikeFloat(*snap, row - 1, nCh, nSamp, raw, one)) continue;
+        wav.insert(wav.end(), one.begin(), one.begin() + static_cast<std::ptrdiff_t>(rec));
+        rows.push_back(static_cast<dataType>(row));
+    }
+    R.total = static_cast<long>(rows.size());
+
+    const corecut::Result r = corecut::analyse(wav.data(), R.total, nCh, nSamp, p);
+    R.ok             = r.ok;
+    R.ordered        = r.ordered;
+    R.cut            = r.cut;
+    R.primaryChannel = r.primaryChannel;
+    R.cutChannel     = r.cutChannel;
+    if (!r.ok) {
+        R.reason = tr("Split off spurious spikes: %1: %2.").arg(name(cluster), QString::fromLatin1(r.reason));
+        return R;
+    }
+    for (std::size_t i = 0; i < r.keep.size(); ++i)
+        if (!r.keep[i]) R.removed.insert(rows[i]);
+    if (R.removed.isEmpty()) R.reason = QString::fromLatin1(r.reason);
     return R;
 }

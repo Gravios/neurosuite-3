@@ -1359,6 +1359,27 @@ public:
                                              double minIsiMs, double maxIsiMs,
                                              bool children = false) const;
 
+    /** Result of detectCoreCut (non-mutating scan). */
+    struct CoreCutResult {
+        bool           ok = false;          ///< the analysis ran (removed may still be empty)
+        QString        reason;              ///< why it did not run, or why nothing is cut
+        int            cluster = 0;
+        long           total = 0;           ///< spikes of the cluster that were read
+        long           ordered = 0;         ///< spikes that were ordered (all, or an evenly spaced subset)
+        long           cut = 0;             ///< ordered spikes kept
+        int            primaryChannel = -1; ///< 0-based, the channel the spikes were centred on
+        int            cutChannel = -1;     ///< 0-based, the channel whose kurtosis onset set the cut
+        QSet<dataType> removed;             ///< 1-based feature rows of the spikes past the cut
+    };
+    /** The core of one cluster and the spikes that are not it (corecut.h): the
+     *  spikes, centred on the first half crossing of their falling flank and
+     *  seen through a tapered window around it on every channel, are put in the
+     *  order in which each next one changes the cumulative mean waveform least,
+     *  and the order is cut at the earliest onset of a rise in a channel's
+     *  cumulative kurtosis.  Reads the waveforms of the space that is shown.
+     *  With @p onChildLayer the id is a child (.clc).  Non-mutating. */
+    CoreCutResult detectCoreCut(int cluster, bool onChildLayer = false);
+
     /** Result of detectWaveformOutliers (non-mutating scan). */
     struct WaveformOutlierResult {
         bool                    ok    = false; ///< true iff the scan ran to completion

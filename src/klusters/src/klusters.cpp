@@ -562,6 +562,23 @@ void KlustersApp::createMenus()
     connect(mSplitBurstFollowers, &QAction::triggered,
             this, &KlustersApp::slotSplitBurstFollowers);
 
+    // One cluster: the spikes in the order that changes the cumulative mean
+    // waveform least, cut where a channel's cumulative kurtosis starts to rise.
+    // Unbound: bind it in the input registry.
+    mSplitOffSpurious = actionMenu->addAction(tr("Split Off Sp&urious Spikes"));
+    mSplitOffSpurious->setToolTip(
+        tr("For each selected cluster: its spikes, centred on the first half crossing "
+           "of their falling flank and seen through a tapered window around it on every "
+           "channel, are put in the order in which each next one changes the cumulative "
+           "mean waveform least.  The order is cut where a channel's cumulative kurtosis "
+           "starts to rise, and the spikes past the cut are split off into a new cluster; "
+           "the core stays.  It assumes one unit is more than half the cluster, and it "
+           "errs on the side of splitting.  Reads the waveforms of the space shown.  With "
+           "children selected the new cluster is a new child beside the one the spikes "
+           "come from.  Undoable."));
+    connect(mSplitOffSpurious, &QAction::triggered,
+            this, &KlustersApp::slotSplitOffSpurious);
+
     // Pin the oblique (template-axis) projection's basis.  The oblique view
     // (Shift+O) normally uses the SELECTED clusters as its axes; this fixes a
     // chosen pair (or more) as the axes so a DIFFERENT cluster can be examined
@@ -2646,6 +2663,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("action.stripWaveformOutliers"),QStringLiteral("Actions"), mStripWaveformOutliers);
     registerActionCommand(QStringLiteral("action.stripResidualOutliers"),QStringLiteral("Actions"), mStripResidualOutliers);
     registerActionCommand(QStringLiteral("action.splitBurstFollowers"),  QStringLiteral("Actions"), mSplitBurstFollowers);
+    registerActionCommand(QStringLiteral("action.splitOffSpurious"),     QStringLiteral("Actions"), mSplitOffSpurious);
     registerActionCommand(QStringLiteral("action.setObliqueBasis"),      QStringLiteral("Actions"), mSetObliqueBasis);
     registerActionCommand(QStringLiteral("action.markAsTemplate"),       QStringLiteral("Actions"), mMarkAsTemplate);
     registerActionCommand(QStringLiteral("action.generateTemplate"),     QStringLiteral("Actions"), mGenerateTemplate);
@@ -7192,7 +7210,7 @@ void KlustersApp::slotStripWaveformOutliers()
 // clusters' spikes cannot be one cell, 10 ms the upper edge of the burst band
 // the burst index uses.
 // ---------------------------------------------------------------------------
-int KlustersApp::splitOffBurstFollowers(const QSet<dataType>& rows, bool children)
+int KlustersApp::splitOffBurstFollowers(const QSet<dataType>& rows, bool children, const QString& label)
 {
     if (rows.isEmpty()) return 0;
     // The split edits the ACTIVE layer, and the landing of a previous split can
@@ -7208,7 +7226,7 @@ int KlustersApp::splitOffBurstFollowers(const QSet<dataType>& rows, bool childre
         if (!sources.contains(src)) sources.append(src);
     }
     if (sources.isEmpty()) return 0;
-    const SpikeSelection selection(rows, QStringLiteral("burst_followers"));
+    const SpikeSelection selection(rows, label);
     const int made = doc->createNewCluster(selection, sources);
     if (made <= 0 || (!children && made == 1)) return 0;     // parent scope: 1 is the noise bin
     return made;
@@ -7360,6 +7378,79 @@ void KlustersApp::slotSplitBurstFollowers()
         created = sortMixedByBursts(refs.at(0), refs.at(1), mixed, summary, children);
     }
     // Both cells and what was taken from them, side by side.  (In child scope the
+    // split has parked the new child with its source already.)
+    if (!children && !created.isEmpty() && clusterPalette) {
+        const QList<int> shown = selected + created;
+        clusterPalette->selectItems(shown);
+        doc->shownClustersUpdate(shown, *view);
+    }
+    slotStatusMsg(summary);
+}
+
+// ---------------------------------------------------------------------------
+// slotSplitOffSpurious  --  a cluster's core kept, the spikes that are not it
+// split off
+//
+// The scan is KlustersDoc::detectCoreCut (corecut.h).  The spikes past the cut
+// become ONE new cluster through the row-named builder the burst action uses;
+// they are not sent to the noise cluster: what is split off may be another
+// cell, and it is parked where it can be looked at, cut again or merged back.
+// ---------------------------------------------------------------------------
+int KlustersApp::splitOffSpurious(int cluster, QString& summary, bool children)
+{
+    const QString name = children ? tr("child %1").arg(cluster) : clusterLabel(cluster);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::CoreCutResult R = doc->detectCoreCut(cluster, children);
+    QApplication::restoreOverrideCursor();
+    if (!R.ok) { summary = R.reason; return 0; }
+    if (R.removed.isEmpty()) {
+        summary = tr("%1: %2 spikes, nothing split off (%3)").arg(name).arg(R.total).arg(R.reason);
+        return 0;
+    }
+    const QString found = tr("%1 of %2 spikes past the cut at %3% of the order (channel %4)")
+        .arg(R.removed.size()).arg(R.total)
+        .arg(100.0 * static_cast<double>(R.cut) / static_cast<double>(std::max(1L, R.ordered)), 0, 'f', 1)
+        .arg(R.cutChannel + 1);
+    const int made = splitOffBurstFollowers(R.removed, children, QStringLiteral("core_cut"));
+    if (made <= 0) { summary = tr("%1: %2, could not be split off").arg(name, found); return 0; }
+    summary = (children ? tr("%1: %2 -> new child %3 of %4").arg(name, found).arg(made).arg(clusterLabel(doc->parentOfChild(made)))
+                        : tr("%1: %2 -> new cluster %3").arg(name, found).arg(made));
+    return made;
+}
+
+void KlustersApp::slotSplitOffSpurious()
+{
+    KlustersView* view = activeView();
+    if (!view || !doc) return;
+    const bool children = doc->isChildClusteringActive();
+    QList<int> selected;
+    if (children) {
+        selected = childPaletteA ? childPaletteA->selectedClusters() : view->clusters();
+        doc->leaveOutChildrenOfReserved(selected, tr("Split off spurious spikes"));
+        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artefact / noise bins
+            if (doc->parentOfChild(selected.at(k)) < 2) selected.removeAt(k);
+    } else {
+        selected = view->clusters();
+        selected.removeAll(0);
+        selected.removeAll(1);
+        doc->leaveOutReserved(selected, tr("Split off spurious spikes"));
+    }
+    if (selected.isEmpty()) {
+        slotStatusMsg(children ? tr("Split off spurious spikes: select one or more children first.")
+                               : tr("Split off spurious spikes: select one or more clusters first."));
+        return;
+    }
+    QStringList parts;
+    QList<int> created;
+    for (const int id : std::as_const(selected)) {
+        QString summary;
+        const int made = splitOffSpurious(id, summary, children);
+        if (made > 0) created << made;
+        parts << summary;
+    }
+    const QString summary = tr("Spurious spikes: %1.").arg(parts.join(QStringLiteral("; ")));
+    qInfo().noquote() << "[core cut]" << summary;
+    // The cores and what was taken from them, side by side.  (In child scope the
     // split has parked the new child with its source already.)
     if (!children && !created.isEmpty() && clusterPalette) {
         const QList<int> shown = selected + created;

@@ -459,7 +459,17 @@ private Q_SLOTS:
      *  clustering, or with @p children the child layer -- a new child beside the
      *  child the rows come from, under that child's parent (the parent clustering
      *  is not changed).  Returns its id, 0 when nothing was made. */
-    int splitOffBurstFollowers(const QSet<dataType>& rows, bool children);
+    int splitOffBurstFollowers(const QSet<dataType>& rows, bool children,
+                               const QString& label = QStringLiteral("burst_followers"));
+    /** Actions: Split Off Spurious Spikes.  For every selected cluster (or child,
+     *  in child scope) runs KlustersDoc::detectCoreCut and splits the spikes past
+     *  the cut off into one new cluster (a new child beside the one they come
+     *  from).  The core stays where it is.  No confirmation; each new cluster is
+     *  one undo step. */
+    void slotSplitOffSpurious();
+    /** The body of the action for one cluster: the id of the new cluster, 0 when
+     *  nothing was split off; what was found in @p summary. */
+    int splitOffSpurious(int cluster, QString& summary, bool children = false);
     /** Actions: pin a basis for the oblique (template-axis) projection.  Prompts
      *  for the cluster ids whose templates become the fixed axes, so a different
      *  cluster can be examined against them with Shift+O; empty input clears the
@@ -1516,6 +1526,7 @@ private:
     QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
     QAction *mStripWaveformOutliers; // split waveform-residual outliers of selected clusters into a new cluster
     QAction *mStripResidualOutliers = nullptr; // gain-free on/off-channel residual strip (dialog)
+    QAction *mSplitOffSpurious = nullptr;      // one cluster: its core kept, the spikes that are not it split off
     QAction *mSplitBurstFollowers = nullptr;   // two similar cells: the other's burst followers, split off
     QAction *mSetObliqueBasis;       // pin the oblique projection's template axes (Set Oblique Basis…)
     QAction *mMarkAsTemplate = nullptr;  // toggle the selected cluster(s) as template units (.wtf on save)

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: Split Off Spurious Spikes — a cluster's core kept, the rest split off](#2026-11-20--klusters-split-off-spurious-spikes--a-clusters-core-kept-the-rest-split-off) |
 | 2026-11-20 | [Klusters: Split Burst Followers on children](#2026-11-20--klusters-split-burst-followers-on-children) |
 | 2026-11-20 | [Klusters: Split Burst Followers with two references and a mixed cluster](#2026-11-20--klusters-split-burst-followers-with-two-references-and-a-mixed-cluster) |
 | 2026-11-20 | [KiloKlustaKwik: a heap overflow in the split trial with -MaxPossibleClusters below 13](#2026-11-20--kiloklustakwik-a-heap-overflow-in-the-split-trial-with--maxpossibleclusters-below-13) |
@@ -217,6 +218,59 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: Split Off Spurious Spikes — a cluster's core kept, the rest split off
+
+<details>
+<summary>Details</summary>
+
+**Actions → Split Off Spurious Spikes** takes each selected cluster (or child) and splits the
+spikes that are not its core off into one new cluster.  No dialog, no confirmation box, one undo
+step per cluster.
+
+- **Centre.**  Each spike is moved, sub-sample, so that the point where its falling flank crosses
+  half the trough depth on the cluster's primary channel lands where the median waveform's does.
+- **Window.**  A tapered window asymmetrically around that crossing: rising over 0.15 ms before
+  it, flat to 0.18 ms after, falling to 0.43 ms.  Every channel, unweighted.
+- **Order.**  From the spike nearest the median waveform, always the spike that changes the
+  cumulative mean least (the one nearest the running mean).
+- **Cut.**  Per channel, the excess kurtosis of the spikes taken so far and its change over 2% of
+  the order.  The cut is the earliest rank, past half the order, where that change exceeds five
+  times its size between 20% and 50%.  No such rank on any channel: nothing is split off.
+- **Size.**  The order is quadratic.  Up to 40,000 spikes are ordered (OpenMP); above that an
+  evenly spaced 40,000 are, and the rest are kept when within the cut's step of the kept mean.
+  Over 400,000 spikes the action refuses.
+
+Measured on `jg05-20120312` group 8 against a curated clustering, spikes identified by row, with
+the Python prototype (project notes, `analysis/core-cut`): the share of a parent in the curator's
+largest unit, before and after, and how much of that unit stays.
+
+| Parent | Spikes | Before | After | Unit kept | |
+|---|---|---|---|---|---|
+| 153, 0–10 min | 8,414 | 75.3% | 97.4% | 80% | recipe arrived at here |
+| 153, 10–20 min | 8,222 | 65.5% | 79.8% | 85% | recipe arrived at here |
+| 32 | 12,506 | 56.4% | 78.4% | 76% | recipe arrived at here |
+| 153, 300–310 min | 3,622 | 79.2% | 89.7% | 87% | not looked at before |
+| 186 | 4,572 | 82.7% | 96.7% | 57% | not looked at before |
+| 226 | 9,439 | 81.6% | 89.9% | 82% | not looked at before |
+| 155 | 2,620 | 74.5% | 88.5% | 61% | not looked at before |
+
+- **It over-splits.**  A ten-minute piece the curator had left as one unit lost 45% of its spikes.
+- **The cut is not stable to small changes.**  The C++ here centres on the median waveform's own
+  crossing and interpolates with a Catmull-Rom cubic where the prototype used a fixed sample and
+  a spline.  On four of the eight parents it cuts within 1% of the prototype; on the others the
+  cut moved by 6 to 22% of the order (153 10–20 min: 49% against 70%, purity 85.6% against 79.8%).
+  The purity rose on all eight with the C++ too (to between 78.6% and 100%); where the cut falls is what moved.
+- **Assumes** one unit is more than half the cluster, and a negative trough.
+- **Not tested:** super-sampled spaces (the rate is taken as the rate times the factor), groups
+  of other channel counts than 8 and 4, other sessions.
+
+`corecut.h` is Qt-free (`klusters_test_corecut`: a unit with a quarter of a neighbour in it, a
+clean unit, a subset, an ordering hook); self-test `test_core_cut.py` (parent and child scope).
+The numbers above are from the prototype on the standard space; the action reads whichever
+space is shown.
+
+</details>
 
 ## 2026-11-20 — Klusters: Split Burst Followers on children
 

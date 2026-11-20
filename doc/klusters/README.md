@@ -1056,6 +1056,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
 | Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
 | Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; with three, two references sort the third; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
+| Split Off Spurious Spikes | — | For each selected cluster, keeps its core and splits the spikes that are not it into a new cluster; see [below](#split-off-spurious-spikes--a-clusters-core-and-the-rest) |
 | Time-Chunk Mode | — | Steps through the session one chunk of the length you enter at a time, with only that chunk's clusters active; **Previous Chunk** / **Next Chunk** move between chunks |
 | Sync Feature Spaces, Next / Previous Feature Space, Sort Spikes by Time | — / `Ctrl+Tab` / `Ctrl+Shift+Tab` / — | See [Feature spaces](#feature-spaces--one-clu-through-another-method) |
 
@@ -1101,6 +1102,35 @@ key; bind `action.splitBurstFollowers` in Preferences → Input).
   cell driving the other). If each cluster holds the other's followers in equal
   numbers the order test sees no asymmetry and nothing is split. The 2 ms and 10 ms
   are fixed.
+
+### Split Off Spurious Spikes — a cluster's core, and the rest
+
+A cluster that is mostly one cell with other spikes in it: select it (or several, or
+children in the child palette) and choose **Actions → Split Off Spurious Spikes** (no
+key; bind `action.splitOffSpurious` in Preferences → Input). The spikes that are not
+the core become one new cluster per selected cluster, shown beside it; in child scope,
+a new child beside the one they came from. The core stays where it is. There is no
+dialog and no confirmation box, and each split is one undo step.
+
+- **How the core is found.** Every spike is centred on the point where its falling
+  flank crosses half its trough depth, and looked at through a short window around
+  that point on every channel. The spikes are then put in the order in which each
+  next one changes the mean waveform of those already taken least. The cell's
+  ordinary spikes come first.
+- **Where it is cut.** While the spikes taken are of one kind, their kurtosis on each
+  channel stays flat; when different ones start to come in it rises. The cut is the
+  first place, past half the order, where that rise sets in on any channel.
+- **Nothing split off** means no such place was found: the status bar says so.
+- **It assumes** that one cell is more than half the cluster, and a downward spike.
+  A cluster of two cells of similar size is not what it is for.
+- **It errs on the side of splitting.** On a unit a curator had left whole it took
+  45% of the spikes. What is split off is a cluster to look at, not noise: merge it
+  back when it is the same cell.
+- **It reads the waveforms of the space shown.** It was worked out on the standard
+  space.
+- **Speed.** The ordering is quadratic: about 3 s for 8,000 spikes and 7 s for 12,000
+  on two cores. Up to 40,000 spikes are ordered; above that an evenly spaced 40,000
+  are, and the others follow them. Over 400,000 spikes it refuses.
 
 ### Plugins
 

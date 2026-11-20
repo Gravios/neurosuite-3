@@ -18,6 +18,8 @@
  *        {"burstFollowers": [a, b]}      Actions > Split Burst Followers on two clusters;
  *                                        with "mixed": c, references a and b sort cluster c;
  *                                        with "children": true, the ids are children
+ *        {"coreCut": [ids]}              Actions > Split Off Spurious Spikes on each cluster;
+ *                                        with "children": true, the ids are children
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
@@ -410,6 +412,32 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (children) result.insert(QStringLiteral("createdParent"), parents);
         result.insert(QStringLiteral("created"), made);
         result.insert(QStringLiteral("summary"), summary);
+        return true;
+    }
+    if (step.contains(QStringLiteral("coreCut"))) {
+        // {"coreCut": [ids]}: Actions > Split Off Spurious Spikes on each of the clusters.
+        const QJsonArray ids = step.value(QStringLiteral("coreCut")).toArray();
+        const bool children = step.value(QStringLiteral("children")).toBool(false);
+        if (children) {
+            QString err;
+            if (!doc->loadChildClustering(err)) {
+                result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err);
+                return false;
+            }
+        }
+        doc->setActiveClustering(children);
+        QJsonArray made, summaries;
+        QJsonObject parents;
+        for (const QJsonValue& v : ids) {
+            QString summary;
+            const int id = splitOffSpurious(v.toInt(), summary, children);
+            made.append(id);                                  // 0: nothing split off from this one
+            summaries.append(summary);
+            if (children && id > 0) parents.insert(QString::number(id), doc->parentOfChild(id));
+        }
+        if (children) result.insert(QStringLiteral("createdParent"), parents);
+        result.insert(QStringLiteral("created"), made);
+        result.insert(QStringLiteral("summaries"), summaries);
         return true;
     }
     if (step.contains(QStringLiteral("residualScan"))) {

@@ -47,6 +47,9 @@ the *Time chunks* preference reaches the command line; needs `KiloKlustaKwik_cpu
 build tree's -- and skips without it)),
 `test_supersampled_on_demand.py` (a `_U` space is not held in memory after its build or at open in
 super-sample mode, the session stays in the `.clu`'s space; it is held once shown and stays held),
+`test_core_cut.py` (the `coreCut` step, Actions > Split Off Spurious Spikes: a unit with 100 spikes of
+another in it loses those and few of its own; a unit alone keeps three quarters or more; the same on
+children, the new child under the source's parent),
 `test_burst_followers.py` (the `burstFollowers` step, Actions > Split Burst Followers: the followers of
 one cluster's bursts found in another are split into one new cluster and nothing else moves; a correct
 clustering is left alone; with `"mixed": c`, two references sort a third cluster into one new cluster
