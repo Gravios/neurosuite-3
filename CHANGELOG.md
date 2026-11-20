@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [KiloKlustaKwik: a heap overflow in the split trial with -MaxPossibleClusters below 13](#2026-11-20--kiloklustakwik-a-heap-overflow-in-the-split-trial-with--maxpossibleclusters-below-13) |
 | 2026-11-20 | [KiloKlustaKwik, process_denoiseuniform: a binary `.fet` or `.clu` whose count has a low byte of 0x30–0x39 is no longer read as text](#2026-11-20--kiloklustakwik-process_denoiseuniform-a-binary-fet-or-clu-whose-count-has-a-low-byte-of-0x300x39-is-no-longer-read-as-text) |
 | 2026-11-20 | [Klusters: Split Burst Followers — two similarly shaped cells told apart by their bursts](#2026-11-20--klusters-split-burst-followers--two-similarly-shaped-cells-told-apart-by-their-bursts) |
 | 2026-11-20 | [Klusters: a super-sampled space is read when it is first shown, not at open; super-sample mode no longer shows it](#2026-11-20--klusters-a-super-sampled-space-is-read-when-it-is-first-shown-not-at-open-super-sample-mode-no-longer-shows-it) |
@@ -214,6 +215,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — KiloKlustaKwik: a heap overflow in the split trial with -MaxPossibleClusters below 13
+
+<details>
+<summary>Details</summary>
+
+`KK::TrySplits` runs a sub-CEM on each cluster to see whether it splits, and started it with 13
+classes (noise and 12) whatever the limits.  The per-class arrays of that sub-problem are sized
+`MaxPossibleClusters`, so with `-MaxPossibleClusters` below 13 the M-step counted members past
+their end (`KK.cpp`, `nClassMembers[Class[p]]++`).  The heap damage showed up later and elsewhere:
+`free(): invalid next size (fast)`, `munmap_chunk(): invalid pointer` in `KK::~KK`, a segmentation
+fault, or nothing.
+
+- **Fix.**  The sub-CEM starts with `min(13, MaxPossibleClusters)` classes.
+- **How it was found.**  A 600-spike run with `-MaxPossibleClusters 5` aborted; an
+  AddressSanitizer build named the read (4 bytes past a 20-byte `Array<int>`, allocated in
+  `AllocateArrays` from `TrySplits`).  With the fix that build runs the case clean, and a
+  49-column one.
+- **A Klusters self-test was failing on current sources.**  `test_recluster_klustakwik.py`,
+  "chunks of 0.1 min", failed 4 of 4 runs with a freshly built `KiloKlustaKwik_cpu` and passes with
+  the fix.  It had been passing against a binary built before the last KiloKlustaKwik changes:
+  `ninja klusters` does not rebuild the sorter the test runs.
+- **Not looked at.**  The other fixed starting counts (`KK_split.cpp`: 2 and 3) against a
+  `-MaxPossibleClusters` of 1 or 2.
+
+</details>
 
 ## 2026-11-20 — KiloKlustaKwik, process_denoiseuniform: a binary `.fet` or `.clu` whose count has a low byte of 0x30–0x39 is no longer read as text
 

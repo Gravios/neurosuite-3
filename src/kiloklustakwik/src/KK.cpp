@@ -901,7 +901,12 @@ int KK::TrySplits() {
         if (Verbose >= 2) Output("Trying to split cluster %d (%d points)\n", c, clusterSize);
         K2.nStartingClusters = 2;
         const float unsplitScore = K2.CEM(nullptr, 0);  // splits disabled: pure 1-cluster baseline
-        K2.nStartingClusters = 13;  // noise + 12 real: gives CEM room to find multi-cluster structure
+        // Noise + 12 real: room for the sub-CEM to find multi-cluster structure --
+        // but never more classes than the per-class arrays hold (they are sized
+        // MaxPossibleClusters; with -MaxPossibleClusters below 13 the 13 starting
+        // classes indexed past their end, a heap overflow that surfaced as
+        // "free(): invalid next size" or "munmap_chunk(): invalid pointer").
+        K2.nStartingClusters = std::min(13, MaxPossibleClusters);
         // Allow splits in the sub-CEM only at the first level of recursion;
         // deeper calls use Recurse=0 to prevent infinite recursion.
         // Allow recursion up to SplitRecurseDepth levels; deeper calls are non-recursive.
