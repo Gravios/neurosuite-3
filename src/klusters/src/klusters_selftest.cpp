@@ -15,6 +15,7 @@
  *        {"nudge": [<cluster>, <delta>]} nudgeClusterTimestamps + the follow
  *        {"supersample": <factor>}       buildSupersampledSpace (no Save As offer)
  *        {"follow": true}                followMovedSpikes now
+ *        {"burstFollowers": [a, b]}      Actions > Split Burst Followers on two clusters
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
@@ -377,6 +378,18 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("order"), order);
         result.insert(QStringLiteral("selected"), selected);
         result.insert(QStringLiteral("counts"), counts);
+        return true;
+    }
+    if (step.contains(QStringLiteral("burstFollowers"))) {
+        // {"burstFollowers": [a, b]}: Actions > Split Burst Followers on the two clusters.
+        const QJsonArray ids = step.value(QStringLiteral("burstFollowers")).toArray();
+        doc->setActiveClustering(false);
+        QString summary;
+        const QList<int> created = splitBurstFollowers(ids.at(0).toInt(), ids.at(1).toInt(), summary);
+        QJsonArray made;
+        for (const int id : created) made.append(id);
+        result.insert(QStringLiteral("created"), made);
+        result.insert(QStringLiteral("summary"), summary);
         return true;
     }
     if (step.contains(QStringLiteral("residualScan"))) {

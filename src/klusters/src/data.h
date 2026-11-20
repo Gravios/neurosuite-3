@@ -1008,6 +1008,11 @@ public:
      *  order spikePositions() lists them.  False when the cluster is unknown. */
     bool spikeTimesInRecordingUnits(int clusterId, std::vector<long>& out) const;
 
+    /** The 1-based feature rows of cluster @p clusterId's spikes and their
+     *  timestamps (recording units), index-aligned.  False when the cluster is
+     *  unknown. */
+    bool spikeRowsAndTimes(int clusterId, std::vector<int64_t>& rows, std::vector<int64_t>& times) const;
+
     /** Largest spike timestamp in recording units (samples). */
     long maxTimeInRecordingUnits() const {return static_cast<long>(maxDimension(nbDimensions));}
 

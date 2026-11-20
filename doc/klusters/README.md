@@ -1055,8 +1055,41 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation |
 | Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
 | Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
+| Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
 | Time-Chunk Mode | — | Steps through the session one chunk of the length you enter at a time, with only that chunk's clusters active; **Previous Chunk** / **Next Chunk** move between chunks |
 | Sync Feature Spaces, Next / Previous Feature Space, Sort Spikes by Time | — / `Ctrl+Tab` / `Ctrl+Shift+Tab` / — | See [Feature spaces](#feature-spaces--one-clu-through-another-method) |
+
+### Split Burst Followers — two similar cells, told apart by their bursts
+
+A bursting cell's later spikes are smaller than its first, and when a second cell has a
+similar waveform they are easily clustered with it. The waveform cannot settle it; the
+timing can, because two different cells seldom fire one behind the other inside a burst
+interval. Select the two clusters and choose **Actions → Split Burst Followers** (no
+key; bind `action.splitBurstFollowers` in Preferences → Input).
+
+- **Bursts.** The two clusters' spikes are pooled in time. A burst is a run whose
+  consecutive intervals are at most 10 ms. Its first spike is the leader, and the
+  leader's cluster is the burst's **reference cell**. Every later spike of the burst
+  that is in the other cluster is a **follower**: a spike that should be with the
+  reference cell.
+- **Two new clusters at most**, one per reference cell: the followers of the first
+  cluster's bursts found in the second, and the reverse. They are not merged into
+  the reference cluster: each is parked as a cluster of its own, shown beside the two
+  you selected, to look at and merge by hand. Each is one undo step. There is no
+  confirmation box.
+- **Left alone.** A burst in which the two clusters fall closer than 2 ms is two cells
+  firing at once, not one cell bursting.
+- **Chance.** A direction is split only when its number of bursts stands above two
+  counts, by a factor of two and at p < 0.001 each: the count with one train shifted
+  against the other by 40 to 70 ms (unrelated firing), and the count with the train
+  run backwards (cells that fire together within a few ms, as in a ripple, do so in
+  no order; a cell's own burst has one). The status bar and the log give all three
+  numbers for both directions, also when nothing is split.
+- **Limits.** Timing only: no waveform is read, so it works in any feature space, and
+  it will also split a pair whose order comes from something other than a burst (one
+  cell driving the other). If each cluster holds the other's followers in equal
+  numbers the order test sees no asymmetry and nothing is split. Parent clustering
+  only. The 2 ms and 10 ms are fixed.
 
 ### Plugins
 

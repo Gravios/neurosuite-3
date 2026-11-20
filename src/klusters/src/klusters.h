@@ -438,6 +438,17 @@ private Q_SLOTS:
      *  tail.  Dialog-driven; does not replace Shift+X, which stays calibrated
      *  to fiber-kit's shed knee.  See KlustersDoc::detectResidualOutliers. */
     void slotStripResidualOutliers();
+    /** Actions: Split Burst Followers.  With two similarly shaped clusters
+     *  selected, runs the burst analysis (KlustersDoc::detectBurstFollowers) and
+     *  splits each cluster's spikes that fall in bursts led by the other off into
+     *  a new cluster -- up to two, one per reference cell, each only when its
+     *  count stands above chance.  No confirmation; each new cluster is one undo
+     *  step.  Parent scope. */
+    void slotSplitBurstFollowers();
+    /** The body of the action for clusters @p a and @p b: the ids of the new
+     *  clusters (none when no direction is significant) and, in @p summary, what
+     *  was found in each direction. */
+    QList<int> splitBurstFollowers(int a, int b, QString& summary);
     /** Actions: pin a basis for the oblique (template-axis) projection.  Prompts
      *  for the cluster ids whose templates become the fixed axes, so a different
      *  cluster can be examined against them with Shift+O; empty input clears the
@@ -1494,6 +1505,7 @@ private:
     QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
     QAction *mStripWaveformOutliers; // split waveform-residual outliers of selected clusters into a new cluster
     QAction *mStripResidualOutliers = nullptr; // gain-free on/off-channel residual strip (dialog)
+    QAction *mSplitBurstFollowers = nullptr;   // two similar cells: the other's burst followers, split off
     QAction *mSetObliqueBasis;       // pin the oblique projection's template axes (Set Oblique Basis…)
     QAction *mMarkAsTemplate = nullptr;  // toggle the selected cluster(s) as template units (.wtf on save)
     QAction *mGenerateTemplate = nullptr;  // run fiber-template now for the selected cluster(s) only

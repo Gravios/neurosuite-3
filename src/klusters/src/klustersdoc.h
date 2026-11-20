@@ -1322,6 +1322,40 @@ public:
                                         bool             onePerSource,
                                         bool             onChild);
 
+    /** One reference cell's followers (detectBurstFollowers). */
+    struct BurstFollowerSet {
+        int            reference = 0;       ///< the cluster leading the bursts: where the spikes should be
+        int            source    = 0;       ///< the cluster the followers are in now
+        QSet<dataType> rows;                ///< the followers' 1-based feature rows
+        double         expected  = 0.0;     ///< followers expected by chance
+        long           bursts    = 0;       ///< bursts holding the followers
+        double         expectedBursts = 0.0;
+        double         pValue    = 1.0;     ///< Poisson tail of @c bursts under @c expectedBursts
+        long           reversedBursts = 0;  ///< the count with the train run backwards (synchrony has no order)
+        double         pOrder    = 1.0;     ///< even-split tail of @c bursts against @c reversedBursts
+        bool           significant = false;
+    };
+    /** Result of detectBurstFollowers (non-mutating scan). */
+    struct BurstFollowerResult {
+        bool    ok = false;
+        QString reason;                     ///< why it did not run
+        BurstFollowerSet ofA, ofB;          ///< reference = the first / the second cluster
+        long    bursts = 0, mixed = 0, collided = 0;
+        double  minIsiMs = 0.0, maxIsiMs = 0.0;
+    };
+    /** Burst analysis of two similarly shaped parent clusters (burstfollowers.h):
+     *  their spikes are pooled in time, every burst (consecutive intervals of at
+     *  most @p maxIsiMs) is given to the cluster of its first spike, and the later
+     *  spikes of the burst labelled as the other cluster are that reference
+     *  cell's followers.  Bursts in which the two clusters fall closer than
+     *  @p minIsiMs are left alone.  Each direction is tested against the count
+     *  with one train shifted by 40 to 70 ms either way (unrelated firing) and
+     *  against the count with the train run backwards (cells firing together,
+     *  which has no order), and must be twice either.  Timing only: it reads
+     *  no waveform and works in any feature space.  Non-mutating. */
+    BurstFollowerResult detectBurstFollowers(int clusterA, int clusterB,
+                                             double minIsiMs, double maxIsiMs) const;
+
     /** Result of detectWaveformOutliers (non-mutating scan). */
     struct WaveformOutlierResult {
         bool                    ok    = false; ///< true iff the scan ran to completion

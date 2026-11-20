@@ -29,6 +29,7 @@
 #include <QStringList>
 
 #include "klustersdoc.h"
+#include "burstfollowers.h"
 #include "data.h"
 #include "clusterlabel.h"
 #include "klustersview.h"
@@ -1443,5 +1444,64 @@ KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
                         .arg(frac * 100.0, 0, 'f', 0)
                         .arg(nUsed);
     }
+    return R;
+}
+
+// ---------------------------------------------------------------------------
+// detectBurstFollowers  --  which of two similar cells a burst's spikes are
+//
+// The analysis is burstfollowers.h (Qt-free, unit-tested); this reads the two
+// clusters' rows and times off the parent layer and carries the result back
+// in the document's own types.
+// ---------------------------------------------------------------------------
+KlustersDoc::BurstFollowerResult KlustersDoc::detectBurstFollowers(int clusterA, int clusterB,
+                                                                   double minIsiMs, double maxIsiMs) const
+{
+    BurstFollowerResult R;
+    R.minIsiMs = minIsiMs;
+    R.maxIsiMs = maxIsiMs;
+    R.ofA.reference = clusterA; R.ofA.source = clusterB;
+    R.ofB.reference = clusterB; R.ofB.source = clusterA;
+    if (!clusteringData) { R.reason = tr("No document is open."); return R; }
+    if (clusterA < 2 || clusterB < 2 || clusterA == clusterB) {
+        R.reason = tr("Burst followers: two different clusters are needed (not the artefact or noise cluster).");
+        return R;
+    }
+    const Data& layer = parentData();
+    const double rate = layer.getSamplingRate();
+    if (rate <= 0.0) { R.reason = tr("Burst followers: the sampling rate is unknown."); return R; }
+
+    std::vector<int64_t> rowsA, timesA, rowsB, timesB;
+    if (!layer.spikeRowsAndTimes(clusterA, rowsA, timesA) || !layer.spikeRowsAndTimes(clusterB, rowsB, timesB)) {
+        R.reason = tr("Burst followers: cluster %1 or %2 does not exist.").arg(clusterA).arg(clusterB);
+        return R;
+    }
+
+    burstfollowers::Params p;
+    p.minIsi = minIsiMs * rate / 1000.0;
+    p.maxIsi = maxIsiMs * rate / 1000.0;
+    for (const double shiftMs : {40.0, 50.0, 60.0, 70.0}) {
+        p.shifts.push_back( shiftMs * rate / 1000.0);
+        p.shifts.push_back(-shiftMs * rate / 1000.0);
+    }
+    const burstfollowers::Result r = burstfollowers::analyse(timesA, rowsA, timesB, rowsB, p);
+
+    const auto carry = [](const burstfollowers::Direction& d, BurstFollowerSet& out) {
+        out.rows.reserve(static_cast<qsizetype>(d.rows.size()));
+        for (const int64_t row : d.rows) out.rows.insert(static_cast<dataType>(row));
+        out.expected       = d.expected;
+        out.bursts         = d.bursts;
+        out.expectedBursts = d.expectedBursts;
+        out.pValue         = d.pValue;
+        out.reversedBursts = d.reversedBursts;
+        out.pOrder         = d.pOrder;
+        out.significant    = d.significant;
+    };
+    carry(r.ofA, R.ofA);
+    carry(r.ofB, R.ofB);
+    R.bursts   = r.bursts;
+    R.mixed    = r.mixed;
+    R.collided = r.collided;
+    R.ok = true;
     return R;
 }

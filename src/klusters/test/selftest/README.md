@@ -8,7 +8,7 @@ succeeded; 1: a step failed; 2: the spec or the open failed). A modal dialog ope
 is closed with its default button and recorded in the report, so a run never hangs.
 
 Steps: `{"show": method}`, `{"realign": cluster}`, `{"nudge": [cluster, delta]}`,
-`{"supersample": factor}`, `{"follow": true}`, `{"save": true}`, `{"saveas": "<path.clu>"}`,
+`{"supersample": factor}`, `{"follow": true}`, `{"burstFollowers": [a, b]}`, `{"save": true}`, `{"saveas": "<path.clu>"}`,
 `{"dump": true, "cluster": id}` (the spaces, their files and working copies, whether each is held in memory, the loaded times
 and phases of the cluster's spikes). A realign's completion is recorded as a `realignDone`
 entry with its shift count and log. Spec keys `realignFromAnySpace`, `realignVerbose`,
@@ -47,6 +47,9 @@ the *Time chunks* preference reaches the command line; needs `KiloKlustaKwik_cpu
 build tree's -- and skips without it)),
 `test_supersampled_on_demand.py` (a `_U` space is not held in memory after its build or at open in
 super-sample mode, the session stays in the `.clu`'s space; it is held once shown and stays held),
+`test_burst_followers.py` (the `burstFollowers` step, Actions > Split Burst Followers: the followers of
+one cluster's bursts found in another are split into one new cluster and nothing else moves; a correct
+clustering is left alone),
 `test_hover_spike.py` (the `hover` step puts the cursor on a spike in the cluster view: the spike tracked
 is one drawn there, every waveform view overlays its `.spk` samples in a contrasting colour in its cluster's
 column, and the overlay goes when the cursor leaves or `Shift+V` turns the tracking off)).

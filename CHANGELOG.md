@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: Split Burst Followers — two similarly shaped cells told apart by their bursts](#2026-11-20--klusters-split-burst-followers--two-similarly-shaped-cells-told-apart-by-their-bursts) |
 | 2026-11-20 | [Klusters: a super-sampled space is read when it is first shown, not at open; super-sample mode no longer shows it](#2026-11-20--klusters-a-super-sampled-space-is-read-when-it-is-first-shown-not-at-open-super-sample-mode-no-longer-shows-it) |
 | 2026-11-20 | [Klusters: the spike under the cursor in the feature view is drawn over the waveform view](#2026-11-20--klusters-the-spike-under-the-cursor-in-the-feature-view-is-drawn-over-the-waveform-view) |
 | 2026-11-19 | [Klusters: a Time chunks preference for KlustaKwik reclusters](#2026-11-19--klusters-a-time-chunks-preference-for-klustakwik-reclusters) |
@@ -212,6 +213,40 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: Split Burst Followers — two similarly shaped cells told apart by their bursts
+
+<details>
+<summary>Details</summary>
+
+A bursting cell's later, smaller spikes are easily clustered with a second cell of similar
+waveform.  **Actions → Split Burst Followers**, with the two clusters selected, uses the timing
+to say which cell each such spike should be with.
+
+- **The rule.**  The two clusters' spikes are pooled in time; a burst is a run with consecutive
+  intervals of at most 10 ms; its first spike's cluster is the burst's reference cell; the later
+  spikes of the burst that are in the other cluster are followers.  A burst in which the two
+  clusters fall closer than 2 ms is left alone.
+- **The result.**  Up to two new clusters, one per reference cell, shown beside the two selected.
+  Not merged into the reference: the split is a hypothesis to look at.  One undo step each, no
+  confirmation box.
+- **Two chance counts**, each to be exceeded twofold at p < 0.001, counted in bursts (followers
+  come several at a time, so a test on spikes calls clean pairs): one train shifted against the
+  other by 40 to 70 ms, and the train run backwards.  The second is there because the first alone
+  failed on real data: on session `jg05-20120312` group 8 it called pairs of clean units that fire
+  together (32/186: 79 bursts against 32.9 shifted, but 64 run backwards).  With both, none of the
+  21 pairs among seven clean units is called, and 14 of 8,556 directions over the 93 clusters of
+  100 spikes or more are.
+- **What was not shown.**  That the 14 are misplaced spikes: their mean waveforms lie between the
+  reference's and the source's (correlation with the reference 0.85 to 0.99, with the rest of the
+  source 0.94 to 0.98), clearly nearer the reference in one pair.  The pairs were not chosen for
+  similar shape, which is what the action is for.
+
+`burstfollowers.h` is Qt-free (`klusters_test_burstfollowers`: recall and precision above 0.9 on
+a simulated pair, nothing called on a clean or a synchronous pair); self-test
+`test_burst_followers.py`.
+
+</details>
 
 ## 2026-11-20 — Klusters: a super-sampled space is read when it is first shown, not at open; super-sample mode no longer shows it
 

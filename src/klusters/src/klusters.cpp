@@ -545,6 +545,19 @@ void KlustersApp::createMenus()
     connect(mStripResidualOutliers, &QAction::triggered,
             this, &KlustersApp::slotStripResidualOutliers);
 
+    // Two similarly shaped cells: the later, smaller spikes of one cell's bursts
+    // are easily clustered with the other.  The waveform cannot tell (that is the
+    // premise); the timing can.  Unbound: bind it in the input registry.
+    mSplitBurstFollowers = actionMenu->addAction(tr("Split &Burst Followers"));
+    mSplitBurstFollowers->setToolTip(
+        tr("With two similarly shaped clusters selected: every burst is given to the "
+           "cluster of its first spike, and the later spikes of the burst that are in "
+           "the other cluster are split off into a new cluster -- one per reference "
+           "cell, only when the count stands above chance (unrelated firing, and "
+           "cells firing together in no order).  Undoable."));
+    connect(mSplitBurstFollowers, &QAction::triggered,
+            this, &KlustersApp::slotSplitBurstFollowers);
+
     // Pin the oblique (template-axis) projection's basis.  The oblique view
     // (Shift+O) normally uses the SELECTED clusters as its axes; this fixes a
     // chosen pair (or more) as the axes so a DIFFERENT cluster can be examined
@@ -2628,6 +2641,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("action.stripOutliers"),        QStringLiteral("Actions"), mStripOutliers);
     registerActionCommand(QStringLiteral("action.stripWaveformOutliers"),QStringLiteral("Actions"), mStripWaveformOutliers);
     registerActionCommand(QStringLiteral("action.stripResidualOutliers"),QStringLiteral("Actions"), mStripResidualOutliers);
+    registerActionCommand(QStringLiteral("action.splitBurstFollowers"),  QStringLiteral("Actions"), mSplitBurstFollowers);
     registerActionCommand(QStringLiteral("action.setObliqueBasis"),      QStringLiteral("Actions"), mSetObliqueBasis);
     registerActionCommand(QStringLiteral("action.markAsTemplate"),       QStringLiteral("Actions"), mMarkAsTemplate);
     registerActionCommand(QStringLiteral("action.generateTemplate"),     QStringLiteral("Actions"), mGenerateTemplate);
@@ -7156,6 +7170,84 @@ void KlustersApp::slotStripWaveformOutliers()
     slotStatusMsg(tr("Stripped %1 waveform outlier spike(s) from %2 cluster(s) "
                      "into new cluster %3.")
                       .arg(R.total).arg(sources.size()).arg(newCluster));
+}
+
+// ---------------------------------------------------------------------------
+// slotSplitBurstFollowers  --  two similar cells, told apart by their bursts
+//
+// The scan is KlustersDoc::detectBurstFollowers (burstfollowers.h).  Each
+// significant direction becomes ONE new cluster through the row-named builder
+// (as the strips do): the spikes of the source cluster that follow the
+// reference cluster's burst leaders.  They are NOT moved into the reference
+// cluster: the split is a hypothesis, parked where it can be looked at and
+// merged (or undone) by hand.  A direction must stand above two chance counts,
+// each by a factor of two: one train shifted against the other (unrelated
+// firing) and the train run backwards (cells that fire together, in no
+// order).  The intervals are named constants, as the
+// strips' thresholds are: 2 ms is the refractory bound below which two
+// clusters' spikes cannot be one cell, 10 ms the upper edge of the burst band
+// the burst index uses.
+// ---------------------------------------------------------------------------
+QList<int> KlustersApp::splitBurstFollowers(int a, int b, QString& summary)
+{
+    constexpr double kMinIsiMs = 2.0;
+    constexpr double kMaxIsiMs = 10.0;
+
+    QList<int> created;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::BurstFollowerResult R = doc->detectBurstFollowers(a, b, kMinIsiMs, kMaxIsiMs);
+    QApplication::restoreOverrideCursor();
+    if (!R.ok) { summary = R.reason; return created; }
+
+    QStringList parts;
+    for (const KlustersDoc::BurstFollowerSet* set : {&R.ofA, &R.ofB}) {
+        const QString counts = tr("%1 spike(s) of %2 in %3 burst(s) led by %4 (chance: %5 burst(s) shifted, %6 reversed)")
+            .arg(set->rows.size()).arg(set->source).arg(set->bursts).arg(set->reference)
+            .arg(set->expectedBursts, 0, 'f', 1).arg(set->reversedBursts);
+        if (!set->significant) {
+            parts << tr("%1: not above chance, left alone").arg(counts);
+            continue;
+        }
+        const SpikeSelection selection(set->rows, QStringLiteral("burst_followers"));
+        const int newCluster = doc->createNewCluster(selection, QList<int>{set->source});
+        if (newCluster <= 1) {
+            parts << tr("%1: could not be split off").arg(counts);
+            continue;
+        }
+        created << newCluster;
+        parts << tr("new cluster %1 = %2, reference cell %3").arg(newCluster).arg(counts).arg(set->reference);
+    }
+    summary = tr("Burst followers (%1-%2 ms; %3 mixed burst(s), %4 collided): %5.")
+                  .arg(kMinIsiMs).arg(kMaxIsiMs).arg(R.mixed).arg(R.collided).arg(parts.join(QStringLiteral("; ")));
+    qInfo().noquote() << "[burst followers]" << summary;
+    return created;
+}
+
+void KlustersApp::slotSplitBurstFollowers()
+{
+    KlustersView* view = activeView();
+    if (!view || !doc) return;
+    if (doc->isChildClusteringActive()) {
+        slotStatusMsg(tr("Split burst followers: switch to the parent clustering first."));
+        return;
+    }
+    QList<int> selected = view->clusters();
+    selected.removeAll(0);
+    selected.removeAll(1);
+    doc->leaveOutReserved(selected, tr("Split burst followers"));
+    if (selected.size() != 2) {
+        slotStatusMsg(tr("Split burst followers: select exactly two clusters (%1 selected).").arg(selected.size()));
+        return;
+    }
+    QString summary;
+    const QList<int> created = splitBurstFollowers(selected.at(0), selected.at(1), summary);
+    // Both cells and what was taken from them, side by side.
+    if (!created.isEmpty() && clusterPalette) {
+        const QList<int> shown = selected + created;
+        clusterPalette->selectItems(shown);
+        doc->shownClustersUpdate(shown, *view);
+    }
+    slotStatusMsg(summary);
 }
 
 // ---------------------------------------------------------------------------
