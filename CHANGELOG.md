@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: Split Off Spurious Spikes orders on the GPU (CUDA)](#2026-11-20--klusters-split-off-spurious-spikes-orders-on-the-gpu-cuda) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes — a cluster's core kept, the rest split off](#2026-11-20--klusters-split-off-spurious-spikes--a-clusters-core-kept-the-rest-split-off) |
 | 2026-11-20 | [Klusters: Split Burst Followers on children](#2026-11-20--klusters-split-burst-followers-on-children) |
 | 2026-11-20 | [Klusters: Split Burst Followers with two references and a mixed cluster](#2026-11-20--klusters-split-burst-followers-with-two-references-and-a-mixed-cluster) |
@@ -218,6 +219,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: Split Off Spurious Spikes orders on the GPU (CUDA)
+
+<details>
+<summary>Details</summary>
+
+The ordering loop of Split Off Spurious Spikes is the action's whole cost: for n spikes of d
+values, n steps of n × d multiply-adds.  In a CUDA build with a device, clusters of 4,000 spikes
+or more now run it there.
+
+- **On the device:** the spikes (column-major), their squared norms, the running products with
+  the mean in double, a taken flag per spike.  One kernel launch per spike taken: every thread
+  folds the spike taken last into its product and each block reduces to its nearest spike left;
+  the per-block minima are copied back and the host takes their minimum.
+- **Same order as the CPU loop** by construction: float products, double sums, ties to the lower
+  index.  The float product's rounding can differ, so a near-tie may be taken the other way round.
+- **Falls back** to the OpenMP loop on any failure, below 4,000 spikes, and in HIP, SYCL and Metal
+  builds, which have no kernel for it.  The status line says "ordered on the GPU" when it was.
+
+**Not run.**  No NVIDIA device or `nvcc` was available where this was written.
+`corecut_cuda.cu` passes clang's CUDA front-end against the CUDA 12.9 headers and its device code
+assembles with `ptxas` (sm_75); it was not linked, and the kernel has never executed.  The
+dispatcher, its stub and the fallback are built and tested in the CPU build
+(`klusters_test_corecut` exercises the ordering hook).  First run on a GPU: compare the status
+line's counts for one cluster with a CPU build's.
+
+</details>
 
 ## 2026-11-20 — Klusters: Split Off Spurious Spikes — a cluster's core kept, the rest split off
 

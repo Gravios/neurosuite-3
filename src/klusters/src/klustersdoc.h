@@ -1369,6 +1369,7 @@ public:
         long           cut = 0;             ///< ordered spikes kept
         int            primaryChannel = -1; ///< 0-based, the channel the spikes were centred on
         int            cutChannel = -1;     ///< 0-based, the channel whose kurtosis onset set the cut
+        bool           onGpu = false;       ///< the ordering ran on a GPU backend
         QSet<dataType> removed;             ///< 1-based feature rows of the spikes past the cut
     };
     /** The core of one cluster and the spikes that are not it (corecut.h): the

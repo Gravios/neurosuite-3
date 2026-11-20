@@ -7410,7 +7410,8 @@ int KlustersApp::splitOffSpurious(int cluster, QString& summary, bool children)
     const QString found = tr("%1 of %2 spikes past the cut at %3% of the order (channel %4)")
         .arg(R.removed.size()).arg(R.total)
         .arg(100.0 * static_cast<double>(R.cut) / static_cast<double>(std::max(1L, R.ordered)), 0, 'f', 1)
-        .arg(R.cutChannel + 1);
+        .arg(R.cutChannel + 1)
+        + (R.onGpu ? tr(", ordered on the GPU") : QString());
     const int made = splitOffBurstFollowers(R.removed, children, QStringLiteral("core_cut"));
     if (made <= 0) { summary = tr("%1: %2, could not be split off").arg(name, found); return 0; }
     summary = (children ? tr("%1: %2 -> new child %3 of %4").arg(name, found).arg(made).arg(clusterLabel(doc->parentOfChild(made)))

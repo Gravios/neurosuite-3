@@ -31,6 +31,7 @@
 #include "klustersdoc.h"
 #include "burstfollowers.h"
 #include "corecut.h"
+#include "corecut_dispatch.h"
 #include "data.h"
 #include "clusterlabel.h"
 #include "klustersview.h"
@@ -1578,12 +1579,16 @@ KlustersDoc::CoreCutResult KlustersDoc::detectCoreCut(int cluster, bool onChildL
     }
     R.total = static_cast<long>(rows.size());
 
-    const corecut::Result r = corecut::analyse(wav.data(), R.total, nCh, nSamp, p);
+    // The ordering loop on a GPU when there is one and the cluster is large enough
+    // to be worth the copies; the dispatcher declines otherwise and the loop in
+    // corecut.h runs.
+    const corecut::Result r = corecut::analyse(wav.data(), R.total, nCh, nSamp, p, &CoreCutGpu::order);
     R.ok             = r.ok;
     R.ordered        = r.ordered;
     R.cut            = r.cut;
     R.primaryChannel = r.primaryChannel;
     R.cutChannel     = r.cutChannel;
+    R.onGpu          = r.hookUsed;
     if (!r.ok) {
         R.reason = tr("Split off spurious spikes: %1: %2.").arg(name(cluster), QString::fromLatin1(r.reason));
         return R;

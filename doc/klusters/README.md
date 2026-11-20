@@ -1130,7 +1130,9 @@ dialog and no confirmation box, and each split is one undo step.
   space.
 - **Speed.** The ordering is quadratic: about 3 s for 8,000 spikes and 7 s for 12,000
   on two cores. Up to 40,000 spikes are ordered; above that an evenly spaced 40,000
-  are, and the others follow them. Over 400,000 spikes it refuses.
+  are, and the others follow them. Over 400,000 spikes it refuses. In a CUDA build with
+  an NVIDIA device, clusters of 4,000 spikes or more are ordered on the GPU and the
+  status bar says so.
 
 ### Plugins
 
