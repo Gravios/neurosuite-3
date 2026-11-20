@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: a super-sampled space is read when it is first shown, not at open; super-sample mode no longer shows it](#2026-11-20--klusters-a-super-sampled-space-is-read-when-it-is-first-shown-not-at-open-super-sample-mode-no-longer-shows-it) |
 | 2026-11-20 | [Klusters: the spike under the cursor in the feature view is drawn over the waveform view](#2026-11-20--klusters-the-spike-under-the-cursor-in-the-feature-view-is-drawn-over-the-waveform-view) |
 | 2026-11-19 | [Klusters: a Time chunks preference for KlustaKwik reclusters](#2026-11-19--klusters-a-time-chunks-preference-for-klustakwik-reclusters) |
 | 2026-11-19 | [KiloKlustaKwik: the time column is always the time axis](#2026-11-19--kiloklustakwik-the-time-column-is-always-the-time-axis) |
@@ -211,6 +212,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: a super-sampled space is read when it is first shown, not at open; super-sample mode no longer shows it
+
+<details>
+<summary>Details</summary>
+
+Every usable feature space was read into memory when a document opened, the super-sampled (`_U2`,
+`_U4`) ones included -- a `.spk` of two or four times the waveforms each, read whether or not the
+space was ever looked at.  In super-sample mode the session also switched to that space at open.
+
+- **At open.**  The `.clu`'s own space is loaded and every other base-rate space is preloaded, as
+  before.  A super-sampled space is listed but not read.
+- **On demand.**  Its `.fet` and `.spk` are read the first time it is shown (the *Space* box,
+  Ctrl+Tab, Actions → Super-sample); the status bar says so while it reads, and the *Space* tooltip
+  marks the spaces not in memory.  Once shown it is held until the document closes, so switching
+  back and forth stays instant.  A space never shown holds nothing: what a build, a sync or a Save
+  reads of it on the way is dropped at the next preload.
+- **Super-sample mode.**  The mode still builds the space at open when its files are missing, and
+  still saves the clustering under its token with *Also save the clustering under the super-sampled
+  token*.  It no longer shows the space: the session stays in the `.clu`'s own space.  Changing the
+  mode in Preferences no longer switches the shown space either.
+- **Not changed.**  A `.clu` saved under a `_U` token opens in that space: it is the `.clu`'s own,
+  and its files are the ones the document loads.  Realign, nudge, the follow and Save write a
+  super-sampled space that is not in memory through its files, as they did for any space not held.
+
+Self-test: `test_supersampled_on_demand.py` (the dump step now reports `held` per space).
+
+</details>
 
 ## 2026-11-20 — Klusters: the spike under the cursor in the feature view is drawn over the waveform view
 

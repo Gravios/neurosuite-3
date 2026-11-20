@@ -57,6 +57,8 @@ void KlustersApp::populateFeatureSpaceCombo()
             tip += tr("\nDetached: no basis (.pca) -- a per-spike feature table, not a projection of the waveforms. "
                       "Its features keep their values when spikes move (only the time column follows); "
                       "realign and nudge do not run in it.");
+        if (s.usable && !doc->featureSpaceHeld(s))
+            tip += tr("\nNot in memory: a super-sampled space is read from disk when it is first shown.");
         if (s.synced)
             tip += s.syncStale
                 ? tr("\nSynced this session, but spike times have changed since: "
@@ -162,6 +164,13 @@ bool KlustersApp::showFeatureSpace(const QString& method, bool syncFirst)
         QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         syncFailed = !doc->syncFeatureSpace(method, syncLog);
     }
+    // A super-sampled space is not preloaded: its first show reads its files.
+    for (const KlustersDoc::FeatureSpace& s : doc->availableFeatureSpaces())
+        if (s.method == method && s.usable && !doc->featureSpaceHeld(s)) {
+            slotStatusMsg(tr("Reading the %1 feature space into memory…").arg(method));
+            QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            break;
+        }
     const bool ok = doc->switchFeatureSpace(method, err);
     QApplication::restoreOverrideCursor();
     if (syncFailed)
@@ -239,7 +248,7 @@ void KlustersApp::slotExportBaseRate()
     statusBar()->showMessage(tr("Exported at the recording's sampling: %1").arg(QFileInfo(written.value(0)).fileName()), 6000);
 }
 
-QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)
+QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet, bool show)
 {
     if (!doc || doc->url().isEmpty()) return QString();
     if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
@@ -257,7 +266,7 @@ QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)
     const QString token = QString::fromStdString(neurosuite::custody::supersampledToken(spkTok, factor));
     if (token.isEmpty() || token == QString::fromStdString(spkTok)) return QString();
 
-    // Already there (built earlier, or shipped): just show it.
+    // Already there (built earlier, or shipped): nothing to build.
     const QString dir  = QFileInfo(doc->url()).absolutePath();
     const std::string stem = (dir + QDir::separator() + doc->documentBaseName()).toStdString();
     const int group = doc->currentElectrodeGroupID().toInt();
@@ -300,9 +309,12 @@ QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet)
         }
         NS3_DIAG() << "[supersample]" << newToken << ":" << log.trimmed();
         slotStatusMsg(tr("Super-sampled space %1 built.").arg(newToken));
-        preloadFeatureSpaces();
+        // Shown next: the waveforms the build just read are used by the switch,
+        // which runs the preload itself.  Not shown: the preload drops them.
+        if (!show) preloadFeatureSpaces();
         populateFeatureSpaceCombo();
     }
+    if (!show) return token;                       // left on disk: read when it is first shown
     if (!showFeatureSpace(token, /*syncFirst*/ false)) return QString();
     slotStatusMsg(tr("Super-sampled space %1 shown.").arg(token));
     return token;
@@ -340,12 +352,13 @@ void KlustersApp::applySupersampleMode()
     if (mode <= 0 || !doc || doc->url().isEmpty() || doc->data().totalNbOfSpikes() <= 0) return;
     if (doc->supersampleFactor() > 1) return;                       // already in a super-sampled space
     if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning() || saveThread->isRunning()) return;
-    const bool cluIsSuper = neurosuite::custody::supersampleOf(doc->cluMethod().toStdString()) > 1;
-    if (cluIsSuper) {                                               // the .clu's space is super-sampled; a borrowed one is shown
-        showFeatureSpace(doc->cluMethod(), false);
-        return;
-    }
-    const QString token = buildAndShowSupersampledSpace(mode, /*quiet*/ true);
+    // The .clu's own space is super-sampled already: nothing to build, and the
+    // space the user chose to look at stays shown.
+    if (neurosuite::custody::supersampleOf(doc->cluMethod().toStdString()) > 1) return;
+    // Built if missing, NOT shown: the base-rate space stays on screen and the
+    // super-sampled files are read when the user switches to them (Space box,
+    // Ctrl+Tab, Actions > Super-sample).
+    const QString token = buildAndShowSupersampledSpace(mode, /*quiet*/ true, /*show*/ false);
     if (token.isEmpty()) return;
     const bool adopt = configuration().getSupersampleAdopt() || !mSupersampleReopenUrl.isEmpty();
     if (!adopt) return;

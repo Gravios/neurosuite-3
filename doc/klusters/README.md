@@ -118,12 +118,19 @@ space; pick the `(.clu)` entry to go back.
   Input). Spaces that cannot be loaded are skipped. Plain Tab / Shift+Tab
   still move keyboard focus around the window.
 - The box is locked while saving, realigning or reclustering.
-- Every space is held in memory: its `.fet` table and its `.spk` waveforms are
-  loaded when the document opens (and refreshed after a switch, a sync or a
-  Save, reading only files that changed), so switching, syncing and waveform
-  display never wait on the disk. The status bar says how much is held. This
-  costs memory: roughly the size of each space's `.fet` plus each distinct
-  `.spk` (a `_D` space shares its waveform token's).
+- Every base-rate space is held in memory: its `.fet` table and its `.spk`
+  waveforms are loaded when the document opens (and refreshed after a switch,
+  a sync or a Save, reading only files that changed), so switching, syncing
+  and waveform display never wait on the disk. The status bar says how much is
+  held. This costs memory: roughly the size of each space's `.fet` plus each
+  distinct `.spk` (a `_D` space shares its waveform token's).
+- A **super-sampled** (`_U`) space is the exception: its `.spk` is 2× or 4×
+  the waveforms, so it is read when you first switch to it, not at open. That
+  first switch waits for the read (the status bar says so, and the *Space*
+  tooltip says which spaces are not in memory yet); from then on the space is
+  held like any other until the document closes. A session whose `.clu` is
+  itself saved under a `_U` token still opens in that space — it is the
+  `.clu`'s own.
 
 This works because every file of a group is indexed by the same spike row,
 and Klusters keeps it that way: realign and nudge rewrite each spike in its own
@@ -212,8 +219,10 @@ and the log says when it differs from the preference). The preference decides
 new spaces only.
 **Preferences → Curation → Realignment → Super-sampling** sets
 the **mode** (off by default, ×2, ×4): in a mode, every session that opens
-gets the super-sampled space over its `.clu`'s space built — if its files are
-not there yet — and shown, and with *Also save the clustering under the
+gets the super-sampled space over its `.clu`'s space built, if its files are
+not there yet. The session still opens in the `.clu`'s own space; the
+super-sampled one is read when you switch to it (the *Space* box, Ctrl+Tab).
+With *Also save the clustering under the
 super-sampled token* the `.clu` is saved as `<base>.clu.<token>_U4.N` and
 reopened there, so realign and nudge run at sub-sample resolution without a
 further step. A super-sampled `.clu` opened while its `.spk.<token>_U4.N` is

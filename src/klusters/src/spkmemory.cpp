@@ -96,6 +96,12 @@ void SpkMemoryCache::clear()
     entries.clear();
 }
 
+bool SpkMemoryCache::holds(const QString& path) const
+{
+    QMutexLocker lk(&mutex);
+    return entries.contains(path);
+}
+
 qint64 SpkMemoryCache::bytesHeld() const
 {
     QMutexLocker lk(&mutex);

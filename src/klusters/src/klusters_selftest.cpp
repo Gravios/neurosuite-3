@@ -18,8 +18,9 @@
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
- *        {"dump": true, "cluster": <id>} the spaces, their files, the loaded
- *                                        times (and phases) of the cluster's spikes
+ *        {"dump": true, "cluster": <id>} the spaces, their files, whether each is held
+ *                                        in memory, the loaded times (and phases) of
+ *                                        the cluster's spikes
  * A modal dialog that opens during a step is closed (its default button) and
  * recorded in the step's result, so the run never hangs on one.
  *
@@ -494,6 +495,7 @@ QJsonObject KlustersApp::selfTestDump(int clusterId) const
         o.insert(QStringLiteral("fet"), s.fetPath);
         o.insert(QStringLiteral("spk"), s.spkPath);
         o.insert(QStringLiteral("usable"), s.usable);
+        o.insert(QStringLiteral("held"), doc->featureSpaceHeld(s));
         o.insert(QStringLiteral("synced"), s.synced);
         o.insert(QStringLiteral("syncStale"), s.syncStale);
         o.insert(QStringLiteral("reason"), s.reason);

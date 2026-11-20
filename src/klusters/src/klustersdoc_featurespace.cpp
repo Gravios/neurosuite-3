@@ -216,6 +216,8 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
     activeMethod  = method;
     activeFetPath = target.fetPath;
     activeSpkPath = target.spkPath;
+    if (neurosuite::custody::supersampleOf(method.toStdString()) > 1)
+        shownOnDemand.insert(method);              // preloadFeatureSpaces keeps it from now on
     return true;
 }
 
@@ -1420,8 +1422,17 @@ qint64 KlustersDoc::preloadFeatureSpaces()
     if (childData) keepSpk << childData->getSpkFileName();
     for (const FeatureSpace& s : availableFeatureSpaces()) {
         if (!s.usable) continue;
+        // A super-sampled space is `factor` times the waveforms: it is read
+        // when it is first shown (switchFeatureSpace), not here, and held from
+        // then on.  One never shown is not kept either: what a build, a sync
+        // or a Save read of it on the way is dropped again.  The .clu's own
+        // space is always wanted (its table is held while another is shown).
+        const bool onDemand = neurosuite::custody::supersampleOf(s.method.toStdString()) > 1
+                           && s.method != activeMethod && s.method != originMethod;
+        if (onDemand && !shownOnDemand.contains(s.method)) continue;
         keepSpk << s.spkPath;
         keepFet << s.fetPath;
+        if (onDemand) continue;                    // held already, by its first show
         // The shown space is loaded already: its table lives in Data and its
         // reader holds its .spk (re-reading it after each realign / nudge
         // would cost a full file read per edit).
@@ -1437,10 +1448,20 @@ qint64 KlustersDoc::preloadFeatureSpaces()
     return held;
 }
 
+bool KlustersDoc::featureSpaceHeld(const FeatureSpace& space) const
+{
+    if (!clusteringData) return false;
+    const bool fetHeld = space.method == activeMethod || fetMemory.contains(space.fetPath);
+    const bool spkHeld = space.spkPath == clusteringData->getSpkFileName()
+                      || SpkMemoryCache::instance().holds(space.spkPath);
+    return fetHeld && spkHeld;
+}
+
 void KlustersDoc::releaseFeatureSpaces()
 {
     SpkMemoryCache::instance().clear();
     fetMemory.clear();
+    shownOnDemand.clear();
 }
 
 void KlustersDoc::discardSyncedFeatureSpaces()

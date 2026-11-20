@@ -57,6 +57,9 @@ public:
     /**Drop everything (document closed).*/
     void clear();
 
+    /**True while bytes are held under @p path (whatever the file version).*/
+    bool holds(const QString& path) const;
+
     /**Bytes currently held, for the status line.*/
     qint64 bytesHeld() const;
 

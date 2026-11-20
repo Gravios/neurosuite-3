@@ -9,7 +9,7 @@ is closed with its default button and recorded in the report, so a run never han
 
 Steps: `{"show": method}`, `{"realign": cluster}`, `{"nudge": [cluster, delta]}`,
 `{"supersample": factor}`, `{"follow": true}`, `{"save": true}`, `{"saveas": "<path.clu>"}`,
-`{"dump": true, "cluster": id}` (the spaces, their files and working copies, the loaded times
+`{"dump": true, "cluster": id}` (the spaces, their files and working copies, whether each is held in memory, the loaded times
 and phases of the cluster's spikes). A realign's completion is recorded as a `realignDone`
 entry with its shift count and log. Spec keys `realignFromAnySpace`, `realignVerbose`,
 `supersampleMode` and `supersampleInterp` (0 cubic spline, 1 Lanczos-3, 2 smoothing spline;
@@ -45,6 +45,8 @@ clusters; `palette` reports the ids inside the list's viewport),
 `reclusterChunkArgs` steps: the time column is the sorter's time axis whatever `-UseFeatures` says, and
 the *Time chunks* preference reaches the command line; needs `KiloKlustaKwik_cpu` -- `KKK_BIN`, else the
 build tree's -- and skips without it)),
+`test_supersampled_on_demand.py` (a `_U` space is not held in memory after its build or at open in
+super-sample mode, the session stays in the `.clu`'s space; it is held once shown and stays held),
 `test_hover_spike.py` (the `hover` step puts the cursor on a spike in the cluster view: the spike tracked
 is one drawn there, every waveform view overlays its `.spk` samples in a contrasting colour in its cluster's
 column, and the overlay goes when the cursor leaves or `Shift+V` turns the tracking off)).

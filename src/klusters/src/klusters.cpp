@@ -4066,8 +4066,9 @@ void KlustersApp::openDocumentFile(const QString& url)
         setWindowTitle(doc->documentName());
         initDisplay();
         loadTemplateMarks();          // restore the template-unit set for this clustering
-        // Super-sample mode: the space over the .clu's own, built if missing, shown
-        // (and the clustering saved under its token when the preference says so).
+        // Super-sample mode: the space over the .clu's own, built if missing (and the
+        // clustering saved under its token when the preference says so).  Not shown:
+        // the base-rate space stays loaded.
         QTimer::singleShot(0, this, [this]() { applySupersampleMode(); });
 
         //A traceView is possible only if the variables it needs are available (provided in the new parameter file) and

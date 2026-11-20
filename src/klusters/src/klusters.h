@@ -545,14 +545,17 @@ private:
 public:
     /** Preferences > Super-sample mode (x2 / x4): after a session opens (and when the
      *  mode changes), build the super-sampled space over the .clu's own space when it
-     *  does not exist, show it, and -- with the adopt preference -- Save As under its
-     *  token and reopen, so realign and nudge run there.  No-op when off, when the
-     *  shown space is already super-sampled, or while a job runs. */
+     *  does not exist and -- with the adopt preference -- Save As under its token and
+     *  reopen, so realign and nudge run there.  The space is not shown: the base-rate
+     *  space stays loaded and the super-sampled files are read when the user switches
+     *  to them.  No-op when off, when the .clu's or the shown space is already
+     *  super-sampled, or while a job runs. */
     void applySupersampleMode();
-    /** Build the super-sampled space (factor) over the .clu's own space and show it;
+    /** Build the super-sampled space (factor) over the .clu's own space and, with
+     *  @p show, show it (the action; the mode leaves the shown space alone);
      *  the shared body of the action and the mode.  @p quiet: no dialogs (the mode).
      *  Returns the new token, empty on failure. */
-    QString buildAndShowSupersampledSpace(int factor, bool quiet);
+    QString buildAndShowSupersampledSpace(int factor, bool quiet, bool show = true);
     /** The two Super-sample actions follow the Preferences gate and the document state. */
     void updateSupersampleActions();
     /** The super-sampling interpolator the preference index names (0 cubic spline,

@@ -2048,11 +2048,17 @@ public:
     /** Record spike rows (0-based) whose times realign / nudge just changed.
      *  Thread-safe: realign calls it from its worker thread. */
     void recordMovedRows(const std::vector<int64_t>& rows);
-    /** Hold every usable space's .fet and .spk in memory (the shown space is
-     *  already loaded), and drop whatever no space uses any more, so switching
-     *  and syncing never read them from disk.  Unchanged files are not read
-     *  again.  Returns the bytes held. */
+    /** Hold every usable base-rate space's .fet and .spk in memory (the shown
+     *  space is already loaded), and drop whatever no space uses any more, so
+     *  switching and syncing never read them from disk.  A super-sampled (_U)
+     *  space is not read here: its files are read when it is first shown, and
+     *  held from then on; until then nothing of it is kept (the .clu's own
+     *  space excepted).  Unchanged files are not read again.  Returns the
+     *  bytes held. */
     qint64 preloadFeatureSpaces();
+    /** True when @p space's feature table and waveforms are in memory: the
+     *  shown space, a preloaded one, or a super-sampled one shown before. */
+    bool featureSpaceHeld(const FeatureSpace& space) const;
     /** Drop every feature table and waveform file held for other spaces. */
     void releaseFeatureSpaces();
 
@@ -2517,6 +2523,9 @@ private:
         std::shared_ptr<const neurofileio::FetBinaryFile> fet;
     };
     QHash<QString, FetInMemory> fetMemory;
+    /** Super-sampled spaces shown since the document opened: the ones
+     *  preloadFeatureSpaces keeps in memory (the others are read on demand). */
+    QSet<QString> shownOnDemand;
     /** The table of @p path for the file as it is now: held, or read and held. */
     std::shared_ptr<const neurofileio::FetBinaryFile> featuresInMemory(const QString& path);
     /** Hold @p fet as the table of @p path for the file as it is now. */
