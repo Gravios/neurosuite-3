@@ -30,6 +30,7 @@
 
 #include "klustersdoc.h"
 #include "burstfollowers.h"
+#include "configuration.h"
 #include "corecut.h"
 #include "corecut_dispatch.h"
 #include "data.h"
@@ -1525,6 +1526,17 @@ KlustersDoc::BurstFollowerResult KlustersDoc::detectBurstFollowers(int clusterA,
 // group is used whatever the channel selection: a weak channel is where a
 // neighbouring cell shows itself.
 // ---------------------------------------------------------------------------
+// The preference's defaults are the analysis's own.
+static_assert(Configuration::CoreCut().onsetFactor == corecut::Params().onsetFactor
+              && Configuration::CoreCut().riseStartMs == corecut::Params().riseStartMs
+              && Configuration::CoreCut().flatStartMs == corecut::Params().flatStartMs
+              && Configuration::CoreCut().flatEndMs == corecut::Params().flatEndMs
+              && Configuration::CoreCut().fallEndMs == corecut::Params().fallEndMs
+              && Configuration::CoreCut().maxShiftMs == corecut::Params().maxShiftMs
+              && Configuration::CoreCut().maxOrdered == corecut::Params().maxOrdered
+              && Configuration::CoreCut().minSpikes == corecut::Params().minSpikes,
+              "Configuration::CoreCut and corecut::Params disagree on a default");
+
 KlustersDoc::CoreCutResult KlustersDoc::detectCoreCut(int cluster, bool onChildLayer)
 {
     CoreCutResult R;
@@ -1550,8 +1562,17 @@ KlustersDoc::CoreCutResult KlustersDoc::detectCoreCut(int cluster, bool onChildL
         return R;
     }
     const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(cluster)));
+    const Configuration::CoreCut& knobs = configuration().getCoreCut();   // Preferences > Splitting
     corecut::Params p;
     p.sampleRateHz = rate;
+    p.onsetFactor  = knobs.onsetFactor;
+    p.riseStartMs  = knobs.riseStartMs;
+    p.flatStartMs  = knobs.flatStartMs;
+    p.flatEndMs    = knobs.flatEndMs;
+    p.fallEndMs    = knobs.fallEndMs;
+    p.maxShiftMs   = knobs.maxShiftMs;
+    p.maxOrdered   = knobs.maxOrdered;
+    p.minSpikes    = knobs.minSpikes;
     if (n < p.minSpikes) {
         R.reason = tr("Split off spurious spikes: %1 has %2 spikes; at least %3 are needed.").arg(name(cluster)).arg(n).arg(p.minSpikes);
         return R;
@@ -1582,7 +1603,8 @@ KlustersDoc::CoreCutResult KlustersDoc::detectCoreCut(int cluster, bool onChildL
     // The ordering loop on a GPU when there is one and the cluster is large enough
     // to be worth the copies; the dispatcher declines otherwise and the loop in
     // corecut.h runs.
-    const corecut::Result r = corecut::analyse(wav.data(), R.total, nCh, nSamp, p, &CoreCutGpu::order);
+    const corecut::Result r = corecut::analyse(wav.data(), R.total, nCh, nSamp, p,
+                                               knobs.useGpu ? corecut::OrderFn(&CoreCutGpu::order) : corecut::OrderFn());
     R.ok             = r.ok;
     R.ordered        = r.ordered;
     R.cut            = r.cut;

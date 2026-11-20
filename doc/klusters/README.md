@@ -1056,7 +1056,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
 | Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
 | Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; with three, two references sort the third; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
-| Split Off Spurious Spikes | — | For each selected cluster, keeps its core and splits the spikes that are not it into a new cluster; see [below](#split-off-spurious-spikes--a-clusters-core-and-the-rest) |
+| Split Off Spurious Spikes | Ctrl+Space | For each selected cluster, keeps its core and splits the spikes that are not it into a new cluster; see [below](#split-off-spurious-spikes--a-clusters-core-and-the-rest) |
 | Time-Chunk Mode | — | Steps through the session one chunk of the length you enter at a time, with only that chunk's clusters active; **Previous Chunk** / **Next Chunk** move between chunks |
 | Sync Feature Spaces, Next / Previous Feature Space, Sort Spikes by Time | — / `Ctrl+Tab` / `Ctrl+Shift+Tab` / — | See [Feature spaces](#feature-spaces--one-clu-through-another-method) |
 
@@ -1106,8 +1106,8 @@ key; bind `action.splitBurstFollowers` in Preferences → Input).
 ### Split Off Spurious Spikes — a cluster's core, and the rest
 
 A cluster that is mostly one cell with other spikes in it: select it (or several, or
-children in the child palette) and choose **Actions → Split Off Spurious Spikes** (no
-key; bind `action.splitOffSpurious` in Preferences → Input). The spikes that are not
+children in the child palette) and press **Ctrl+Space**, or choose **Actions → Split Off
+Spurious Spikes** (rebind `action.splitOffSpurious` in Preferences → Input). The spikes that are not
 the core become one new cluster per selected cluster, shown beside it; in child scope,
 a new child beside the one they came from. The core stays where it is. There is no
 dialog and no confirmation box, and each split is one undo step.
@@ -1128,6 +1128,10 @@ dialog and no confirmation box, and each split is one undo step.
   back when it is the same cell.
 - **It reads the waveforms of the space shown.** It was worked out on the standard
   space.
+- **Knobs** (Preferences → Curation → Splitting). *Cut sensitivity* is the one to
+  reach for: lower it when foreign spikes are left in, raise it when too much of the
+  cell is taken. The window's four edges, the largest centring shift, the number of
+  spikes ordered, the smallest cluster and the GPU switch are there too.
 - **Speed.** The ordering is quadratic: about 3 s for 8,000 spikes and 7 s for 12,000
   on two cores. Up to 40,000 spikes are ordered; above that an evenly spaced 40,000
   are, and the others follow them. Over 400,000 spikes it refuses. In a CUDA build with

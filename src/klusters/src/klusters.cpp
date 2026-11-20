@@ -564,8 +564,9 @@ void KlustersApp::createMenus()
 
     // One cluster: the spikes in the order that changes the cumulative mean
     // waveform least, cut where a channel's cumulative kurtosis starts to rise.
-    // Unbound: bind it in the input registry.
+    // Its knobs are in Preferences > Splitting.
     mSplitOffSpurious = actionMenu->addAction(tr("Split Off Sp&urious Spikes"));
+    mSplitOffSpurious->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Space));
     mSplitOffSpurious->setToolTip(
         tr("For each selected cluster: its spikes, centred on the first half crossing "
            "of their falling flank and seen through a tapered window around it on every "

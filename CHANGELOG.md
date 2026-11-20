@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: Split Off Spurious Spikes on Ctrl+Space, its knobs in Preferences ▸ Splitting](#2026-11-20--klusters-split-off-spurious-spikes-on-ctrlspace-its-knobs-in-preferences--splitting) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes orders on the GPU (CUDA)](#2026-11-20--klusters-split-off-spurious-spikes-orders-on-the-gpu-cuda) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes — a cluster's core kept, the rest split off](#2026-11-20--klusters-split-off-spurious-spikes--a-clusters-core-kept-the-rest-split-off) |
 | 2026-11-20 | [Klusters: Split Burst Followers on children](#2026-11-20--klusters-split-burst-followers-on-children) |
@@ -219,6 +220,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: Split Off Spurious Spikes on Ctrl+Space, its knobs in Preferences ▸ Splitting
+
+<details>
+<summary>Details</summary>
+
+**Ctrl+Space** now runs Actions → Split Off Spurious Spikes (rebindable as
+`action.splitOffSpurious`), and **Preferences ▸ Curation ▸ Splitting** has a group for it:
+
+| Knob | Default | |
+|---|---|---|
+| Cut sensitivity | × 5.0 | how sharp the kurtosis rise must be, against its size over 20–50% of the order; lower splits off more, higher less or nothing |
+| Window: rise, open, fall, closed | −0.154, −0.031, 0.184, 0.430 ms | the part of the waveform compared, relative to the first half crossing; edges out of order fall back to the default window |
+| Largest centring shift | 0.184 ms | 0 turns the centring off |
+| Order at most | 40,000 spikes | above it an evenly spaced subset is ordered |
+| Smallest cluster | 200 spikes | |
+| Order on the GPU when there is one | on | |
+
+The defaults are the ones the action shipped with (a `static_assert` ties
+`Configuration::CoreCut` to `corecut::Params`), so nothing changes until a knob is moved.
+
+Self-test `test_core_cut.py`: the key is Ctrl+Space; the sensitivity at its largest leaves a
+mixed cluster whole; the Splitting page has the group, renders, and writing the dialog back
+leaves the cut where it was (new `prefPage` step).  Not tested: any knob other than the
+sensitivity for its effect on a cut; the page was looked at as an off-screen render only.
+
+</details>
 
 ## 2026-11-20 — Klusters: Split Off Spurious Spikes orders on the GPU (CUDA)
 

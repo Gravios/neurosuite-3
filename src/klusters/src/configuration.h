@@ -344,6 +344,24 @@ public:
     int    getKnnMinNew()    const {return knnMinNew;}
     int    getKnnMinRef()    const {return knnMinRef;}
 
+    /// Actions > Split Off Spurious Spikes (corecut.h), Preferences > Splitting.
+    /// The window is in ms relative to the spike's first half crossing.
+    struct CoreCut {
+        double onsetFactor  =  5.0;    ///< the kurtosis rise that counts as the onset, x its level in 20-50% of the order
+        double riseStartMs  = -0.154;
+        double flatStartMs  = -0.031;
+        double flatEndMs    =  0.184;
+        double fallEndMs    =  0.430;
+        double maxShiftMs   =  0.184;  ///< a spike is never moved further than this when centred
+        int    maxOrdered   =  40000;  ///< above this an evenly spaced subset is ordered
+        int    minSpikes    =  200;
+        bool   useGpu       =  true;   ///< order on the GPU when the build has one
+    };
+    const CoreCut& getCoreCut() const { return coreCut; }
+    CoreCut getCoreCutDefault() const { return CoreCut(); }
+    /// Out-of-range values are clamped; a window whose edges are not in order is replaced by the default one.
+    void setCoreCut(const CoreCut& c);
+
     // Auto-Merge (patch 0068) — getters.
     int    getAutoMergeAlgorithm()       const {return autoMergeAlgorithm;}
     int    getAutoMergeMedianK()         const {return autoMergeMedianK;}
@@ -707,6 +725,7 @@ private:
     double  knnThreshold;          ///< majority vote threshold (fraction of K, 0-1)
     int     knnMinNew;             ///< min size for a new cluster to be kept (1-10000)
     int     knnMinRef;             ///< min "good" reference-cluster size (10-100000)
+    CoreCut coreCut;               ///< Split Off Spurious Spikes
 
     // Auto-Merge (patch 0068) — settings for the upcoming Auto-Merge action.
     // Mirrors KKE's WithinChunkTemplateMatch / MedianKnn parameters so

@@ -245,6 +245,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     connect(prefSplitting->knnThresholdSpinBox,        &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefSplitting->knnMinNewSpinBox,           &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefSplitting->knnMinRefSpinBox,           &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
+    connect(prefSplitting, &PrefSplitting::coreCutChanged, this, &PrefDialog::enableApply);
 
     // Display
     connect(prefDisplay->backgroundColorButton,        &QColorButton::colorChanged,    this, &PrefDialog::enableApply);
@@ -386,6 +387,7 @@ void PrefDialog::updateDialog()
     prefSplitting->setKnnThreshold(configuration().getKnnThreshold());
     prefSplitting->setKnnMinNew(configuration().getKnnMinNew());
     prefSplitting->setKnnMinRef(configuration().getKnnMinRef());
+    prefSplitting->setCoreCut(configuration().getCoreCut());
 
     // Display
     prefDisplay->setBackgroundColor(configuration().getBackgroundColor());
@@ -505,6 +507,7 @@ void PrefDialog::updateConfiguration()
     configuration().setKnnThreshold(prefSplitting->getKnnThreshold());
     configuration().setKnnMinNew(prefSplitting->getKnnMinNew());
     configuration().setKnnMinRef(prefSplitting->getKnnMinRef());
+    configuration().setCoreCut(prefSplitting->getCoreCut());
 
     // Display
     configuration().setBackgroundColor(prefDisplay->getBackgroundColor());
@@ -637,6 +640,7 @@ void PrefDialog::slotDefault()
     prefSplitting->setKnnThreshold(configuration().getKnnThresholdDefault());
     prefSplitting->setKnnMinNew(configuration().getKnnMinNewDefault());
     prefSplitting->setKnnMinRef(configuration().getKnnMinRefDefault());
+    prefSplitting->setCoreCut(configuration().getCoreCutDefault());
 
     prefDisplay->setBackgroundColor(configuration().getBackgroundColorDefault());
     prefDisplay->setMarkerSize(configuration().getMarkerSizeDefault());

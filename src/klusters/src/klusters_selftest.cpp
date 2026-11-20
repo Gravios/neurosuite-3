@@ -19,7 +19,16 @@
  *                                        with "mixed": c, references a and b sort cluster c;
  *                                        with "children": true, the ids are children
  *        {"coreCut": [ids]}              Actions > Split Off Spurious Spikes on each cluster;
- *                                        with "children": true, the ids are children
+ *                                        with "children": true, the ids are children; with
+ *                                        "onsetFactor": f, that preference is set first (not
+ *                                        written to disk); the result carries "shortcut", the
+ *                                        action's key
+ *        {"prefPage": "<class>"}         the Preferences dialog is built and filled from the
+ *                                        configuration, without being shown: whether it has a
+ *                                        page of that class, the titles of the page's group
+ *                                        boxes; "saveTo": a path the page's image is written to;
+ *                                        "apply": true writes the dialog's values back (a round
+ *                                        trip through every page)
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
@@ -43,12 +52,14 @@
 #include "savethread.h"
 #include "serialjobqueue.h"
 #include "configuration.h"
+#include "prefdialog.h"
 
 #include <cmath>
 #include <vector>
 #include <QApplication>
 #include <QFile>
 #include <QFileInfo>
+#include <QGroupBox>
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QPushButton>
@@ -414,6 +425,30 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("summary"), summary);
         return true;
     }
+    if (step.contains(QStringLiteral("prefPage"))) {
+        const QString wanted = step.value(QStringLiteral("prefPage")).toString();
+        if (mPluginRegistry.plugins().isEmpty()) mPluginRegistry.reload();
+        PrefDialog dialog(this, (mainDock && doc) ? doc->nbOfchannels() : 0, &mPluginRegistry);
+        dialog.setRadialCatalog(actionCatalog());
+        dialog.updateDialog();
+        QWidget* page = nullptr;
+        const QList<QWidget*> all = dialog.findChildren<QWidget*>();
+        for (QWidget* w : all)
+            if (QString::fromLatin1(w->metaObject()->className()) == wanted) { page = w; break; }
+        result.insert(QStringLiteral("found"), page != nullptr);
+        if (!page) return true;
+        QJsonArray groups;
+        const QList<QGroupBox*> boxes = page->findChildren<QGroupBox*>();
+        for (const QGroupBox* b : boxes) groups.append(b->title());
+        result.insert(QStringLiteral("groups"), groups);
+        const QString saveTo = step.value(QStringLiteral("saveTo")).toString();
+        if (!saveTo.isEmpty()) {
+            page->resize(page->sizeHint().expandedTo(QSize(640, 480)));
+            result.insert(QStringLiteral("saved"), page->grab().save(saveTo));
+        }
+        if (step.value(QStringLiteral("apply")).toBool()) dialog.updateConfiguration();
+        return true;
+    }
     if (step.contains(QStringLiteral("coreCut"))) {
         // {"coreCut": [ids]}: Actions > Split Off Spurious Spikes on each of the clusters.
         const QJsonArray ids = step.value(QStringLiteral("coreCut")).toArray();
@@ -426,6 +461,14 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             }
         }
         doc->setActiveClustering(children);
+        const Configuration::CoreCut knobsBefore = configuration().getCoreCut();
+        if (step.contains(QStringLiteral("onsetFactor"))) {
+            Configuration::CoreCut knobs = configuration().getCoreCut();
+            knobs.onsetFactor = step.value(QStringLiteral("onsetFactor")).toDouble();
+            configuration().setCoreCut(knobs);
+        }
+        result.insert(QStringLiteral("onsetFactor"), configuration().getCoreCut().onsetFactor);
+        result.insert(QStringLiteral("shortcut"), mSplitOffSpurious ? mSplitOffSpurious->shortcut().toString(QKeySequence::PortableText) : QString());
         QJsonArray made, summaries;
         QJsonObject parents;
         for (const QJsonValue& v : ids) {
@@ -435,6 +478,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             summaries.append(summary);
             if (children && id > 0) parents.insert(QString::number(id), doc->parentOfChild(id));
         }
+        configuration().setCoreCut(knobsBefore);              // the step's knob does not outlive it
         if (children) result.insert(QStringLiteral("createdParent"), parents);
         result.insert(QStringLiteral("created"), made);
         result.insert(QStringLiteral("summaries"), summaries);

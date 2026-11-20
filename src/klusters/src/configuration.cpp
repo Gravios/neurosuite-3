@@ -19,6 +19,7 @@
 #include "configuration.h"
 
 #include <algorithm>
+#include <cmath>
 #include <QSettings>
 #include <QStandardPaths>
 
@@ -162,6 +163,20 @@ void Configuration::read() {
     knnThreshold = settings.value("knnThreshold", 0.50).toDouble();
     knnMinNew    = settings.value("knnMinNew",    5).toInt();
     knnMinRef    = settings.value("knnMinRef",    100).toInt();
+    {
+        const CoreCut d;
+        CoreCut c;
+        c.onsetFactor = settings.value("coreCutOnsetFactor", d.onsetFactor).toDouble();
+        c.riseStartMs = settings.value("coreCutRiseStartMs", d.riseStartMs).toDouble();
+        c.flatStartMs = settings.value("coreCutFlatStartMs", d.flatStartMs).toDouble();
+        c.flatEndMs   = settings.value("coreCutFlatEndMs",   d.flatEndMs).toDouble();
+        c.fallEndMs   = settings.value("coreCutFallEndMs",   d.fallEndMs).toDouble();
+        c.maxShiftMs  = settings.value("coreCutMaxShiftMs",  d.maxShiftMs).toDouble();
+        c.maxOrdered  = settings.value("coreCutMaxOrdered",  d.maxOrdered).toInt();
+        c.minSpikes   = settings.value("coreCutMinSpikes",   d.minSpikes).toInt();
+        c.useGpu      = settings.value("coreCutUseGpu",      d.useGpu).toBool();
+        setCoreCut(c);
+    }
 
     // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
     autoMergeAlgorithm           = settings.value("autoMergeAlgorithm",           1).toInt();
@@ -340,6 +355,15 @@ void Configuration::write() const {
     settings.setValue("knnThreshold", knnThreshold);
     settings.setValue("knnMinNew",    knnMinNew);
     settings.setValue("knnMinRef",    knnMinRef);
+    settings.setValue("coreCutOnsetFactor", coreCut.onsetFactor);
+    settings.setValue("coreCutRiseStartMs", coreCut.riseStartMs);
+    settings.setValue("coreCutFlatStartMs", coreCut.flatStartMs);
+    settings.setValue("coreCutFlatEndMs",   coreCut.flatEndMs);
+    settings.setValue("coreCutFallEndMs",   coreCut.fallEndMs);
+    settings.setValue("coreCutMaxShiftMs",  coreCut.maxShiftMs);
+    settings.setValue("coreCutMaxOrdered",  coreCut.maxOrdered);
+    settings.setValue("coreCutMinSpikes",   coreCut.minSpikes);
+    settings.setValue("coreCutUseGpu",      coreCut.useGpu);
 
     // Auto-Merge (patch 0068)
     settings.setValue("autoMergeAlgorithm",           autoMergeAlgorithm);
@@ -436,4 +460,22 @@ Configuration& configuration() {
     //have to be created upon first call of the function.
     static Configuration conf;
     return conf;
+}
+
+void Configuration::setCoreCut(const CoreCut& c)
+{
+    const CoreCut d;
+    coreCut = c;
+    coreCut.onsetFactor = std::isfinite(c.onsetFactor) ? qBound(1.1, c.onsetFactor, 1000.0) : d.onsetFactor;
+    coreCut.maxShiftMs  = std::isfinite(c.maxShiftMs) ? qBound(0.0, c.maxShiftMs, 2.0) : d.maxShiftMs;
+    coreCut.maxOrdered  = qBound(1000, c.maxOrdered, 200000);
+    coreCut.minSpikes   = qBound(50, c.minSpikes, coreCut.maxOrdered);
+    // rise < flat start <= flat end < fall, the crossing (0) inside [rise, fall]
+    const bool ordered = std::isfinite(c.riseStartMs) && std::isfinite(c.flatStartMs) && std::isfinite(c.flatEndMs) && std::isfinite(c.fallEndMs)
+                         && c.riseStartMs < c.flatStartMs && c.flatStartMs <= c.flatEndMs && c.flatEndMs < c.fallEndMs
+                         && c.riseStartMs >= -5.0 && c.fallEndMs <= 5.0;
+    if (!ordered) {
+        coreCut.riseStartMs = d.riseStartMs; coreCut.flatStartMs = d.flatStartMs;
+        coreCut.flatEndMs   = d.flatEndMs;   coreCut.fallEndMs   = d.fallEndMs;
+    }
 }
