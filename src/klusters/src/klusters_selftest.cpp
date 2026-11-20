@@ -15,7 +15,8 @@
  *        {"nudge": [<cluster>, <delta>]} nudgeClusterTimestamps + the follow
  *        {"supersample": <factor>}       buildSupersampledSpace (no Save As offer)
  *        {"follow": true}                followMovedSpikes now
- *        {"burstFollowers": [a, b]}      Actions > Split Burst Followers on two clusters
+ *        {"burstFollowers": [a, b]}      Actions > Split Burst Followers on two clusters;
+ *                                        with "mixed": c, references a and b sort cluster c
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
@@ -384,8 +385,11 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // {"burstFollowers": [a, b]}: Actions > Split Burst Followers on the two clusters.
         const QJsonArray ids = step.value(QStringLiteral("burstFollowers")).toArray();
         doc->setActiveClustering(false);
+        // With "mixed": c, the three-cluster form: a and b sort the spikes of c.
         QString summary;
-        const QList<int> created = splitBurstFollowers(ids.at(0).toInt(), ids.at(1).toInt(), summary);
+        const QList<int> created = step.contains(QStringLiteral("mixed"))
+            ? sortMixedByBursts(ids.at(0).toInt(), ids.at(1).toInt(), step.value(QStringLiteral("mixed")).toInt(), summary)
+            : splitBurstFollowers(ids.at(0).toInt(), ids.at(1).toInt(), summary);
         QJsonArray made;
         for (const int id : created) made.append(id);
         result.insert(QStringLiteral("created"), made);

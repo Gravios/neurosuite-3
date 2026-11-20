@@ -10,7 +10,11 @@ least 20 ms from any other spike.  Then:
     direction (spikes of 2 behind leaders of 3: none) is left alone;
   * Save: the .clu carries it; clusters 2 and 3 keep every other spike;
   * a second session with the followers left in cluster 2 (a correct clustering): nothing is
-    split.
+    split;
+  * two references and a mixed cluster (`"mixed": 4`): cells 1 and 2 each fire 100 bursts of two
+    spikes; the leaders are clusters 2 and 3, the followers of both are in cluster 4 with 200
+    spikes of its own.  Two new clusters, holding exactly the followers of each reference;
+    cluster 4 keeps its own spikes and the references are untouched.
 """
 import os
 import sys
@@ -58,6 +62,49 @@ def retime(base, follower_label, seed=3):
     return res, clu, follower
 
 
+def retime_mixed(base, seed=5):
+    """Clusters 2 and 3 lead bursts; cluster 4 holds the followers of both and 200 spikes of its
+    own.  Returns (clu, owner): owner is 2 or 3 for a follower of that reference, else 0."""
+    rng = np.random.default_rng(seed)
+    n = S.read_res(f"{base}.res.standard.1").size            # 600
+    nb = n // 6                                              # bursts per reference
+    n_solo = n - 4 * nb
+    slot = int(0.030 * S.SR)
+    slots = rng.choice(np.arange(40, 40 + 2 * nb + n_solo + 100), 2 * nb + n_solo, replace=False)
+    start = slots * slot + rng.integers(0, int(0.010 * S.SR), slots.size)
+    la, lb, solo = start[:nb], start[nb:2 * nb], start[2 * nb:]
+    gap = int(0.005 * S.SR)
+    times = np.concatenate([la, lb, la + gap, lb + gap, solo])
+    labels = np.concatenate([np.full(nb, 2), np.full(nb, 3), np.full(2 * nb + n_solo, 4)])
+    owner = np.concatenate([np.zeros(2 * nb, int), np.full(nb, 2), np.full(nb, 3), np.zeros(n_solo, int)])
+    order = np.argsort(times, kind="stable")
+    res, clu, owner = times[order].astype(np.int64), labels[order].astype(np.int32), owner[order]
+    res.tofile(f"{base}.res.standard.1")
+    with open(f"{base}.clu.standard.1", "wb") as fh:
+        np.array([3], np.int32).tofile(fh)
+        clu.tofile(fh)
+    fet = S.read_fet(f"{base}.fet.standard.1")
+    fet[:, -1] = res
+    with open(f"{base}.fet.standard.1", "wb") as fh:
+        np.array([fet.shape[1]], np.int32).tofile(fh)
+        fet.astype(np.int64).tofile(fh)
+    return clu, owner
+
+
+def run_mixed(klusters):
+    with tempfile.TemporaryDirectory() as d:
+        base, _ = S.make_session(d, "rat")
+        clu, owner = retime_mixed(base)
+        steps = [{"burstFollowers": [2, 3], "mixed": 4}, {"save": True}]
+        rep = R.run(klusters, f"{base}.clu.standard.1", steps, d)
+        check(rep.get("code") == 0 and rep["rc"] == 0,
+              f"the self-test ran every step (code {rep.get('code')}, rc {rep['rc']})", rep.get("stderr", ""))
+        results = [r for r in rep.get("results", []) if "step" in r]
+        step = results[0] if results else {}
+        print("   " + step.get("summary", "(no summary)"))
+        return step, clu, owner, S.read_clu(f"{base}.clu.standard.1")
+
+
 def run_case(klusters, follower_label):
     with tempfile.TemporaryDirectory() as d:
         base, _ = S.make_session(d, "rat")
@@ -91,6 +138,19 @@ def main():
     step, clu, follower, saved = run_case(klusters, follower_label=2)
     check(step.get("created") == [], f"nothing is split (got {step.get('created')})")
     check(np.array_equal(saved, clu), "the saved .clu is unchanged")
+
+    print("-- two references (2, 3) sort a mixed cluster (4)")
+    step, clu, owner, saved = run_mixed(klusters)
+    created = step.get("created", [])
+    check(len(created) == 2, f"two new clusters (got {created})")
+    if len(created) == 2:
+        of2, of3 = created
+        check(np.array_equal(saved == of2, owner == 2),
+              f"the first holds exactly the {int((owner == 2).sum())} followers of reference 2 ({int((saved == of2).sum())} spikes)")
+        check(np.array_equal(saved == of3, owner == 3),
+              f"the second holds exactly the {int((owner == 3).sum())} followers of reference 3 ({int((saved == of3).sum())} spikes)")
+        check(np.array_equal(saved[owner == 0], clu[owner == 0]),
+              "the references and the mixed cluster's own spikes kept their clusters")
 
     print(f"test_burst_followers: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

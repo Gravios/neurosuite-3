@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: Split Burst Followers with two references and a mixed cluster](#2026-11-20--klusters-split-burst-followers-with-two-references-and-a-mixed-cluster) |
 | 2026-11-20 | [KiloKlustaKwik: a heap overflow in the split trial with -MaxPossibleClusters below 13](#2026-11-20--kiloklustakwik-a-heap-overflow-in-the-split-trial-with--maxpossibleclusters-below-13) |
 | 2026-11-20 | [KiloKlustaKwik, process_denoiseuniform: a binary `.fet` or `.clu` whose count has a low byte of 0x30–0x39 is no longer read as text](#2026-11-20--kiloklustakwik-process_denoiseuniform-a-binary-fet-or-clu-whose-count-has-a-low-byte-of-0x300x39-is-no-longer-read-as-text) |
 | 2026-11-20 | [Klusters: Split Burst Followers — two similarly shaped cells told apart by their bursts](#2026-11-20--klusters-split-burst-followers--two-similarly-shaped-cells-told-apart-by-their-bursts) |
@@ -215,6 +216,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: Split Burst Followers with two references and a mixed cluster
+
+<details>
+<summary>Details</summary>
+
+Split Burst Followers took two clusters, each a cell.  With **three** clusters selected it now
+takes two reference cells and a third cluster that holds spikes of both, and sorts the third.
+
+- **Which is the mixed one** cannot be read off a selection, so the action asks (one list, three
+  entries).
+- **The rule.**  The mixed cluster is not a cell, so no burst is its own: only its spikes behind a
+  reference's burst leader are taken.  Each reference is scanned against the mixed cluster with the
+  two-cluster analysis and the same two chance counts; the spikes behind its leaders become one new
+  cluster, when above chance.  A spike behind leaders of both references stays where it is.
+- **Not taken.**  A spike of the mixed cluster that *leads* a burst a reference then continues:
+  taking spikes on either side of a reference spike would drop the order test, the one that keeps
+  cells that merely fire together from being read as one cell.
+- Self-test: `test_burst_followers.py` gains the case (100 followers of each of two references and
+  200 other spikes in one cluster: two new clusters of exactly 100).  The chooser itself is not
+  exercised by a test, and no real pair of references was tried.
+
+</details>
 
 ## 2026-11-20 — KiloKlustaKwik: a heap overflow in the split trial with -MaxPossibleClusters below 13
 

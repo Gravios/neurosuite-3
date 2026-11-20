@@ -438,7 +438,8 @@ private Q_SLOTS:
      *  tail.  Dialog-driven; does not replace Shift+X, which stays calibrated
      *  to fiber-kit's shed knee.  See KlustersDoc::detectResidualOutliers. */
     void slotStripResidualOutliers();
-    /** Actions: Split Burst Followers.  With two similarly shaped clusters
+    /** Actions: Split Burst Followers.  With three clusters selected it asks which
+     *  one holds spikes of the other two and runs sortMixedByBursts.  With two similarly shaped clusters
      *  selected, runs the burst analysis (KlustersDoc::detectBurstFollowers) and
      *  splits each cluster's spikes that fall in bursts led by the other off into
      *  a new cluster -- up to two, one per reference cell, each only when its
@@ -449,6 +450,11 @@ private Q_SLOTS:
      *  clusters (none when no direction is significant) and, in @p summary, what
      *  was found in each direction. */
     QList<int> splitBurstFollowers(int a, int b, QString& summary);
+    /** The three-cluster form: @p refA and @p refB are reference cells, @p mixed
+     *  holds spikes of both.  The spikes of @p mixed behind each reference's burst
+     *  leaders are split off into a new cluster per reference (when above chance);
+     *  a spike both references claim stays.  Returns the new ids. */
+    QList<int> sortMixedByBursts(int refA, int refB, int mixed, QString& summary);
     /** Actions: pin a basis for the oblique (template-axis) projection.  Prompts
      *  for the cluster ids whose templates become the fixed axes, so a different
      *  cluster can be examined against them with Shift+O; empty input clears the

@@ -1055,7 +1055,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation |
 | Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
 | Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
-| Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
+| Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; with three, two references sort the third; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
 | Time-Chunk Mode | — | Steps through the session one chunk of the length you enter at a time, with only that chunk's clusters active; **Previous Chunk** / **Next Chunk** move between chunks |
 | Sync Feature Spaces, Next / Previous Feature Space, Sort Spikes by Time | — / `Ctrl+Tab` / `Ctrl+Shift+Tab` / — | See [Feature spaces](#feature-spaces--one-clu-through-another-method) |
 
@@ -1079,6 +1079,12 @@ key; bind `action.splitBurstFollowers` in Preferences → Input).
   confirmation box.
 - **Left alone.** A burst in which the two clusters fall closer than 2 ms is two cells
   firing at once, not one cell bursting.
+- **Two references and a mixed cluster.** Select three clusters: the action asks which
+  one holds spikes of the other two. The mixed cluster is not a cell, so only its spikes
+  *behind* a reference's burst leader are sorted: one new cluster for those behind the
+  first reference's leaders, one for those behind the second's, each tested as above.
+  A spike behind leaders of both references stays in the mixed cluster, as does
+  everything that follows no reference. The references are not changed.
 - **Chance.** A direction is split only when its number of bursts stands above two
   counts, by a factor of two and at p < 0.001 each: the count with one train shifted
   against the other by 40 to 70 ms (unrelated firing), and the count with the train
