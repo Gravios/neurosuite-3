@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-20 | [Klusters: Split Burst Followers on children](#2026-11-20--klusters-split-burst-followers-on-children) |
 | 2026-11-20 | [Klusters: Split Burst Followers with two references and a mixed cluster](#2026-11-20--klusters-split-burst-followers-with-two-references-and-a-mixed-cluster) |
 | 2026-11-20 | [KiloKlustaKwik: a heap overflow in the split trial with -MaxPossibleClusters below 13](#2026-11-20--kiloklustakwik-a-heap-overflow-in-the-split-trial-with--maxpossibleclusters-below-13) |
 | 2026-11-20 | [KiloKlustaKwik, process_denoiseuniform: a binary `.fet` or `.clu` whose count has a low byte of 0x30–0x39 is no longer read as text](#2026-11-20--kiloklustakwik-process_denoiseuniform-a-binary-fet-or-clu-whose-count-has-a-low-byte-of-0x300x39-is-no-longer-read-as-text) |
@@ -216,6 +217,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-20 — Klusters: Split Burst Followers on children
+
+<details>
+<summary>Details</summary>
+
+Split Burst Followers refused in child scope.  With children selected it now runs on the child
+layer, in both forms: two children, or two reference children and a child that holds spikes of both.
+
+- **The scan** reads rows and times from the `.clc` layer (`detectBurstFollowers(..., children)`);
+  the children may have different parents.
+- **The split** makes a new child beside the child the spikes came from, under that child's parent.
+  The parent clustering is not touched: a follower found in a child of parent 3 behind the bursts of
+  a child of parent 2 becomes a new child of 3, not of 2.  Moving it across is left to the curator.
+- Children of the artefact and noise bins and of reserved chunk clusters are left out of the
+  selection, as in the residual strip.
+- Self-test: `test_burst_followers.py`, the two-children case (one new child holding exactly the
+  150 followers, parent 3 in the saved `.clp`, `.clu` unchanged).  The two-references form on
+  children shares the code and has no case of its own.
+
+</details>
 
 ## 2026-11-20 — Klusters: Split Burst Followers with two references and a mixed cluster
 

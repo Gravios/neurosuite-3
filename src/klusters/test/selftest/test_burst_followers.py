@@ -14,7 +14,11 @@ least 20 ms from any other spike.  Then:
   * two references and a mixed cluster (`"mixed": 4`): cells 1 and 2 each fire 100 bursts of two
     spikes; the leaders are clusters 2 and 3, the followers of both are in cluster 4 with 200
     spikes of its own.  Two new clusters, holding exactly the followers of each reference;
-    cluster 4 keeps its own spikes and the references are untouched.
+    cluster 4 keeps its own spikes and the references are untouched;
+  * the same on CHILDREN (`"children": true`): the first session with a child layer in which
+    child 2 (of parent 2) leads the bursts and child 3 (of parent 3) holds its followers.  One new
+    child with exactly the followers, placed under parent 3 -- beside the child they came from --
+    and the parent clustering (.clu) is unchanged.
 """
 import os
 import sys
@@ -105,6 +109,28 @@ def run_mixed(klusters):
         return step, clu, owner, S.read_clu(f"{base}.clu.standard.1")
 
 
+def run_children(klusters):
+    with tempfile.TemporaryDirectory() as d:
+        base, _ = S.make_session(d, "rat")
+        res, clu, follower = retime(base, 3)
+        with open(f"{base}.clc.standard.1", "wb") as fh:      # child c = parent c
+            np.array([len(np.unique(clu))], np.int32).tofile(fh)
+            clu.astype(np.int32).tofile(fh)
+        clp = np.array([0, 2, 3], np.int32)                   # entry c-1 = the parent of child c
+        with open(f"{base}.clp.standard.1", "wb") as fh:
+            np.array([clp.size], np.int32).tofile(fh)
+            clp.tofile(fh)
+        steps = [{"burstFollowers": [2, 3], "children": True}, {"save": True}]
+        rep = R.run(klusters, f"{base}.clu.standard.1", steps, d)
+        check(rep.get("code") == 0 and rep["rc"] == 0,
+              f"the self-test ran every step (code {rep.get('code')}, rc {rep['rc']})", rep.get("stderr", ""))
+        results = [r for r in rep.get("results", []) if "step" in r]
+        step = results[0] if results else {}
+        print("   " + step.get("summary", step.get("error", "(no summary)")))
+        return (step, clu, follower, S.read_clu(f"{base}.clu.standard.1"), S.read_clu(f"{base}.clc.standard.1"),
+                S.read_clu(f"{base}.clp.standard.1"))
+
+
 def run_case(klusters, follower_label):
     with tempfile.TemporaryDirectory() as d:
         base, _ = S.make_session(d, "rat")
@@ -151,6 +177,24 @@ def main():
               f"the second holds exactly the {int((owner == 3).sum())} followers of reference 3 ({int((saved == of3).sum())} spikes)")
         check(np.array_equal(saved[owner == 0], clu[owner == 0]),
               "the references and the mixed cluster's own spikes kept their clusters")
+
+    print("-- children: child 3 (parent 3) holds the followers of child 2's bursts (parent 2)")
+    step, clu, follower, saved_clu, saved_clc, saved_clp = run_children(klusters)
+    created = step.get("created", [])
+    check(len(created) == 1, f"one new child (got {created})")
+    if len(created) == 1:
+        new = created[0]
+        check(step.get("createdParent", {}).get(str(new)) == 3,
+              f"it is a child of parent 3, where its spikes came from ({step.get('createdParent')})")
+        check(np.array_equal(saved_clu, clu), "the parent clustering (.clu) is unchanged")
+        # The saved .clc may be renumbered: find the new child as the one holding the followers.
+        ids = np.unique(saved_clc[follower])
+        check(ids.size == 1 and np.array_equal(saved_clc == ids[0], follower),
+              f"one child of the saved .clc holds exactly the {int(follower.sum())} followers")
+        if ids.size == 1 and 1 <= ids[0] <= saved_clp.size:
+            check(saved_clp[ids[0] - 1] == 3, f"the saved .clp gives it parent 3 (got {saved_clp[ids[0] - 1]})")
+        check(np.unique(saved_clc[clu == 2]).size == 1 and np.unique(saved_clc[(clu == 3) & ~follower]).size == 1,
+              "the reference child and the rest of the source child are each still one child")
 
     print(f"test_burst_followers: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

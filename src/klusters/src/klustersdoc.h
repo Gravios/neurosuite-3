@@ -1352,9 +1352,12 @@ public:
      *  with one train shifted by 40 to 70 ms either way (unrelated firing) and
      *  against the count with the train run backwards (cells firing together,
      *  which has no order), and must be twice either.  Timing only: it reads
-     *  no waveform and works in any feature space.  Non-mutating. */
+     *  no waveform and works in any feature space.  Non-mutating.
+     *  With @p children the two ids are children (the .clc layer) and the rows
+     *  and times are read from that layer; the two may have different parents. */
     BurstFollowerResult detectBurstFollowers(int clusterA, int clusterB,
-                                             double minIsiMs, double maxIsiMs) const;
+                                             double minIsiMs, double maxIsiMs,
+                                             bool children = false) const;
 
     /** Result of detectWaveformOutliers (non-mutating scan). */
     struct WaveformOutlierResult {

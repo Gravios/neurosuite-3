@@ -1085,6 +1085,11 @@ key; bind `action.splitBurstFollowers` in Preferences → Input).
   first reference's leaders, one for those behind the second's, each tested as above.
   A spike behind leaders of both references stays in the mixed cluster, as does
   everything that follows no reference. The references are not changed.
+- **Children.** With the child clustering active (children selected), the same runs on
+  the child layer, for two children or for two references and a mixed child; the
+  children may belong to different parents. A split makes a **new child beside the
+  child the spikes came from**, under that child's parent. The parent clustering is
+  not changed, so nothing moves to the reference's parent: that step is yours.
 - **Chance.** A direction is split only when its number of bursts stands above two
   counts, by a factor of two and at p < 0.001 each: the count with one train shifted
   against the other by 40 to 70 ms (unrelated firing), and the count with the train
@@ -1094,8 +1099,8 @@ key; bind `action.splitBurstFollowers` in Preferences → Input).
 - **Limits.** Timing only: no waveform is read, so it works in any feature space, and
   it will also split a pair whose order comes from something other than a burst (one
   cell driving the other). If each cluster holds the other's followers in equal
-  numbers the order test sees no asymmetry and nothing is split. Parent clustering
-  only. The 2 ms and 10 ms are fixed.
+  numbers the order test sees no asymmetry and nothing is split. The 2 ms and 10 ms
+  are fixed.
 
 ### Plugins
 

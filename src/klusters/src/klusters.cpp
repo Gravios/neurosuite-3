@@ -557,7 +557,8 @@ void KlustersApp::createMenus()
            "cells firing together in no order).  With three selected: two references "
            "and a cluster that holds spikes of both; its spikes behind each "
            "reference's burst leaders are split off, one new cluster per reference.  "
-           "Undoable."));
+           "With children selected it works on the child layer: the new clusters are "
+           "new children beside the ones the spikes come from.  Undoable."));
     connect(mSplitBurstFollowers, &QAction::triggered,
             this, &KlustersApp::slotSplitBurstFollowers);
 
@@ -7191,14 +7192,36 @@ void KlustersApp::slotStripWaveformOutliers()
 // clusters' spikes cannot be one cell, 10 ms the upper edge of the burst band
 // the burst index uses.
 // ---------------------------------------------------------------------------
-QList<int> KlustersApp::splitBurstFollowers(int a, int b, QString& summary)
+int KlustersApp::splitOffBurstFollowers(const QSet<dataType>& rows, bool children)
+{
+    if (rows.isEmpty()) return 0;
+    // The split edits the ACTIVE layer, and the landing of a previous split can
+    // leave the parent active: re-assert the scope (as the residual strip does).
+    if (children && !doc->isChildClusteringActive()) doc->setActiveClustering(true);
+    // The sources are read from the layer now: an auto-renumber after a previous
+    // split renames clusters, and a stale id makes the builder drop the rows.
+    QList<int> sources;
+    const QVector<dataType> labelByRow = doc->data().labelByFeatureRow();
+    for (const dataType row : rows) {
+        if (row <= 0 || row >= labelByRow.size()) continue;
+        const int src = static_cast<int>(labelByRow.at(static_cast<int>(row)));
+        if (!sources.contains(src)) sources.append(src);
+    }
+    if (sources.isEmpty()) return 0;
+    const SpikeSelection selection(rows, QStringLiteral("burst_followers"));
+    const int made = doc->createNewCluster(selection, sources);
+    if (made <= 0 || (!children && made == 1)) return 0;     // parent scope: 1 is the noise bin
+    return made;
+}
+
+QList<int> KlustersApp::splitBurstFollowers(int a, int b, QString& summary, bool children)
 {
     constexpr double kMinIsiMs = 2.0;
     constexpr double kMaxIsiMs = 10.0;
 
     QList<int> created;
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const KlustersDoc::BurstFollowerResult R = doc->detectBurstFollowers(a, b, kMinIsiMs, kMaxIsiMs);
+    const KlustersDoc::BurstFollowerResult R = doc->detectBurstFollowers(a, b, kMinIsiMs, kMaxIsiMs, children);
     QApplication::restoreOverrideCursor();
     if (!R.ok) { summary = R.reason; return created; }
 
@@ -7211,14 +7234,16 @@ QList<int> KlustersApp::splitBurstFollowers(int a, int b, QString& summary)
             parts << tr("%1: not above chance, left alone").arg(counts);
             continue;
         }
-        const SpikeSelection selection(set->rows, QStringLiteral("burst_followers"));
-        const int newCluster = doc->createNewCluster(selection, QList<int>{set->source});
-        if (newCluster <= 1) {
+        const int newCluster = splitOffBurstFollowers(set->rows, children);
+        if (newCluster <= 0) {
             parts << tr("%1: could not be split off").arg(counts);
             continue;
         }
         created << newCluster;
-        parts << tr("new cluster %1 = %2, reference cell %3").arg(newCluster).arg(counts).arg(set->reference);
+        parts << (children
+            ? tr("new child %1 of %2 = %3, reference child %4").arg(newCluster)
+                  .arg(clusterLabel(doc->parentOfChild(newCluster))).arg(counts).arg(set->reference)
+            : tr("new cluster %1 = %2, reference cell %3").arg(newCluster).arg(counts).arg(set->reference));
     }
     summary = tr("Burst followers (%1-%2 ms; %3 mixed burst(s), %4 collided): %5.")
                   .arg(kMinIsiMs).arg(kMaxIsiMs).arg(R.mixed).arg(R.collided).arg(parts.join(QStringLiteral("; ")));
@@ -7232,7 +7257,7 @@ QList<int> KlustersApp::splitBurstFollowers(int a, int b, QString& summary)
 // two-cluster form (KlustersDoc::detectBurstFollowers of reference and mixed).
 // A spike both references claim -- it follows a leader of each within the burst
 // interval -- is left in the mixed cluster.
-QList<int> KlustersApp::sortMixedByBursts(int refA, int refB, int mixed, QString& summary)
+QList<int> KlustersApp::sortMixedByBursts(int refA, int refB, int mixed, QString& summary, bool children)
 {
     constexpr double kMinIsiMs = 2.0;
     constexpr double kMaxIsiMs = 10.0;
@@ -7243,8 +7268,8 @@ QList<int> KlustersApp::sortMixedByBursts(int refA, int refB, int mixed, QString
         return created;
     }
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    KlustersDoc::BurstFollowerResult RA = doc->detectBurstFollowers(refA, mixed, kMinIsiMs, kMaxIsiMs);
-    KlustersDoc::BurstFollowerResult RB = doc->detectBurstFollowers(refB, mixed, kMinIsiMs, kMaxIsiMs);
+    KlustersDoc::BurstFollowerResult RA = doc->detectBurstFollowers(refA, mixed, kMinIsiMs, kMaxIsiMs, children);
+    KlustersDoc::BurstFollowerResult RB = doc->detectBurstFollowers(refB, mixed, kMinIsiMs, kMaxIsiMs, children);
     QApplication::restoreOverrideCursor();
     if (!RA.ok || !RB.ok) { summary = !RA.ok ? RA.reason : RB.reason; return created; }
 
@@ -7265,14 +7290,16 @@ QList<int> KlustersApp::sortMixedByBursts(int refA, int refB, int mixed, QString
             parts << tr("%1: not above chance, left in %2").arg(counts).arg(mixed);
             continue;
         }
-        const SpikeSelection selection(set->rows, QStringLiteral("burst_followers"));
-        const int newCluster = doc->createNewCluster(selection, QList<int>{mixed});
-        if (newCluster <= 1) {
+        const int newCluster = splitOffBurstFollowers(set->rows, children);
+        if (newCluster <= 0) {
             parts << tr("%1: could not be split off").arg(counts);
             continue;
         }
         created << newCluster;
-        parts << tr("new cluster %1 = %2, reference cell %3").arg(newCluster).arg(counts).arg(set->reference);
+        parts << (children
+            ? tr("new child %1 of %2 = %3, reference child %4").arg(newCluster)
+                  .arg(clusterLabel(doc->parentOfChild(newCluster))).arg(counts).arg(set->reference)
+            : tr("new cluster %1 = %2, reference cell %3").arg(newCluster).arg(counts).arg(set->reference));
     }
     summary = tr("Burst followers of two references (%1-%2 ms): %3; %4 spike(s) behind leaders of both, left in %5.")
                   .arg(kMinIsiMs).arg(kMaxIsiMs).arg(parts.join(QStringLiteral("; "))).arg(both.size()).arg(mixed);
@@ -7284,23 +7311,33 @@ void KlustersApp::slotSplitBurstFollowers()
 {
     KlustersView* view = activeView();
     if (!view || !doc) return;
-    if (doc->isChildClusteringActive()) {
-        slotStatusMsg(tr("Split burst followers: switch to the parent clustering first."));
-        return;
+    // Children selected: the same analysis on the child layer.  A split makes a
+    // new child beside the one the spikes come from; the parents are not changed.
+    const bool children = doc->isChildClusteringActive();
+    QList<int> selected;
+    if (children) {
+        selected = childPaletteA ? childPaletteA->selectedClusters() : view->clusters();
+        doc->leaveOutChildrenOfReserved(selected, tr("Split burst followers"));
+        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artefact / noise bins
+            if (doc->parentOfChild(selected.at(k)) < 2) selected.removeAt(k);
+    } else {
+        selected = view->clusters();
+        selected.removeAll(0);
+        selected.removeAll(1);
+        doc->leaveOutReserved(selected, tr("Split burst followers"));
     }
-    QList<int> selected = view->clusters();
-    selected.removeAll(0);
-    selected.removeAll(1);
-    doc->leaveOutReserved(selected, tr("Split burst followers"));
     if (selected.size() != 2 && selected.size() != 3) {
-        slotStatusMsg(tr("Split burst followers: select two clusters, or two references and the cluster "
-                         "that holds spikes of both (%1 selected).").arg(selected.size()));
+        slotStatusMsg((children
+            ? tr("Split burst followers: select two children, or two reference children and the child "
+                 "that holds spikes of both (%1 selected).")
+            : tr("Split burst followers: select two clusters, or two references and the cluster "
+                 "that holds spikes of both (%1 selected).")).arg(selected.size()));
         return;
     }
     QString summary;
     QList<int> created;
     if (selected.size() == 2) {
-        created = splitBurstFollowers(selected.at(0), selected.at(1), summary);
+        created = splitBurstFollowers(selected.at(0), selected.at(1), summary, children);
     } else {
         // Which of the three is the mixed one cannot be read off the selection: ask.
         QStringList choices;
@@ -7308,21 +7345,23 @@ void KlustersApp::slotSplitBurstFollowers()
             QList<int> refs = selected;
             refs.removeAll(id);
             choices << tr("%1 holds both (%2 spikes); references %3 and %4")
-                           .arg(id).arg(doc->parentData().nbOfSpikes(static_cast<dataType>(id)))
+                           .arg(id).arg(doc->data().nbOfSpikes(static_cast<dataType>(id)))
                            .arg(refs.at(0)).arg(refs.at(1));
         }
         bool accepted = false;
         const QString choice = QInputDialog::getItem(this, tr("Split Burst Followers"),
-            tr("Two of the three clusters are the reference cells; the third holds spikes of both:"),
+            children ? tr("Two of the three children are the references; the third holds spikes of both:")
+                     : tr("Two of the three clusters are the reference cells; the third holds spikes of both:"),
             choices, choices.size() - 1, /*editable*/ false, &accepted);
         if (!accepted) return;
         const int mixed = selected.at(choices.indexOf(choice));
         QList<int> refs = selected;
         refs.removeAll(mixed);
-        created = sortMixedByBursts(refs.at(0), refs.at(1), mixed, summary);
+        created = sortMixedByBursts(refs.at(0), refs.at(1), mixed, summary, children);
     }
-    // Both cells and what was taken from them, side by side.
-    if (!created.isEmpty() && clusterPalette) {
+    // Both cells and what was taken from them, side by side.  (In child scope the
+    // split has parked the new child with its source already.)
+    if (!children && !created.isEmpty() && clusterPalette) {
         const QList<int> shown = selected + created;
         clusterPalette->selectItems(shown);
         doc->shownClustersUpdate(shown, *view);

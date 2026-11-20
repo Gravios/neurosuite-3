@@ -449,12 +449,17 @@ private Q_SLOTS:
     /** The body of the action for clusters @p a and @p b: the ids of the new
      *  clusters (none when no direction is significant) and, in @p summary, what
      *  was found in each direction. */
-    QList<int> splitBurstFollowers(int a, int b, QString& summary);
+    QList<int> splitBurstFollowers(int a, int b, QString& summary, bool children = false);
     /** The three-cluster form: @p refA and @p refB are reference cells, @p mixed
      *  holds spikes of both.  The spikes of @p mixed behind each reference's burst
      *  leaders are split off into a new cluster per reference (when above chance);
      *  a spike both references claim stays.  Returns the new ids. */
-    QList<int> sortMixedByBursts(int refA, int refB, int mixed, QString& summary);
+    QList<int> sortMixedByBursts(int refA, int refB, int mixed, QString& summary, bool children = false);
+    /** One new cluster of @p rows on the layer the burst action works on: the parent
+     *  clustering, or with @p children the child layer -- a new child beside the
+     *  child the rows come from, under that child's parent (the parent clustering
+     *  is not changed).  Returns its id, 0 when nothing was made. */
+    int splitOffBurstFollowers(const QSet<dataType>& rows, bool children);
     /** Actions: pin a basis for the oblique (template-axis) projection.  Prompts
      *  for the cluster ids whose templates become the fixed axes, so a different
      *  cluster can be examined against them with Shift+O; empty input clears the

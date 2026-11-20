@@ -16,7 +16,8 @@
  *        {"supersample": <factor>}       buildSupersampledSpace (no Save As offer)
  *        {"follow": true}                followMovedSpikes now
  *        {"burstFollowers": [a, b]}      Actions > Split Burst Followers on two clusters;
- *                                        with "mixed": c, references a and b sort cluster c
+ *                                        with "mixed": c, references a and b sort cluster c;
+ *                                        with "children": true, the ids are children
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
@@ -384,14 +385,29 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("burstFollowers"))) {
         // {"burstFollowers": [a, b]}: Actions > Split Burst Followers on the two clusters.
         const QJsonArray ids = step.value(QStringLiteral("burstFollowers")).toArray();
-        doc->setActiveClustering(false);
+        // "children": true reads the ids as children (the .clc layer), as the action
+        // does in child scope.
+        const bool children = step.value(QStringLiteral("children")).toBool(false);
+        if (children) {
+            QString err;
+            if (!doc->loadChildClustering(err)) {
+                result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err);
+                return false;
+            }
+        }
+        doc->setActiveClustering(children);
         // With "mixed": c, the three-cluster form: a and b sort the spikes of c.
         QString summary;
         const QList<int> created = step.contains(QStringLiteral("mixed"))
-            ? sortMixedByBursts(ids.at(0).toInt(), ids.at(1).toInt(), step.value(QStringLiteral("mixed")).toInt(), summary)
-            : splitBurstFollowers(ids.at(0).toInt(), ids.at(1).toInt(), summary);
+            ? sortMixedByBursts(ids.at(0).toInt(), ids.at(1).toInt(), step.value(QStringLiteral("mixed")).toInt(), summary, children)
+            : splitBurstFollowers(ids.at(0).toInt(), ids.at(1).toInt(), summary, children);
         QJsonArray made;
-        for (const int id : created) made.append(id);
+        QJsonObject parents;
+        for (const int id : created) {
+            made.append(id);
+            if (children) parents.insert(QString::number(id), doc->parentOfChild(id));
+        }
+        if (children) result.insert(QStringLiteral("createdParent"), parents);
         result.insert(QStringLiteral("created"), made);
         result.insert(QStringLiteral("summary"), summary);
         return true;

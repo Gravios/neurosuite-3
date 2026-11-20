@@ -50,7 +50,8 @@ super-sample mode, the session stays in the `.clu`'s space; it is held once show
 `test_burst_followers.py` (the `burstFollowers` step, Actions > Split Burst Followers: the followers of
 one cluster's bursts found in another are split into one new cluster and nothing else moves; a correct
 clustering is left alone; with `"mixed": c`, two references sort a third cluster into one new cluster
-per reference),
+per reference; with `"children": true` on the child layer, the new child placed under the parent its
+spikes came from and the `.clu` unchanged),
 `test_hover_spike.py` (the `hover` step puts the cursor on a spike in the cluster view: the spike tracked
 is one drawn there, every waveform view overlays its `.spk` samples in a contrasting colour in its cluster's
 column, and the overlay goes when the cursor leaves or `Shift+V` turns the tracking off)).

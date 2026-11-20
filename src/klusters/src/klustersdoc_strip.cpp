@@ -1455,7 +1455,8 @@ KlustersDoc::computeResidualPreview(const QSet<dataType>& featureRows,
 // in the document's own types.
 // ---------------------------------------------------------------------------
 KlustersDoc::BurstFollowerResult KlustersDoc::detectBurstFollowers(int clusterA, int clusterB,
-                                                                   double minIsiMs, double maxIsiMs) const
+                                                                   double minIsiMs, double maxIsiMs,
+                                                                   bool children) const
 {
     BurstFollowerResult R;
     R.minIsiMs = minIsiMs;
@@ -1463,17 +1464,24 @@ KlustersDoc::BurstFollowerResult KlustersDoc::detectBurstFollowers(int clusterA,
     R.ofA.reference = clusterA; R.ofA.source = clusterB;
     R.ofB.reference = clusterB; R.ofB.source = clusterA;
     if (!clusteringData) { R.reason = tr("No document is open."); return R; }
-    if (clusterA < 2 || clusterB < 2 || clusterA == clusterB) {
-        R.reason = tr("Burst followers: two different clusters are needed (not the artefact or noise cluster).");
+    if (children && !childData) {
+        R.reason = tr("Burst followers: this session has no child layer.");
         return R;
     }
-    const Data& layer = parentData();
+    if (clusterA == clusterB || (!children && (clusterA < 2 || clusterB < 2))) {
+        R.reason = children
+            ? tr("Burst followers: two different children are needed.")
+            : tr("Burst followers: two different clusters are needed (not the artefact or noise cluster).");
+        return R;
+    }
+    const Data& layer = children ? *childData : parentData();
     const double rate = layer.getSamplingRate();
     if (rate <= 0.0) { R.reason = tr("Burst followers: the sampling rate is unknown."); return R; }
 
     std::vector<int64_t> rowsA, timesA, rowsB, timesB;
     if (!layer.spikeRowsAndTimes(clusterA, rowsA, timesA) || !layer.spikeRowsAndTimes(clusterB, rowsB, timesB)) {
-        R.reason = tr("Burst followers: cluster %1 or %2 does not exist.").arg(clusterA).arg(clusterB);
+        R.reason = (children ? tr("Burst followers: child %1 or %2 does not exist.")
+                             : tr("Burst followers: cluster %1 or %2 does not exist.")).arg(clusterA).arg(clusterB);
         return R;
     }
 
