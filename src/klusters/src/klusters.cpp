@@ -8278,7 +8278,17 @@ void KlustersApp::slotTabChange(int index){
             //will trigger an update of the display
 
             //Update the cluster palette
-            clusterPalette->selectItems(activeView->clusters());
+            //
+            // The view lists ids of the SHOWN layer.  In child scope those are
+            // children, and the parent palette has no item for them: selecting
+            // them there emitted an empty selection (or, while a child still
+            // shared its number with a parent, that unrelated parent), and the
+            // palette's one emission takes the views to the parent layer.  Every
+            // realign ends with this refresh, so a child's realign put the views
+            // on the parents.  The parent palette already holds the parent being
+            // curated; leave it alone.
+            if(!(doc && doc->isChildClusteringActive()))
+                clusterPalette->selectItems(activeView->clusters());
 
 
             //Check if a reclustering process is working in order to correctly set up the menus

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-21 | [Klusters: the refresh after a realign no longer takes the child view to the parents](#2026-11-21--klusters-the-refresh-after-a-realign-no-longer-takes-the-child-view-to-the-parents) |
 | 2026-11-21 | [Klusters: child ids are disjoint from parent ids — a parent's own child is parent + 10000, every other child 20000 and up](#2026-11-21--klusters-child-ids-are-disjoint-from-parent-ids--a-parents-own-child-is-parent--10000-every-other-child-20000-and-up) |
 | 2026-11-21 | [Klusters: Preferences pages scroll instead of being squeezed](#2026-11-21--klusters-preferences-pages-scroll-instead-of-being-squeezed) |
 | 2026-11-20 | [Klusters: the spike under the cursor is a preference — on or off, the ring's radius and line, the trace's width](#2026-11-20--klusters-the-spike-under-the-cursor-is-a-preference--on-or-off-the-rings-radius-and-line-the-traces-width) |
@@ -221,6 +222,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-21 — Klusters: the refresh after a realign no longer takes the child view to the parents
+
+<details>
+<summary>Details</summary>
+
+**What happened.**  A child realigned from the child view could leave the views on the parent
+layer, showing a parent that had nothing to do with it.  It happened only to a child whose number
+was also a parent's.
+
+**Why.**  Every realign ends by restoring the menus (`noRealignState`), and that ends with the
+refresh a tab switch makes (`slotTabChange`).  The refresh handed the ids the view shows to the
+parent palette.  In the child view those ids are children:
+
+- a child numbered like a parent selected THAT parent, and the palette's emission adopted it:
+  the views went to the parent layer and the child palette was rebuilt for the wrong parent;
+- any other child selected nothing.  The empty emission still took the views to the parent
+  layer; the child palette then brought the child view back, so nothing was left to see but two
+  layer switches and a rebuild of the child palette on every refresh.
+
+Since the child ids became disjoint from the parent ids (the entry below) only the second case
+is left, apart from the two bins and the reserved chunk ids.
+
+**The change.**  In child scope the refresh leaves the parent palette alone: it already holds
+the parent being curated.  Nothing changes in parent scope.
+
+**Tests.**  `test_child_realign_scope.py`: a child and a self child realigned from the child view
+are still shown on the child layer, the refresh on its own does not switch the layer even in
+passing (`layerSwitches`, a count the `hierarchy` step now reports; this check fails without the
+change), and a parent realign still ends on the parent.  The self-test's `realign` step takes
+`"children": true`, and `tabRefresh` runs the refresh.  With `NS3_TRACE_SCOPE` set,
+`setPendingParentSelection` now prints what it was asked for and what it kept.
+
+</details>
 
 ---
 

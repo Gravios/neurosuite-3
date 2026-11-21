@@ -688,6 +688,10 @@ public:
      *  which the document may be edited or saved. */
     void setActiveClustering(bool child);
     bool isChildClusteringActive() const { return childScopeActive; }
+    /** How many times the shown layer has changed since the session opened: what
+     *  a self-test reads to tell a view that stayed on a layer from one that
+     *  left it and came back. */
+    int layerSwitchCount() const { return layerSwitches; }
 
     /// Record a parent parent whose spike membership an operation created or changed.
     /// Drained by takeModifiedParents() in the coalesced post-edit step to drive the
@@ -3057,6 +3061,7 @@ private:
     bool                 clcWasOldNumbering = false;   ///< the .clc on disk predates the disjoint numbering
     int                  childIdsUpgraded = 0;          ///< children renumbered when it was loaded
     bool                 childScopeActive = false;  // true while a child is the shown clustering
+    int  layerSwitches = 0;      // see layerSwitchCount()
     int                  curatedParentId = -1;      // the parent being curated
     QList<int>           curatedParents;            // >=2 parents => joint matrix scope; else empty
     QList<int>           jointChildren;             // atoms the matrices brought into the joint palette

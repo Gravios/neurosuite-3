@@ -272,6 +272,10 @@ void KlustersDoc::setPendingParentSelection(const QList<int>& parents)
     for (int f : parents)
         if (f > 1 && !pendingParentSelection.contains(f) && clusterHasMembers(f))
             pendingParentSelection.append(f);   // keep order; first stays primary
+    if (scopeTraceEnabled())
+        qDebug().noquote() << QStringLiteral("[scope] setPendingParentSelection asked=%1 kept=%2 childScope=%3")
+                              .arg(layerTagsFor(parents), layerTagsFor(pendingParentSelection),
+                                   childScopeActive ? QStringLiteral("true") : QStringLiteral("false"));
 }
 
 QList<int> KlustersDoc::takePendingParentSelection()

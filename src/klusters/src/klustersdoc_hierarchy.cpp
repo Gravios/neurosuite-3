@@ -103,6 +103,7 @@ void KlustersDoc::setActiveClustering(bool child){
         qDebug().noquote() << QStringLiteral("[scope] setActiveClustering %1 -> %2")
                               .arg(childScopeActive ? "child" : "parent")
                               .arg(child ? "child" : "parent");
+    if ((child && childData) != childScopeActive) ++layerSwitches;
     if (child && childData){
         activeData       = childData;
         activeColorList  = childColorList;

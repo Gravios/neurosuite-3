@@ -57,6 +57,7 @@
 #include "klusters.h"
 #include "klustersdoc.h"
 #include "klustersview.h"
+#include <qextendtabwidget.h>
 #include "clusterview.h"
 #include "waveformview.h"
 #include "clusterPalette.h"
@@ -194,6 +195,16 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     }
     if (step.contains(QStringLiteral("realign"))) {
         const int id = step.value(QStringLiteral("realign")).toInt();
+        if (step.value(QStringLiteral("children")).toBool()) {
+            // The child view showing that child, as a click in the child palette leaves it.
+            QString err;
+            if (!doc->loadChildClustering(err)) {
+                result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err);
+                return false;
+            }
+            doc->setActiveClustering(true);
+            if (activeView()) doc->shownClustersUpdate(QList<int>{ id }, *activeView());
+        }
         if (realignBlockedHere(tr("Realign"), /*silent*/ true)) {
             result.insert(QStringLiteral("error"), QStringLiteral("realign refused in the shown space"));
             return false;
@@ -567,6 +578,20 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("childSizes"), sizes);
         result.insert(QStringLiteral("parentSizes"), parentSizes);
         result.insert(QStringLiteral("upgraded"), doc->childIdsUpgradedOnLoad());
+        result.insert(QStringLiteral("childScope"), doc->isChildClusteringActive());
+        result.insert(QStringLiteral("layerSwitches"), doc->layerSwitchCount());
+        QJsonArray shown;
+        if (activeView()) for (const int c : activeView()->clusters()) shown.append(c);
+        result.insert(QStringLiteral("shown"), shown);
+        return true;
+    }
+    if (step.contains(QStringLiteral("tabRefresh"))) {
+        // The refresh every realign, recluster and tab switch ends with.
+        if (!tabsParent) {
+            result.insert(QStringLiteral("error"), QStringLiteral("no display"));
+            return false;
+        }
+        slotTabChange(tabsParent->currentIndex());
         return true;
     }
     if (step.contains(QStringLiteral("coreCut"))) {
