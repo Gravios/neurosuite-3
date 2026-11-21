@@ -144,13 +144,20 @@ void KlustersDoc::buildHierarchyMaps(){
         const neurofileio::CluFile chi = neurofileio::readCluBinary(clcSiblingPath.toStdString(), nSpikes);
         if (par.ok && chi.ok && par.ids.size() == chi.ids.size()){
             haveScan = true;
+            // A .clc in the numbering used before 2026-11-21 is read through the same
+            // upgrade loadChildClustering applies to the atom layer, so the maps name
+            // the atoms the session works with.  Its .clp is keyed by the old ids and
+            // is not cross-checked below; the next Save writes both anew.
+            const hierarchyfiles::ChildIdUpgrade upgrade = hierarchyfiles::upgradeChildIds(
+                std::vector<int>(par.ids.begin(), par.ids.end()), std::vector<int>(chi.ids.begin(), chi.ids.end()));
+            clcWasOldNumbering = upgrade.needed;
             // child -> parent must be a function (nesting invariant): each child id is owned by
             // exactly one parent.  A violation means the .clc is not nested in the .clu; we keep the
             // first-seen owner and warn rather than silently merge.
             const std::size_t n = par.ids.size();
             for (std::size_t i = 0; i < n; ++i){
                 const int p = par.ids[i];
-                const int c = chi.ids[i];
+                const int c = upgrade.needed ? upgrade.ids[i] : chi.ids[i];
                 const auto existing = childToParent.constFind(c);
                 if (existing != childToParent.constEnd()){
                     if (existing.value() != p) nestingViolation = true;
@@ -172,7 +179,7 @@ void KlustersDoc::buildHierarchyMaps(){
     if (haveScan){
         // Cross-check the cache against the truth and report drift; the scan wins either way and
         // the next Save regenerates the .clp from the per-spike layers (prepareSave).
-        if (!clpSiblingPath.isEmpty()){
+        if (!clpSiblingPath.isEmpty() && !clcWasOldNumbering){
             const qint64 bytes = QFileInfo(clpSiblingPath).size();
             if (bytes > 4){
                 const int64_t nChildren = (bytes - 4) / 4;      // minus the int32 header
@@ -289,6 +296,43 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
         return false;
     }
     // Colour list for the child clusters (same HSV scheme as the parent build).
+    // The numbering of atoms (hierarchyfiles.h): parents are 0 .. 9999 and the reserved
+    // chunk ids; a parent's self child is parent + 10000; every other atom is 20000 or more.
+    for (const dataType id : clusteringData->clusterIds()) {
+        if (hierarchyfiles::fiberIdFits(id)) continue;
+        errorInformation = tr("Cluster %1: the child layer numbers a parent's own child parent + %2, which "
+                              "leaves room for parents up to %3. Renumber the clusters, then open the "
+                              "hierarchical view again.")
+                               .arg(id).arg(hierarchyfiles::kSelfChildBase).arg(hierarchyfiles::kSelfChildBase - 1);
+        delete childData; childData = nullptr;
+        return false;
+    }
+    childData->setFreshIdFloor(hierarchyfiles::kFreeChildBase);
+    {
+        // A .clc written before 2026-11-21 numbers its atoms like parents.  Bring it to the
+        // numbering above; the labels are restored, not edited, so nothing lands on the
+        // undo stack, and the session is marked changed so that Save writes the new
+        // .clc and .clp over the old pair.
+        const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+        const QVector<dataType> childByRow = childData->labelByFeatureRow();
+        if (cluByRow.size() == childByRow.size() && childByRow.size() > 1) {
+            const std::vector<int> parentIds(cluByRow.constBegin() + 1, cluByRow.constEnd());
+            const std::vector<int> childIds(childByRow.constBegin() + 1, childByRow.constEnd());
+            const hierarchyfiles::ChildIdUpgrade upgrade = hierarchyfiles::upgradeChildIds(parentIds, childIds);
+            if (upgrade.needed) {
+                QVector<dataType> labels = childByRow;
+                for (std::size_t i = 0; i < upgrade.ids.size(); ++i)
+                    labels[static_cast<int>(i) + 1] = static_cast<dataType>(upgrade.ids[i]);
+                childData->restoreClusterLabels(labels);
+                childIdsUpgraded = static_cast<int>(upgrade.oldToNew.size());
+                modified = true;
+                qInfo().noquote() << QStringLiteral("[hierarchy] %1 was in the old child numbering: %2 children renumbered "
+                                                    "(a parent's own child to parent + %3, the others from %4); Save writes it.")
+                                         .arg(QFileInfo(clcSiblingPath).fileName()).arg(childIdsUpgraded)
+                                         .arg(hierarchyfiles::kSelfChildBase).arg(hierarchyfiles::kFreeChildBase);
+            }
+        }
+    }
     childColorList = new ItemColors();
     const QList<dataType> kids = childData->clusterIds();
     for (dataType id : kids){
@@ -298,6 +342,19 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
         childColorList->append(static_cast<int>(id), color);
     }
     buildHierarchyMaps();
+    {
+        // The names, as every edit leaves them: a parent's only child is its self child.
+        // A file written by another tool, or upgraded just above, need not say so yet.
+        QMap<int, int> renamed;
+        if (normaliseChildIds(&renamed)) {
+            childIdsUpgraded = qMax(childIdsUpgraded, static_cast<int>(renamed.size()));
+            modified = true;
+            syncChildColors();
+            rebuildHierarchyFromData();
+            qInfo().noquote() << QStringLiteral("[hierarchy] %1 children renamed to the numbering (a parent's only child is parent + %2); Save writes it.")
+                                     .arg(renamed.size()).arg(hierarchyfiles::kSelfChildBase);
+        }
+    }
     return true;
 }
 
@@ -873,9 +930,144 @@ bool KlustersDoc::validateHierarchyMaps(const char* where) const {
 }
 
 
+// ---------------------------------------------------------------------------
+// normaliseChildIds  --  the atoms' NAMES brought to the numbering
+//
+// The numbering (hierarchyfiles.h) keeps 10002 .. 19999 for self children:
+// parent p's is p + 10000.  Edits leave atoms whose name no longer says that:
+//   - a parent is renumbered, sorted or merged into another: its self child
+//     still carries the old parent's number;
+//   - a split moves a parent's whole self child onto a new parent;
+//   - a parent is left with one atom of the free block (its children were
+//     merged back into one).
+// This renames, in ONE simultaneous map (the layer is relabelled row by row, so
+// chains and swaps are fine as long as the result is one-to-one):
+//   1. per real parent p, the atom that becomes p's self child: the one already
+//      named so; else the lowest misnamed atom of the block under p; else p's
+//      only atom;
+//   2. every other atom with an id below 20000 that is not its parent's self
+//      child takes a fresh id of the free block.
+// Atoms that straddle parents keep their name (collapseToSelfChildren re-cuts
+// them first), as do atoms of the free block that are one of several, the
+// bins' own atoms 0 and 1, and reserved ids.  Membership never changes.
+//
+// NOT AN EDIT.  The labels are restored (Data::restoreClusterLabels), not
+// edited: nothing lands on the atom layer's undo stack, so the stack stays one
+// level per ChildEdit.  Undoing the edit that made a name stale restores the
+// table that edit started from, names included; a redo brings the stale name
+// back, and undoChildEdit / redoChildEdit run this again.
+//
+// The ids held outside the Data -- the joint palette's atoms, the scope's sort
+// order, the visible scope, the colours -- follow the same map.  Emits nothing
+// and does not re-derive the parent<-atom maps: the callers do, once.
+// ---------------------------------------------------------------------------
+bool KlustersDoc::normaliseChildIds(QMap<int, int>* renamed)
+{
+    if (renamed) renamed->clear();
+    if (!childData || !clusteringData) return false;
+    const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
+    const QVector<dataType> childByRow = childData->labelByFeatureRow();
+    const int n = qMin(cluByRow.size(), childByRow.size());
+
+    QMap<int, int>        parentOf;          // atom -> its parent (-1: straddles)
+    QMap<int, QList<int>> atomsOf;           // parent -> its atoms, ascending
+    for (int r = 1; r < n; ++r) {
+        const int a = static_cast<int>(childByRow[r]);
+        const int F = static_cast<int>(cluByRow[r]);
+        const auto it = parentOf.find(a);
+        if (it == parentOf.end()) parentOf.insert(a, F);
+        else if (it.value() != F) it.value() = -1;
+    }
+    for (auto it = parentOf.constBegin(); it != parentOf.constEnd(); ++it)
+        if (it.value() >= 0) atomsOf[it.value()].append(it.key());
+
+    const auto renamable = [](int a) { return a > 1 && !isReservedClusterId(static_cast<dataType>(a)); };
+    const auto misnamed  = [&](int a, int F) {          // an id below the free block that is not F's self child
+        return renamable(a) && a < hierarchyfiles::kFreeChildBase && a != static_cast<int>(hierarchyfiles::selfChildOf(F));
+    };
+
+    QMap<int, int> rename;                    // atom -> new id
+    QSet<int>      selfTaken;                 // self ids that stay or are handed out
+    // 1. who is each parent's self child
+    for (auto it = atomsOf.constBegin(); it != atomsOf.constEnd(); ++it) {
+        const int F = it.key();
+        if (!hierarchyfiles::hasOffsetSelfChild(F)) continue;
+        const int self = static_cast<int>(hierarchyfiles::selfChildOf(F));
+        const QList<int>& atoms = it.value();
+        if (atoms.contains(self)) { selfTaken.insert(self); continue; }
+        // the id must be free once the map is applied: not held, or held by an atom that is renamed away
+        const auto holder = parentOf.constFind(self);
+        if (holder != parentOf.constEnd() && holder.value() < 0) continue;       // held by a straddler
+        int chosen = -1;
+        for (const int a : atoms)
+            if (misnamed(a, F)) { chosen = a; break; }                           // ascending: the lowest
+        if (chosen < 0 && atoms.size() == 1 && renamable(atoms.first())) chosen = atoms.first();
+        if (chosen < 0) continue;
+        rename.insert(chosen, self);
+        selfTaken.insert(self);
+    }
+    // 2. every other misnamed atom leaves the blocks it has no claim to
+    int next = static_cast<int>(childData->highestIdForAllocation());
+    for (auto it = parentOf.constBegin(); it != parentOf.constEnd(); ++it) {
+        const int a = it.key(), F = it.value();
+        if (F < 0 || rename.contains(a) || !misnamed(a, F)) continue;
+        rename.insert(a, ++next);
+    }
+    if (rename.isEmpty()) return false;
+
+    // One-to-one, and onto ids no atom that stays put holds: otherwise two atoms would be fused.
+    QSet<int> targets;
+    for (auto it = rename.constBegin(); it != rename.constEnd(); ++it) {
+        const bool heldByStayer = parentOf.contains(it.value()) && !rename.contains(it.value());
+        if (targets.contains(it.value()) || heldByStayer) {
+            qWarning() << "[hierarchy] normaliseChildIds: the rename of child" << it.key() << "to" << it.value()
+                       << "would meet another child; nothing was renamed.";
+            return false;
+        }
+        targets.insert(it.value());
+    }
+    QVector<dataType> labels = childByRow;
+    for (int r = 1; r < labels.size(); ++r) {
+        const auto it = rename.constFind(static_cast<int>(labels[r]));
+        if (it != rename.constEnd()) labels[r] = static_cast<dataType>(it.value());
+    }
+    childData->restoreClusterLabels(labels);
+    if (renamed) *renamed = rename;
+
+    const auto follow = [&rename](int id) { return rename.value(id, id); };
+    if (childPrimaryOn) {                     // the stored child->parent map is keyed by atom id
+        QMap<int, int> rekeyed;
+        for (auto it = shadowChildToParent.constBegin(); it != shadowChildToParent.constEnd(); ++it)
+            rekeyed.insert(follow(it.key()), it.value());
+        shadowChildToParent = rekeyed;
+    }
+    for (int& c : jointChildren)  c = follow(c);
+    for (int& c : scopeSortOrder) c = follow(c);
+    QSet<int> visible;
+    for (const int c : std::as_const(childScopeVisible)) visible.insert(follow(c));
+    childScopeVisible = visible;
+    if (childColorList) {
+        // Colours follow their atom.  A swap needs every id moved before any lands, so the
+        // colours are read first and written under the new ids after.
+        QMap<int, QColor> moved;
+        for (auto it = rename.constBegin(); it != rename.constEnd(); ++it) {
+            if (!childColorList->contains(it.key())) continue;
+            moved.insert(it.value(), childColorList->color(it.key()));      // by item id
+            childColorList->remove(it.key());
+        }
+        for (auto it = moved.constBegin(); it != moved.constEnd(); ++it) {
+            if (childColorList->contains(it.key())) childColorList->remove(it.key());
+            childColorList->append(it.key(), it.value());
+        }
+        childColorList->sortByItemId();
+    }
+    return true;
+}
+
 void KlustersDoc::collapseToSelfChildren(){
     // The single hierarchy invariant: every parent is covered by its child atom(s), and a parent
-    // with one child IS that child (the "self child", atom id == parent id -- the identity the
+    // with one child IS that child (the "self child", numbered parent + 10000 -- hierarchyfiles.h;
+    // the bins' own atoms keep 0 and 1 -- the identity the
     // .clc==.clu lift establishes).  Any flat-layer edit -- a parent recluster, an artifact
     // recluster, a manual split, or a child recluster whose new atoms span parents -- leaves
     // "loose" spikes: in a parent (real OR reserve) but covered only by an atom belonging to a
@@ -896,6 +1088,7 @@ void KlustersDoc::collapseToSelfChildren(){
     // sides, so the source parent lost the child.  Keeping the straddler whole on its
     // home parent -- and collapsing only the clipped-off remainder into the new
     // parent's self child -- preserves the sub-cluster where it still mostly lives.
+    const auto selfOf = [](int parent) { return static_cast<int>(hierarchyfiles::selfChildOf(parent)); };
     QHash<int, QHash<int,int>> childParentCount;               // real atom -> parent -> spike count
     for (int r = 1; r < n; ++r){
         const int a = static_cast<int>(childByRow[r]);
@@ -911,7 +1104,8 @@ void KlustersDoc::collapseToSelfChildren(){
         // A self child (atom id == a parent id) stays on its own parent; any other atom
         // stays on the parent holding the plurality of its spikes (ties -> lower parent
         // id == the pre-existing source, not the freshly minted split-off parent).
-        if (perParent.contains(a)){ homeParent[a] = a; continue; }
+        const int own = static_cast<int>(hierarchyfiles::fiberOfSelfChild(a));
+        if (own >= 0 && perParent.contains(own)){ homeParent[a] = own; continue; }
         int best = -1, bestN = -1;
         for (auto f = perParent.constBegin(); f != perParent.constEnd(); ++f)
             if (f.value() > bestN || (f.value() == bestN && f.key() < best)){ bestN = f.value(); best = f.key(); }
@@ -969,7 +1163,7 @@ void KlustersDoc::collapseToSelfChildren(){
     for (int r = 1; r < n; ++r){
         const int F = static_cast<int>(cluByRow[r]);
         const int a = static_cast<int>(childByRow[r]);
-        if ((a > 1 && intact.contains(a)) || a == F
+        if ((a > 1 && intact.contains(a)) || a == selfOf(F)
                 || (a > 1 && homeParent.value(a, -1) == F))
             keptAtom.insert(a);
         else if (F > 1)
@@ -1017,6 +1211,8 @@ void KlustersDoc::collapseToSelfChildren(){
     // artifact and noise self children, membership inside them is not curated
     // structure, and fragmenting noise per source atom would scatter it across
     // ever more ids for no gain.
+    // ... and never below the block of ids kept for atoms that are not self children.
+    nextFreeAtom = qMax(nextFreeAtom, hierarchyfiles::kFreeChildBase - 1);
     QHash<int, QHash<int,int>> splitTarget;
     auto targetFor = [&](int a, int F) -> int {
         if (F <= 1) return F;
@@ -1024,7 +1220,8 @@ void KlustersDoc::collapseToSelfChildren(){
         const auto cached = perSource.constFind(a);
         if (cached != perSource.constEnd()) return cached.value();
         const bool soleSource = (looseSources.value(F).size() == 1);
-        const int t = (soleSource && !keptAtom.contains(F)) ? F : ++nextFreeAtom;
+        const int self = selfOf(F);
+        const int t = (soleSource && !keptAtom.contains(self)) ? self : ++nextFreeAtom;
         perSource.insert(a, t);
         return t;
     };
@@ -1065,7 +1262,7 @@ void KlustersDoc::collapseToSelfChildren(){
             const int F = static_cast<int>(cluByRow[r]);
             const int a = static_cast<int>(source[r]);
             if (a > 1 && intact.contains(a)) continue;           // deliberate sub-cluster, preserved
-            if (a == F) continue;                                // already its own self child
+            if (a == selfOf(F)) continue;                        // already its own self child
             if (a > 1 && homeParent.value(a, -1) == F) continue;  // straddler whole on its home parent
             const int t = targetFor(a, F);                       // this source's share of the cut
             if (t != a){ out[r] = static_cast<dataType>(t); any = true; }
@@ -1099,48 +1296,13 @@ void KlustersDoc::collapseToSelfChildren(){
     // parent, so the source parent's sole remaining atom is a deliberate sub-cluster
     // while the new parent's sole atom still carries the source parent's id.  The maps
     // stay correct (a child's parent is derived from its spikes), but the convention
-    // "a parent with one child IS that child, atom id == parent id" breaks, and the
+    // "a parent with one child IS that child, atom id == parent + 10000" breaks, and the
     // stray id can later collide with a freshly minted parent.  Rename each such sole
     // child to its parent's id so the self-child identity holds again.  (A parent with
     // two or more atoms is genuine sub-structure and is left untouched.)
-    const QVector<dataType> childAfter = childData->labelByFeatureRow();
-    const int nA = qMin(cluByRow.size(), childAfter.size());
-    QHash<int, QSet<int>> parentChildren;                        // parent -> its covering atoms
-    QSet<int> existingAtoms;                                 // every atom id currently present
-    for (int r = 1; r < nA; ++r){
-        const int a = static_cast<int>(childAfter[r]);
-        if (a <= 0) continue;
-        existingAtoms.insert(a);
-        parentChildren[static_cast<int>(cluByRow[r])].insert(a);
-    }
-    QMap<int,int> renameToSelf;                              // sole non-self child -> parent (self) id
-    for (auto it = parentChildren.constBegin(); it != parentChildren.constEnd(); ++it){
-        const int F = it.key();
-        if (F <= 1 || it.value().size() != 1) continue;      // noise/artifact or genuine sub-structure
-        const int C = *it.value().constBegin();
-        if (C != F) renameToSelf.insert(C, F);
-    }
-    if (!renameToSelf.isEmpty()){
-        // renumberPartial buckets by NEW id, so a target still held by an atom that is
-        // NOT itself being renamed away would merge two atoms.  Keep only targets that
-        // are free or are themselves sources -- a plain split satisfies this for all of
-        // them (a source parent and its split-off both hand their sole atom back) -- and
-        // leave any rarer case with its naming oddity rather than corrupt the layer.
-        QMap<int,int> safe;
-        bool admitted = true;
-        while (admitted){
-            admitted = false;
-            for (auto it = renameToSelf.constBegin(); it != renameToSelf.constEnd(); ++it){
-                if (safe.contains(it.key())) continue;              // already admitted
-                if (!existingAtoms.contains(it.value())             // target free
-                        || safe.contains(it.value())){              // target vacated by an accepted rename
-                    safe.insert(it.key(), it.value());
-                    admitted = true;
-                }
-            }
-        }
-        if (!safe.isEmpty()) childData->renumberPartial(safe);
-    }
+    // The names: every parent's self child carries parent + 10000, and no other atom
+    // carries an id of that block (normaliseChildIds).
+    normaliseChildIds();
     if (changed) {
         beginGesture(QStringLiteral("collapseToSelfChildren"), {{ QStringLiteral("rows"), n }});
         endGesture();
@@ -1196,6 +1358,8 @@ int KlustersDoc::mergeParents(const QList<int>& parentsIn, KlustersView& activeV
 
     noteModifiedParent(kept);                              // merged parent needs realign
     setPendingParentSelection({kept});                    // land on the merged parent
+    normaliseChildIds();                                  // the folded parents' self children are no longer anyone's
+    syncChildColors();
     rebuildHierarchyFromData();
     emit hierarchyChanged();
     return kept;
@@ -1262,6 +1426,8 @@ int KlustersDoc::promoteChildren(const QList<int>& childrenIn, KlustersView& act
     }
     if (target < 0) { endGesture({{ QStringLiteral("outcome"), QStringLiteral("nothing moved") }}); return -1; }
     clusterPalette.updateClusterList();
+    normaliseChildIds();                    // a lone promoted child becomes the new parent's self child
+    syncChildColors();
     rebuildHierarchyFromData();
     setPendingParentSelection({target});   // the output is a FIBER; land there
     emit hierarchyChanged();
@@ -1835,7 +2001,14 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
 
     QList<int> grp = children;                         // groupClusters takes a non-const ref
     logChildBefore(CurationLogger::ActionType::HIERARCHY_EDIT, children);
-    const int newId = static_cast<int>(childData->groupClusters(grp));   // mutates childData, self-snapshots
+    int newId = static_cast<int>(childData->groupClusters(grp));         // mutates childData, self-snapshots
+    {
+        // A parent whose children were all merged is left with ONE child: it takes the
+        // parent's self-child id.  Settled here, before the log and the views hear of the
+        // new child, so that everything downstream names it once.
+        QMap<int, int> renamed;
+        if (normaliseChildIds(&renamed)) newId = renamed.value(newId, newId);
+    }
     if (curationLogger && curationLogger->isOpen() && logActionOpen)
         curationLogger->recordActionDetails({{ QStringLiteral("edit"), QStringLiteral("mergeChildren") },
                                              { QStringLiteral("parent"), parentId },
@@ -1943,8 +2116,9 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     QSet<int> collapsedParents;                    // parents that actually lost an atom
     for (int r = 1; r < childByRow.size(); ++r){
         const dataType F = cluByRow[r];
-        newLabels[r] = F;
-        if (childByRow[r] != F) collapsedParents.insert(static_cast<int>(F));
+        const dataType self = static_cast<dataType>(hierarchyfiles::selfChildOf(F));
+        newLabels[r] = self;
+        if (childByRow[r] != self) collapsedParents.insert(static_cast<int>(F));
     }
     if (collapsedParents.isEmpty()) return 0;      // already one self atom per parent
 
@@ -1989,6 +2163,7 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     childData->undo();                                 // reverts childData's tables
     childRedoStack.prepend(e);
     logChildUndoRedo(/*redo=*/false, e.added, e.modified, e.deleted);
+    normaliseChildIds();               // names are not on the undo stack (see normaliseChildIds)
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
     // with it is not recoverable from the ChildEdit -- it records id SETS, not the
@@ -2010,6 +2185,7 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     childData->redo();                                // re-applies the atom edit
     childUndoStack.prepend(e);
     logChildUndoRedo(/*redo=*/true, e.added, e.modified, e.deleted);
+    normaliseChildIds();               // the redone table carries the names it had before they were settled
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
     // with it is not recoverable from the ChildEdit -- it records id SETS, not the

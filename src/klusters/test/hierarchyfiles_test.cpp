@@ -60,12 +60,53 @@ int main()
     {
         const std::vector<int> clu = {0, 1, 4, 4, 2, 1, 4};
         const Promotion p = promoteFlat(clu);
-        check(p.clc == clu, "promotion: atom id = fiber id per spike");
+        check(p.clc == std::vector<int>({0, 1, 10004, 10004, 10002, 1, 10004}), "promotion: every fiber's one atom is its self child; the bins keep 0 and 1");
         check(p.clcCount == 4, "promotion: count header = distinct ids");
-        check(p.clp == std::vector<int32_t>({1, 2, 0, 4}), "promotion: identity map, unused id 3 unmapped");
+        check(p.clp.size() == 10004 && p.clp[0] == 1 && p.clp[10001] == 2 && p.clp[10003] == 4 && p.clp[10002] == 0 && p.clp[1] == 0,
+              "promotion: .clp entry c-1 holds the fiber of atom c, unused ids unmapped");
         const NestingScan s = scanNesting(clu, p.clc);
         check(s.ok && s.straddlers.empty(), "promoted pair is nested");
         check(clpFromMap(s.childToParent) == p.clp, "promoted .clp equals the map the pair implies");
+    }
+
+    // ---- the numbering of atoms ----
+    {
+        check(selfChildOf(0) == 0 && selfChildOf(1) == 1, "the bins are their own self child");
+        check(selfChildOf(2) == 10002 && selfChildOf(153) == 10153 && selfChildOf(9999) == 19999, "fiber p -> atom p + 10000");
+        check(selfChildOf(kReservedClusterLo) == kReservedClusterLo, "a reserved chunk cluster is its own");
+        check(isSelfChildId(10002) && isSelfChildId(19999) && !isSelfChildId(10001) && !isSelfChildId(20000) && !isSelfChildId(153),
+              "the self-child block is 10002 .. 19999");
+        check(fiberOfSelfChild(10153) == 153 && fiberOfSelfChild(1) == 1 && fiberOfSelfChild(0) == 0
+              && fiberOfSelfChild(20000) == -1 && fiberOfSelfChild(153) == -1 && fiberOfSelfChild(kReservedClusterLo) == kReservedClusterLo,
+              "the fiber an atom is the self child of, by id");
+        check(fiberIdFits(0) && fiberIdFits(9999) && !fiberIdFits(10000) && fiberIdFits(kReservedClusterLo), "fibers are 0 .. 9999 and the reserved ids");
+        bool roundTrip = true;
+        for (int p2 = 0; p2 < kSelfChildBase; ++p2) roundTrip = roundTrip && fiberOfSelfChild(selfChildOf(p2)) == p2;
+        check(roundTrip, "fiberOfSelfChild undoes selfChildOf for every fiber");
+    }
+
+    // ---- upgradeChildIds: a .clc in the old numbering ----
+    {
+        //                               fiber: 0  1  4      4      4      2      2   7   7
+        const std::vector<int> parent      = {0, 1, 4,     4,     4,     2,     2,  7,  7};
+        const std::vector<int> oldChild    = {0, 1, 4,     9,     9,     2,     2,  3, 12};   // 4, 2: self; 9 under 4; 3, 12 under 7
+        const ChildIdUpgrade u = upgradeChildIds(parent, oldChild);
+        check(u.needed, "ids below 10000 mark the old numbering");
+        check(u.ids == std::vector<int>({0, 1, 10004, 20001, 20001, 10002, 10002, 20000, 20002}),
+              "self children move to fiber + 10000, the others to 20000.. in ascending old id; the bins stay");
+        check(u.oldToNew == std::map<int, int>({{2, 10002}, {3, 20000}, {4, 10004}, {9, 20001}, {12, 20002}}), "the map of every atom that changed");
+        const NestingScan s = scanNesting(parent, u.ids);
+        check(s.ok && s.straddlers.empty() && s.childToParent.at(20001) == 4 && s.childToParent.at(10002) == 2, "the upgraded pair nests as the old one did");
+        const ChildIdUpgrade again = upgradeChildIds(parent, u.ids);
+        check(!again.needed && again.ids.empty(), "a file in the new numbering is left alone");
+        // an old atom numbered like a fiber it does not sit under is not a self child
+        const ChildIdUpgrade other = upgradeChildIds({2, 2, 5}, {5, 5, 8});
+        check(other.needed && other.ids == std::vector<int>({20000, 20000, 20001}), "atom 5 under fiber 2 is not fiber 5's self child");
+        // reserved ids keep their number; a high old id is renumbered with the rest
+        const int rsv = static_cast<int>(kReservedClusterLo);
+        const ChildIdUpgrade high = upgradeChildIds({3, rsv, 3}, {3, rsv, 15000});
+        check(high.needed && high.ids == std::vector<int>({10003, rsv, 20000}), "reserved ids stay, an old id above 10000 is renumbered");
+        check(!upgradeChildIds({1, 2}, {1}).needed, "arrays of different length: nothing is done");
     }
 
     // ---- siblingPath ----

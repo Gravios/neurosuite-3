@@ -19,8 +19,14 @@ Readers check the length against the group's spike count and refuse a mismatch.
 Klusters reads it with `neurofileio::readCluBinary`, so the binary form is
 required.
 
-- Atom ids are **global** within the group (`1 … nAtoms`), not numbered per
-  fiber.
+- Atom ids are **global** within the group, not numbered per fiber, and since
+  2026-11-21 **disjoint from the fiber ids**: `0` and `1` are the bins' own
+  atoms, fiber *p*'s self child (its only atom, or the one holding what no
+  other atom covers) is *p* + 10000, and every other atom is 20000 or above
+  ([Klusters: how atoms are numbered](../../klusters/hierarchical-clustering.md#how-atoms-are-numbered)).
+  A file in the older numbering (atoms `1 … nAtoms`, an only atom carrying its
+  fiber's id) is still read: Klusters renumbers it on load and writes the new
+  numbering on Save.
 - `0` = noise, as in `.clu`.
 - The header is the number of distinct atom ids, as for [`.clu`](clu.md#layout).
   Klusters reads the atom layer with the `.clu` loader, so it refuses a `.clc`
@@ -48,7 +54,7 @@ atoms.
 ## Writers and readers
 
 - **Written** by fiber-kit's over-split stage; by Klusters' **Promote to
-  Hierarchical Session** (one atom per unit, atom id = unit id) for a flat
+  Hierarchical Session** (one atom per unit, atom id = unit id + 10000) for a flat
   `.clu`; rewritten by Klusters on Save (with a `.bak` copy) when the atom
   layer is loaded, and written under the new name on Save As.
   `process_spikefilter.py` and the other row-dropping steps keep it aligned with

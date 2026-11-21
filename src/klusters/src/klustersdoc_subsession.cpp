@@ -226,7 +226,7 @@ int KlustersDoc::integrateReclusteredChildren(const QString& clcPath, QString* e
     // the .clu path treats KlustaKwik's noise cluster).
     QVector<dataType> labels = childData->labelByFeatureRow();
     QMap<int32_t, dataType> remap;
-    dataType next = childData->highestClusterId();
+    dataType next = childData->highestIdForAllocation();
     for (int i = 0; i < ids.size(); ++i) {
         const dataType r = reclusterSubsessionRows[i];
         if (r < 1 || r >= labels.size()) continue;

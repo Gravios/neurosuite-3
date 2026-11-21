@@ -1254,7 +1254,7 @@ void KlustersApp::createMenus()
     mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
     mMergeAllChildren = hierarchyMenu->addAction(tr("&Flatten Hierarchy to Flat Clustering"));
     mMergeAllChildren->setToolTip(tr("Walk every parent and merge its child atoms into one self child\n"
-                                     "(atom id == parent id), so the atom layer becomes a copy of the\n"
+                                     "(numbered parent + 10000), so the atom layer becomes a copy of the\n"
                                      "parent layer.  Discards all sub-mode structure -- undo with\n"
                                      "Ctrl+Shift+Z."));
     mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));

@@ -113,14 +113,14 @@ def run_children(klusters):
     with tempfile.TemporaryDirectory() as d:
         base, _ = S.make_session(d, "rat")
         res, clu, follower = retime(base, 3)
-        with open(f"{base}.clc.standard.1", "wb") as fh:      # child c = parent c
+        with open(f"{base}.clc.standard.1", "wb") as fh:      # child c = parent c: the OLD numbering, upgraded on load
             np.array([len(np.unique(clu))], np.int32).tofile(fh)
             clu.astype(np.int32).tofile(fh)
         clp = np.array([0, 2, 3], np.int32)                   # entry c-1 = the parent of child c
         with open(f"{base}.clp.standard.1", "wb") as fh:
             np.array([clp.size], np.int32).tofile(fh)
             clp.tofile(fh)
-        steps = [{"burstFollowers": [2, 3], "children": True}, {"save": True}]
+        steps = [{"burstFollowers": [10002, 10003], "children": True}, {"save": True}]
         rep = R.run(klusters, f"{base}.clu.standard.1", steps, d)
         check(rep.get("code") == 0 and rep["rc"] == 0,
               f"the self-test ran every step (code {rep.get('code')}, rc {rep['rc']})", rep.get("stderr", ""))
@@ -195,6 +195,8 @@ def main():
             check(saved_clp[ids[0] - 1] == 3, f"the saved .clp gives it parent 3 (got {saved_clp[ids[0] - 1]})")
         check(np.unique(saved_clc[clu == 2]).size == 1 and np.unique(saved_clc[(clu == 3) & ~follower]).size == 1,
               "the reference child and the rest of the source child are each still one child")
+        check(np.all(saved_clc[clu == 2] == 10002) and np.all(saved_clc[(clu == 3) & ~follower] == 10003) and ids.size == 1 and ids[0] >= 20000,
+              f"the saved .clc is in the disjoint numbering: self children 10002 and 10003, the new child {ids[:1]} in the free block")
 
     print(f"test_burst_followers: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

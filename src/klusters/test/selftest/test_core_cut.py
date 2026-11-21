@@ -56,7 +56,7 @@ def run_case(klusters, ids, children=False, onset=None):
         base, _ = S.make_session(d, "rat")
         clu, foreign = relabel(base)
         if children:
-            with open(f"{base}.clc.standard.1", "wb") as fh:      # child c = parent c
+            with open(f"{base}.clc.standard.1", "wb") as fh:      # child c = parent c: the OLD numbering, upgraded on load
                 np.array([len(np.unique(clu))], np.int32).tofile(fh)
                 clu.astype(np.int32).tofile(fh)
             clp = np.array([0, 2, 3], np.int32)                   # entry c-1 = the parent of child c
@@ -127,8 +127,8 @@ def main():
     check(stay >= 0.75 * (clu == 3).sum(), f"at least three quarters of it stays ({int(stay)} of {int((clu == 3).sum())})")
     check(np.array_equal(saved[clu == 2], clu[clu == 2]), "cluster 2 is untouched")
 
-    print("-- children: child 2 (parent 2) holds unit A and the 100 foreign spikes")
-    out, clu, foreign, saved_clu, saved_clc, saved_clp = run_case(klusters, [2], children=True)
+    print("-- children: child 10002 (the self child of parent 2) holds unit A and the 100 foreign spikes")
+    out, clu, foreign, saved_clu, saved_clc, saved_clp = run_case(klusters, [10002], children=True)
     created = out.get("created", [])
     check(len(created) == 1 and created[0] > 0, f"one new child (got {created})")
     if len(created) == 1 and created[0] > 0:
@@ -144,7 +144,8 @@ def main():
         check((gone & own).sum() <= 0.25 * own.sum(), f"and few of the unit's own ({int((gone & own).sum())} of {int(own.sum())})")
         if 1 <= child <= saved_clp.size:
             check(saved_clp[child - 1] == 2, f"the saved .clp gives it parent 2 (got {saved_clp[child - 1]})")
-        check(np.unique(saved_clc[clu == 3]).size == 1, "child 3 is still one child")
+        check(np.all(saved_clc[clu == 3] == 10003), "parent 3's child is its self child, 10003, in the saved .clc")
+        check(child >= 20000 and np.all(saved_clc[own & ~gone] == 10002), f"the new child ({child}) is in the free block and the core is still 10002")
 
     print(f"test_core_cut: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

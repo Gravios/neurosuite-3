@@ -33,6 +33,15 @@
  *                                        showing ("scrollToEnd": scrolled to its end first), with
  *                                        the height the page is drawn at and where its last
  *                                        group's bottom edge falls
+ *        {"hierarchy": {...}}            the child layer (loaded if it is not): one edit, then
+ *                                        every child's parent and size.  "mergeParents": [..],
+ *                                        "mergeChildren": [..], "promoteChildren": [..],
+ *                                        "flatten": true, "renumber": true (parents made
+ *                                        consecutive), "toEnd": [parents] (the palette's T),
+ *                                        "order": [parents] (a sort), "undo": true (the parent
+ *                                        layer), "undoChild" / "redoChild": true; none: only
+ *                                        the report.  "upgraded": children the load renumbered
+ *                                        from the old numbering
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
@@ -520,6 +529,44 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             dialog.hide();
         }
         if (step.value(QStringLiteral("apply")).toBool()) dialog.updateConfiguration();
+        return true;
+    }
+    if (step.contains(QStringLiteral("hierarchy"))) {
+        const QJsonObject o = step.value(QStringLiteral("hierarchy")).toObject();
+        QString err;
+        if (!doc->loadChildClustering(err)) {
+            result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err);
+            return false;
+        }
+        const auto ids = [&o](const char* key) {
+            QList<int> out;
+            const QJsonArray a = o.value(QLatin1String(key)).toArray();
+            for (const QJsonValue& v : a) out << v.toInt();
+            return out;
+        };
+        KlustersView* view = activeView();
+        if (!view) { result.insert(QStringLiteral("error"), QStringLiteral("no active view")); return false; }
+        if (o.contains(QStringLiteral("mergeParents")))    result.insert(QStringLiteral("returned"), doc->mergeParents(ids("mergeParents"), *view));
+        if (o.contains(QStringLiteral("mergeChildren")))   result.insert(QStringLiteral("returned"), doc->mergeChildren(ids("mergeChildren"), *view));
+        if (o.contains(QStringLiteral("promoteChildren"))) result.insert(QStringLiteral("returned"), doc->promoteChildren(ids("promoteChildren"), *view));
+        if (o.value(QStringLiteral("flatten")).toBool())   result.insert(QStringLiteral("returned"), doc->flattenHierarchyToClu(*view));
+        if (o.value(QStringLiteral("renumber")).toBool())  doc->renumberClusters();
+        if (o.contains(QStringLiteral("toEnd")))           doc->renumberClustersToEnd(ids("toEnd"));
+        if (o.contains(QStringLiteral("order")))           result.insert(QStringLiteral("returned"), doc->reorderClustersByPermutation(ids("order"), QStringLiteral("self-test")));
+        if (o.value(QStringLiteral("undo")).toBool())      doc->undo();
+        if (o.value(QStringLiteral("undoChild")).toBool()) result.insert(QStringLiteral("returned"), doc->undoChildEditDispatch());
+        if (o.value(QStringLiteral("redoChild")).toBool()) result.insert(QStringLiteral("returned"), doc->redoChildEditDispatch());
+        QJsonObject parents, sizes, parentSizes;
+        for (dataType id : doc->childClusterData().clusterIds()) {
+            parents.insert(QString::number(id), doc->parentOfChild(static_cast<int>(id)));
+            sizes.insert(QString::number(id), static_cast<qint64>(doc->childClusterData().nbOfSpikes(id)));
+        }
+        for (dataType id : doc->parentData().clusterIds())
+            parentSizes.insert(QString::number(id), static_cast<qint64>(doc->parentData().nbOfSpikes(id)));
+        result.insert(QStringLiteral("childParents"), parents);
+        result.insert(QStringLiteral("childSizes"), sizes);
+        result.insert(QStringLiteral("parentSizes"), parentSizes);
+        result.insert(QStringLiteral("upgraded"), doc->childIdsUpgradedOnLoad());
         return true;
     }
     if (step.contains(QStringLiteral("coreCut"))) {

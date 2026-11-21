@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-21 | [Klusters: child ids are disjoint from parent ids — a parent's own child is parent + 10000, every other child 20000 and up](#2026-11-21--klusters-child-ids-are-disjoint-from-parent-ids--a-parents-own-child-is-parent--10000-every-other-child-20000-and-up) |
 | 2026-11-21 | [Klusters: Preferences pages scroll instead of being squeezed](#2026-11-21--klusters-preferences-pages-scroll-instead-of-being-squeezed) |
 | 2026-11-20 | [Klusters: the spike under the cursor is a preference — on or off, the ring's radius and line, the trace's width](#2026-11-20--klusters-the-spike-under-the-cursor-is-a-preference--on-or-off-the-rings-radius-and-line-the-traces-width) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes on Ctrl+Space, its knobs in Preferences ▸ Splitting](#2026-11-20--klusters-split-off-spurious-spikes-on-ctrlspace-its-knobs-in-preferences--splitting) |
@@ -222,6 +223,69 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-21 — Klusters: child ids are disjoint from parent ids — a parent's own child is parent + 10000, every other child 20000 and up
+
+<details>
+<summary>Details</summary>
+
+**Why.**  The two layers of a hierarchical session shared one set of numbers.  A parent's only
+child carried the parent's own id on purpose, and beyond that child 7 and parent 7 could be
+unrelated.  Any code that asked "does this id exist?" accepted an id from the wrong layer, and a
+child that shared a parent's number could make the child view fall back to the parent view.
+
+**The numbering** (`hierarchyfiles.h`):
+
+| Ids | |
+|---|---|
+| 0, 1 | the artefact and noise bins; each bin's one child carries the bin's id |
+| 2 … 9999 | parents only |
+| 10002 … 19999 | a parent's **self child**: parent + 10000 |
+| 20000 … | every other child, numbered upwards as made |
+
+- **Old files load.**  A `.clc` with any id in 2 … 9999 is in the old numbering.  On load a child
+  numbered like the parent it sits under becomes that parent's self child, a parent's only child
+  likewise, and the rest take 20000, 20001, … in ascending order of their old id.  No spike
+  changes child.  The session is marked changed; **Save overwrites the `.clc` and `.clp`** in the
+  new numbering (previous files kept as `.bak`).
+- **The names are kept true** by one pass, `KlustersDoc::normaliseChildIds`, run after the
+  re-cut that follows parent edits, after a parent is renumbered, sorted or moved to the end,
+  after parents or children are merged, after a child is promoted, after a child undo or redo,
+  and on load.  It renames only; it restores labels and puts nothing on the undo stack, so undo
+  stays one press per edit.
+- **Fresh children** come from `Data::setFreshIdFloor(20000)` on the child layer; every path that
+  numbers new clusters goes through `highestIdForAllocation()`.
+- **A parent id of 10000 or more** has no room: the child layer is not loaded and the message
+  says to renumber the clusters.  Reserved chunk clusters keep their own id for their one child.
+- **`.clp`** is indexed by child id as before, so it now has an entry for every id up to the
+  highest child (about 100 kB for 5,000 children).
+
+**Checked on a real session** (`jg05-20120312` group 8, a curated clustering: 815,728 spikes,
+318 parents, 5,092 children in the old numbering): loaded, saved, and compared with the files
+before.  The `.clu` is unchanged; old and new child ids map one to one; 148 parents with one
+child each have it at parent + 10000; the other 4,942 children are 20000 … 25084; no child id
+is a parent id; the `.clp` agrees with the document's map for every child.
+
+Tests: `klusters_test_hierarchyfiles` (the helpers and the upgrade); self-test
+`test_child_ids.py` (load, save and reopen; parents renumbered, sorted with a chain through an
+id in use, moved to the end; parents merged; children merged; a child promoted; Flatten; undo
+and redo of a child merge; a parent split with the child layer loaded), through a new
+`hierarchy` self-test step.  `test_burst_followers.py` and `test_core_cut.py` now load an
+old-numbering `.clc` and check the saved one; `test_residual_strip_children.py` uses the new ids.
+
+**Not done / not tested**
+- fiber-kit still writes the old numbering; its files load through the conversion.
+- A curation log written before this names children by their old ids; nothing translates it.
+- Not exercised: recluster of children, drop to noise/artefact, dissolve parent, the joint
+  palette and matrix scope across a rename, the `NS3_CHILD_PRIMARY` backend, and the GUI by hand.
+- The reported symptom (child view reverting to the parent view) was never reproduced here, so
+  it is not shown fixed; what is shown is that the two layers no longer share an id.
+- `test_recluster_klustakwik.py` failed one check in one run and passed in the next, on the same
+  build: `"1 chunks" not in log` meets "1 chunks affected", a per-cluster line of a three-chunk
+  run that the sorter prints only sometimes.  That session has no child layer, so this change is
+  not on its path.  The test is left as it is here.
+
+</details>
 
 ## 2026-11-21 — Klusters: Preferences pages scroll instead of being squeezed
 

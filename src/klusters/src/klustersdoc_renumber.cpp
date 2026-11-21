@@ -219,7 +219,11 @@ void KlustersDoc::renumberClusters(){
     // would re-enter it (see scheduleAutoPostClusterEdit, which deliberately hooks
     // only renumber()).  The child palette refreshes on the post-edit parent
     // selection (applyPendingParentSelection) or the next user selection.
-    if (childData) rebuildHierarchyFromData();
+    // The self children are named after their parent (parent + 10000): they follow.
+    if (childData) {
+        normaliseChildIds();
+        rebuildHierarchyFromData();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -370,6 +374,7 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     // renumberClusters, this path is a direct user action (not the deferred post-edit
     // flow), so emitting hierarchyChanged here cannot re-enter that flow.
     if (childData) {
+        normaliseChildIds();              // a renamed parent's self child takes the new parent + 10000
         rebuildHierarchyFromData();
         emit hierarchyChanged();
     }

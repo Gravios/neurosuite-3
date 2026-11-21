@@ -795,8 +795,24 @@ public:
      *  tail, never filling interior gaps.  Used by every create-cluster
      *  path so the palette ordering is predictable. */
     dataType nextFreeClusterId() const {
-        return highestClusterId() + 1;
+        return highestIdForAllocation() + 1;
     }
+
+    /** The id new clusters are numbered above: highestClusterId(), or the id
+     *  just below the layer's floor for fresh ids when that is higher.  Every
+     *  path that makes ids of its own (rather than through nextFreeClusterId)
+     *  starts from this. */
+    dataType highestIdForAllocation() const {
+        const dataType top = highestClusterId();
+        return (freshIdFloor > 0 && top < freshIdFloor - 1) ? freshIdFloor - 1 : top;
+    }
+
+    /** The lowest id a newly made cluster of this layer may take (0: none).
+     *  The atom layer of a hierarchical session sets it, so that fresh atoms
+     *  are numbered above the block of ids kept for self children (see
+     *  hierarchyfiles.h).  It has no effect on ids already present. */
+    void setFreshIdFloor(dataType floor) { freshIdFloor = floor; }
+    dataType getFreshIdFloor() const { return freshIdFloor; }
 
     /** Whether this layer protects the reserved chunk clusters (default: yes).
      *  A protected layer refuses an edit that adds a spike to a reserved cluster
@@ -1440,6 +1456,7 @@ private:
 
     /** See setProtectsReservedClusters. */
     bool protectsReserved = true;
+    dataType freshIdFloor = 0;        ///< see setFreshIdFloor
 
     /** Native-width implementation of createMedianWaveformResidualFeatureFile.
      *  T is the acquisition sample type (int16 for two-byte recordings,

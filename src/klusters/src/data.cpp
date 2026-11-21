@@ -2783,7 +2783,7 @@ QMap<int,int> Data::createNewClusters(const SpikeSelection& selection, const QLi
     //Set the new cluster number to the biggest existing number plus nbMaxNewClusters.
     //The number will be decremented before being used, and the number will be corrected at the end once the
     //number of really created clusters will be known (the biggest clusterId is store at the bottom of spikesByClusterTemp).
-    dataType newClusterId = highestClusterId() + nbMaxNewClusters;
+    dataType newClusterId = highestIdForAllocation() + nbMaxNewClusters;
 
     //Create the variables to store the number of spikes and the position of the first spike
     //for each cluster contributing to a new cluster. This will be used to sort the new clusters.
@@ -3037,7 +3037,7 @@ bool Data::integrateBasinLabeling(QList<int>& clustersToRecluster,
 
     // 2. Rewrite column 2 with `basin + highestId`, mirroring
     //    loadReclusteredClusters' offsetting of KlustaKwik output.
-    const dataType highestId = highestClusterId();
+    const dataType highestId = highestIdForAllocation();
     for (dataType i = 1; i <= reclusteringNbSpikes; ++i) {
         const dataType row = reclusteringSpikesByCluster(1, i);
         const auto it      = featureRowToBasin.find(row);
@@ -3352,7 +3352,7 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
     }
 
     // ── Allocate new cluster IDs ────────────────────────────────────────
-    int nextId = static_cast<int>(highestClusterId()) + 1;
+    int nextId = static_cast<int>(highestIdForAllocation()) + 1;
     // Real-reference labels first (ascending refId), residual (-1) last
     QList<int> labelsInOrder;
     for (auto it = partitions.constBegin(); it != partitions.constEnd(); ++it)
@@ -7210,7 +7210,7 @@ bool Data::loadReclusteredClusters(QFile &clusterFile){
     // We offset each ID by highestClusterId so new clusters don't collide
     // with existing ones.
 
-    dataType highestId = highestClusterId();
+    dataType highestId = highestIdForAllocation();
     const dataType maxK = reclusteringSpikesByCluster.nbOfColumns();
 
     NS3_DIAG() << "loadReclusteredClusters: expecting" << maxK

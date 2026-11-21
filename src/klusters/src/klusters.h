@@ -393,7 +393,7 @@ private Q_SLOTS:
     void slotDropChildToNoise();
     void slotMergeChildren();
     /** Hierarchy > Flatten Hierarchy: collapse .clc to .clu -- every parent becomes a single
-     *  self atom (atom id == parent id).  Confirms first -- it discards the whole
+     *  self atom (atom id == parent id + 10000).  Confirms first -- it discards the whole
      *  sub-mode layer. */
     void slotFlattenHierarchyToClu();
     void slotUndoChildEdit();

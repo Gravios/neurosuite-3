@@ -695,10 +695,12 @@ public:
     /**Layer trace, enabled by setting NS3_TRACE_SCOPE in the environment.
      *
      * Exists to settle one question: does an id from the CHILD layer ever reach
-     * a parent-layer code path?  With the two numberings overlapping -- atom 7
-     * and parent 7 are unrelated units that happen to share a number, and the
-     * self-child identity makes the overlap deliberate -- a wrong-layer id is
-     * accepted silently by any test that only asks "does this exist?".  Every
+     * a parent-layer code path?  The two numberings used to overlap -- atom 7
+     * and parent 7 were unrelated units sharing a number, and a parent's only
+     * atom carried the parent's id on purpose -- so a wrong-layer id was accepted
+     * silently by any test that only asks "does this exist?".  Since 2026-11-21
+     * the numberings are disjoint outside the bins (hierarchyfiles.h): PC can
+     * now only be 0 or 1, or a reserved chunk id.  Every
      * line tags each id with where it actually lives: P = a parent only,
      * C = an atom only, PC = BOTH (the case that hides the mistake), - = neither.
      *
@@ -898,7 +900,7 @@ public:
   * @return those parents.*/
     QList<int> breakUpParents(const QList<BreakUpMove>& plan, KlustersView& activeView);
     /** Session-wide flatten: merge every parent's atoms into a single self child
-     *  (atom id == parent id), applied to all parents including the reserve bins so
+     *  (hierarchyfiles::selfChildOf: parent + 10000; a bin's own id), applied to all parents including the reserve bins so
      *  the resulting .clc is exactly .clu and no atom can span two parents.
      *  Destructive -- it discards deliberate sub-structure, unlike the repair-only
      *  collapseToSelfChildren().  Costs one Data undo level plus one ChildEdit, so
@@ -986,11 +988,21 @@ public:
      *  refiberizes.  Independent of the parent and atom undo stacks. */
     void repairNesting();
     /** Shared core of repairNesting: collapse "loose" spikes (in a real parent but covered only
-     *  by a reserve or straddling atom) into their parent's self child (atom id == parent id),
+     *  by a reserve or straddling atom) into their parent's self child (hierarchyfiles::selfChildOf: parent + 10000),
      *  preserving intact sub-structure, then rebuild child->parent and emit hierarchyChanged.
      *  Does NOT touch the atom undo stack, so edit paths that record their own ChildEdit
      *  (e.g. a child recluster) call this directly; repairNesting wraps it with the undo reset. */
     void collapseToSelfChildren();
+    /** Brings the atoms' names to the numbering of hierarchyfiles.h: every real
+     *  parent's self child carries parent + 10000, and no other atom keeps an id
+     *  below 20000.  Renames only -- no spike changes atom -- and carries the
+     *  ids held outside the atom layer (joint palette, scope order, colours)
+     *  along.  Not an edit: nothing lands on the atom layer's undo stack.
+     *  Returns whether anything was renamed (the map in @p renamed, old -> new);
+     *  the caller re-derives the parent<-atom maps. */
+    bool normaliseChildIds(QMap<int, int>* renamed = nullptr);
+    /** How many children the load renumbered from the old numbering (0: none). */
+    int childIdsUpgradedOnLoad() const { return childIdsUpgraded; }
     /** Stages an id file (.clu/.clc/.clp) for the commit unless @p path already
      *  holds @p ids (SaveThread).  Appends @p path to @p targets when staged. */
     bool stageIdTarget(const QString& path, int32_t header, const std::vector<int32_t>& ids,
@@ -3042,6 +3054,8 @@ private:
     void updateHierarchyShadow(const QVector<dataType>& cluByRow,
                                const QVector<dataType>& childByRow, int n);
     QSet<int>            childScopeVisible;  // children currently shown in the child palette
+    bool                 clcWasOldNumbering = false;   ///< the .clc on disk predates the disjoint numbering
+    int                  childIdsUpgraded = 0;          ///< children renumbered when it was loaded
     bool                 childScopeActive = false;  // true while a child is the shown clustering
     int                  curatedParentId = -1;      // the parent being curated
     QList<int>           curatedParents;            // >=2 parents => joint matrix scope; else empty

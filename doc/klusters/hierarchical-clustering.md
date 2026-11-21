@@ -27,6 +27,38 @@ it: it is compared with the scan on open, reported if stale, and rewritten
 on save; only when the per-spike files cannot be read is the map taken from
 the `.clp` alone. Every hierarchy edit below preserves the invariant.
 
+## How atoms are numbered
+
+Atom ids and fiber ids are **disjoint**, so a number names one thing in
+whichever palette, view or log line it appears:
+
+| Ids | What |
+|---|---|
+| `0`, `1` | The artefact and noise bins. Each bin's one atom carries the bin's id. |
+| `2` … `9999` | Fibers only. |
+| `10002` … `19999` | **Self children.** Fiber *p*'s self child is *p* + 10000 (fiber 153 → atom 10153). It is the atom a fiber has when it has only one, and the atom that takes the fiber's spikes no other atom covers. |
+| `20000` … | Every other atom, numbered upwards as it is made. |
+
+- **Klusters keeps the names true.** When a fiber is renumbered, sorted or
+  moved to the end, its self child follows. When fibers are merged, the
+  absorbed fiber's self child gets an id of the 20000 block. When a fiber's
+  atoms are merged back into one, that atom becomes the self child. These
+  renames change no spike's atom and take no undo step.
+- **Older files are read and converted.** Before 2026-11-21 an atom carried its
+  fiber's own number when it was the only one, and atom 7 and fiber 7 could be
+  unrelated. Such a `.clc` is renumbered when its atom layer is loaded: an atom
+  numbered like the fiber it sits under becomes that fiber's self child, a
+  fiber's only atom likewise, and the others take 20000, 20001, … in ascending
+  order of their old id. The session is marked changed, and **Save writes the
+  `.clc` and `.clp` in the new numbering over the old pair** (the previous
+  files are kept with a `.bak` suffix). The terminal shows how many atoms were
+  renumbered.
+- **A fiber id of 10000 or more** (other than a reserved chunk cluster) has no
+  room in this numbering: the atom layer is not loaded and Klusters says to
+  renumber the clusters first.
+- A reserved chunk cluster (`R0` … `R99`) keeps the old rule: its one atom
+  carries its own id.
+
 ## Opening a hierarchical session
 
 Open the fiber file (`<base>.clu.N`) as usual. If the `.clc.N` and
@@ -45,8 +77,9 @@ ordinary flat clustering. To make a flat clustering hierarchical, use
 open flat clustering into a hierarchical one, for a `.clu` that did not come
 from fiber-kit:
 
-- With no `.clc` yet, Klusters writes one in which **every unit is one atom
-  with the same id** (the artefact bin 0 gets atom 0), and the `.clp` that
+- With no `.clc` yet, Klusters writes one in which **every unit is one atom,
+  its self child** (unit 7 gets atom 10007; the bins keep 0 and 1 — see
+  [How atoms are numbered](#how-atoms-are-numbered)), and the `.clp` that
   maps each atom to its unit. Nothing about the clustering changes; the
   child palette then shows each unit as a single atom, ready to be split
   (`Ctrl+Up` makes a new fiber from selected atoms, as usual). This is the

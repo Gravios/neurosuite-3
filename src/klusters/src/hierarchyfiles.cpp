@@ -54,11 +54,45 @@ int distinctCount(const std::vector<int>& ids)
 Promotion promoteFlat(const std::vector<int>& clu)
 {
     Promotion out;
-    out.clc = clu;
-    out.clcCount = distinctCount(clu);
-    std::map<int, int> self;
-    for (int id : clu) self.emplace(id, id);
+    out.clc.reserve(clu.size());
+    std::map<int, int> self;                       // atom -> fiber
+    for (int id : clu) {
+        const int atom = static_cast<int>(selfChildOf(id));
+        out.clc.push_back(atom);
+        self.emplace(atom, id);
+    }
+    out.clcCount = distinctCount(out.clc);
     out.clp = clpFromMap(self);
+    return out;
+}
+
+ChildIdUpgrade upgradeChildIds(const std::vector<int>& parent, const std::vector<int>& child)
+{
+    ChildIdUpgrade out;
+    if (parent.size() != child.size()) return out;
+    const auto renumbered = [](int a) { return a >= 2 && !isReservedClusterId(static_cast<dataType>(a)); };
+    bool old = false;
+    for (int a : child)
+        if (a >= 2 && a < kSelfChildBase) { old = true; break; }
+    if (!old) return out;
+
+    std::map<int, int> firstFiber;                 // old atom -> the fiber of its first spike
+    for (std::size_t i = 0; i < child.size(); ++i)
+        if (renumbered(child[i])) firstFiber.emplace(child[i], parent[i]);
+    int next = kFreeChildBase;
+    std::map<int, int> taken;                      // new id -> old atom, to keep the map one-to-one
+    for (const auto& [atom, fiber] : firstFiber) { // ascending old id
+        int to = (atom == fiber && hasOffsetSelfChild(fiber)) ? static_cast<int>(selfChildOf(fiber)) : -1;
+        if (to < 0 || taken.count(to)) to = next++;
+        taken.emplace(to, atom);
+        if (to != atom) out.oldToNew.emplace(atom, to);
+    }
+    out.needed = true;
+    out.ids = child;
+    for (int& a : out.ids) {
+        const auto it = out.oldToNew.find(a);
+        if (it != out.oldToNew.end()) a = it->second;
+    }
     return out;
 }
 

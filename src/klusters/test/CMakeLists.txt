@@ -46,7 +46,7 @@ add_test(NAME klusters_test_templatelineagestore COMMAND klusters_test_templatel
 add_executable(klusters_test_hierarchyfiles
     hierarchyfiles_test.cpp "${_klu_src}/hierarchyfiles.cpp")
 target_compile_features(klusters_test_hierarchyfiles PRIVATE cxx_std_20)
-target_include_directories(klusters_test_hierarchyfiles PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_hierarchyfiles PRIVATE "${_klu_src}" "${_shared}")
 add_test(NAME klusters_test_hierarchyfiles COMMAND klusters_test_hierarchyfiles)
 
 # filecommit -- the save's all-or-nothing commit (journal, rollback, roll

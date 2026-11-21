@@ -218,7 +218,7 @@ void KlustersApp::slotFlattenHierarchyToClu(){
     const QMessageBox::StandardButton go = QMessageBox::question(this,
         tr("Merge all children"),
         tr("Merge every parent's child atoms into a single self child\n"
-           "(atom id == parent id)?\n\n"
+           "(numbered parent + 10000)?\n\n"
            "This discards all sub-mode structure in the atom layer for the\n"
            "whole session.  It can be undone in one step with Ctrl+Shift+Z,\n"
            "and is written to disk only when you save."),

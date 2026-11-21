@@ -18,6 +18,9 @@ nAtoms = (fileSize − 4) / 4
 ```
 
 - Atom ids are global and 1-based: `parent[c − 1]` is the fiber of atom `c`.
+  With atoms numbered from 10002 and 20000 ([`.clc`](clc.md)) the file has an
+  entry for every id up to the highest atom, most of them `0`: a session with
+  5,000 atoms writes about 100 kB.
 - `0` means the atom is noise / unmapped.
 - Readers derive `nAtoms` from the file size and ignore the header.
 
