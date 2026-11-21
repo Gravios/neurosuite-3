@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-21 | [Klusters: in the child view, a click on the curated parent returns to the parent view](#2026-11-21--klusters-in-the-child-view-a-click-on-the-curated-parent-returns-to-the-parent-view) |
 | 2026-11-21 | [Klusters: the refresh after a realign no longer takes the child view to the parents](#2026-11-21--klusters-the-refresh-after-a-realign-no-longer-takes-the-child-view-to-the-parents) |
 | 2026-11-21 | [Klusters: child ids are disjoint from parent ids — a parent's own child is parent + 10000, every other child 20000 and up](#2026-11-21--klusters-child-ids-are-disjoint-from-parent-ids--a-parents-own-child-is-parent--10000-every-other-child-20000-and-up) |
 | 2026-11-21 | [Klusters: Preferences pages scroll instead of being squeezed](#2026-11-21--klusters-preferences-pages-scroll-instead-of-being-squeezed) |
@@ -222,6 +223,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-21 — Klusters: in the child view, a click on the curated parent returns to the parent view
+
+<details>
+<summary>Details</summary>
+
+While children are shown, the parent palette keeps their parent selected.  A click on that parent
+did nothing: the list's selection does not change, so the palette emitted nothing.  The way back
+to the parent was to click another parent and then this one.
+
+The palette's list now reports a plain left click on the item that is already the whole selection
+(`selectedItemClicked`, passed on as `ClusterPalette::selectionClickedAgain`).  In child scope
+Klusters answers it as it answers a click on any other parent: the parent layer is shown, with
+that parent.  On the parent layer the click is ignored as before, and Ctrl and Shift clicks are
+not affected.
+
+**Tests.**  `test_child_view_parent_click.py` (the `clickParent` step sends the press and release
+to the palette's list): from the child view a click on the curated parent shows it on the parent
+layer, a second click changes nothing, a click on another parent still shows that one.  The first
+check fails without the change.
+
+</details>
 
 ---
 

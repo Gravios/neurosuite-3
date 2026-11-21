@@ -585,6 +585,14 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("shown"), shown);
         return true;
     }
+    if (step.contains(QStringLiteral("clickParent"))) {
+        // A left click on that parent's item in the parent palette.
+        if (!clusterPalette || !clusterPalette->clickItem(step.value(QStringLiteral("clickParent")).toInt())) {
+            result.insert(QStringLiteral("error"), QStringLiteral("not in the parent palette"));
+            return false;
+        }
+        return true;
+    }
     if (step.contains(QStringLiteral("tabRefresh"))) {
         // The refresh every realign, recluster and tab switch ends with.
         if (!tabsParent) {

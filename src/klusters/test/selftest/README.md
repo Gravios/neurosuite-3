@@ -7,7 +7,7 @@ save, plugin or pending return to a space) -- writes a JSON report and quits (0:
 succeeded; 1: a step failed; 2: the spec or the open failed). A modal dialog opened by a step
 is closed with its default button and recorded in the report, so a run never hangs.
 
-Steps: `{"show": method}`, `{"realign": cluster}` (with `"children": true` a child, from the child view), `{"tabRefresh": true}`, `{"nudge": [cluster, delta]}`,
+Steps: `{"show": method}`, `{"realign": cluster}` (with `"children": true` a child, from the child view), `{"tabRefresh": true}`, `{"clickParent": cluster}`, `{"nudge": [cluster, delta]}`,
 `{"supersample": factor}`, `{"follow": true}`, `{"burstFollowers": [a, b]}`, `{"save": true}`, `{"saveas": "<path.clu>"}`,
 `{"dump": true, "cluster": id}` (the spaces, their files and working copies, whether each is held in memory, the loaded times
 and phases of the cluster's spikes). A realign's completion is recorded as a `realignDone`
@@ -53,6 +53,8 @@ child merging, promotion, Flatten, undo and a parent split -- the `hierarchy` st
 `test_child_realign_scope.py` (a child realigned from the child view stays shown on the child layer,
 and the refresh a realign ends with -- the `tabRefresh` step -- never leaves that layer: the
 `hierarchy` step's `childScope`, `shown` and `layerSwitches`),
+`test_child_view_parent_click.py` (from the child view a click on the curated parent in the parent
+palette -- the `clickParent` step -- shows that parent on the parent layer),
 `test_pref_pages.py` (the Preferences dialog at 1000 x 700: every page in a scroll area and drawn at
 the height it was laid out for, the Cluster view page scrolling to its last group),
 `test_core_cut.py` (the `coreCut` step, Actions > Split Off Spurious Spikes: a unit with 100 spikes of

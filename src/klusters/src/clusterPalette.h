@@ -64,6 +64,9 @@ Q_SIGNALS:
     /** Emitted when S toggles a cluster's selection state; connected to
      *  ClusterPalette::slotClickRedraw to trigger a display update. */
     void selectionToggled();
+    /** A plain left click on the item that is already the whole selection: the
+     *  list does not change, so itemSelectionChanged is not emitted. */
+    void selectedItemClicked();
 
 private:
     /** Tracks which item S was last pressed on, for the "S twice = isolate"
@@ -183,6 +186,9 @@ public:
     void reset();
     /**Returns the list of selected clusters*/
     QList<int> selectedClusters();
+    /** Clicks the item of @p clusterId as the mouse would (press and release on
+     *  the list's viewport).  For the self-test; false when the id is not listed. */
+    bool clickItem(int clusterId);
     /** The ids in list order, top to bottom. */
     QList<int> listedClusters() const;
     /** The ids whose items lie inside the list's viewport, in list order. */
@@ -242,6 +248,9 @@ protected Q_SLOTS:
 Q_SIGNALS:
     void singleChangeColor(int selectedCluster);
     void updateShownClusters(const QList<int>& selectedClusters);
+    /** The user clicked the one selected item again; the selection is unchanged
+     *  and updateShownClusters was not emitted. */
+    void selectionClickedAgain(const QList<int>& selectedClusters);
     void groupClusters(const QList<int> &selectedClusters);
     void moveClustersToNoise(const QList<int> &selectedClusters);
     void moveClustersToArtefact(const QList<int> &selectedClusters);

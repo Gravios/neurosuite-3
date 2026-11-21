@@ -37,6 +37,8 @@
 #include <QScrollBar>
 #include <climits>
 
+#include <QCoreApplication>
+#include <QMouseEvent>
 #include <QPixmap>
 #include <QBitmap>
 #include <QColorDialog>
@@ -70,7 +72,17 @@ void ClusterPaletteWidget::mousePressEvent ( QMouseEvent * event )
         if(item)
             Q_EMIT changeColor(item);
     }
+    // A plain left click on the only selected item changes nothing in the list,
+    // so itemSelectionChanged stays silent.  Say so: in the child view that click
+    // on the curated parent is how the curator returns to the parent.
+    const QList<QListWidgetItem*> before = selectedItems();
     QListWidget::mousePressEvent(event);
+    if(event->button() == Qt::LeftButton
+       && !(event->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier))){
+        QListWidgetItem *item = itemAt(event->position().toPoint());
+        if(item && before.size() == 1 && before.first() == item && selectedItems() == before)
+            Q_EMIT selectedItemClicked();
+    }
 }
 
 void ClusterPaletteWidget::mouseMoveEvent ( QMouseEvent * event )
@@ -397,6 +409,9 @@ ClusterPalette::ClusterPalette(const QColor& bgColor,QWidget* parent,QStatusBar 
     connect(iconView,&ClusterPaletteWidget::onItem,this, &ClusterPalette::slotOnItem);
     connect(iconView,&ClusterPaletteWidget::paletteGainedFocus,this, &ClusterPalette::paletteGainedFocus);
     connect(iconView, &ClusterPaletteWidget::selectionToggled, this, &ClusterPalette::slotClickRedraw);
+    connect(iconView, &ClusterPaletteWidget::selectedItemClicked, this, [this]{
+        Q_EMIT selectionClickedAgain(selectedClusters());
+    });
 
     // Redirect focus straight to the inner list so Tab-navigation and
     // arrow-key cluster browsing work the moment the panel is entered.
@@ -812,6 +827,22 @@ void ClusterPalette::toggleCurrentSelection(){
         iconView->lastSPressItem = cur;
     }
     slotClickRedraw();
+}
+
+bool ClusterPalette::clickItem(int clusterId){
+    for(int k = 0; k < iconView->count(); ++k){
+        QListWidgetItem* it = iconView->item(k);
+        if(!it || it->data(CLUSTER_ID).toInt() != clusterId) continue;
+        iconView->scrollToItem(it, QAbstractItemView::EnsureVisible);
+        const QPointF at = iconView->visualItemRect(it).center();
+        const QPointF global = iconView->viewport()->mapToGlobal(at);
+        QMouseEvent press(QEvent::MouseButtonPress, at, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(iconView->viewport(), &press);
+        QMouseEvent release(QEvent::MouseButtonRelease, at, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(iconView->viewport(), &release);
+        return true;
+    }
+    return false;
 }
 
 void ClusterPalette::slotClickRedraw (){

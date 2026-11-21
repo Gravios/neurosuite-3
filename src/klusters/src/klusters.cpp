@@ -1444,6 +1444,13 @@ void KlustersApp::createMenus()
     //Custom connections
     connect(clusterPalette, &ClusterPalette::singleChangeColor, this, &KlustersApp::slotSingleColorUpdate);
     connect(clusterPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotUpdateShownClusters);
+    // In the child view the parent palette still shows the curated parent as
+    // selected.  A click on it changes nothing in the list, but it is the way
+    // back: show that parent on the parent layer, as a click on any other parent
+    // would.  On the parent layer the click has nothing to change.
+    connect(clusterPalette, &ClusterPalette::selectionClickedAgain, this, [this](const QList<int>& selection){
+        if(doc && doc->isChildClusteringActive()) slotUpdateShownClusters(selection);
+    });
     connect(childPaletteA, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::groupClusters), this, &KlustersApp::slotGroupClusters);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToNoise), this, &KlustersApp::slotMoveClustersToNoise);
