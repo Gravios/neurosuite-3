@@ -18,6 +18,7 @@
 #ifndef PREFDIALOG_H
 #define PREFDIALOG_H
 
+#include <QHash>
 #include <QWidget>
 #include <QMap>
 #include <qpagedialog.h>
@@ -42,6 +43,8 @@ class QComboBox;
 class PrefDialog : public QPageDialog {
     Q_OBJECT
   public:
+    /** Makes @p page (one of the dialog's own pages) the page shown.  False when it is not one. */
+    bool showPage(const QWidget* page);
     /** @p plugins: the installed plugin descriptors (KlustersApp's registry); one Preferences page
      *  per plugin is generated from them (Plugins group).  Null = no Plugins group. */
     explicit PrefDialog(QWidget *parent, int nbChannels = 0, const PluginRegistry* plugins = nullptr);
@@ -90,6 +93,8 @@ class PrefDialog : public QPageDialog {
     QMap<QString, QPageWidgetItem*> pluginPageItems;   // plugin name -> its page (Reclustering's "Parameters…")
     QComboBox*        themeCombo;
     bool applyEnable;
+  private:
+    QHash<const QWidget*, QPageWidgetItem*> itemOfPage;   ///< every sub page's item, by the page widget
 };
 
 #endif  // PREFDIALOG_H

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-21 | [Klusters: Preferences pages scroll instead of being squeezed](#2026-11-21--klusters-preferences-pages-scroll-instead-of-being-squeezed) |
 | 2026-11-20 | [Klusters: the spike under the cursor is a preference — on or off, the ring's radius and line, the trace's width](#2026-11-20--klusters-the-spike-under-the-cursor-is-a-preference--on-or-off-the-rings-radius-and-line-the-traces-width) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes on Ctrl+Space, its knobs in Preferences ▸ Splitting](#2026-11-20--klusters-split-off-spurious-spikes-on-ctrlspace-its-knobs-in-preferences--splitting) |
 | 2026-11-20 | [Klusters: Split Off Spurious Spikes orders on the GPU (CUDA)](#2026-11-20--klusters-split-off-spurious-spikes-orders-on-the-gpu-cuda) |
@@ -221,6 +222,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
 
 ---
+
+## 2026-11-21 — Klusters: Preferences pages scroll instead of being squeezed
+
+<details>
+<summary>Details</summary>
+
+**Symptom.**  The "Spike under the cursor" group added to Preferences ▸ Cluster view the day
+before could not be found on the page.
+
+**Cause.**  The dialog put each page straight into its stack, with no scrolling.  The Cluster
+view page is laid out for 930 px; the dialog asked for 780 and a 1080-line screen gives it about
+that.  Qt then squeezes the page to its minimum size hint, which for these group boxes is far
+below what they can be read at: at 780 px the t-SNE "Advanced" group was a strip without its
+fields and the "Template projection scope" rows lay on top of one another.  The new group, last
+on the page, is where a larger font or a shorter screen runs out first.
+
+**Fix.**  Every sub page sits in a frameless `QScrollArea` and keeps the height it was laid out
+for.  With room to spare nothing changes and no scroll bar shows; without, the page scrolls.
+The dialog's minimum height drops from 780 px to 297 px.
+
+Self-test `test_pref_pages.py` (the `prefPage` step now renders the whole dialog at a given
+size): at 1000 × 700 the Cluster view page is drawn at its 930 px with a 288 px scroll range and
+its last group is inside the dialog once scrolled; Splitting, Waveform view and Display fit and
+have nothing to scroll.
+
+**Not verified:** that this was what hid the group on the reporting machine.  It was reproduced
+as a squeezed, partly unreadable page in an off-screen render, where the group itself was still
+in view; on that machine the font, style and screen height are unknown.  Not tested: the Input,
+Radial menu, Session and Plugins pages by eye.
+
+</details>
 
 ## 2026-11-20 — Klusters: the spike under the cursor is a preference — on or off, the ring's radius and line, the trace's width
 

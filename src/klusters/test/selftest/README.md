@@ -47,6 +47,8 @@ the *Time chunks* preference reaches the command line; needs `KiloKlustaKwik_cpu
 build tree's -- and skips without it)),
 `test_supersampled_on_demand.py` (a `_U` space is not held in memory after its build or at open in
 super-sample mode, the session stays in the `.clu`'s space; it is held once shown and stays held),
+`test_pref_pages.py` (the Preferences dialog at 1000 x 700: every page in a scroll area and drawn at
+the height it was laid out for, the Cluster view page scrolling to its last group),
 `test_core_cut.py` (the `coreCut` step, Actions > Split Off Spurious Spikes: a unit with 100 spikes of
 another in it loses those and few of its own; a unit alone keeps three quarters or more; the same on
 children, the new child under the source's parent; its key is Ctrl+Space, the cut sensitivity of

@@ -38,6 +38,7 @@
 #include "channellist.h"
 #include "config-klusters.h"
 #include <qhelpviewer.h>
+#include <QScrollArea>
 
 #include <klustersshared/theme.h>
 
@@ -66,10 +67,26 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     };
     auto subPage = [this](QPageWidgetItem* parentItem, QWidget* page, const QString& name,
                           const QString& header, const QString& icon) {
-        QPageWidgetItem* it = new QPageWidgetItem(page, name);
+        // Every page scrolls.  A page laid out for more height than the screen gives
+        // the dialog is otherwise squeezed: its groups collapse onto one another and
+        // the lowest ones end up unreadable or out of sight (the Cluster view page
+        // asks for over 900 px).  With room to spare the area shows no scroll bar.
+        QScrollArea* area = new QScrollArea(this);
+        area->setFrameShape(QFrame::NoFrame);
+        area->setWidgetResizable(true);
+        area->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+        // A resizable area shrinks its widget to the minimum size hint, and these
+        // pages' group boxes report a minimum they cannot be read at: hold the page
+        // at the height it was laid out for, and let the area scroll below that.
+        page->setMinimumHeight(page->sizeHint().height());
+        area->setWidget(page);
+        area->viewport()->setAutoFillBackground(false);     // the dialog's own background, not the base colour
+        page->setAutoFillBackground(false);
+        QPageWidgetItem* it = new QPageWidgetItem(area, name);
         it->setHeader(header);
         it->setIcon(QIcon(icon));
         addSubPage(parentItem, it);
+        itemOfPage.insert(page, it);
         return it;
     };
 
@@ -727,4 +744,12 @@ void PrefDialog::resetChannelList(int nbChannels)
 void PrefDialog::enableChannelSettings(bool state)
 {
     prefWaveformView->enableChannelSettings(state);
+}
+
+bool PrefDialog::showPage(const QWidget* page)
+{
+    QPageWidgetItem* item = itemOfPage.value(page, nullptr);
+    if (!item) return false;
+    setCurrentPage(item);
+    return true;
 }

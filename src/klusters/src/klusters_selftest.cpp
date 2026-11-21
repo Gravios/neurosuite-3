@@ -28,7 +28,11 @@
  *                                        page of that class, the titles of the page's group
  *                                        boxes; "saveTo": a path the page's image is written to;
  *                                        "apply": true writes the dialog's values back (a round
- *                                        trip through every page)
+ *                                        trip through every page); "dialogSize": [w, h] with
+ *                                        "dialogSaveTo": the whole dialog at that size, this page
+ *                                        showing ("scrollToEnd": scrolled to its end first), with
+ *                                        the height the page is drawn at and where its last
+ *                                        group's bottom edge falls
  *        {"save": true}                  File > Save
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
@@ -60,6 +64,8 @@
 #include <QFile>
 #include <QFileInfo>
 #include <QGroupBox>
+#include <QScrollArea>
+#include <QScrollBar>
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QPushButton>
@@ -476,6 +482,42 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (!saveTo.isEmpty()) {
             page->resize(page->sizeHint().expandedTo(QSize(640, 480)));
             result.insert(QStringLiteral("saved"), page->grab().save(saveTo));
+        }
+        // How much room the dialog needs, and whether the page can scroll when it gets less.
+        bool scrolls = false;
+        for (QWidget* w = page->parentWidget(); w && !scrolls; w = w->parentWidget())
+            scrolls = qobject_cast<QScrollArea*>(w) != nullptr;
+        result.insert(QStringLiteral("scrolls"), scrolls);
+        result.insert(QStringLiteral("pageHeight"), page->sizeHint().height());
+        result.insert(QStringLiteral("dialogMinHeight"), dialog.minimumSizeHint().height());
+        const QJsonArray size = step.value(QStringLiteral("dialogSize")).toArray();
+        const QString dialogTo = step.value(QStringLiteral("dialogSaveTo")).toString();
+        if (size.size() == 2 && !dialogTo.isEmpty()) {
+            // The dialog as it is on a screen of that size, this page showing.
+            result.insert(QStringLiteral("pageShown"), dialog.showPage(page));
+            dialog.setAttribute(Qt::WA_DontShowOnScreen);
+            dialog.show();
+            dialog.resize(size.at(0).toInt(), size.at(1).toInt());
+            QCoreApplication::processEvents();
+            result.insert(QStringLiteral("dialogHeight"), dialog.height());
+            // The page's last group box, before and after scrolling to the end: where its
+            // bottom edge is in the dialog, and the height the page is drawn at.
+            QScrollArea* area = nullptr;
+            for (QWidget* w = page->parentWidget(); w && !area; w = w->parentWidget()) area = qobject_cast<QScrollArea*>(w);
+            const QGroupBox* last = boxes.isEmpty() ? nullptr : boxes.last();
+            if (last) {
+                result.insert(QStringLiteral("lastGroup"), last->title());
+                result.insert(QStringLiteral("lastGroupBottom"), last->mapTo(&dialog, QPoint(0, last->height())).y());
+            }
+            result.insert(QStringLiteral("pageDrawnHeight"), page->height());
+            if (area && step.value(QStringLiteral("scrollToEnd")).toBool()) {
+                area->verticalScrollBar()->setValue(area->verticalScrollBar()->maximum());
+                QCoreApplication::processEvents();
+                result.insert(QStringLiteral("scrollRange"), area->verticalScrollBar()->maximum());
+                if (last) result.insert(QStringLiteral("lastGroupBottomScrolled"), last->mapTo(&dialog, QPoint(0, last->height())).y());
+            }
+            result.insert(QStringLiteral("dialogSaved"), dialog.grab().save(dialogTo));
+            dialog.hide();
         }
         if (step.value(QStringLiteral("apply")).toBool()) dialog.updateConfiguration();
         return true;
