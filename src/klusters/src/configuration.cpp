@@ -185,6 +185,14 @@ void Configuration::read() {
         h.ringWidthPx  = settings.value("hoverSpikeRingWidthPx",  d.ringWidthPx).toDouble();
         h.traceWidthPx = settings.value("hoverSpikeTraceWidthPx", d.traceWidthPx).toDouble();
         setHoverSpike(h);
+        const WaveformQuality qd;
+        WaveformQuality q;
+        q.enabled    = settings.value("waveformQualityEnabled",    qd.enabled).toBool();
+        q.yellow     = settings.value("waveformQualityYellow",     qd.yellow).toDouble();
+        q.orange     = settings.value("waveformQualityOrange",     qd.orange).toDouble();
+        q.red        = settings.value("waveformQualityRed",        qd.red).toDouble();
+        q.diameterPx = settings.value("waveformQualityDiameterPx", qd.diameterPx).toInt();
+        setWaveformQuality(q);
     }
 
     // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
@@ -377,6 +385,11 @@ void Configuration::write() const {
     settings.setValue("hoverSpikeRingMarginPx", hoverSpike.ringMarginPx);
     settings.setValue("hoverSpikeRingWidthPx",  hoverSpike.ringWidthPx);
     settings.setValue("hoverSpikeTraceWidthPx", hoverSpike.traceWidthPx);
+    settings.setValue("waveformQualityEnabled",    waveformQuality.enabled);
+    settings.setValue("waveformQualityYellow",     waveformQuality.yellow);
+    settings.setValue("waveformQualityOrange",     waveformQuality.orange);
+    settings.setValue("waveformQualityRed",        waveformQuality.red);
+    settings.setValue("waveformQualityDiameterPx", waveformQuality.diameterPx);
 
     // Auto-Merge (patch 0068)
     settings.setValue("autoMergeAlgorithm",           autoMergeAlgorithm);
@@ -491,6 +504,17 @@ void Configuration::setCoreCut(const CoreCut& c)
         coreCut.riseStartMs = d.riseStartMs; coreCut.flatStartMs = d.flatStartMs;
         coreCut.flatEndMs   = d.flatEndMs;   coreCut.fallEndMs   = d.fallEndMs;
     }
+}
+
+void Configuration::setWaveformQuality(const WaveformQuality& q)
+{
+    const WaveformQuality d;
+    const auto level = [](double v, double fallback) { return std::isfinite(v) ? qBound(-1.0, v, 10.0) : fallback; };
+    waveformQuality.enabled    = q.enabled;
+    waveformQuality.yellow     = level(q.yellow, d.yellow);
+    waveformQuality.orange     = std::max(waveformQuality.yellow, level(q.orange, d.orange));
+    waveformQuality.red        = std::max(waveformQuality.orange, level(q.red, d.red));
+    waveformQuality.diameterPx = qBound(4, q.diameterPx, 48);
 }
 
 void Configuration::setHoverSpike(const HoverSpike& h)

@@ -27,6 +27,9 @@
 #include <QThread>   // msleep for the synchronous job quiesce
 #include "waveformthread.h"
 #include "configuration.h"          // the hovered spike's trace width
+#include "waveformquality.h"        // the quality dot
+#include <QHelpEvent>
+#include <QToolTip>
 #include "templatematrixthread.h"   // tmReadSpikeFloat: the hovered spike's waveform
 #include "types.h"
 #include "input/bindingregistry.h"   // registerInput: the channel-pick press trigger (seam)
@@ -368,6 +371,11 @@ void WaveformView::customEvent(QEvent *event){
             //Update the widget
             update();
         }
+        else{
+            //The silent precomputation brought the statistics the quality dots show:
+            //repaint the widget (the buffer is reused; only the overlays are drawn again).
+            if(configuration().getWaveformQuality().enabled) update();
+        }
     }
     //Event sent by a waveform job to inform that the data are not available
     //for the cluster requested (e.g. it was suppressed after the job was
@@ -468,8 +476,100 @@ void WaveformView::clearHoverSpike()
     update();
 }
 
+QColor WaveformView::qualityColor(double value)
+{
+    const Configuration::WaveformQuality& q = configuration().getWaveformQuality();
+    switch (waveformquality::grade(value, q.yellow, q.orange, q.red)) {
+    case waveformquality::Grade::Green:  return QColor(46, 184, 76);
+    case waveformquality::Grade::Yellow: return QColor(240, 214, 40);
+    case waveformquality::Grade::Orange: return QColor(245, 140, 30);
+    case waveformquality::Grade::Red:    return QColor(225, 45, 45);
+    case waveformquality::Grade::Unknown: break;
+    }
+    return QColor();
+}
+
+void WaveformView::drawQualityDots(QPainter& widget)
+{
+    qualityDots_.clear();
+    const Configuration::WaveformQuality& q = configuration().getWaveformQuality();
+    if (!q.enabled || hasResidualPreview_ || !dataReady) return;
+    QList<int> shown = view.clusters();
+    if (shown.isEmpty()) return;
+    std::sort(shown.begin(), shown.end());
+
+    Data& clusteringData = doc.data();
+    const int d = q.diameterPx;
+    const int margin = 4;
+    const QRect area = contentsRect();
+    const int top = area.top() + margin;
+    widget.save();
+    widget.setRenderHint(QPainter::Antialiasing, true);
+    for (int index = 0; index < shown.size(); ++index) {
+        const int cid = shown.at(index);
+        Data::WaveformIterator* it = (presentationMode == SAMPLE)
+            ? static_cast<Data::WaveformIterator*>(clusteringData.sampleWaveformIterator(static_cast<dataType>(cid), nbSpkToDisplay))
+            : static_cast<Data::WaveformIterator*>(clusteringData.timeFrameWaveformIterator(static_cast<dataType>(cid), startTime, endTime));
+        if (!it) continue;
+        const bool ready = it->isMeanAvailable();
+        const double value = ready ? it->residualVariance() : 0.0;
+        const long n = ready ? static_cast<long>(it->nbOfSpikes()) : 0;
+        delete it;
+        if (!ready) continue;       // the statistics job has not finished: no dot yet, it repaints when it has
+
+        // Side by side: the upper right corner of the cluster's own column.  Overlaid: the dots
+        // line up leftwards from the view's upper right corner, in cluster order.
+        int right;
+        if (overLayPresentation) {
+            right = area.right() - margin - (static_cast<int>(shown.size()) - 1 - index) * (d + margin);
+        } else {
+            const long worldRight = X0 + static_cast<long>(index) * shift + static_cast<long>(nbSamplesInWaveform - 1) * Xstep;
+            right = static_cast<int>(worldToViewportAbscissa(worldRight));
+            if (right > area.right() - margin) right = area.right() - margin;
+        }
+        const QRect rect(right - d, top, d, d);
+        if (rect.right() < area.left() || rect.left() > area.right()) continue;   // the column is zoomed out of the view
+
+        const QColor fill = qualityColor(value);
+        // Ringed in the cluster's own colour, which says whose dot it is when the clusters are
+        // overlaid.  (Not the contrasting colour: that one is the hovered spike's.)
+        QPen ring(doc.clusterColors().color(cid));
+        ring.setWidthF(1.5);
+        widget.setPen(ring);
+        widget.setBrush(fill.isValid() ? QBrush(fill) : QBrush(Qt::NoBrush));   // hollow: too few spikes for a value
+        widget.drawEllipse(rect);
+
+        QualityDot dot;
+        dot.cluster = cid; dot.value = value; dot.nSpikes = n; dot.rect = rect;
+        qualityDots_.append(dot);
+    }
+    widget.restore();
+}
+
+bool WaveformView::event(QEvent* e)
+{
+    if (e->type() == QEvent::ToolTip) {
+        const QPoint at = static_cast<QHelpEvent*>(e)->pos();
+        for (const QualityDot& dot : std::as_const(qualityDots_)) {
+            if (!dot.rect.adjusted(-2, -2, 2, 2).contains(at)) continue;
+            const QString text = std::isfinite(dot.value)
+                ? tr("Cluster %1: residual variance %2 of the median waveform's energy (%3 spikes shown)")
+                      .arg(clusterLabel(dot.cluster)).arg(dot.value, 0, 'f', 2).arg(dot.nSpikes)
+                : tr("Cluster %1: fewer than %2 spikes shown, no value")
+                      .arg(clusterLabel(dot.cluster)).arg(waveformquality::kMinSpikes);
+            QToolTip::showText(static_cast<QHelpEvent*>(e)->globalPos(), text, this, dot.rect);
+            return true;
+        }
+        QToolTip::hideText();
+        e->ignore();
+        return true;
+    }
+    return ViewWidget::event(e);
+}
+
 void WaveformView::paintWidgetOverlays(QPainter& widget)
 {
+    drawQualityDots(widget);
     if (hoverRow0_ < 0 || hasResidualPreview_ || !dataReady) return;
     if (static_cast<int>(hoverWave_.size()) != nbchannels * nbSamplesInWaveform) return;
     // The cluster's column: side by side the shown clusters are laid out by increasing id.

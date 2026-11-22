@@ -95,6 +95,23 @@ public:
      *  swallow.  Arming consumes the press so the base never starts a zoom rubber band. */
     void beginChannelPick(){ channelPickArmed = true; }
 
+    /** One quality dot as it was last painted (Preferences > Waveform view;
+     *  waveformquality.h): the cluster, the value its colour stands for (NaN:
+     *  not enough spikes, drawn hollow), the number of spikes it was computed
+     *  on, and where it is in the widget. */
+    struct QualityDot {
+        int    cluster = 0;
+        double value = 0.0;
+        long   nSpikes = 0;
+        QRect  rect;
+    };
+    /** The dots of the last paint, left to right.  Empty while the dot is off,
+     *  a lasso preview is shown, or no cluster's statistics are ready. */
+    const QVector<QualityDot>& qualityDots() const { return qualityDots_; }
+    /** The colour of a value: green, yellow, orange, red by the Preferences'
+     *  thresholds; an invalid colour for a NaN. */
+    static QColor qualityColor(double value);
+
 public Q_SLOTS:
 
     /**Updates the view only for one cluster for which the color has been changed
@@ -348,6 +365,8 @@ protected:
     void afterPaint(QPainter& widget) override;
     /**Live overlay on the widget every paint: the spike hovered in the feature view.*/
     void paintWidgetOverlays(QPainter& widget) override;
+    /** The tool tip of a quality dot. */
+    bool event(QEvent* e) override;
     /**Treat the events sent by the WaveformThread instances*/
     void customEvent(QEvent* event) override;
     /**The view responds to a double click.
@@ -397,6 +416,9 @@ private:
   * are shown or if only the mean and the standard deviation.
   */
     bool meanPresentation;
+    /** Draws the quality dots and records them in qualityDots_. */
+    void drawQualityDots(QPainter& widget);
+    QVector<QualityDot> qualityDots_;
 
     /**
   * Boolean indicating if the waveforms for the presented clusters have to overlay.

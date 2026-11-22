@@ -58,6 +58,7 @@
 #include "klustersdoc.h"
 #include "klustersview.h"
 #include <qextendtabwidget.h>
+#include <QElapsedTimer>
 #include "clusterview.h"
 #include "waveformview.h"
 #include "clusterPalette.h"
@@ -422,6 +423,94 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
                 }
                 views.append(v);
             }
+        result.insert(QStringLiteral("waveformViews"), views);
+        return true;
+    }
+    if (step.contains(QStringLiteral("waveformQuality"))) {
+        // {"waveformQuality": {...}}: the quality dots of every waveform view of the active display.
+        //   "show": [ids]      shows those clusters first ("children": true reads them as children);
+        //   "nbSpikes": n      the number of spikes the views hold per cluster (the toolbar's spin box);
+        //   "overlay": bool    overlaid / side by side;
+        //   "prefs": {"enabled", "yellow", "orange", "red", "diameter"}  Preferences > Waveform view;
+        //   "saveTo": path     the grabbed view;   "windowSize": [w, h]  the main window is resized first.
+        // Per view: its size and, per dot, the cluster, the value, the spikes it was computed on,
+        // the rectangle, the colour the value maps to and the colour of the pixel at the dot's centre.
+        if (!activeView()) { result.insert(QStringLiteral("error"), QStringLiteral("no display")); return false; }
+        const QJsonObject o = step.value(QStringLiteral("waveformQuality")).toObject();
+        if (o.contains(QStringLiteral("windowSize"))) {          // the main window, for a grab at a size a curator works at
+            const QJsonArray sz = o.value(QStringLiteral("windowSize")).toArray();
+            resize(sz.at(0).toInt(), sz.at(1).toInt());
+            QCoreApplication::processEvents();
+        }
+        if (o.contains(QStringLiteral("prefs"))) {
+            const QJsonObject pr = o.value(QStringLiteral("prefs")).toObject();
+            Configuration::WaveformQuality q = configuration().getWaveformQuality();
+            if (pr.contains(QStringLiteral("enabled")))  q.enabled    = pr.value(QStringLiteral("enabled")).toBool();
+            if (pr.contains(QStringLiteral("yellow")))   q.yellow     = pr.value(QStringLiteral("yellow")).toDouble();
+            if (pr.contains(QStringLiteral("orange")))   q.orange     = pr.value(QStringLiteral("orange")).toDouble();
+            if (pr.contains(QStringLiteral("red")))      q.red        = pr.value(QStringLiteral("red")).toDouble();
+            if (pr.contains(QStringLiteral("diameter"))) q.diameterPx = pr.value(QStringLiteral("diameter")).toInt();
+            configuration().setWaveformQuality(q);
+            applyHoverSpikePreference();          // repaints every waveform view, as Apply does
+        }
+        QList<int> ids;
+        if (o.contains(QStringLiteral("show"))) {
+            for (const QJsonValue& v : o.value(QStringLiteral("show")).toArray()) ids.append(v.toInt());
+            const bool children = o.value(QStringLiteral("children")).toBool();
+            if (children) {
+                QString err;
+                if (!doc->loadChildClustering(err)) { result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err); return false; }
+            }
+            doc->setActiveClustering(children);
+            doc->shownClustersUpdate(ids, *activeView());
+        } else {
+            ids = activeView()->clusters();
+        }
+        QList<WaveformView*> wvs;
+        for (ViewWidget* w : activeView()->getViewList())
+            if (WaveformView* wv = qobject_cast<WaveformView*>(w)) wvs.append(wv);
+        for (WaveformView* wv : std::as_const(wvs)) {
+            if (o.contains(QStringLiteral("nbSpikes"))) wv->setDisplayNbSpikes(o.value(QStringLiteral("nbSpikes")).toInt());
+            if (o.contains(QStringLiteral("overlay"))) {
+                if (o.value(QStringLiteral("overlay")).toBool()) wv->setOverLayPresentation(); else wv->setSideBySidePresentation();
+            }
+        }
+        // The spikes and then their statistics arrive from the waveform jobs.
+        const bool expectDots = configuration().getWaveformQuality().enabled;
+        QElapsedTimer waited; waited.start();
+        for (;;) {
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+            bool ready = true;
+            for (WaveformView* wv : std::as_const(wvs)) {
+                wv->repaint();
+                if (wv->isThreadsRunning() || (expectDots && wv->qualityDots().size() != ids.size())) ready = false;
+            }
+            if (ready || waited.elapsed() > 15000) break;
+        }
+        QJsonArray views;
+        for (WaveformView* wv : std::as_const(wvs)) {
+            wv->repaint();
+            const QImage img = wv->grab().toImage();
+            QJsonObject v;
+            v.insert(QStringLiteral("width"), img.width());
+            v.insert(QStringLiteral("height"), img.height());
+            v.insert(QStringLiteral("background"), wv->palette().color(wv->backgroundRole()).name());
+            QJsonArray dots;
+            for (const WaveformView::QualityDot& d : wv->qualityDots()) {
+                QJsonObject j;
+                j.insert(QStringLiteral("cluster"), d.cluster);
+                if (std::isfinite(d.value)) j.insert(QStringLiteral("value"), d.value);
+                j.insert(QStringLiteral("nSpikes"), static_cast<double>(d.nSpikes));
+                j.insert(QStringLiteral("rect"), QJsonArray{ d.rect.x(), d.rect.y(), d.rect.width(), d.rect.height() });
+                const QColor c = WaveformView::qualityColor(d.value);
+                if (c.isValid()) j.insert(QStringLiteral("colour"), c.name());
+                j.insert(QStringLiteral("centrePixel"), QColor(img.pixel(d.rect.center())).name());
+                dots.append(j);
+            }
+            v.insert(QStringLiteral("dots"), dots);
+            if (o.contains(QStringLiteral("saveTo"))) img.save(o.value(QStringLiteral("saveTo")).toString());
+            views.append(v);
+        }
         result.insert(QStringLiteral("waveformViews"), views);
         return true;
     }

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-22 | [Klusters: a quality dot per cluster in the waveform view](#2026-11-22--klusters-a-quality-dot-per-cluster-in-the-waveform-view) |
 | 2026-11-21 | [Klusters: in the child view, a click on the curated parent returns to the parent view](#2026-11-21--klusters-in-the-child-view-a-click-on-the-curated-parent-returns-to-the-parent-view) |
 | 2026-11-21 | [Klusters: the refresh after a realign no longer takes the child view to the parents](#2026-11-21--klusters-the-refresh-after-a-realign-no-longer-takes-the-child-view-to-the-parents) |
 | 2026-11-21 | [Klusters: child ids are disjoint from parent ids — a parent's own child is parent + 10000, every other child 20000 and up](#2026-11-21--klusters-child-ids-are-disjoint-from-parent-ids--a-parents-own-child-is-parent--10000-every-other-child-20000-and-up) |
@@ -223,6 +224,66 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-22 — Klusters: a quality dot per cluster in the waveform view
+
+<details>
+<summary>Details</summary>
+
+A coloured dot in the upper right corner of each cluster's waveforms -- green, yellow, orange, red
+-- for parents and children alike.  Its colour is the normalised residual variance of the spikes
+the view holds for the cluster about their median waveform (`waveformquality.h`):
+
+    value = sum (mean squared difference from the per-point median - background) / sum median^2
+
+over the window less its first and last tenth, and all channels; the background of a channel is the
+mean square at those edge samples.  A cluster with fewer than 30 spikes held gets a hollow dot.
+The tool tip of a dot gives the value and the number of spikes.
+
+**Where it is computed.**  With the mean and standard deviation the waveform cache already keeps
+per cluster (`Data::WaveformData::calculateMean`), so it costs one median per point of the spikes
+the view holds and follows the view: sample mode, time frame, either layer.  The view repaints its
+overlays when the statistics job of a plain fetch finishes (that completion used to be silent).
+
+**Preferences ▸ Waveform view ▸ Cluster quality dot**: on/off, the three thresholds (0.12, 0.27,
+0.52) and the diameter (12 px).
+
+**What it is worth** (measured before it was built; `analysis/cluster-quality-dot/` in the
+project).  On `sirotaA-jg-000005-20120312` group 8, 594 pipeline parents and children of at least
+100 spikes were scored against the curated file, on the 100 spikes the view shows by default:
+
+| space | AUC, under 90 % pure against 98 % or more | impure in the lowest fifth | in the highest fifth |
+|---|---|---|---|
+| `stderiv_C5` | 0.71 | 15 % | 55 % |
+| `standard` | 0.73 | 16 % | 60 % |
+
+So green does not mean pure.  Variants tried and not better: the mean in place of the median,
+removing each spike's amplitude first (worse: the amplitude spread is itself the best single
+sign, AUC 0.79-0.82), normalising by the background instead of the waveform's energy (no better
+in `standard`, near chance in `stderiv_C5`), the four largest channels only.  The thresholds are
+the 40 %, 60 % and 80 % quantiles of the `stderiv_C5` values of those pipeline clusters.
+
+Two things to know when reading it on a curated session.  The curated file's parent 253, which
+holds two cells of similar shape, reads 0.29 in `stderiv_C5` against 0.21 and 0.18 for its two
+cells alone -- a step, but inside the spread of single cells -- and -0.01 in `standard`, where the
+cells alone read -0.02 and -0.06.  And the curated parents, which span the whole session, read
+higher than the pipeline's clusters: of the 163 with at least 100 spikes, 22 % are green, 17 %
+yellow, 18 % orange and 42 % red at the defaults (median 0.38), because a cell's waveform changing
+over hours counts as residual.  Time frame mode measures a stretch of the session instead.
+
+**Tests.**  `klusters_test_waveformquality`: one unit reads about 0, a 20 % amplitude spread about
+0.04, a second unit more the larger its share, the value is independent of gain and sample type,
+the median of an even count, the cases without a value, the colours.
+`test_waveform_quality.py` (the `waveformQuality` step): the dots' values equal numpy's on the
+`.spk`, for parents and for children; colours follow the thresholds and are what is painted; a
+20-spike cluster is hollow; position side by side and overlaid; off and on; the Preferences group.
+
+**Not tested**: the appearance at a working window size (the harness's views are about 60-110
+pixels wide; one grab of the real session was looked at, at that size).
+
+</details>
 
 ---
 

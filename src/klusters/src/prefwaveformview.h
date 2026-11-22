@@ -30,6 +30,10 @@
 //include files for the application
 #include <prefwaveformviewlayout.h>
 #include "channellist.h"
+#include "configuration.h"
+
+class QCheckBox;
+class QDoubleSpinBox;
 
 /**
   * Class representing the Waveform View configuration page of the Klusters preferences dialog.
@@ -73,10 +77,21 @@ public:
     }
 
 
+    /** The quality dot's knobs (Configuration::WaveformQuality). */
+    void setWaveformQuality(const Configuration::WaveformQuality& q);
+    Configuration::WaveformQuality getWaveformQuality() const;
+
 Q_SIGNALS:
     void positionsChanged();
+    /** A quality-dot knob was edited. */
+    void waveformQualityChanged();
 
 private:
+    QCheckBox*      qualityEnabledCheck = nullptr;
+    QDoubleSpinBox* qualityYellowSpin = nullptr;
+    QDoubleSpinBox* qualityOrangeSpin = nullptr;
+    QDoubleSpinBox* qualityRedSpin = nullptr;
+    QSpinBox*       qualityDiameterSpin = nullptr;
     QList<int> channelPositions;
     int nbChannels;
 

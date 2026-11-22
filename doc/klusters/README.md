@@ -577,6 +577,37 @@ Shows spike waveforms for the selected clusters on all channels of the electrode
 | Increase amplitude (all channels) | `I` |
 | Decrease amplitude (all channels) | `D` |
 
+**Quality dot.**  A dot in the upper right corner of each cluster's waveforms (side by side: of its
+column; overlaid: the dots line up at the view's upper right corner, in cluster order, each ringed
+in its cluster's colour).  It is there for parents and for children alike, and is computed on the
+spikes the view holds for the cluster (the N of sample mode, or the time frame).
+
+Its colour is the **normalised residual variance** of those spikes about their median waveform: the
+mean squared difference from the per-point median, less the background (the mean square at the
+first and last tenth of the window, per channel), summed over the rest of the window and all
+channels, and divided by the median waveform's energy over the same points.  0 is a cluster whose
+spikes differ from their median by the background only; 0.25 one whose spikes carry a quarter of
+the waveform's energy in differences from it.  Hover the dot for the number.
+
+| Colour | Value (defaults, Preferences ▸ Waveform view ▸ Cluster quality dot) |
+|---|---|
+| green | below 0.12 |
+| yellow | 0.12 – 0.27 |
+| orange | 0.27 – 0.52 |
+| red | 0.52 and above |
+| hollow | fewer than 30 spikes held: no value |
+
+The defaults are the quantiles measured in a `stderiv_C5` space; raw (`standard`) waveforms read
+lower (about 0.00 / 0.05 / 0.20 for the same split).  The dot is a hint, not a verdict.  A second
+cell raises the value, and so do bursts (amplitude), drift (shape) and misalignment; two cells of
+similar shape and amplitude do not.  On `sirotaA-jg-000005-20120312` group 8, over 594 pipeline
+parents and children scored against the curated file, clusters under 90 % pure were told from
+clusters at 98 % or more with AUC 0.71–0.74: of the fifth with the lowest values 10–15 % were
+impure, of the fifth with the highest 55–60 %.  Clusters that span a long session read higher than
+that (a cell's waveform changing over hours counts as residual): of the curated parents of that
+session 42 % are red at the defaults.  Time frame mode measures a stretch of the session instead;
+raise the thresholds if most of a curated session reads red.
+
 ### Correlogram Display
 
 Shows auto-correlograms (diagonal) and cross-correlograms (off-diagonal) for selected clusters.

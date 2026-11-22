@@ -29,6 +29,7 @@
 #include "curationlogger.h"   // for ClusterSnapshot return type
 
 //Include files for QT
+#include <limits>
 #include <functional>   // buildMissingClusterTemplates' progress callback
 
 #include <QList>
@@ -1823,6 +1824,14 @@ private:
 
         virtual void calculateMean(WaveformMode waveformMode) = 0;
 
+        /** The normalised residual variance of the spikes held for
+         *  @p waveformMode about their median waveform (waveformquality.h),
+         *  as calculateMean() last computed it; NaN before that, or when
+         *  there were too few spikes. */
+        double residualVariance(WaveformMode waveformMode) const {
+            return waveformMode == SAMPLE ? sampleResidualVariance : timeFrameResidualVariance;
+        }
+
     protected:
         Waveforms(Data& d,dataType nbSample = 0,dataType nbTimeFrame = 0,dataType index = 0,dataType startTime = 0,dataType endTime = 0)
             :data(d),
@@ -1845,6 +1854,8 @@ private:
         WaveformMode mode = SAMPLE;
         int nbPtsBySpike;
         dataType nbSpikesAsked;
+        double sampleResidualVariance = std::numeric_limits<double>::quiet_NaN();
+        double timeFrameResidualVariance = std::numeric_limits<double>::quiet_NaN();
     } ;
 
     template <class T>
@@ -2328,6 +2339,8 @@ public:
         virtual dataType nextMeanValue(){return 0;}
         virtual dataType nextStDeviationValue(){return 0;}
         virtual dataType nbOfSpikes() const{return 0;}
+        /** Waveforms::residualVariance() of the spikes this iterator walks. */
+        virtual double residualVariance() const{return std::numeric_limits<double>::quiet_NaN();}
 
         WaveformIterator(){init();}
 
@@ -2405,6 +2418,9 @@ public:
         dataType nbOfSpikes() const override {
             return waveforms->nbOfSpikes(SAMPLE);
         }
+        double residualVariance() const override {
+            return waveforms->residualVariance(SAMPLE);
+        }
     private:
         SampleWaveformIterator(): WaveformIterator(){}
         explicit SampleWaveformIterator(const std::shared_ptr<Waveforms>& waveformsData): WaveformIterator(waveformsData){}
@@ -2461,6 +2477,9 @@ public:
         }
         dataType nbOfSpikes() const override {
             return waveforms->nbOfSpikes(TIME_FRAME);
+        }
+        double residualVariance() const override {
+            return waveforms->residualVariance(TIME_FRAME);
         }
 
     private:

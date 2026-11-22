@@ -24,6 +24,7 @@
  ***************************************************************************/
 //Application include files
 #include "data.h"
+#include "waveformquality.h"
 #include "reservedclusters.h"
 #include "clusterlabel.h"
 #include "spkmemory.h"
@@ -5825,6 +5826,8 @@ void Data::WaveformData<T>::calculateMean(WaveformMode waveformMode){
                 sampleStDeviationTable[(i * data.nbChannels) + j] = static_cast<dataType>(sqrt(static_cast<double>(variance)));
             }
         }
+        sampleResidualVariance = waveformquality::normalisedResidualVariance(
+            sampleSpikesTable.data(), static_cast<long>(nbSampleSpikes), data.nbSamplesInWaveform, data.nbChannels);
     }
     else{
         timeFrameMeanTable.assign(static_cast<size_t>(data.nbSamplesInWaveform) * data.nbChannels, T{});
@@ -5848,6 +5851,8 @@ void Data::WaveformData<T>::calculateMean(WaveformMode waveformMode){
                 timeFrameStDeviationTable[(i * data.nbChannels) + j] = static_cast<dataType>(sqrt(static_cast<double>(variance)));
             }
         }
+        timeFrameResidualVariance = waveformquality::normalisedResidualVariance(
+            timeFrameSpikesTable.data(), static_cast<long>(nbTimeFrameSpikes), data.nbSamplesInWaveform, data.nbChannels);
     }
 }
 

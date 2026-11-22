@@ -368,6 +368,21 @@ public:
     const HoverSpike& getHoverSpike() const { return hoverSpike; }
     HoverSpike getHoverSpikeDefault() const { return HoverSpike(); }
     void setHoverSpike(const HoverSpike& h);   ///< clamped: margin 0-64 px, widths 0.5-12 px
+    /// The quality dot of the waveform view (Preferences > Waveform view): one
+    /// per shown cluster, coloured by the normalised residual variance of its
+    /// spikes about their median waveform (waveformquality.h).  The defaults
+    /// are the quantiles measured in a stderiv_C5 space; raw (standard)
+    /// waveforms read lower, about 0.00 / 0.05 / 0.20.
+    struct WaveformQuality {
+        bool   enabled    = true;
+        double yellow     = 0.12;   ///< green below this
+        double orange     = 0.27;   ///< yellow below this
+        double red        = 0.52;   ///< orange below this, red from here
+        int    diameterPx = 12;
+    };
+    const WaveformQuality& getWaveformQuality() const { return waveformQuality; }
+    WaveformQuality getWaveformQualityDefault() const { return WaveformQuality(); }
+    void setWaveformQuality(const WaveformQuality& q);   ///< clamped: thresholds -1..10 and ascending, diameter 4-48 px
 
     const CoreCut& getCoreCut() const { return coreCut; }
     CoreCut getCoreCutDefault() const { return CoreCut(); }
@@ -739,6 +754,7 @@ private:
     int     knnMinRef;             ///< min "good" reference-cluster size (10-100000)
     CoreCut coreCut;               ///< Split Off Spurious Spikes
     HoverSpike hoverSpike;         ///< the spike under the cursor
+    WaveformQuality waveformQuality;   ///< the quality dot of the waveform view
 
     // Auto-Merge (patch 0068) — settings for the upcoming Auto-Merge action.
     // Mirrors KKE's WithinChunkTemplateMatch / MedianKnn parameters so

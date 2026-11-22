@@ -315,6 +315,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     connect(prefclusterView->densitySigmaSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
+    connect(prefWaveformView, &PrefWaveformView::waveformQualityChanged, this, &PrefDialog::enableApply);
 
     // Input bindings: an edited shortcut lights Apply (PrefInput blocks signals
     // during its programmatic load, so this fires only on real user edits).
@@ -453,6 +454,7 @@ void PrefDialog::updateDialog()
     prefclusterView->setShowEapClassMembers(configuration().getShowEapClassMembers());
     prefclusterView->setDensitySigmaPx(configuration().getDensitySigmaPx());
     prefWaveformView->setGain(configuration().getGain());
+    prefWaveformView->setWaveformQuality(configuration().getWaveformQuality());
 
     // Appearance: reflect the current suite-wide theme preference.
     {
@@ -574,6 +576,7 @@ void PrefDialog::updateConfiguration()
     configuration().setShowEapClassMembers(prefclusterView->getShowEapClassMembers());
     configuration().setDensitySigmaPx(prefclusterView->getDensitySigmaPx());
     configuration().setGain(prefWaveformView->getGain());
+    configuration().setWaveformQuality(prefWaveformView->getWaveformQuality());
     configuration().setNbChannels(prefWaveformView->getNbChannels());
     configuration().setChannelPositions(prefWaveformView->getChannelPositions());
 
@@ -706,6 +709,7 @@ void PrefDialog::slotDefault()
     prefclusterView->setShowEapClassMembers(configuration().getShowEapClassMembersDefault());
     prefclusterView->setDensitySigmaPx(configuration().getDensitySigmaPxDefault());
     prefWaveformView->setGain(configuration().getGainDefault());
+    prefWaveformView->setWaveformQuality(configuration().getWaveformQualityDefault());
     prefWaveformView->resetChannelList(configuration().getNbChannels());
 
     // Input bindings: every editor back to its command's shipped default.
