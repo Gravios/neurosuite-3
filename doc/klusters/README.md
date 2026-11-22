@@ -578,8 +578,8 @@ Shows spike waveforms for the selected clusters on all channels of the electrode
 | Decrease amplitude (all channels) | `D` |
 
 **Quality dot.**  A dot in the upper right corner of each cluster's waveforms (side by side: of its
-column; overlaid: the dots line up at the view's upper right corner, in cluster order, each ringed
-in its cluster's colour).  It is there for parents and for children alike, and is computed on the
+column; overlaid: the dots line up at the view's upper right corner, in cluster order).  A dot is
+the quality colour alone, with no perimeter.  It is there for parents and for children alike, and is computed on the
 spikes the view holds for the cluster (the N of sample mode, or the time frame).
 
 Its colour is the **normalised residual variance** of those spikes about their median waveform: the
@@ -595,7 +595,7 @@ the waveform's energy in differences from it.  Hover the dot for the number.
 | yellow | 0.12 – 0.27 |
 | orange | 0.27 – 0.52 |
 | red | 0.52 and above |
-| hollow | fewer than 30 spikes held: no value |
+| empty circle | fewer than 30 spikes held: no value |
 
 The defaults are the quantiles measured in a `stderiv_C5` space; raw (`standard`) waveforms read
 lower (about 0.00 / 0.05 / 0.20 for the same split).  The dot is a hint, not a verdict.  A second

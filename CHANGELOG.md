@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-22 | [Klusters: the quality dot has no perimeter](#2026-11-22--klusters-the-quality-dot-has-no-perimeter) |
 | 2026-11-22 | [Klusters: a quality dot per cluster in the waveform view](#2026-11-22--klusters-a-quality-dot-per-cluster-in-the-waveform-view) |
 | 2026-11-21 | [Klusters: in the child view, a click on the curated parent returns to the parent view](#2026-11-21--klusters-in-the-child-view-a-click-on-the-curated-parent-returns-to-the-parent-view) |
 | 2026-11-21 | [Klusters: the refresh after a realign no longer takes the child view to the parents](#2026-11-21--klusters-the-refresh-after-a-realign-no-longer-takes-the-child-view-to-the-parents) |
@@ -224,6 +225,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-22 — Klusters: the quality dot has no perimeter
+
+<details>
+<summary>Details</summary>
+
+The dot was ringed in its cluster's colour.  The ring is gone: a dot is the quality colour alone.
+The dot of a cluster with too few spikes for a value stays an empty circle, now drawn in the
+view's neutral text colour instead of the cluster's.
+
+`test_waveform_quality.py` counts the pixels of the cluster's own colour in a 20-pixel dot's
+bounding square (the step reports `clusterColourPixels`): 19-20 with the ring, none without.
+
+</details>
 
 ---
 

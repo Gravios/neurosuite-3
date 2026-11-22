@@ -531,12 +531,17 @@ void WaveformView::drawQualityDots(QPainter& widget)
         if (rect.right() < area.left() || rect.left() > area.right()) continue;   // the column is zoomed out of the view
 
         const QColor fill = qualityColor(value);
-        // Ringed in the cluster's own colour, which says whose dot it is when the clusters are
-        // overlaid.  (Not the contrasting colour: that one is the hovered spike's.)
-        QPen ring(doc.clusterColors().color(cid));
-        ring.setWidthF(1.5);
-        widget.setPen(ring);
-        widget.setBrush(fill.isValid() ? QBrush(fill) : QBrush(Qt::NoBrush));   // hollow: too few spikes for a value
+        if (fill.isValid()) {
+            // The quality colour alone, no perimeter: nothing on the dot but what it says.
+            widget.setPen(Qt::NoPen);
+            widget.setBrush(fill);
+        } else {
+            // Too few spikes for a value: an empty circle in the view's neutral text colour.
+            QPen outline(palette().color(foregroundRole()));
+            outline.setWidthF(1.5);
+            widget.setPen(outline);
+            widget.setBrush(Qt::NoBrush);
+        }
         widget.drawEllipse(rect);
 
         QualityDot dot;

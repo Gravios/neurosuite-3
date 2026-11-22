@@ -18,6 +18,7 @@ Through the `waveformQuality` step, with the views holding every spike of a clus
   - with thresholds put between the two, the one-unit clusters are green and the mixed one red; moving
     the thresholds moves the colours through yellow and orange; the pixel at a dot's centre has the
     colour reported;
+  - a filled dot is the quality colour alone, with no perimeter in the cluster's colour;
   - a cluster with fewer than 30 spikes has a hollow dot and no value;
   - side by side a dot sits at the top of the view, at the right end of its cluster's column, in
     cluster order; overlaid the dots line up at the view's upper right corner;
@@ -147,6 +148,10 @@ def main():
         check(views[5][0]["dots"] == [], "preference off: no dot", str(views[5][0]["dots"]))
         check(all(dd["rect"][2] == 20 for dd in views[6][0]["dots"]) and len(views[6][0]["dots"]) == 3,
               "preference on again, 20 px across", str([dd["rect"] for dd in views[6][0]["dots"]]))
+        # No perimeter in the cluster's colour: at 20 px a ring left 19-20 pixels of exactly that colour
+        # in the dot's square; without it there are none.
+        own = [(dd["cluster"], dd["clusterColourPixels"]) for dd in views[6][0]["dots"] if "colour" in dd]
+        check(len(own) == 2 and all(n <= 6 for _, n in own), f"a filled dot has no perimeter in the cluster's colour {own}", str(own))
 
         kids = {dd["cluster"]: dd for dd in views[7][0]["dots"]}
         check(sorted(kids) == [10002, 20000, 20001], "child view: one dot per shown child", str(sorted(kids)))
