@@ -436,6 +436,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // Reports what the last rebuild found: the .eap read, the rows with two or more classes, the
         // rows corrected, the partners fitted and subtracted, and how many corrected rows are served.
         const QJsonObject o = step.value(QStringLiteral("collisionRows")).toObject();
+        QCoreApplication::processEvents();          // a save or a space switch just done queues its own rebuild
         if (o.contains(QStringLiteral("prefs"))) {
             const QJsonObject pr = o.value(QStringLiteral("prefs")).toObject();
             if (pr.contains(QStringLiteral("enabled")))
@@ -457,6 +458,8 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         QJsonArray deltas;                                      // accepted fits by (fitted - stored) offset, -4 .. +4
         for (const int v : rep.offsetDeltas) deltas.append(v);
         result.insert(QStringLiteral("offsetDeltas"), deltas);
+        result.insert(QStringLiteral("rowsMoved"), static_cast<double>(rep.rowsMoved));
+        result.insert(QStringLiteral("classesMoved"), rep.classesMoved);
         result.insert(QStringLiteral("active"), static_cast<double>(doc->collisionRowsActive()));
         result.insert(QStringLiteral("stale"), doc->collisionRowsStale());
         QJsonArray records;

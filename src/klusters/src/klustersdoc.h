@@ -1997,7 +1997,9 @@ public:
         int     partnersSubtracted = 0;     ///< of them, fits that were accepted
         int     partnersWithoutTemplate = 0;
         int     offsetsDiffer = 0;          ///< accepted fits whose whole-sample offset is not the .eap's
-        QVector<int> offsetDeltas = QVector<int>(9, 0);   ///< accepted fits by (fitted - stored) offset, -4 .. +4
+        QVector<int> offsetDeltas = QVector<int>(9, 0);   ///< accepted fits by (fitted - searched-from) offset, -4 .. +4
+        qint64  rowsMoved = 0;              ///< collision rows whose time is not the one the .eap was written for
+        int     classesMoved = 0;           ///< partner classes whose unit moved since then (its rows' median time change)
         qint64  milliseconds = 0;
     };
     /** Rebuilds the corrected record of every collision row of the open stage --
@@ -2018,6 +2020,11 @@ public:
     qint64 collisionRowsActive() const;
     /** True when corrected rows are held for another .spk than the one read now. */
     bool collisionRowsStale() const;
+    /** Writes the offsets the last rebuild fitted into the stage's .eap (the stage's own file:
+     *  a stage that read the base .eap gets its own) and takes the times as they are now as
+     *  the ones those offsets hold for.  Called at Save.  @p changed: cells rewritten.
+     *  False when there is nothing to write or the file cannot be written. */
+    bool writeCollisionOffsets(int* changed = nullptr, QString* error = nullptr);
     /** The stage's .eap, else (a stage without one) the untagged base .eap; @p inherited says which. */
     QString stageEapPath(bool* inherited = nullptr) const;
     /** Writes the corrected rows shown now as a sparse .spkc at @p path (an empty one when there are none). */
@@ -3121,6 +3128,15 @@ private:
     QList<int>           scopeResolvedParents;          // held contributing parents, block order
     QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
     QList<int>           collisionRowClusters;       // clusters holding a corrected collision row (klustersdoc_spkc.cpp)
+    // The .eap's offsets are relative to the spike times it was written for.  Realign and nudge
+    // move times in memory long before a Save, so the times the .eap holds for are kept (taken
+    // when the .eap is first read after open, and again when the offsets are written back), and
+    // a rebuild starts each partner's search from
+    //     stored offset - (the row's time change) + (the partner unit's time change).
+    std::vector<qint64>  collisionRefTimes;          // per row: the time the .eap's offsets hold for
+    QString              collisionRefEap;            // the .eap those times belong to
+    struct CollisionFit { qint64 row; int classId; int tau; };
+    std::vector<CollisionFit> collisionFits;         // accepted fits of the last rebuild (row, partner class, fitted offset)
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
     QVector<dataType>    reclusterSubsessionRows;   // the last sub-session's feature rows, in its spike order

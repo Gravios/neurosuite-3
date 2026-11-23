@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: collision offsets follow realign and nudge, and are saved](#2026-11-23--klusters-collision-offsets-follow-realign-and-nudge-and-are-saved) |
 | 2026-11-23 | [Klusters: a collision row is shown as its own unit's spike](#2026-11-23--klusters-a-collision-row-is-shown-as-its-own-units-spike) |
 | 2026-11-23 | [Core: collision rows with the partner subtracted, and the sparse `.spkc` that holds them](#2026-11-23--core-collision-rows-with-the-partner-subtracted-and-the-sparse-spkc-that-holds-them) |
 | 2026-11-22 | [Klusters: the quality dot has no perimeter](#2026-11-22--klusters-the-quality-dot-has-no-perimeter) |
@@ -227,6 +228,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: collision offsets follow realign and nudge, and are saved
+
+A collision row keeps its partner however far the row, or the partner's unit, is moved; Save writes
+the fitted offsets to the `.eap`.
+
+<details>
+<summary>Details</summary>
+
+The `.eap` says where in a row's window the partner is, relative to the spike times it was written
+for.  The fit searches 4 samples either side, so a row nudged five times -- or realigned by more --
+lost its partner, and so did every row naming a unit that had been moved.
+
+`rebuildCollisionRows` now keeps the times the `.eap` holds for (taken when it is first read, and
+again when the offsets are written back) and starts each partner's search from
+
+    stored offset - (the row's time change) + (the partner unit's time change)
+
+the unit's change being the median over its rows that are not collisions.  At Save
+`writeCollisionOffsets` puts the offsets the last rebuild fitted -- they are relative to the times
+being saved -- into the stage's own `.eap` (a stage that read the base file gets its own), then the
+rows are rebuilt from the files.
+
+`test_collision_rows.py`: after five one-sample nudges of the unit (the planted offsets were
+already written up to 2 samples off) all 40 rows are still corrected, median error 0.3 % of the raw
+row's; after two more of the PARTNER's unit, still 40; after Save the `.eap` holds planted - 5 - 2
+for at least 38 of the 40 (the others one sample off), the own classes and a partner that was never
+found are untouched, a rebuild finds no row moved and the fits where the file says, the saved `.spk`
+is the raw cut at the saved times, and the `.spkc` holds the 40 rows.
+
+Not done: features of collision rows; a row whose own class is not at offset 0 is not followed
+(realign re-centres a row on its own unit); super-sampled spaces.  Synthetic session only.
+
+</details>
 
 ---
 

@@ -23,7 +23,14 @@ Through the `collisionRows` step:
   - after a NUDGE of unit 2 by one sample -- every one of its rows is cut again from the
     recording -- the 40 rows are corrected again, from the new records: each is served as the
     record the recording held there before the partner was added, one sample on; nothing of the
-    earlier correction is served.
+    earlier correction is served;
+  - the offsets FOLLOW the moves: after four more nudges of unit 2 (five samples in all, more than
+    the fit searches) and two of unit 3, the partner's unit, all 40 rows are still corrected -- the
+    search starts from the stored offset less the row's move plus the partner unit's;
+  - at Save the fitted offsets are written to the .eap, relative to the saved times, and the
+    .spkc is written; rebuilt from the saved files, the 40 rows are corrected with (at least 38 of)
+    the fitted offsets exactly where the .eap now says, and no row counts as moved; the saved .spk
+    is the raw cut of the recording at the saved times.
 """
 import os
 import struct
@@ -128,6 +135,12 @@ def main():
             {"collisionRows": {"prefs": {"enabled": True}, "refresh": True, "rows": ask[:3]}},
             {"nudge": [2, 1]},
             {"collisionRows": {"rows": [int(i) for i in coll]}},
+            {"nudge": [2, 1]}, {"nudge": [2, 1]}, {"nudge": [2, 1]}, {"nudge": [2, 1]},
+            {"collisionRows": {"rows": [int(i) for i in coll]}},
+            {"nudge": [3, -1]}, {"nudge": [3, -1]},
+            {"collisionRows": {"rows": [int(i) for i in coll]}},
+            {"save": True},
+            {"collisionRows": {}},
         ]
         rep = R.run(klusters, f"{base}.clu.standard.1", steps, d)
         st = rep.get("results", [])
@@ -164,7 +177,10 @@ def main():
               "the fit places the partner where it IS, whatever the .eap said (up to 2 samples off, either way): "
               "at most 2 of 40 fitted offsets are not the planted one",
               f"fitted - stored, -4..+4: {r0.get('offsetDeltas')}, planted: {want}")
-        check(open(spk_path, "rb").read() == on_disk, "the .spk on disk is unchanged (the nudge writes a pending copy; nothing was saved)")
+        saved_spk = np.fromfile(spk_path, np.int16).reshape(-1, S.NSAMP * nch)
+        res_s = res.copy(); res_s[clu == 2] += 5; res_s[clu == 3] -= 2
+        check(np.array_equal(saved_spk, S.cut(fil, res_s, S.CHANS, S.NSAMP, S.PEAK)),
+              "the saved .spk is the RAW cut of the recording at the saved times: no corrected record was written into it")
 
         r1, r2 = st[1], st[2]
         off = all(x["served"] == x["raw"] for x in r1.get("records", []))
@@ -193,6 +209,41 @@ def main():
               "... and they are served corrected from the NEW records")
         check(np.median(e_old / e_cor) > 3.0, "... not as corrected before the nudge (those records are several times further off)")
 
+        # five samples on: beyond the fit's reach unless the offsets follow the row
+        r9 = st[9]
+        res5 = res.copy(); res5[clu == 2] += 5
+        want5 = S.cut(fil0, res5, S.CHANS, S.NSAMP, S.PEAK); raw5 = S.cut(fil, res5, S.CHANS, S.NSAMP, S.PEAK)
+        rec9 = {r["row"]: r for r in r9.get("records", [])}
+        e_raw = np.array([((raw5[i].astype(float) - want5[i]) ** 2).sum() for i in coll])
+        e_cor = np.array([((np.array(rec9[int(i)]["served"], float) - want5[i]) ** 2).sum() for i in coll])
+        print(f"      five samples on: corrected {r9.get('corrected')}, rows moved {r9.get('rowsMoved')}, "
+              f"error share median {np.median(e_cor / e_raw):.3f}, worst {(e_cor / e_raw).max():.3f}")
+        check(r9.get("corrected") == 40 and r9.get("rowsMoved") == 41 and r9.get("classesMoved") == 0,
+              "after five nudges of unit 2 (5 samples, more than the fit searches) the 40 rows are still corrected",
+              str({k: r9.get(k) for k in ("corrected", "rowsMoved", "classesMoved", "offsetDeltas")}))
+        check(np.median(e_cor / e_raw) < 0.10, "... to the records the recording held there before the partners were added")
+        r12 = st[12]
+        check(r12.get("corrected") == 40 and r12.get("classesMoved") == 1,
+              "after two nudges of unit 3 -- the PARTNER's unit -- they are still corrected, the partner's move counted",
+              str({k: r12.get(k) for k in ("corrected", "rowsMoved", "classesMoved", "offsetDeltas")}))
+        r14 = st[14]
+        d14 = r14.get("offsetDeltas") or [0] * 9
+        check(r14.get("corrected") == 40 and r14.get("rowsMoved") == 0 and d14[4] >= 38 and sum(d14) == 40,
+              "after Save the .eap holds the fitted offsets for the saved times: nothing has moved and the fits are where it says",
+              str({k: r14.get(k) for k in ("corrected", "rowsMoved", "classesMoved", "offsetDeltas")}))
+        with open(f"{base}.eap.1", "rb") as fh:
+            fh.read(32)
+            saved = np.fromfile(fh, np.int8).reshape(n, 4)
+        want_tau = true_tau - 5 - 2                        # the row 5 later, the partner's unit 2 earlier
+        got_tau = saved[coll, 1].astype(int)
+        check((np.abs(got_tau - want_tau) <= 1).all() and (got_tau != want_tau).sum() <= 2,
+              "the saved .eap: partner offsets = planted - 5 (the row's move) - 2 (the partner unit's), at most 2 of 40 a sample off",
+              f"saved {got_tau.tolist()} planted-7 {want_tau.tolist()}")
+        check((saved[a, 0] == 0).all() and (saved[b, 1] == 0).all() and saved[ghost, 1] == 11,
+              "... own classes and the partner that was never found are untouched")
+        sp = f"{base}.spkc.standard.1"
+        check(os.path.exists(sp) and np.array_equal(read_spkc(sp)[4], coll), "Save wrote the sparse .spkc with the 40 rows")
+
         check(r0.get("spkcWritten") is True and os.path.exists(spkc_path), "the .spkc was written")
         if os.path.exists(spkc_path):
             magic, n_spikes, n_samp, n_ch, rows, wav = read_spkc(spkc_path)
@@ -200,6 +251,13 @@ def main():
             check(np.array_equal(rows, coll), ".spkc index: exactly the corrected rows, ascending")
             check(all(np.array_equal(wav[k], np.array(recs[int(i)]["served"], np.int16)) for k, i in enumerate(coll)),
                   ".spkc records: the served records")
+
+        # the first run saved: put the session's files back as they were
+        spk16.tofile(spk_path)
+        res.tofile(f"{base}.res.standard.1")
+        for stale in (f"{base}.spkc.standard.1",):
+            if os.path.exists(stale):
+                os.remove(stale)
 
         # NEGATIVE CONTROL: an .eap that names no partner
         cells2 = np.full((n, 4), ABSENT, np.int16)

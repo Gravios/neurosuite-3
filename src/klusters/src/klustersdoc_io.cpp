@@ -1019,6 +1019,18 @@ void KlustersDoc::finishSave(bool ok){
         // The saved .spk is read through a fresh reader: the corrected collision rows are
         // rebuilt against it once the save has unwound, and written out for other tools.
         QTimer::singleShot(0, this, [this]() {
+            // The times just saved are the ones the .eap must hold for: write the offsets the
+            // last rebuild fitted (they are relative to these times), then rebuild from the file.
+            if (configuration().getCorrectCollisionRows()) {
+                int changed = 0; QString why;
+                if (writeCollisionOffsets(&changed, &why)) {
+                    if (changed > 0)
+                        qInfo().noquote() << "[collision rows]" << changed << "fitted offsets written to"
+                                          << QFileInfo(collisionRefEap).fileName();
+                } else if (!why.isEmpty()) {
+                    qWarning().noquote() << "[collision rows]" << why;
+                }
+            }
             refreshCollisionRows();
             const QString path = spkcPathFor(activeFeatureMethod());
             if (!path.isEmpty() && (collisionRowsActive() > 0 || QFileInfo::exists(path))) {

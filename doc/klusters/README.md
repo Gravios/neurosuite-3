@@ -1196,10 +1196,14 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   save and when the preference changes.  At Save they are written as a sparse
   [`.spkc`](../ndmanager-plugins/formats/spkc.md) for other tools.
 
-Not done yet: the features (`.fet`) of a collision row are still those of its raw record; the
-offsets the fit finds are not written back to the `.eap`, so a row moved by more than about 4
-samples in all loses its partner; a super-sampled space shows the raw records; time-sort and dedup
-do not carry the `.spkc`.
+- The `.eap`'s offsets are relative to the spike times it was written for, and realign and nudge
+  move times long before a Save.  So a rebuild starts each partner's search from the stored offset
+  less the row's time change plus the partner unit's (the median time change of its rows that are
+  not collisions), and Save writes the offsets the fit found -- relative to the saved times -- to
+  the stage's own `.eap`.  A row can be moved any distance, and so can its partner's unit.
+
+Not done yet: the features (`.fet`) of a collision row are still those of its raw record; a
+super-sampled space shows the raw records; time-sort and dedup do not carry the `.spkc`.
 
 ### Plugins
 

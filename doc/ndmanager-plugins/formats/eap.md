@@ -50,6 +50,13 @@ change. Each column's status and provenance are in [`.tcl`](tcl.md).
 Amplitudes and sub-sample shifts are not stored here; for collisions they stay
 in [`.col`](col.md).
 
+## Offsets and spike times
+
+An offset is relative to the row's `.res` time, and to where the class's unit puts its own spikes
+in their windows.  A tool that moves spike times has to keep the offsets in step: Klusters does it
+at Save, writing for every collision row whose partner it could fit the whole-sample offset that
+fit found (`KlustersDoc::writeCollisionOffsets`); between saves it carries the difference in memory.
+
 ## Size changes
 
 - When a writer needs a class and no `.tcl` slot is `free`, the matrix is

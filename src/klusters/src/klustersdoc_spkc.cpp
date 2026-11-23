@@ -138,6 +138,16 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
         rowsOf.insert(static_cast<int>(id), rows);
     }
 
+    // ── the times the .eap's offsets hold for, and how far each row is from them now ──
+    const int timeDim = clusteringData->nbOfDimensionsTotal();
+    auto timeNow = [&](qint64 row) { return static_cast<qint64>(clusteringData->featureValue(static_cast<dataType>(row + 1), timeDim)); };
+    if (collisionRefEap != rep.eapPath || static_cast<qint64>(collisionRefTimes.size()) != nSpikes) {
+        collisionRefTimes.resize(static_cast<std::size_t>(nSpikes));
+        for (qint64 i = 0; i < nSpikes; ++i) collisionRefTimes[static_cast<std::size_t>(i)] = timeNow(i);
+        collisionRefEap = rep.eapPath;
+    }
+    auto moved = [&](qint64 row) { return timeNow(row) - collisionRefTimes[static_cast<std::size_t>(row)]; };
+
     // ── which cluster each class is ──
     std::vector<int> home = df::homeClusters(eap, clu);
     {
@@ -204,6 +214,27 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
         return t;
     };
 
+    // How far a class's unit has moved since the .eap was written: the median time change of
+    // (up to 301 of) its rows that are not collisions.  Its template moved the other way in the
+    // window, so a partner of that class is that much LATER relative to an unmoved row.
+    QHash<int, qint64> classShift;
+    auto shiftOf = [&](int cls) -> qint64 {
+        auto it = classShift.find(cls);
+        if (it != classShift.end()) return it.value();
+        const QVector<int>& rows = cleanRows(cls);
+        qint64 med = 0;
+        if (!rows.isEmpty()) {
+            std::vector<qint64> d;
+            const int step = std::max<int>(1, static_cast<int>(rows.size()) / 301);
+            for (int k = 0; k < rows.size(); k += step) d.push_back(moved(rows[k]));
+            std::nth_element(d.begin(), d.begin() + static_cast<std::ptrdiff_t>(d.size() / 2), d.end());
+            med = d[d.size() / 2];
+        }
+        if (med != 0) ++rep.classesMoved;
+        return classShift.insert(cls, med).value();
+    };
+    collisionFits.clear();
+
     // ── fit and subtract ──
     auto overlay = std::make_shared<SpkOverlay>();
     QList<int> clusters;
@@ -212,6 +243,11 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
     for (const qint64 i : collisions) {
         const int c = clu[static_cast<std::size_t>(i)];
         if (!df::splitRow(eap, i, c, home, own, partners)) continue;
+        // Where to look for each partner NOW: the row moved, and so may the partner's unit have.
+        const qint64 rowMoved = moved(i);
+        if (rowMoved != 0) ++rep.rowsMoved;
+        for (df::Member& p : partners)
+            p.offset = static_cast<int>(std::clamp<qint64>(p.offset - rowMoved + shiftOf(p.classId), -127, 127));
         if (!snap->readSpkRaw(buf.data(), recBytes, i * recBytes)) continue;
         for (std::size_t q = 0; q < rec; ++q) w[q] = static_cast<float>(buf[q]);
         std::map<int, std::vector<float>> templates;
@@ -229,6 +265,7 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
                 if (fits[k].tau != partners[k].offset) ++rep.offsetsDiffer;
                 const int delta = fits[k].tau - partners[k].offset;
                 if (delta >= -4 && delta <= 4) ++rep.offsetDeltas[delta + 4];
+                collisionFits.push_back(CollisionFit{i, partners[k].classId, fits[k].tau});
             }
         }
         if (done == 0) continue;
@@ -245,8 +282,48 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
                       << "rows with two or more classes," << rep.corrected << "corrected ("
                       << rep.partnersSubtracted << "of" << rep.partnersFitted << "partners subtracted,"
                       << rep.partnersWithoutTemplate << "without a template),"
-                      << rep.offsetsDiffer << "fitted offsets differ from the .eap's;" << rep.milliseconds << "ms";
+                      << rep.offsetsDiffer << "fitted offsets differ from where the search started;"
+                      << rep.rowsMoved << "rows and" << rep.classesMoved << "partner units moved since the .eap was written;"
+                      << rep.milliseconds << "ms";
     return finish(true);
+}
+
+bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error)
+{
+    namespace nf = neurofileio;
+    if (changed) *changed = 0;
+    auto fail = [&](const QString& why) { if (error) *error = why; return false; };
+    if (!clusteringData || collisionRefEap.isEmpty()) return false;
+    nf::EapFile eap = nf::readEap(collisionRefEap.toStdString());
+    const qint64 nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    if (!eap.ok || eap.nSpikes != nSpikes) return fail(QStringLiteral("%1 no longer fits the session").arg(collisionRefEap));
+    int n = 0;
+    for (const CollisionFit& f : collisionFits) {
+        if (f.row < 0 || f.row >= nSpikes || f.classId < 0 || f.classId >= eap.nClasses) continue;
+        int8_t& cell = eap.cells[static_cast<std::size_t>(f.row) * eap.nClasses + f.classId];
+        const int8_t v = static_cast<int8_t>(std::clamp(f.tau, -127, 127));
+        if (nf::eapPresent(cell) && cell != v) { cell = v; ++n; }
+    }
+    // The stage's own file: a stage that read the base .eap gets its own, as the template
+    // classes do (TemplateClassStore::save).
+    std::string base, stage; int group = 0;
+    if (!sessionAnchor(url(), base, group, stage)) return fail(QStringLiteral("the session's name does not parse"));
+    std::string target = neurosuite::custody::untaggedPath(base, "eap", group);
+    if (!stage.empty()) target += "." + stage;
+    const bool sameFile = QString::fromStdString(target) == collisionRefEap;
+    if (n > 0 || !sameFile) {
+        if (!nf::writeEap(target, eap.nSpikes, eap.nClasses, eap.group, eap.flags, eap.cells))
+            return fail(QStringLiteral("could not write %1").arg(QString::fromStdString(target)));
+    }
+    // The offsets on disk now hold for the times as they are.
+    const int timeDim = clusteringData->nbOfDimensionsTotal();
+    collisionRefTimes.resize(static_cast<std::size_t>(nSpikes));
+    for (qint64 i = 0; i < nSpikes; ++i)
+        collisionRefTimes[static_cast<std::size_t>(i)] =
+            static_cast<qint64>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+    collisionRefEap = QString::fromStdString(target);
+    if (changed) *changed = n;
+    return true;
 }
 
 void KlustersDoc::refreshCollisionRows()
