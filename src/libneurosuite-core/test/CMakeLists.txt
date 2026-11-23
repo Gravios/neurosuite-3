@@ -85,6 +85,16 @@ target_include_directories(core_test_decollide_eap
 target_link_libraries(core_test_decollide_eap PRIVATE Neurosuite::core)
 add_test(NAME core_test_decollide_eap COMMAND core_test_decollide_eap)
 
+# decollide_fit — a collision row with its partners' fitted templates subtracted,
+# the class -> cluster reading of the .eap, and the sparse .spkc that holds the
+# corrected rows (readSpkc / writeSpkc in the library).
+add_executable(core_test_decollide_fit decollide_fit_test.cpp)
+target_compile_features(core_test_decollide_fit PRIVATE cxx_std_20)
+target_include_directories(core_test_decollide_fit
+    PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+target_link_libraries(core_test_decollide_fit PRIVATE Neurosuite::core)
+add_test(NAME core_test_decollide_fit COMMAND core_test_decollide_fit)
+
 # Native fiber-template port (template_generate.hpp): the LINKED per-unit/class
 # median series — drift chunks + energy bins, numpy-matching (median, quantile
 # edges, subsample stride, res-frame roll, rint->int16).  Header-only (the pure

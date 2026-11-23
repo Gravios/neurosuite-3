@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Core: collision rows with the partner subtracted, and the sparse `.spkc` that holds them](#2026-11-23--core-collision-rows-with-the-partner-subtracted-and-the-sparse-spkc-that-holds-them) |
 | 2026-11-22 | [Klusters: the quality dot has no perimeter](#2026-11-22--klusters-the-quality-dot-has-no-perimeter) |
 | 2026-11-22 | [Klusters: a quality dot per cluster in the waveform view](#2026-11-22--klusters-a-quality-dot-per-cluster-in-the-waveform-view) |
 | 2026-11-21 | [Klusters: in the child view, a click on the curated parent returns to the parent view](#2026-11-21--klusters-in-the-child-view-a-click-on-the-curated-parent-returns-to-the-parent-view) |
@@ -225,6 +226,46 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Core: collision rows with the partner subtracted, and the sparse `.spkc` that holds them
+
+A spike row whose `.eap` row names two units holds both spikes.  The first piece of showing it as
+its own unit's spike: the subtraction and the file for its result.  Nothing uses either yet.
+
+<details>
+<summary>Details</summary>
+
+**`.spkc`** (`neurofileio::readSpkc` / `writeSpkc` / `spkcFind`, `kSpkcVersion` 1,
+`doc/ndmanager-plugins/formats/spkc.md`): a row index and the corrected records of
+those rows only.  The `.spk` stays the raw cut of the recording, so every tool that re-cuts it
+keeps working and a row cannot be subtracted twice; a reader takes row *i* from the `.spkc` when it
+is listed.  `contract.yaml` lists the format (`contract: 3`).
+
+**`core/decollide_fit.hpp`** (header-only): `fitPartner` fits a partner's template into a record
+within a few samples of the offset the `.eap` holds -- jointly with the row's own template, to a
+fraction of a sample -- and returns the amplitude and the shift; `subtractPartner` removes it;
+`correctRow` does both for every partner of a row.  A fit is accepted only for a plausible
+amplitude (0.3-2.5) that removes at least 5 % of the residual energy.  `homeClusters` and
+`splitRow` read off the membership which cluster a class now is and which class is a row's own, so
+neither depends on cluster ids surviving a renumbering.
+
+Nothing but the `.eap` has to be kept in step when a row or a unit moves: the amplitudes are not
+stored, and the fit returns the offset it found.
+
+Measured in `core_test_decollide_fit` (synthetic 52 x 8 records, noise sd 12): a partner planted
+at 11.4 samples and 0.8 of its template, searched from a stored offset of 8 and of 14, is found within 0.2
+sample and 5 % of its amplitude, and the corrected row is the own spike to within a quarter of the
+noise energy.  Negative controls: 200 rows with no partner and 200 with a partner at 0.15 of its
+template -- none accepted, none changed.  With a partner 3 samples from the own trough, fitting it
+alone misses its amplitude by more than three times the joint fit's error.
+
+Not done: no real data has been through it; the partner's template ends where the window does, so
+the part of its spike outside its own window stays in the row; fiber-kit does not read or write
+`.spkc` yet (its `contract.yaml` and the reference file come with that patch).
+
+</details>
 
 ---
 

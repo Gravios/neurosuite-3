@@ -34,6 +34,7 @@ naming scheme, `SESSION.<type>.<method>.N` — start with
 |---|---|
 | [`.col.<method>.N`](col.md) | Collision decomposition results |
 | [`.eap.N`](eap.md) | Template-class membership and offsets |
+| [`.spkc.<method>.N`](spkc.md) | Sparse corrected waveforms of collision rows |
 | [`.tcl.N`](tcl.md) | Template-class registry |
 | [`.wti.N`](wti.md) | Template-waveform index |
 | [`.wtf.<method>.N`](wtf.md) | Template-waveform stack |

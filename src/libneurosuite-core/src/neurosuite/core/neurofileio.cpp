@@ -837,6 +837,98 @@ bool initEap(const std::string& path, int64_t nSpikes, int nClasses, int group)
     return writeEap(path, nSpikes, nClasses, group, 0u, cells);
 }
 
+// ── .spkc ──────────────────────────────────────────────────────────────────────
+namespace {
+bool spkcIndexValid(const std::vector<int64_t>& rows, int64_t nSpikes)
+{
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        if (rows[i] < 0 || rows[i] >= nSpikes) return false;
+        if (i > 0 && rows[i] <= rows[i - 1]) return false;      // strictly ascending
+    }
+    return true;
+}
+} // namespace
+
+SpkcFile readSpkc(const std::string& path)
+{
+    SpkcFile f;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return f;
+    unsigned char magic[4] = {0, 0, 0, 0};
+    in.read(reinterpret_cast<char*>(magic), 4);
+    if (!in || magic[0] != 'S' || magic[1] != 'P' || magic[2] != 'C' || magic[3] != kSpkcVersion)
+        return f;
+    uint32_t nRows = 0, nSamples = 0, nChannels = 0, nSpikes = 0, group = 0, flags = 0;
+    auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
+    rdU32(nRows); rdU32(nSamples); rdU32(nChannels); rdU32(nSpikes); rdU32(group); rdU32(flags);
+    in.seekg(4, std::ios::cur);                              // pad -> 32B header (4 + 6*4 + 4)
+    if (!in) return f;
+
+    // The header is untrusted: check the file holds index and body BEFORE allocating either.
+    const std::streampos bodyStart = in.tellg();
+    in.seekg(0, std::ios::end);
+    const std::streamoff fileBytes = in.tellg();
+    in.seekg(bodyStart);
+    if (!in || fileBytes < 0 || bodyStart < 0 || fileBytes < static_cast<std::streamoff>(bodyStart)) return f;
+    const uint64_t avail = static_cast<uint64_t>(fileBytes - static_cast<std::streamoff>(bodyStart));
+    const uint64_t maxInt = static_cast<uint64_t>(std::numeric_limits<int>::max());
+    if (nSamples == 0 || nChannels == 0 || nSamples > maxInt || nChannels > maxInt) return f;
+    const uint64_t rec = static_cast<uint64_t>(nSamples) * nChannels;
+    if (rec > (std::numeric_limits<uint64_t>::max() - 8) / 2) return f;
+    const uint64_t perRow = 8 + rec * 2;                     // an index entry and a record
+    if (static_cast<uint64_t>(nRows) > avail / perRow) return f;   // short index or body
+
+    f.rows.resize(nRows);
+    if (nRows)
+        in.read(reinterpret_cast<char*>(f.rows.data()), static_cast<std::streamsize>(nRows * 8ull));
+    f.waveforms.resize(static_cast<std::size_t>(nRows * rec));
+    if (!f.waveforms.empty())
+        in.read(reinterpret_cast<char*>(f.waveforms.data()),
+                static_cast<std::streamsize>(f.waveforms.size() * 2));
+    if (!in || !spkcIndexValid(f.rows, static_cast<int64_t>(nSpikes))) {
+        f.rows.clear(); f.waveforms.clear();
+        return f;
+    }
+    f.nSpikes = static_cast<int64_t>(nSpikes);
+    f.nSamples = static_cast<int>(nSamples);
+    f.nChannels = static_cast<int>(nChannels);
+    f.group = static_cast<int>(group);
+    f.flags = flags;
+    f.ok = true;
+    return f;
+}
+
+bool writeSpkc(const std::string& path, const SpkcFile& f)
+{
+    if (f.nSpikes < 0 || f.nSamples <= 0 || f.nChannels <= 0) return false;
+    if (f.nSpikes > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) return false;
+    const std::size_t rec = static_cast<std::size_t>(f.nSamples) * static_cast<std::size_t>(f.nChannels);
+    if (f.waveforms.size() != f.rows.size() * rec) return false;
+    if (!spkcIndexValid(f.rows, f.nSpikes)) return false;
+    std::ofstream out(path, std::ios::binary);
+    if (!out) return false;
+    const unsigned char magic[4] = {'S', 'P', 'C', static_cast<unsigned char>(kSpkcVersion)};
+    out.write(reinterpret_cast<const char*>(magic), 4);
+    auto wrU32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
+    wrU32(static_cast<uint32_t>(f.rows.size())); wrU32(static_cast<uint32_t>(f.nSamples));
+    wrU32(static_cast<uint32_t>(f.nChannels));   wrU32(static_cast<uint32_t>(f.nSpikes));
+    wrU32(static_cast<uint32_t>(f.group));       wrU32(f.flags);
+    const char pad[4] = {0, 0, 0, 0};
+    out.write(pad, 4);
+    if (!f.rows.empty())
+        out.write(reinterpret_cast<const char*>(f.rows.data()), static_cast<std::streamsize>(f.rows.size() * 8));
+    if (!f.waveforms.empty())
+        out.write(reinterpret_cast<const char*>(f.waveforms.data()),
+                  static_cast<std::streamsize>(f.waveforms.size() * 2));
+    return static_cast<bool>(out);
+}
+
+int64_t spkcFind(const SpkcFile& f, int64_t row)
+{
+    const auto it = std::lower_bound(f.rows.begin(), f.rows.end(), row);
+    return (it != f.rows.end() && *it == row) ? static_cast<int64_t>(it - f.rows.begin()) : -1;
+}
+
 EapFile growEap(const EapFile& in, int newT)
 {
     if (!in.ok || newT <= in.nClasses) return in;           // no-op: already wide enough

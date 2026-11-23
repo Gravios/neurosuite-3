@@ -36,7 +36,7 @@ differ, fix the page.
 | Subject | Code | Canonical page | Other pages (summary + link only) |
 |---|---|---|---|
 | `.res` `.clu` `.fet` `.spk` `.evt` `.dat`/`.fil`/`.lfp` | `src/libneurosuite-core/src/neurosuite/core/neurofileio.{h,cpp}` | `doc/ndmanager-plugins/formats/<ext>.md` ([index](../ndmanager-plugins/formats/README.md)) | [FILE_FORMATS.md](../../src/libneurosuite-core/docs/FILE_FORMATS.md) maps each format to its reader, writer and `file:line`; [GLOSSARY.md](../GLOSSARY.md) |
-| `.eap` `.tcl` `.wti` `.wtf` `.wtl` `.col` | `neurofileio.{h,cpp}` | `doc/ndmanager-plugins/formats/<ext>.md` | FILE_FORMATS.md §4 |
+| `.eap` `.spkc` `.tcl` `.wti` `.wtf` `.wtl` `.col` | `neurofileio.{h,cpp}` | `doc/ndmanager-plugins/formats/<ext>.md` | FILE_FORMATS.md §4 |
 | `.pca` (PCAE basis) | `core/pca_projection.hpp` | [formats/pca.md](../ndmanager-plugins/formats/pca.md) | [CORE_API.md](../../src/libneurosuite-core/docs/CORE_API.md) §3.6 (the API) |
 | `.nst` (NSTE noise statistics) | `core/noise_stats.hpp` | [formats/nst.md](../ndmanager-plugins/formats/nst.md) | FILE_FORMATS.md §4.7 |
 | File naming, method tokens, resolution order | `core/custody.hpp` | [formats/naming.md](../ndmanager-plugins/formats/naming.md) | CORE_API.md §3.1, FILE_FORMATS.md §1.1 |
@@ -305,12 +305,12 @@ promises at the boundary:
 - `plugin_protocol`: the ndm-plugin-protocol it speaks;
 - `session_schema`: the `parameters.version` it writes;
 - `formats`: for each version-tagged format (`pca`, `wti`, `wtl`, `tcl`,
-  `eap`, `nst`), the highest version it reads and the version it writes;
+  `eap`, `spkc`, `nst`), the highest version it reads and the version it writes;
 - `vectors`: the MD5 of each shared table and reference file.
 
 The code states the same values: in neurosuite-3, the constants in
 `core/version_contract.hpp`, `neurofileio.h` (`kWtiVersion`, `kWtlVersion`,
-`kTclVersion`, `kEapVersion`), `core/pca_projection.hpp` (`kPcaeVersion`) and `core/noise_stats.hpp` (`kNsteVersion`).
+`kTclVersion`, `kEapVersion`, `kSpkcVersion`), `core/pca_projection.hpp` (`kPcaeVersion`) and `core/noise_stats.hpp` (`kNsteVersion`).
 In fiber-kit they are the version constants in `src/fiber_kit/neuro_io.py`,
 `fiber_pca.py` and `ndm_fiber_kit.py`. The rule between the repositories is
 that each reads every version the other writes.

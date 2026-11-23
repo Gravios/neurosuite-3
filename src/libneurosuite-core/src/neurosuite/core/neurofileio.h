@@ -44,6 +44,7 @@ inline constexpr int kWtiVersion = 2;   // "wti <v>"; v2 adds the parent column
 inline constexpr int kWtlVersion = 2;   // "wtl <v>"; v2 stores node summaries
 inline constexpr int kTclVersion = 1;   // "tcl <v>"
 inline constexpr int kEapVersion = 1;   // 4th byte of the 'E','A','P' magic
+inline constexpr int kSpkcVersion = 1;  // 4th byte of the 'S','P','C' magic
 
 // ── .clu.N ────────────────────────────────────────────────────────────────
 struct CluFile {
@@ -436,6 +437,44 @@ NEUROSUITE_CORE_EXPORT EapFile growEap(const EapFile& in, int newT);
 NEUROSUITE_CORE_EXPORT std::vector<int64_t> eapClassSpikes(const EapFile& e, int classId);
 NEUROSUITE_CORE_EXPORT std::vector<std::pair<int,int8_t>> eapSpikeClasses(const EapFile& e,
                                                                           int64_t spike);
+
+// ── .spkc — sparse corrected waveforms (doc/ndmanager-plugins/formats/spkc.md) ──
+// The waveforms of the FEW spike rows whose .spk record is not what a reader
+// should see: a collision row (two or more classes in its .eap row) with its
+// partners' fitted templates subtracted.  The .spk itself stays the raw cut of
+// the recording at the .res times -- every tool that re-cuts it keeps working,
+// and a row is never subtracted twice -- and a reader that wants the corrected
+// waveform of row i takes it from here when the row is listed, else from the
+// .spk.  Per method and per stage, like the .spk it overlays:
+// <base>.spkc.<method>.<group>[.<stage>].
+//
+// Binary, little-endian:
+//   Header 32B: magic {'S','P','C',0x01}, nRows u32, nSamples u32, nChannels u32,
+//               nSpikes u32 (rows of the .spk it overlays), group u32, flags u32,
+//               pad[4]
+//   Index:      nRows × int64, the 0-based .spk rows, STRICTLY ASCENDING
+//   Body:       nRows × nSamples × nChannels int16, the .spk record layout
+//               (sample-major, channel-fastest), in index order
+// It is derived data: from the .spk, the .eap and the clustering it can be
+// rebuilt (core/decollide_fit.hpp), and a writer rebuilds the rows it touches.
+struct SpkcFile {
+    int64_t              nSpikes   = 0;   ///< rows of the .spk this overlays (a mismatch = stale)
+    int                  nSamples  = 0;
+    int                  nChannels = 0;
+    int                  group     = 0;
+    uint32_t             flags     = 0;
+    std::vector<int64_t> rows;            ///< strictly ascending 0-based .spk rows
+    std::vector<int16_t> waveforms;       ///< rows.size() * nSamples * nChannels
+    bool                 ok = false;
+};
+// readSpkc rejects a bad magic or version, a short file, and an index that is
+// not strictly ascending or names a row >= nSpikes.  writeSpkc requires the same
+// of what it is given (else writes nothing, returns false).
+NEUROSUITE_CORE_EXPORT SpkcFile readSpkc(const std::string& path);
+NEUROSUITE_CORE_EXPORT bool     writeSpkc(const std::string& path, const SpkcFile& f);
+// Position of @p row in f.rows (its record starts at pos * nSamples * nChannels
+// in f.waveforms), or -1 when the row is not listed.
+NEUROSUITE_CORE_EXPORT int64_t  spkcFind(const SpkcFile& f, int64_t row);
 
 // ── .tcl — template-class registry (see claude/eap-template-class-design) ────
 // Session+group, STAGE-INDEPENDENT (a class id means the same .eap column across

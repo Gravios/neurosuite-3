@@ -149,6 +149,23 @@ int main(int argc, char** argv) {
         io.close();
         check(!neurofileio::readEap(P("a.eap")).ok, "readEap rejects a newer version");
     }
+    {   // .spkc: the version is the magic's 4th byte
+        neurofileio::SpkcFile f;
+        f.nSpikes = 4; f.nSamples = 2; f.nChannels = 1; f.rows = {1}; f.waveforms = {5, -5};
+        check(neurofileio::writeSpkc(P("a.spkc"), f), "writeSpkc");
+        std::ifstream in(P("a.spkc"), std::ios::binary);
+        char magic[4] = {0, 0, 0, 0};
+        in.read(magic, 4);
+        check(static_cast<unsigned char>(magic[3]) == neurofileio::kSpkcVersion,
+              "writeSpkc writes version byte " + std::to_string(neurofileio::kSpkcVersion));
+        in.close();
+        check(neurofileio::readSpkc(P("a.spkc")).ok, "readSpkc reads what writeSpkc wrote");
+        std::fstream io(P("a.spkc"), std::ios::binary | std::ios::in | std::ios::out);
+        io.seekp(3);
+        io.put(static_cast<char>(neurofileio::kSpkcVersion + 1));
+        io.close();
+        check(!neurofileio::readSpkc(P("a.spkc")).ok, "readSpkc rejects a newer version");
+    }
     {   // .pca (PCAE): the header's second int32
         neurosuite::core::PcaBasis b;
         b.nCh = 1; b.data2use = 2; b.nComp = 1;
