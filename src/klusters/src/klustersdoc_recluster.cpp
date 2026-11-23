@@ -108,6 +108,22 @@ int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString
         return CREATION_ERROR;
 }
 
+int KlustersDoc::createFeatureFileAgainst(int mixed, const QList<int>& references, const QString& reclusteringFetFileName){
+    QFile fetFile(reclusteringFetFileName);
+    if(!fetFile.open(QIODevice::WriteOnly))
+        return OPEN_ERROR;
+    reclusterTarget = &data();                         // pinned for the async integrate, as createFeatureFile does
+    const qint64 nMixed = static_cast<qint64>(reclusterTarget->clusterSpkIndices(mixed).size());
+    const qint64 cap = reclusterReferenceCapOverride > 0 ? reclusterReferenceCapOverride : reclusterReferenceCap(nMixed);
+    reclusterReferenceCapOverride = 0;
+    reclusterTarget->createFeatureFileAgainst(mixed, references, static_cast<dataType>(cap), fetFile);
+    fetFile.close();
+    // Header only (4 bytes) or nothing: the pool could not be written.
+    if(fetFile.error() != QFile::NoError || QFileInfo(reclusteringFetFileName).size() <= 4)
+        return CREATION_ERROR;
+    return OK;
+}
+
 // patch78 — wrapper for the mean-subtracted sub-dimensional path.
 // Returns one of the standard enum values (OK / OPEN_ERROR /
 // CREATION_ERROR) to avoid colliding the success path's K+1 dim count
@@ -177,6 +193,15 @@ static void patch81_cleanupTempYaml(const QString& reclusteringFetFileName)
 
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){
 
+    // A recluster against references changes the mixed cluster only: for the log, the undo
+    // step and every view this is a recluster of that one cluster.
+    const bool against = reclusterAgainst;
+    reclusterAgainst = false;
+    if (against) {
+        const Data* pinned = reclusterTarget ? reclusterTarget : clusteringData;
+        clustersToRecluster = QList<int>{ pinned->reclusterAgainstReport().mixed };
+    }
+
     // Capture cluster state before KlustaKwik's output is integrated
     // Parent scope only: a hierarchical recluster pins childData as its
     // target (reclusterTarget), pushes onto CHILDDATA's stack, and its ids
@@ -232,7 +257,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     // this Data's highestClusterId(), so child atoms land above the highest
     // child id and cannot collide with parent (or existing child) ids.
     Data* rt = reclusterTarget ? reclusterTarget : clusteringData;
-    if(!rt->integrateReclusteredClusters(clustersToRecluster,reclusteredClusterList,cluFile)){
+    if(!rt->integrateReclusteredClusters(clustersToRecluster,reclusteredClusterList,cluFile,against)){
         cluFile.close();
         if(!QFile::remove(reclusteringFetFileName))
             QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary feature file used by the reclustering program.") );
@@ -251,11 +276,24 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         QMessageBox::critical(nullptr,tr("Warning !"),tr("Could not delete the temporary cluster file used by the reclustering program.") );
     patch81_cleanupTempYaml(reclusteringFetFileName);
 
+    if (against) {
+        lastReclusterAgainst = rt->reclusterAgainstReport();
+        lastReclusterAgainstOnChild = onChild;
+    }
+
     // Log the newly created clusters — reclusteredClusterList is populated by
     // integrateReclusteredClusters() above and contains the KlustaKwik outputs.
     closeLog(reclusteredClusterList, true);
 
     return OK;
+}
+
+int KlustersDoc::reclusterAgainstCurrentId(int piece) const{
+    const Data* layer = (lastReclusterAgainstOnChild && childData) ? childData : clusteringData;
+    if (!layer || !lastReclusterAgainst.pieceRow.contains(piece)) return piece;
+    const QVector<dataType> labels = layer->labelByFeatureRow();
+    const dataType row = lastReclusterAgainst.pieceRow.value(piece);
+    return (row >= 1 && row < labels.size()) ? static_cast<int>(labels[static_cast<int>(row)]) : piece;
 }
 
 void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList){

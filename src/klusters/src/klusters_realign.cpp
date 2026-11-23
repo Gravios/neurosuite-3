@@ -487,6 +487,8 @@ void KlustersApp::applyPendingParentSelection()
     // read it during the operation.  Only the child-primary derivation moves here,
     // where the arrays have stopped changing.
     if (doc) doc->deriveStoredMap();
+    // A recluster against references named its pieces before the renumber: name them again.
+    if (doc && reclusterAgainstSettlePending) showReclusterAgainstSummary(true);
 
     if (!activeView()) return;
     const QList<int> pending = doc->takePendingParentSelection();

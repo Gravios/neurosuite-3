@@ -327,6 +327,44 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         else slotRecluster();
         return true;
     }
+    if (step.contains(QStringLiteral("reclusterAgainst"))) {
+        // {"reclusterAgainst": <mixed id>, "opts": {"exe", "args", ...}}: Actions > Recluster >
+        // Recluster Against References on the current selection, with that cluster as the mixed
+        // one (the dialog's answer).  {"reclusterAgainstReport": true} reports what the last one found.
+        const QJsonObject o = step.value(QStringLiteral("opts")).toObject();
+        if (o.contains(QStringLiteral("exe")))  reclusteringExecutable = o.value(QStringLiteral("exe")).toString();
+        if (o.contains(QStringLiteral("args"))) reclusteringArgs = o.value(QStringLiteral("args")).toString();
+        if (o.contains(QStringLiteral("autoSelect"))) autoSelectFeatures = o.value(QStringLiteral("autoSelect")).toBool();
+        // "referenceCap": n -- most spikes of one reference pooled, for this run (0 = the rule).
+        doc->setReclusterReferenceCapOverride(o.value(QStringLiteral("referenceCap")).toInt(0));
+        result.insert(QStringLiteral("started"),
+                      startReclusterAgainstReferences(step.value(QStringLiteral("reclusterAgainst")).toInt(-1)));
+        return true;
+    }
+    if (step.contains(QStringLiteral("reclusterAgainstReport"))) {
+        const Data::ReclusterAgainstReport& r = doc->reclusterAgainstReport();
+        QJsonObject pieces;
+        for (auto it = r.pieces.constBegin(); it != r.pieces.constEnd(); ++it)       // by the ids they have now
+            pieces.insert(QString::number(doc->reclusterAgainstCurrentId(it.key())), static_cast<double>(it.value()));
+        QJsonArray refs;
+        for (const Data::ReclusterAgainstReport::Reference& ref : r.references) {
+            QJsonObject by;
+            for (auto it = ref.byPiece.constBegin(); it != ref.byPiece.constEnd(); ++it)
+                by.insert(QString::number(doc->reclusterAgainstCurrentId(it.key())), static_cast<double>(it.value()));
+            refs.append(QJsonObject{{QStringLiteral("id"), ref.id}, {QStringLiteral("spikes"), static_cast<double>(ref.spikes)},
+                                    {QStringLiteral("pooled"), static_cast<double>(ref.pooled)},
+                                    {QStringLiteral("largest"), static_cast<double>(ref.largest)},
+                                    {QStringLiteral("elsewhere"), static_cast<double>(ref.elsewhere)},
+                                    {QStringLiteral("byPiece"), by}});
+        }
+        result.insert(QStringLiteral("mixed"), r.mixed);
+        result.insert(QStringLiteral("mixedSpikes"), static_cast<double>(r.mixedSpikes));
+        result.insert(QStringLiteral("pieces"), pieces);
+        result.insert(QStringLiteral("references"), refs);
+        result.insert(QStringLiteral("ignored"), r.ignored);
+        result.insert(QStringLiteral("summary"), QJsonArray::fromStringList(reclusterAgainstSummary()));
+        return true;
+    }
     if (step.contains(QStringLiteral("reclusterChunkArgs"))) {
         // {"reclusterChunkArgs": {"exe": ..., "args": [...], "chunking": 0-3, "minutes": n}}:
         // the chunking flag a recluster would add to that command line (nothing is run).
@@ -645,6 +683,19 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("moveToEnd"))) {
         // {"moveToEnd": true}: the T key on the current parent-palette selection.
         slotMoveSelectedClustersToEnd();
+        return true;
+    }
+    if (step.contains(QStringLiteral("undo"))) {
+        // {"undo": true}: Edit > Undo.
+        slotUndo();
+        return true;
+    }
+    if (step.contains(QStringLiteral("labels"))) {
+        // {"labels": true}: the parent cluster of every spike row, in row order.
+        const QVector<dataType> labels = doc->parentData().labelByFeatureRow();
+        QJsonArray out;
+        for (int r = 1; r < labels.size(); ++r) out.append(static_cast<int>(labels[r]));
+        result.insert(QStringLiteral("labels"), out);
         return true;
     }
     if (step.contains(QStringLiteral("palette"))) {

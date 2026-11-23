@@ -777,6 +777,10 @@ public:
     /** Recluster the selected cluster(s) forcing the raw-waveform
      *  median-residual feature path (pooled median) for this run only (Shift+M). */
     void slotReclusterMedianResidual();
+    /** Actions > Recluster > Recluster Against References…: of the selected clusters one is a
+     *  mixture of the others.  Asks which, sorts the pool, and replaces ONLY the mixed cluster,
+     *  by the pieces of it the sorter's clusters hold; the references are not changed. */
+    void slotReclusterAgainstReferences();
     /** Recluster the selection forcing channel-level high-variance feature
      *  selection for this run only (Shift+C). */
     void slotReclusterChannelVariance();
@@ -1574,8 +1578,25 @@ private:
     /** One-shot recluster mode requested via a keyboard shortcut (Shift+M /
      *  Shift+C); consumed by the next slotRecluster() that proceeds past the
      *  busy-retry guard, so a retry preserves the request. */
-    enum class ReclusterOnce { None, MedianResidual, ChannelVariance, Subsession };
+    enum class ReclusterOnce { None, MedianResidual, ChannelVariance, Subsession, AgainstReferences };
     ReclusterOnce reclusterOnce = ReclusterOnce::None;
+    /** Recluster Against References: the mixed cluster of the run asked for (the other selected
+     *  clusters are its references), and whether the run in flight is one. */
+    int  reclusterAgainstMixed = -1;
+    bool reclusterAgainstRun = false;
+    /** Starts it on the current selection with @p mixed as the mixed cluster (the dialog of
+     *  slotReclusterAgainstReferences picks it; the self-test names it).  False, with the reason in
+     *  the status bar, when the selection does not allow it. */
+    bool startReclusterAgainstReferences(int mixed);
+    /** The lines the run's report adds to the Recluster output tab and the status bar. */
+    QStringList reclusterAgainstSummary() const;
+    /** Writes the summary to the Recluster output tab and the status bar -- at the end of the run,
+     *  and once more at the settled point of the post-edit automation if the automatic renumber
+     *  gave the new clusters other ids in between. */
+    void showReclusterAgainstSummary(bool settled);
+    QStringList reclusterAgainstShown;
+    bool reclusterAgainstSettlePending = false;
+    QAction *mReclusterAgainst = nullptr;    // Actions > Recluster > Recluster Against References…
     /** The plugin a Subsession recluster runs (a `recluster` descriptor), with its parameters; unset
      *  (reclusterPluginSet false) = the preferences' fiber-kit command. */
     KlustersPlugin reclusterPlugin;

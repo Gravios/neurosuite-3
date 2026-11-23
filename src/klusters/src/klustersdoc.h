@@ -1765,6 +1765,24 @@ public:
   */
     int createFeatureFile(QList<int>& clustersToRecluster, const QString &reclusteringFetFileName);
 
+    /** Most spikes of one reference that enter a recluster against references, for a mixed
+     *  cluster of @p mixedSpikes: three times its size, and at least 1000. */
+    static qint64 reclusterReferenceCap(qint64 mixedSpikes) { return std::max<qint64>(1000, 3 * mixedSpikes); }
+    /** The feature file of a recluster against references (Data::createFeatureFileAgainst), of the
+     *  active clustering.  Same return values as createFeatureFile. */
+    int createFeatureFileAgainst(int mixed, const QList<int>& references, const QString& reclusteringFetFileName);
+    /** The NEXT integrateReclusteredClusters is of a recluster against references: only the mixed
+     *  cluster changes (the list handed in is narrowed to it).  Consumed by that call. */
+    void setReclusterAgainst(bool on) { reclusterAgainst = on; }
+    /** A cap on the pooled spikes per reference for the next createFeatureFileAgainst, in place
+     *  of reclusterReferenceCap() (0 = that rule).  For tests; consumed by that call. */
+    void setReclusterReferenceCapOverride(int cap) { reclusterReferenceCapOverride = cap; }
+    /** What the last recluster against references found. */
+    const Data::ReclusterAgainstReport& reclusterAgainstReport() const { return lastReclusterAgainst; }
+    /** The id the piece created as @p piece has NOW: the automatic renumber that follows an edit
+     *  gives the new clusters other ids.  @p piece itself when its spikes cannot be found. */
+    int reclusterAgainstCurrentId(int piece) const;
+
     /** The recluster SUB-SESSION (klustersdoc_subsession.cpp): the selected clusters' spikes of the
      *  ACTIVE layer written as a session of their own under @p tmpBase (dir + base name), so that a
      *  fiber-kit plan runs on them unmodified -- row subsets of every .res/.spk/.fet of the group in
@@ -3029,6 +3047,10 @@ private:
     // is in flight.  See createFeatureFile / integrateReclusteredClusters /
     // reclusteringUpdate.
     Data*       reclusterTarget = nullptr;
+    bool        reclusterAgainst = false;             // the next integration is against references
+    int         reclusterReferenceCapOverride = 0;
+    Data::ReclusterAgainstReport lastReclusterAgainst;
+    bool        lastReclusterAgainstOnChild = false;
     QString     clcSiblingPath;              // resolved .clc path ("" if none detected)
     QString     clpSiblingPath;              // resolved .clp child->parent map ("" if none)
     // Atom-layer (childData) edits live on their OWN undo timeline, because the

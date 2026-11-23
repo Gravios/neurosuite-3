@@ -822,6 +822,11 @@ void KlustersApp::createMenus()
     mReclusterChannelVar->setToolTip(tr("Recluster using the highest-variance channels' features"));
     connect(mReclusterChannelVar,&QAction::triggered, this,&KlustersApp::slotReclusterChannelVariance);
 
+    mReclusterAgainst = reclusterMenu->addAction(tr("Recluster &Against References…"));
+    mReclusterAgainst->setToolTip(tr("One selected cluster is a mixture of the others: sort them pooled, and replace "
+                                     "only the mixed cluster by its pieces (the references are left as they are)"));
+    connect(mReclusterAgainst,&QAction::triggered, this,&KlustersApp::slotReclusterAgainstReferences);
+
     mReclusterFiberKit = reclusterMenu->addAction(tr("Recluster with &fiber-kit (plan on the selection)"));
     mReclusterFiberKit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Q));
     mReclusterFiberKit->setToolTip(tr("Run the fiber-kit plan of this folder's fiber-kit.yaml on the selected "
@@ -2716,6 +2721,7 @@ void KlustersApp::registerInputBindings()
 
     registerActionCommand(QStringLiteral("recluster.recluster"),    QStringLiteral("Recluster"), mReCluster);
     registerActionCommand(QStringLiteral("recluster.median"),       QStringLiteral("Recluster"), mReclusterMedian);
+    registerActionCommand(QStringLiteral("recluster.against"),      QStringLiteral("Recluster"), mReclusterAgainst);
     registerActionCommand(QStringLiteral("recluster.fiberkit"),     QStringLiteral("Recluster"), mReclusterFiberKit);
     registerActionCommand(QStringLiteral("recluster.engine.klustakwik"), QStringLiteral("Recluster"), mEngineKlustaKwik);
     registerActionCommand(QStringLiteral("recluster.engine.fiberkit"),   QStringLiteral("Recluster"), mEngineFiberKit);

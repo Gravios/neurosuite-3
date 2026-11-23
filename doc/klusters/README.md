@@ -1549,10 +1549,43 @@ The **Actions → Recluster** submenu also holds:
 |---|---|---|
 | Recluster (median-waveform residual) | `Shift+M` | Reclusters the selected cluster(s) on the residuals of their pooled median waveform |
 | Recluster (channel-variance features) | `Shift+C` | Reclusters using the features of the highest-variance channels |
+| Recluster Against References… | — | One selected cluster is a mixture of the others: sorts them pooled and replaces only the mixed cluster by its pieces; see [below](#recluster-against-references--a-mixed-cluster-and-the-cells-it-is-a-mixture-of) |
 | Recluster with fiber-kit (plan on the selection) | `Shift+Q` | Runs the fiber-kit plan of the session folder's `fiber-kit.yaml` on the selected clusters' (or atoms') spikes and replaces them with its clusters; see [below](#recluster-with-fiber-kit) |
 | Split by KNN voting… | `Shift+K` | Splits the selected cluster by a K-nearest-neighbour vote against well-isolated reference clusters |
 | Strip by Template… | `Shift+J` | Uses one selected cluster as a waveform template and pulls matching spikes out of the other selected clusters (current channel selection) |
 | DipSplit Selected Cluster | `Shift+D` | See [DipSplit](#dipsplit--automatic-bimodal-split) |
+
+### Recluster Against References — a mixed cluster and the cells it is a mixture of
+
+A cluster that holds spikes of two known cells is hard to split by itself: the sorter sees
+one blob. Sorted together with the two clean clusters, each cell's mode has its weight.
+
+Select the mixed cluster **and** the clusters it is a mixture of, then **Actions → Recluster →
+Recluster Against References…** (no key; bind `recluster.against` in Preferences → Input). A
+dialog lists the selected clusters with their spike counts and asks which one is the mixed
+one; the others are the references.
+
+- **The pool.** All spikes of the mixed cluster and the spikes of each reference go to the
+  sorter (KiloKlustaKwik with the Reclustering preferences, in the shown space's features --
+  collision rows with their corrected ones). A reference larger than three times the mixed
+  cluster (and than 1000 spikes) is cut to that many: its spikes inside the mixed cluster's
+  time span, thinned evenly, or the nearest outside it when the span holds fewer.
+- **What changes.** Only the mixed cluster. Each of the sorter's clusters that holds spikes of
+  it becomes a new cluster of just those spikes; sorter clusters without any are ignored. The
+  references keep every spike and their ids. Nothing is merged into a reference.
+- **The summary**, in the Recluster output tab under the sorter's log and in the status bar:
+  each new cluster with its spikes and the reference it was sorted with ("new cluster 31: 140
+  spikes, sorted with 98 % of reference 12"), how many spikes of each reference were pooled,
+  and a warning when the sorter split a reference itself (its largest part under 90 %), which
+  says the pool was not separable. The ids are the ones after the automatic renumbering.
+- **Undo.** As after any recluster: the automatic renumber is one step, the recluster the next.
+- **Pool size.** The sorter needs enough spikes for its number of dimensions: on the test
+  session a pool of 600 spikes in 13 dimensions came back as one cluster, 780 as the two
+  units. A mixed cluster that returns in one piece is reported as such.
+
+It runs KiloKlustaKwik whatever engine Actions → Recluster → Engine has checked. Compare
+**Split by KNN voting…**, which assigns a cluster's spikes to reference clusters by vote
+and chooses the references itself.
 
 ### Recluster with fiber-kit
 

@@ -157,42 +157,14 @@ committed template model (`.mti`/`.mtf`, the `.wti`/`.spk` layouts) has no
 fiber-kit reader yet.  A separate fiber-kit patch, never cross-applied from
 ns3.  Estimate: a quarter session.
 
-**Klusters — recluster a mixed cluster against reference clusters.**
-(User's design, 2026-11-23.)  A cluster that holds spikes of two known
-cells is hard to split by itself: the sorter sees one blob.  Pool it with
-the two clean clusters it is a mixture of and sort the pool; the references
-give each mode its weight.  Then only the mixed cluster changes: every
-output cluster that holds spikes of the mixed cluster becomes a NEW
-cluster of just those spikes; output clusters without any are ignored; the
-reference clusters keep every spike and their ids.
-
-- *Gesture.*  Select the mixed cluster and one or more references;
-  **Actions → Recluster Against References**.  Which one is the mixed
-  cluster must be unambiguous -- proposed: the first one selected (the
-  primary selection), named in the status line before the job starts.
-- *Job.*  The existing recluster path (`klusters_recluster.cpp`: sub-session
-  files of the selected clusters, the active engine, the output pane) with
-  the pool as input, in the shown space's features.  `-MinClusters` = the
-  number of references.
-- *Apply.*  A new step beside `Data::integrateReclusteredClusters`: read the
-  sorter's labels, keep the rows of the mixed cluster, give each label
-  present among them a free cluster id, leave every other row as it is.
-  One undo step.  Nothing is merged into a reference: the user sees the
-  pieces first (over-split before a false merge).
-- *Report.*  Per new cluster: its spikes, and how the references' spikes
-  fell over the sorter's clusters (e.g. "new 301: 412 spikes, with 96 % of
-  reference 12") -- which reference a piece goes with, and whether the
-  references themselves came out whole (a reference the sorter split is a
-  warning that the pool was not separable).
-- *Open.*  References much larger than the mixed cluster: cap them (the
-  spikes nearest in time to the mixed cluster's, which also keeps drift
-  out).  Collision rows enter with their corrected features.  Whether to
-  seed the sorter with the references instead of only pooling them.
-- *Test.*  Self-test on a synthetic session: two units, a third cluster
-  made of 200 spikes of each; after the action two new clusters with the
-  right spikes, the references byte for byte as before; NEGATIVE CONTROL: a
-  plain recluster of the mixed cluster alone does not separate it.
-Estimate: 1-2 sessions.
+**Klusters — Recluster Against References: what the first version leaves.**
+Built 2026-11-23 (Actions → Recluster → Recluster Against References…, `CHANGELOG.md`,
+`doc/klusters/README.md`).  Open: a first use on a real mixed cluster; a session with a
+child layer (same code path as a recluster of one atom, not run); `-MinClusters` is the
+preferences' value, not the number of references; seeding the sorter with the references
+instead of only pooling them; an engine other than KiloKlustaKwik; and the pool size the
+sorter needs (600 spikes in 13 dimensions came back as one cluster) -- fewer features for
+a small pool would be the lever.
 
 **Klusters — collision rows in super-sampled spaces.**
 A `_U<f>` space still shows the raw record of a collision row (the rebuild

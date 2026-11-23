@@ -7063,6 +7063,93 @@ void Data::createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile){
     }
 }
 
+void Data::createFeatureFileAgainst(int mixed, const QList<int>& references, dataType referenceCap, QFile& fetFile){
+    reclusteringOrigin.clear();
+    againstReport = ReclusterAgainstReport();
+    againstReport.mixed = mixed;
+    if (!clusterInfoMap->contains(static_cast<dataType>(mixed))) {
+        qWarning("createFeatureFileAgainst: cluster %d is absent from clusterInfoMap -- aborting", mixed);
+        return;
+    }
+    for (const int r : references)
+        if (r == mixed || !clusterInfoMap->contains(static_cast<dataType>(r))) {
+            qWarning("createFeatureFileAgainst: reference %d is the mixed cluster or absent -- aborting", r);
+            return;
+        }
+    // A cluster's spikes lie in spikesByCluster in feature-row order, which is time order.
+    const ClusterInfo mixedInfo = clusterInfoMap->value(static_cast<dataType>(mixed));
+    const dataType nMixed = mixedInfo.nbSpikes();
+    if (nMixed < 1) return;
+    const dataType tFirst = features((*spikesByCluster)(1, mixedInfo.firstSpikePosition()), nbDimensions);
+    const dataType tLast  = features((*spikesByCluster)(1, mixedInfo.firstSpikePosition() + nMixed - 1), nbDimensions);
+    againstReport.mixedSpikes = static_cast<qint64>(nMixed);
+
+    std::vector<dataType> rows, origin;                      // the pool: feature row, the cluster it is in
+    for (dataType k = 0; k < nMixed; ++k) {
+        rows.push_back((*spikesByCluster)(1, mixedInfo.firstSpikePosition() + k));
+        origin.push_back(static_cast<dataType>(mixed));
+    }
+    for (const int r : references) {
+        const ClusterInfo info = clusterInfoMap->value(static_cast<dataType>(r));
+        const dataType first = info.firstSpikePosition(), n = info.nbSpikes();
+        ReclusterAgainstReport::Reference ref;
+        ref.id = r;
+        ref.spikes = static_cast<qint64>(n);
+        std::vector<dataType> take;                          // offsets into the cluster's run, ascending
+        if (referenceCap < 1 || n <= referenceCap) {
+            for (dataType k = 0; k < n; ++k) take.push_back(k);
+        } else {
+            // [lo, hi): the reference's spikes inside the mixed cluster's time span.
+            dataType lo = 0, hi = n;
+            while (lo < n && features((*spikesByCluster)(1, first + lo), nbDimensions) < tFirst) ++lo;
+            while (hi > lo && features((*spikesByCluster)(1, first + hi - 1), nbDimensions) > tLast) --hi;
+            const dataType inside = hi - lo;
+            if (inside >= referenceCap) {
+                for (dataType k = 0; k < referenceCap; ++k)  // evenly through the span
+                    take.push_back(lo + (k * inside) / referenceCap);
+            } else {
+                dataType a = lo, b = hi;                     // widen to the nearest outside it, either side in turn
+                while (b - a < referenceCap) {
+                    const bool canLeft = a > 0, canRight = b < n;
+                    if (!canLeft && !canRight) break;
+                    if (canLeft && (!canRight || (lo - a) <= (b - hi))) --a; else ++b;
+                }
+                for (dataType k = a; k < b; ++k) take.push_back(k);
+            }
+        }
+        ref.pooled = static_cast<qint64>(take.size());
+        againstReport.references.append(ref);
+        for (const dataType k : take) {
+            rows.push_back((*spikesByCluster)(1, first + k));
+            origin.push_back(static_cast<dataType>(r));
+        }
+    }
+
+    const dataType nPool = static_cast<dataType>(rows.size());
+    reclusteringSpikesByCluster.setSize(nPool);              // erases any previous data
+    for (dataType i = 1; i <= nPool; ++i) {
+        reclusteringSpikesByCluster(1, i) = rows[static_cast<size_t>(i - 1)];
+        reclusteringSpikesByCluster(2, i) = origin[static_cast<size_t>(i - 1)];
+    }
+    reclusteringOrigin = std::move(origin);
+
+    // The binary .fet, as createFeatureFile writes it.
+    fetFile.close();
+    FILE* ff = fopen(fetFile.fileName().toLocal8Bit().constData(), "wb");
+    if (ff) {
+        const int32_t nDim32 = static_cast<int32_t>(nbDimensions);
+        fwrite(&nDim32, sizeof(int32_t), 1, ff);
+        for (dataType i = 1; i <= nPool; ++i) {
+            const dataType featuresRowIndex = reclusteringSpikesByCluster(1, i);
+            for (int j = 1; j <= nbDimensions; ++j) {
+                const int64_t v = static_cast<int64_t>(features(featuresRowIndex, j));
+                fwrite(&v, sizeof(int64_t), 1, ff);
+            }
+        }
+        fclose(ff);
+    }
+}
+
 QVector<dataType> Data::createFeatureFileSorted(QList<int>& clustersToRecluster, const QString& fetPath){
     QVector<dataType> rows;
     for (int cid : clustersToRecluster)
@@ -7104,9 +7191,60 @@ QVector<dataType> Data::createFeatureFileSorted(QList<int>& clustersToRecluster,
     return rows;
 }
 
-bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList, QFile& clusterFile){
+bool Data::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList, QFile& clusterFile,
+                                        bool against){
     //Replace the cluster ids in reclusteringSpikesByCluster by the new ones.
     if(!loadReclusteredClusters(clusterFile)) return 0;
+
+    // A recluster AGAINST REFERENCES: the sorter saw the mixed cluster pooled with its references,
+    // and only the mixed cluster changes.  Note where each reference's spikes fell, then keep the
+    // entries of the mixed cluster alone -- from here on this is a recluster of that one cluster,
+    // and the references are among the clusters copied as they are.
+    if (against) {
+        const dataType nPool = reclusteringSpikesByCluster.nbOfColumns();
+        const dataType mixed = static_cast<dataType>(againstReport.mixed);
+        if (static_cast<dataType>(reclusteringOrigin.size()) != nPool || againstReport.mixed < 0
+            || clustersToRecluster.size() != 1 || clustersToRecluster.first() != againstReport.mixed) {
+            qWarning() << "Data::integrateReclusteredClusters: the recluster against references does not match"
+                       << "the pool that was written -- aborting, cluster state unchanged";
+            reclusteringSpikesByCluster.setSize(0, true);
+            reclusteringOrigin.clear();
+            return 0;
+        }
+        QMap<int, qint64> all;                               // sorter cluster (as a new id) -> pooled spikes
+        QHash<int, QMap<int, qint64>> ofReference;           // reference -> sorter cluster -> its spikes
+        std::vector<dataType> keptRow, keptLabel;
+        for (dataType i = 1; i <= nPool; ++i) {
+            const int label = static_cast<int>(reclusteringSpikesByCluster(2, i));
+            const dataType from = reclusteringOrigin[static_cast<size_t>(i - 1)];
+            ++all[label];
+            if (from == mixed) {
+                ++againstReport.pieces[label];
+                if (!againstReport.pieceRow.contains(label))
+                    againstReport.pieceRow.insert(label, reclusteringSpikesByCluster(1, i));
+                keptRow.push_back(reclusteringSpikesByCluster(1, i));
+                keptLabel.push_back(static_cast<dataType>(label));
+            } else {
+                ++ofReference[static_cast<int>(from)][label];
+            }
+        }
+        againstReport.ignored = static_cast<int>(all.size() - againstReport.pieces.size());
+        for (ReclusterAgainstReport::Reference& ref : againstReport.references) {
+            const QMap<int, qint64> where = ofReference.value(ref.id);
+            for (auto it = where.constBegin(); it != where.constEnd(); ++it) {
+                ref.largest = std::max(ref.largest, it.value());
+                if (againstReport.pieces.contains(it.key())) ref.byPiece.insert(it.key(), it.value());
+                else ref.elsewhere += it.value();
+            }
+        }
+        const dataType nKept = static_cast<dataType>(keptRow.size());
+        reclusteringSpikesByCluster.setSize(nKept);
+        for (dataType i = 1; i <= nKept; ++i) {
+            reclusteringSpikesByCluster(1, i) = keptRow[static_cast<size_t>(i - 1)];
+            reclusteringSpikesByCluster(2, i) = keptLabel[static_cast<size_t>(i - 1)];
+        }
+        reclusteringOrigin.clear();
+    }
 
     //The new information about the cluster will be inserted in the table pointed by spikesByClusterTemp
     SortableTable* spikesByClusterTemp = new SortableTable();

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: Recluster Against References](#2026-11-23--klusters-recluster-against-references) |
 | 2026-11-23 | [Roadmap: what the collision-row work left open, and reclustering against references](#2026-11-23--roadmap-what-the-collision-row-work-left-open-and-reclustering-against-references) |
 | 2026-11-23 | [Self-test: test_recluster_klustakwik read the chunk count off any line](#2026-11-23--self-test-test_recluster_klustakwik-read-the-chunk-count-off-any-line) |
 | 2026-11-23 | [Klusters: a line of a child process is no longer cut where the other stream speaks](#2026-11-23--klusters-a-line-of-a-child-process-is-no-longer-cut-where-the-other-stream-speaks) |
@@ -239,6 +240,47 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: Recluster Against References
+
+A new action for a cluster that is a mixture of known cells: it is sorted pooled with the clean
+clusters of those cells, and only the mixed cluster is replaced.  (The user's design.)
+
+<details>
+<summary>Details</summary>
+
+- **Actions → Recluster → Recluster Against References…** (`recluster.against`, no default key).
+  Select the mixed cluster and its references; a dialog asks which of them is the mixed one.
+- `Data::createFeatureFileAgainst` writes the pool: the mixed cluster whole, each reference up to
+  `KlustersDoc::reclusterReferenceCap` spikes (three times the mixed cluster, at least 1000) --
+  those inside the mixed cluster's time span, thinned evenly, or the nearest outside it.
+- `Data::integrateReclusteredClusters(.., against)`: after the sorter's labels are read, where each
+  reference's spikes fell is noted and the table is cut down to the mixed cluster's entries; from
+  there on it is an ordinary recluster of that one cluster.  The references are among the clusters
+  copied as they are, so the log, the undo step, the palette and the hierarchy see one cluster
+  reclustered.
+- The summary (output tab and status bar) names each piece with the reference it was sorted with,
+  the spikes pooled per reference, a reference the sorter split, and a mixed cluster that came
+  back in one piece.  Klusters renumbers after every edit, so the pieces are named by the id they
+  have at the settled point (found through one of their rows), not by the id they were created
+  under.
+- It runs the KiloKlustaKwik command of the Reclustering preferences whatever engine is checked.
+- `test_recluster_against_references.py`: a cluster of 150 + 150 spikes of two synthetic units,
+  references of 250 each.  The references keep their rows and ids; the two large pieces are the
+  two units (140 and 141 spikes, both pure; 19 spikes in a third, the sorter's noise); the summary
+  names the right reference for each; two Undos restore the mixed cluster; an ordinary recluster
+  of the same selection replaces the references as well; with 240 of 250 pooled per reference the
+  split is the same.
+- **Measured on the way:** with 150 pooled per reference (600 spikes, 13 dimensions)
+  KiloKlustaKwik returns one cluster and the mixed cluster comes back whole; with 240 (780 spikes)
+  it separates.  The pool has to be large enough for the sorter.
+- **Not tested:** the dialog itself (the self-test step answers it), a session with a child layer
+  (the code takes the same path as a recluster of one atom), a real session, and a mixture that a
+  plain recluster of the mixed cluster alone cannot split -- the two test units are well apart.
+
+</details>
 
 ---
 

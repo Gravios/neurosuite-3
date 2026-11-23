@@ -131,6 +131,87 @@ void KlustersApp::slotReclusterChannelVariance(){
     slotRecluster();
 }
 
+void KlustersApp::slotReclusterAgainstReferences(){
+    if(!mReCluster->isEnabled() || !activeView()) return;
+    const QList<int> selected = activeView()->clusters();
+    if (selected.size() < 2) {
+        QMessageBox::information(this, tr("Recluster Against References"),
+            tr("Select the mixed cluster together with the clusters it is a mixture of (two or more "
+               "clusters; %1 selected).").arg(selected.size()));
+        return;
+    }
+    // Which one is the mixture cannot be read off the selection: ask.
+    QStringList items;
+    for (const int id : selected)
+        items << tr("%1   (%2 spikes)").arg(clusterLabel(id)).arg(doc->data().clusterSpkIndices(id).size());
+    bool ok = false;
+    const QString picked = QInputDialog::getItem(this, tr("Recluster Against References"),
+        tr("Which of the selected clusters is the MIXED one?\n\n"
+           "It is sorted pooled with the others and replaced by its pieces.\n"
+           "The others are references: they are not changed."),
+        items, 0, false, &ok);
+    if (!ok) return;
+    startReclusterAgainstReferences(selected.value(items.indexOf(picked), -1));
+}
+
+bool KlustersApp::startReclusterAgainstReferences(int mixed){
+    if(!mReCluster->isEnabled() || !activeView()) return false;
+    const QList<int> selected = activeView()->clusters();
+    if (selected.size() < 2 || !selected.contains(mixed)) {
+        statusBar()->showMessage(tr("Recluster Against References: select the mixed cluster and at least one reference."), 8000);
+        return false;
+    }
+    reclusterAgainstMixed = mixed;
+    reclusterOnce = ReclusterOnce::AgainstReferences;
+    slotRecluster();
+    return true;
+}
+
+QStringList KlustersApp::reclusterAgainstSummary() const{
+    const Data::ReclusterAgainstReport& r = doc->reclusterAgainstReport();
+    QStringList lines;
+    lines << tr("Recluster against references: cluster %1 (%2 spikes) is now %3 cluster(s); the references are unchanged.")
+                 .arg(clusterLabel(r.mixed)).arg(r.mixedSpikes).arg(r.pieces.size());
+    for (auto it = r.pieces.constBegin(); it != r.pieces.constEnd(); ++it) {
+        const int now = doc->reclusterAgainstCurrentId(it.key());      // after any renumber
+        QStringList with;
+        for (const Data::ReclusterAgainstReport::Reference& ref : r.references) {
+            const qint64 n = ref.byPiece.value(it.key(), 0);
+            if (ref.pooled > 0 && 20 * n >= ref.pooled)          // 5 % of the reference or more
+                with << tr("%1 % of reference %2").arg(qRound(100.0 * static_cast<double>(n) / static_cast<double>(ref.pooled)))
+                                                 .arg(clusterLabel(ref.id));
+        }
+        lines << tr("  new cluster %1: %2 spikes, sorted with %3").arg(clusterLabel(now)).arg(it.value())
+                     .arg(with.isEmpty() ? tr("no reference (under 5 % of each)") : with.join(tr(", ")));
+    }
+    for (const Data::ReclusterAgainstReport::Reference& ref : r.references) {
+        QString line = tr("  reference %1: %2 of its %3 spikes pooled").arg(clusterLabel(ref.id)).arg(ref.pooled).arg(ref.spikes);
+        if (ref.pooled > 0 && 10 * ref.largest < 9 * ref.pooled)
+            line += tr("; the sorter SPLIT it (its largest part holds %1 %): the pool may not be separable")
+                        .arg(qRound(100.0 * static_cast<double>(ref.largest) / static_cast<double>(ref.pooled)));
+        lines << line;
+    }
+    if (r.ignored > 0)
+        lines << tr("  %1 cluster(s) of the sorter held no spike of the mixed cluster and were ignored.").arg(r.ignored);
+    if (r.pieces.size() == 1)
+        lines << tr("  The sorter did not separate the mixed cluster: it came back in one piece (Undo restores its id).");
+    return lines;
+}
+
+void KlustersApp::showReclusterAgainstSummary(bool settled){
+    const QStringList summary = reclusterAgainstSummary();
+    if (settled) {
+        reclusterAgainstSettlePending = false;
+        if (summary == reclusterAgainstShown) return;                   // no id changed
+    }
+    if (processWidget) {
+        if (settled) processWidget->addItem(tr("After the automatic renumbering:"));
+        for (const QString& line : summary) processWidget->addItem(line);
+    }
+    statusBar()->showMessage(summary.value(0), 15000);
+    reclusterAgainstShown = summary;
+}
+
 void KlustersApp::slotReclusterFiberKit(){
     if(!mReCluster->isEnabled()) return;
     // The shipped fiber-kit descriptor (fiber-kit-recluster, installed by `fk install klusters-plugin`)
@@ -266,6 +347,14 @@ void KlustersApp::slotRecluster(){
     for(shownClustersIterator = currentClusters.begin(); shownClustersIterator != currentClusters.end(); ++shownClustersIterator)
         clustersToRecluster.append(*shownClustersIterator);
     std::sort(clustersToRecluster.begin(), clustersToRecluster.end());
+
+    // Against references: the selection is the pool; one of it is the mixed cluster.
+    reclusterAgainstRun = (reclusterOnceMode == ReclusterOnce::AgainstReferences);
+    if (reclusterAgainstRun && (clustersToRecluster.size() < 2 || !clustersToRecluster.contains(reclusterAgainstMixed))) {
+        reclusterAgainstRun = false;
+        statusBar()->showMessage(tr("Recluster Against References: the selection changed; nothing was run."), 8000);
+        return;
+    }
 
     // ── Pre-launch desync check ──────────────────────────────────────────
     // The cluster palette reads its membership counts from spikesByCluster
@@ -879,6 +968,10 @@ void KlustersApp::slotRecluster(){
             return;
         }
         NS3_DIAG() << "[recluster] fiber-kit sub-session" << fileBaseName << ":" << written.size() << "files";
+    } else if (reclusterAgainstRun) {
+        QList<int> references = clustersToRecluster;
+        references.removeAll(reclusterAgainstMixed);
+        returnStatus = doc->createFeatureFileAgainst(reclusterAgainstMixed, references, reclusteringFetFileName);
     } else if (!usedSubdim) {
         returnStatus = doc->createFeatureFile(clustersToRecluster,reclusteringFetFileName);
     }
@@ -1032,6 +1125,9 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         }
         NS3_DIAG() << "[recluster] refine: the engine's .clc staged as the .clu to integrate (atom layer)";
     }
+    const bool againstRun = reclusterAgainstRun;
+    reclusterAgainstRun = false;
+    doc->setReclusterAgainst(againstRun);       // only the mixed cluster changes; the list is narrowed to it
     int returnStatus = doc->integrateReclusteredClusters(clustersToRecluster,clustersFromReclustering,reclusteringFetFileName);
     reclusterRefine = false;
     // A hierarchical plan's atoms: --final-clu copied the final .clc beside the .clu; in a hierarchical
@@ -1184,7 +1280,12 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // view refresh for the settled selection (the new atoms if any, else the parent).
     if (childPanel && childPanel->isVisible())
         slotChildSelectionChanged({});
-    if(heldReclusterOutput){
+    if (againstRun) {
+        // The report: in the Recluster output tab under the sorter's own lines, its first line
+        // in the status bar.
+        showReclusterAgainstSummary(false);
+        reclusterAgainstSettlePending = true;
+    } else if(heldReclusterOutput){
         const QString reclustered = clusterLabels(clustersToRecluster).join(QStringLiteral(", "));
         const qsizetype made = clustersFromReclustering.size();
         statusBar()->showMessage(made == 1

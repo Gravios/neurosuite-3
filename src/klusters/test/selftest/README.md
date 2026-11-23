@@ -58,6 +58,10 @@ palette -- the `clickParent` step -- shows that parent on the parent layer),
 `test_collision_rows.py` (rows whose `.eap` row names a partner unit are served with it subtracted --
 the `collisionRows` step: 40 planted collisions corrected, the `.spk` untouched, rows without a
 partner served raw, the preference, the `.spkc`, and the rows rebuilt after a nudge),
+`test_recluster_against_references.py` (Actions > Recluster > Recluster Against References, the
+`reclusterAgainst` step: a cluster of 150 + 150 spikes of two units pooled with the units' own
+clusters -- the references keep their rows and ids, the mixed cluster becomes the two units' pieces,
+the summary names the right reference for each; an ordinary recluster replaces the references too),
 `test_realign_collision_rows.py` (a realign measures a collision row on its corrected record: 60
 planted collisions 3-7 samples from the spike, every true time known -- 1 of 60 ends off its true
 time, against 33 of 60 with the preference off; the records written are raw cuts),

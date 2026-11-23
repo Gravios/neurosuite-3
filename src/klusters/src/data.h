@@ -1375,6 +1375,32 @@ public:
   */
     void createFeatureFile(QList<int>& clustersToRecluster,QFile& fetFile);
 
+    /** What a recluster against references found (integrateReclusteredClusters, @c against). */
+    struct ReclusterAgainstReport {
+        struct Reference {
+            int    id = -1;
+            qint64 spikes = 0;             ///< the cluster's spikes
+            qint64 pooled = 0;             ///< of them, how many went to the sorter
+            QMap<int, qint64> byPiece;     ///< new cluster id -> its pooled spikes the sorter put there
+            qint64 elsewhere = 0;          ///< its pooled spikes in sorter clusters without a mixed spike
+            qint64 largest = 0;            ///< its pooled spikes in its largest sorter cluster
+        };
+        int    mixed = -1;
+        qint64 mixedSpikes = 0;
+        QList<Reference> references;
+        QMap<int, qint64> pieces;          ///< new cluster id -> spikes of the mixed cluster in it
+        QMap<int, dataType> pieceRow;      ///< new cluster id -> one feature row of it (the id may be
+                                           ///< renumbered afterwards; the row says which cluster it is now)
+        int    ignored = 0;                ///< sorter clusters without a spike of the mixed cluster
+    };
+    /** The feature file of a recluster AGAINST REFERENCES: every spike of @p mixed, pooled with the
+     *  spikes of each cluster of @p references -- all of one with up to @p referenceCap spikes,
+     *  else the @p referenceCap nearest in time to the mixed cluster's (those inside its time span,
+     *  thinned evenly; the nearest outside it when the span holds fewer).  The integration that
+     *  follows (@c against) changes the mixed cluster only. */
+    void createFeatureFileAgainst(int mixed, const QList<int>& references, dataType referenceCap, QFile& fetFile);
+    const ReclusterAgainstReport& reclusterAgainstReport() const { return againstReport; }
+
     /** The recluster table in TIME order.  Fills reclusteringSpikesByCluster with the
      *  spikes of @p clustersToRecluster -- as createFeatureFile does, but sorted by
      *  feature row (ascending spike index), so a sub-session written from it has a
@@ -1424,7 +1450,8 @@ public:
   * @param clusterFile cluster file created by the automatic reclustering program.
   * @return true if the integration is successful, false otherwise.
   */
-    bool integrateReclusteredClusters(QList<int>& clustersToRecluster, QList<int>& reclusteredClusterList, QFile &clusterFile);
+    bool integrateReclusteredClusters(QList<int>& clustersToRecluster, QList<int>& reclusteredClusterList, QFile &clusterFile,
+                                      bool against = false);
 
     /**
   * Informs if the the variables need it by the traceView are available. Those variables are retrieve only from
@@ -2133,6 +2160,10 @@ private:
 
     /**Excerpt of spikesByCluster for the clusters selected to be recluster.*/
     SortableTable reclusteringSpikesByCluster;
+    /** A recluster against references: the cluster each entry of reclusteringSpikesByCluster came
+     *  from, in the order written (createFeatureFileAgainst), and what the integration found. */
+    std::vector<dataType> reclusteringOrigin;
+    ReclusterAgainstReport againstReport;
 
     /** Map given the cluster user information, the key is the cluster id and the value an instance of ClusterUserInformation.
   This map is only used to store the data read from or write to the parameter file (YAML).
