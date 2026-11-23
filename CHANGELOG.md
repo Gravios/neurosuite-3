@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: the quality dot of a cluster without a value is a white circle](#2026-11-23--klusters-the-quality-dot-of-a-cluster-without-a-value-is-a-white-circle) |
 | 2026-11-23 | [Klusters: collision offsets follow realign and nudge, and are saved](#2026-11-23--klusters-collision-offsets-follow-realign-and-nudge-and-are-saved) |
 | 2026-11-23 | [Klusters: a collision row is shown as its own unit's spike](#2026-11-23--klusters-a-collision-row-is-shown-as-its-own-units-spike) |
 | 2026-11-23 | [Core: collision rows with the partner subtracted, and the sparse `.spkc` that holds them](#2026-11-23--core-collision-rows-with-the-partner-subtracted-and-the-sparse-spkc-that-holds-them) |
@@ -228,6 +229,20 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: the quality dot of a cluster without a value is a white circle
+
+<details>
+<summary>Details</summary>
+
+A cluster holding fewer than 30 spikes has no quality value; its dot is an empty circle.  It was
+drawn in the view's text colour and is now white.  `test_waveform_quality.py` counts the white
+pixels in each dot's bounding square (the step reports `whitePixels`): some for the empty circle,
+none for a dot with a value.
+
+</details>
 
 ---
 

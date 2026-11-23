@@ -536,8 +536,8 @@ void WaveformView::drawQualityDots(QPainter& widget)
             widget.setPen(Qt::NoPen);
             widget.setBrush(fill);
         } else {
-            // Too few spikes for a value: an empty circle in the view's neutral text colour.
-            QPen outline(palette().color(foregroundRole()));
+            // Too few spikes for a value: an empty white circle.
+            QPen outline(Qt::white);
             outline.setWidthF(1.5);
             widget.setPen(outline);
             widget.setBrush(Qt::NoBrush);

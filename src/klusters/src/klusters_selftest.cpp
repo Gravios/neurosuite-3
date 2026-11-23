@@ -573,6 +573,12 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
                         if (img.valid(x, y) && (img.pixel(x, y) & 0x00ffffff) == (own & 0x00ffffff)) ++ownPixels;
                 j.insert(QStringLiteral("clusterColour"), QColor(own).name());
                 j.insert(QStringLiteral("clusterColourPixels"), ownPixels);
+                // ... and how much of it is plain white: the empty circle of a cluster without a value.
+                int whitePixels = 0;
+                for (int y = d.rect.top(); y <= d.rect.bottom(); ++y)
+                    for (int x = d.rect.left(); x <= d.rect.right(); ++x)
+                        if (img.valid(x, y) && (img.pixel(x, y) & 0x00ffffff) == 0x00ffffff) ++whitePixels;
+                j.insert(QStringLiteral("whitePixels"), whitePixels);
                 dots.append(j);
             }
             v.insert(QStringLiteral("dots"), dots);

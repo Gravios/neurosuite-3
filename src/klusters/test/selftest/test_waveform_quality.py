@@ -19,7 +19,7 @@ Through the `waveformQuality` step, with the views holding every spike of a clus
     the thresholds moves the colours through yellow and orange; the pixel at a dot's centre has the
     colour reported;
   - a filled dot is the quality colour alone, with no perimeter in the cluster's colour;
-  - a cluster with fewer than 30 spikes has a hollow dot and no value;
+  - a cluster with fewer than 30 spikes has a hollow white dot and no value;
   - side by side a dot sits at the top of the view, at the right end of its cluster's column, in
     cluster order; overlaid the dots line up at the view's upper right corner;
   - with the preference off there is no dot; the Preferences page has the group.
@@ -123,7 +123,10 @@ def main():
               f"{[(dots[c]['centrePixel'], dots[c]['colour']) for c in (2, 3)]}")
         check("value" not in dots[5] and "colour" not in dots[5] and dots[5]["nSpikes"] == 20,
               "20 spikes: no value, a hollow dot", str(dots[5]))
-        check(dots[5]["centrePixel"] not in (GREEN, YELLOW, ORANGE, RED), "the hollow dot is not filled", dots[5]["centrePixel"])
+        check(dots[5]["centrePixel"] not in (GREEN, YELLOW, ORANGE, RED, "#ffffff"), "the hollow dot is not filled", dots[5]["centrePixel"])
+        check(dots[5].get("whitePixels", 0) >= 4 and all(dd.get("whitePixels", 0) == 0 for c, dd in dots.items() if c != 5),
+              "the hollow dot is a WHITE circle; no dot with a value has a white pixel",
+              str({c: dd.get("whitePixels") for c, dd in dots.items()}))
 
         # where: the top of the view, the right end of each column, in cluster order
         r2, r3, r5 = (dots[c]["rect"] for c in (2, 3, 5))

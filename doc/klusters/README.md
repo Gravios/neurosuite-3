@@ -595,7 +595,7 @@ the waveform's energy in differences from it.  Hover the dot for the number.
 | yellow | 0.12 – 0.27 |
 | orange | 0.27 – 0.52 |
 | red | 0.52 and above |
-| empty circle | fewer than 30 spikes held: no value |
+| empty white circle | fewer than 30 spikes held: no value |
 
 The defaults are the quantiles measured in a `stderiv_C5` space; raw (`standard`) waveforms read
 lower (about 0.00 / 0.05 / 0.20 for the same split).  The dot is a hint, not a verdict.  A second
