@@ -29,6 +29,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  ***************************************************************************/
 #include "klustersdoc.h"
+#include <neurosuite/core/fileops.hpp>
 
 #include "configuration.h"
 #include "data.h"
@@ -308,6 +309,32 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
                       << rep.rowsMoved << "rows and" << rep.classesMoved << "partner units moved since the .eap was written;"
                       << rep.milliseconds << "ms";
     return finish(true);
+}
+
+void KlustersDoc::carryEapToSavedName()
+{
+    const QString from = eapBeforeSaveAs;
+    eapBeforeSaveAs.clear();
+    if (from.isEmpty() || !QFileInfo::exists(from)) return;
+    if (stageEapPath() == from) return;                // the new name reads the same file
+    std::string base, stage; int group = 0;
+    if (!sessionAnchor(url(), base, group, stage)) return;
+    std::string own = neurosuite::custody::untaggedPath(base, "eap", group);
+    if (!stage.empty()) own += "." + stage;
+    const QString target = QString::fromStdString(own);
+    if (target == from) return;
+    // Beside the target first, then swapped in: a reader never sees half a table.
+    const QString tmp = target + QStringLiteral(".saveas.tmp");
+    QFile::remove(tmp);
+    if (!QFile::copy(from, tmp)
+        || !neurosuite::core::replaceFile(tmp.toLocal8Bit().constData(), target.toLocal8Bit().constData())) {
+        QFile::remove(tmp);
+        qWarning().noquote() << "[collision rows] could not copy" << QFileInfo(from).fileName()
+                             << "to" << QFileInfo(target).fileName();
+        return;
+    }
+    qInfo().noquote() << "[collision rows]" << QFileInfo(from).fileName() << "copied to" << QFileInfo(target).fileName();
+    if (collisionRefEap == from) collisionRefEap = target;   // the same table, the same times
 }
 
 void KlustersDoc::resetCollisionRows()

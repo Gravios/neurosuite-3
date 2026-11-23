@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: Save As takes the stage's .eap with it](#2026-11-23--klusters-save-as-takes-the-stages-eap-with-it) |
 | 2026-11-23 | [Klusters: Sort Spikes by Time carries the .eap and the .spkc](#2026-11-23--klusters-sort-spikes-by-time-carries-the-eap-and-the-spkc) |
 | 2026-11-23 | [Klusters: collision-row state is dropped with the document](#2026-11-23--klusters-collision-row-state-is-dropped-with-the-document) |
 | 2026-11-23 | [Klusters: a corrected collision row is placed by its corrected features](#2026-11-23--klusters-a-corrected-collision-row-is-placed-by-its-corrected-features) |
@@ -233,6 +234,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: Save As takes the stage's .eap with it
+
+A session read under a stage name with its own `.eap`, saved under a new stage name, left the new
+stage without one: it read the base `.eap` (other offsets, or no partners at all) or none.
+
+<details>
+<summary>Details</summary>
+
+- After a Save As the `.eap` read under the old name is copied to the new name's own
+  (`<base>.eap.<group>[.<stage>]`), written beside it and swapped in, unless the new name already
+  reads that same file.  With the preference on or off.  The fitted offsets are then written to it
+  as after any save.
+- The copy follows the save, like the offsets and the `.spkc`; it is not part of the save's file
+  transaction.  If it fails a warning is logged and the save stands.
+- `test_collision_rows.py`: stage `a` (its `.eap` names 40 partners, the base `.eap` none) saved
+  as stage `b` -- `b` has the same table byte for byte and corrects the 40 rows, at once and when
+  opened later; four checks fail with the copy disabled (0 rows corrected under `b`).
+
+</details>
 
 ---
 

@@ -3156,6 +3156,11 @@ private:
      *  projects each corrected record onto the shown space's PCA basis, restores the rows that
      *  are no longer corrected, refreshes the extrema and tells the views. */
     void applyCollisionFeatures(const std::shared_ptr<const SpkOverlay>& overlay, CollisionRowsReport& rep);
+    /** Save As: the .eap the session read under its old name, copied to the new name's own
+     *  (<base>.eap.<group>[.<stage>]) unless the new name reads that same file.  Without it a
+     *  new stage name would read the base .eap, or none. */
+    void carryEapToSavedName();
+    QString eapBeforeSaveAs;                         // set by a Save As, used once by carryEapToSavedName()
     /** Forgets everything held about the collision rows of the document that was open (the
      *  times the offsets hold for, the feature values put aside, the last fits and report):
      *  all of it is indexed by that document's rows. */

@@ -147,6 +147,7 @@ void KlustersDoc::closeDocument(){
     releaseFeatureSpaces();
     dropMovedSpikes();
     resetCollisionRows();
+    eapBeforeSaveAs.clear();
     parameterFile.clear();
     qDeleteAll(clusterColorListUndoList);
     clusterColorListUndoList.clear();
@@ -1022,6 +1023,7 @@ void KlustersDoc::finishSave(bool ok){
         // The saved .spk is read through a fresh reader: the corrected collision rows are
         // rebuilt against it once the save has unwound, and written out for other tools.
         QTimer::singleShot(0, this, [this]() {
+            carryEapToSavedName();                   // a Save As: the membership table follows
             // The times just saved are the ones the .eap must hold for: write the offsets the
             // last rebuild fitted (they are relative to these times), then rebuild from the file.
             if (configuration().getCorrectCollisionRows()) {
@@ -1353,6 +1355,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
 
     // ── the session follows the files ───────────────────────────────────────
     if (isSaveAs) {
+        eapBeforeSaveAs  = stageEapPath();           // read under the old name: it goes with the session
         docUrl           = saveUrl;
         baseName         = newBaseName;
         electrodeGroupID = newGroup;

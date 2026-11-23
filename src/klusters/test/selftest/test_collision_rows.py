@@ -42,6 +42,8 @@ Through the `collisionRows` step:
     8 samples later by a tool: times, records, features and .eap offsets), the 40 rows are
     corrected on the new files and none counts as moved -- nothing held for the closed document
     (the times its offsets were for, feature values put aside) reaches the new one;
+  - Save As under a new stage name copies the stage's own .eap to the new name (with the
+    preference on or off), so the new stage does not fall back to the base .eap;
   - the application rebuilds by itself -- on open, per nudge, at Save, and after an edit of the
     clustering (a core cut); the step only reports, so a missing hook would show.
 """
@@ -372,6 +374,50 @@ def main():
               "reopen: no feature value of the closed document is put into the new one",
               str({k: o2.get(k) for k in ("featuresRestored", "featuresProjected")}))
         # back to the session as it was
+        spk16.tofile(spk_path)
+        res.tofile(f"{base}.res.standard.1")
+        with open(fet_path, "wb") as fh:
+            np.array([fet_raw.shape[1] + 1], np.int32).tofile(fh)
+            np.concatenate([fet_raw, res[:, None]], axis=1).astype(np.int64).tofile(fh)
+
+        # Save As under a new stage name: the stage's own .eap goes with it.  The session is
+        # stage "a" (its own .eap names the partners; the base .eap names none), saved first so
+        # the fitted offsets are in the file, then saved as stage "b".
+        cells_none = np.full((n, 4), ABSENT, np.int16)
+        cells_none[a, 0] = 0
+        cells_none[b, 1] = 0
+        write_eap(f"{base}.eap.1", cells_none)
+        write_eap(f"{base}.eap.1.a", cells)
+        clu_a, clu_b = f"{base}.clu.standard.1.a", f"{base}.clu.standard.1.b"
+        with open(f"{base}.clu.standard.1", "rb") as src, open(clu_a, "wb") as dst:
+            dst.write(src.read())
+        for pref in (True, False):
+            for stale in (f"{base}.eap.1.b", clu_b):
+                if os.path.exists(stale):
+                    os.remove(stale)
+            reps = R.run(klusters, clu_a, [{"collisionRows": {"prefs": {"enabled": pref}, "refresh": True}}, {"save": True},
+                                           {"collisionRows": {}}, {"saveas": clu_b}, {"collisionRows": {"rows": crows}}], d)
+            sa = (reps.get("results") or []) + [{}] * 5
+            tag = "Save As" if pref else "Save As, preference off"
+            same_file = os.path.exists(f"{base}.eap.1.b") and open(f"{base}.eap.1.b", "rb").read() == open(f"{base}.eap.1.a", "rb").read()
+            check(reps.get("rc") == 0 and os.path.exists(clu_b) and same_file,
+                  f"{tag}: the new stage has its own .eap, byte for byte the one the session read",
+                  f"rc {reps.get('rc')} exists {os.path.exists(base + '.eap.1.b')}")
+            if pref:
+                check(sa[2].get("eap") == os.path.basename(f"{base}.eap.1.a") and sa[2].get("corrected") == 40
+                      and sa[4].get("eap") == os.path.basename(f"{base}.eap.1.b") and sa[4].get("corrected") == 40
+                      and sa[4].get("rowsMoved") == 0,
+                      "Save As: under the new name the 40 rows are corrected from that file",
+                      str([{k: x.get(k) for k in ("eap", "corrected", "rowsMoved")} for x in (sa[2], sa[4])]))
+        repb = R.run(klusters, clu_b, [{"collisionRows": {"prefs": {"enabled": True}, "refresh": True}}], d)
+        sb = (repb.get("results") or [{}])[0]
+        check(sb.get("corrected") == 40 and sb.get("eap") == os.path.basename(f"{base}.eap.1.b"),
+              "Save As: opened later, stage b corrects the 40 rows (it would read the base .eap, which names none)",
+              str({k: sb.get(k) for k in ("eap", "corrected", "collisionRows")}))
+        check(open(f"{base}.eap.1", "rb").read()[32:] == cells_none.astype(np.int8).tobytes(), "Save As: the base .eap is untouched")
+        for f in (f"{base}.eap.1.a", f"{base}.eap.1.b", clu_a, clu_b):
+            if os.path.exists(f):
+                os.remove(f)
         spk16.tofile(spk_path)
         res.tofile(f"{base}.res.standard.1")
         with open(fet_path, "wb") as fh:

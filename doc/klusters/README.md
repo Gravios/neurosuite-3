@@ -1207,6 +1207,9 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   less the row's time change plus the partner unit's (the median time change of its rows that are
   not collisions), and Save writes the offsets the fit found -- relative to the saved times -- to
   the stage's own `.eap`.  A row can be moved any distance, and so can its partner's unit.
+- **Save As.**  The `.eap` the session read goes with it: it is copied to the new name's own
+  (`<base>.eap.<group>[.<stage>]`) unless the new name reads that same file, so a new stage name
+  does not fall back to the base `.eap`.
 
 - **Features.**  A corrected row's features are re-projected from its corrected record onto the
   space's PCA basis (the `.pca` of the open space), so the row sits in the cluster views where its
