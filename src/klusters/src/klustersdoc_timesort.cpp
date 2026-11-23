@@ -18,6 +18,7 @@
 
 #include "klustersdoc.h"
 #include <neurosuite/core/fileops.hpp>
+#include <neurosuite/core/neurofileio.h>
 
 #include <QDir>
 #include <neurosuite/core/fileio64.hpp>
@@ -96,6 +97,34 @@ bool permuteRows(const KlustersDoc::RowFile& f, const std::vector<int64_t>& orde
     return ok;
 }
 
+/// Write the sparse .spkc @p src to @p dst with every row renamed to where
+/// @p order puts it (order[k] = the row that moves to row k) and the records in
+/// the new ascending order.
+bool permuteSparse(const QString& src, const std::vector<int64_t>& order, const QString& dst)
+{
+    const neurofileio::SpkcFile in = neurofileio::readSpkc(src.toLocal8Bit().constData());
+    if (!in.ok || in.nSpikes != static_cast<int64_t>(order.size())) return false;
+    std::vector<int64_t> movedTo(order.size());
+    for (size_t k = 0; k < order.size(); ++k) movedTo[static_cast<size_t>(order[k])] = static_cast<int64_t>(k);
+    std::vector<size_t> by(in.rows.size());
+    std::iota(by.begin(), by.end(), size_t{0});
+    std::sort(by.begin(), by.end(), [&](size_t a, size_t b) {
+        return movedTo[static_cast<size_t>(in.rows[a])] < movedTo[static_cast<size_t>(in.rows[b])];
+    });
+    neurofileio::SpkcFile out = in;
+    const size_t rec = static_cast<size_t>(in.nSamples) * static_cast<size_t>(in.nChannels);
+    for (size_t k = 0; k < by.size(); ++k) {
+        out.rows[k] = movedTo[static_cast<size_t>(in.rows[by[k]])];
+        std::copy_n(in.waveforms.begin() + static_cast<std::ptrdiff_t>(by[k] * rec), rec,
+                    out.waveforms.begin() + static_cast<std::ptrdiff_t>(k * rec));
+    }
+    if (!neurofileio::writeSpkc(dst.toLocal8Bit().constData(), out)) {
+        QFile::remove(dst);
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) const
@@ -137,13 +166,54 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
     const QDir dir(QFileInfo(docUrl).absolutePath());
     const int group = electrodeGroupID.toInt();
     const QString eapPrefix = baseName + QStringLiteral(".eap.") + electrodeGroupID;
+    const QString spkcPrefix = baseName + QStringLiteral(".spkc.");
     const QStringList names = dir.entryList(QStringList{ baseName + QStringLiteral(".*") },
                                             QDir::Files, QDir::Name);
     for (const QString& name : names) {
-        // Template-class membership (.eap) is row-indexed too, but its layout
-        // is owned by the template tools: report it rather than rewrite it.
+        // Template-class membership (.eap): one row of nClasses int8 cells per
+        // spike after a 32-byte header.  A cell is an offset from the row's own
+        // time, so the rows move as they are.
         if (name == eapPrefix || name.startsWith(eapPrefix + QLatin1Char('.'))) {
-            if (!isWorkingCopySuffix(name.mid(eapPrefix.size()))) plan.notReordered << name;
+            if (isWorkingCopySuffix(name.mid(eapPrefix.size()))) continue;
+            const QString path = dir.absoluteFilePath(name);
+            QFile in(path);
+            quint32 head[3] = { 0, 0, 0 };                // magic, nSpikes, nClasses
+            RowFile f;
+            f.path   = path;
+            f.header = 32;
+            // reinterpret_cast: QIODevice::read fills raw bytes (the header's first three words).
+            const bool read = in.open(QIODevice::ReadOnly)
+                && in.read(reinterpret_cast<char*>(head), sizeof(head)) == static_cast<qint64>(sizeof(head));
+            f.record = read ? static_cast<qint64>(head[2]) : 0;
+            if (read && f.record > 0 && static_cast<int64_t>(head[1]) == n
+                && QFileInfo(path).size() == f.header + n * f.record)
+                plan.files.push_back(f);
+            else
+                plan.skipped << name;
+            continue;
+        }
+        // Sparse corrected waveforms (<base>.spkc.<method>.<group>[.<stage>]): the
+        // index names rows.
+        if (name.startsWith(spkcPrefix)) {
+            const QStringList toks = name.mid(spkcPrefix.size()).split(QLatin1Char('.'));
+            int gi = -1;
+            for (int i = 0; i < toks.size() && gi < 0; ++i) {
+                bool isNumber = false;
+                toks[i].toInt(&isNumber);
+                if (isNumber) gi = i;
+            }
+            if (gi < 0 || toks[gi] != electrodeGroupID) continue;          // another group's
+            if (isWorkingCopySuffix(QStringList(toks.mid(gi + 1)).join(QLatin1Char('.')))) continue;
+            const QString path = dir.absoluteFilePath(name);
+            const neurofileio::SpkcFile c = neurofileio::readSpkc(path.toLocal8Bit().constData());
+            if (c.ok && c.nSpikes == n) {
+                RowFile f;
+                f.path   = path;
+                f.sparse = true;
+                plan.files.push_back(f);
+            } else {
+                plan.skipped << name;
+            }
             continue;
         }
         neurosuite::custody::Anchor a;
@@ -153,7 +223,7 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
             continue;                                 // a group-like token out of int range: not ours
         }
         // The decollide collision sidecar (.col) holds a spike index per record:
-        // row-indexed, and owned by decollide, like .eap.
+        // row-indexed, and owned by decollide: reported, not rewritten.
         if (a.ok && a.group == group && a.type == "col"
             && QString::fromStdString(a.base) == baseName
             && !isWorkingCopySuffix(QString::fromStdString(a.suffix))) {
@@ -222,7 +292,8 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
     auto dropTmps = [&]() { for (const QString& t : tmps) QFile::remove(t); };
     for (const RowFile& f : plan.files) {
         tmps.push_back(f.path + QStringLiteral(".timesort.tmp"));
-        if (!permuteRows(f, plan.order, tmps.back())) {
+        if (!(f.sparse ? permuteSparse(f.path, plan.order, tmps.back())
+                       : permuteRows(f, plan.order, tmps.back()))) {
             log << tr("Writing %1 in time order failed; no file was changed.")
                        .arg(QFileInfo(f.path).fileName()) << "\n";
             dropTmps();

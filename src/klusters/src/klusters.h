@@ -563,6 +563,10 @@ public:
      *  pending return to a space) before it runs and before the next one. */
     void startSelfTest(const QString& specPath);
 private:
+    /** Close the document, apply @p plan (KlustersDoc::applyTimeSort) and reopen
+     *  it.  1: sorted; 0: failed, every file as it was (@p log says why); -1: the
+     *  document could not be closed, nothing was done. */
+    int sortSpikesByTime(const KlustersDoc::TimeSortPlan& plan, QString& log);
     void selfTestTick();
     bool selfTestRunStep(const QJsonObject& step, QJsonObject& result);
     QJsonObject selfTestDump(int clusterId) const;

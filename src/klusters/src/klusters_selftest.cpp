@@ -446,6 +446,29 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("waveformViews"), views);
         return true;
     }
+    if (step.contains(QStringLiteral("timeSort"))) {
+        // {"timeSort": {}}: Actions > Sort Spikes by Time without its dialog -- plan, then close,
+        // rewrite and reopen.  Reports the plan: "outOfOrder", the "files" rewritten, those
+        // "skipped" (another spike count) and "notReordered", and "sorted" (1 / 0 / -1).
+        KlustersDoc::TimeSortPlan plan;
+        QString err;
+        if (!doc->planTimeSort(plan, err)) {
+            result.insert(QStringLiteral("error"), err);
+            return false;
+        }
+        QJsonArray files;
+        for (const KlustersDoc::RowFile& f : plan.files) files.append(QFileInfo(f.path).fileName());
+        result.insert(QStringLiteral("outOfOrder"), static_cast<double>(plan.nOutOfOrder));
+        result.insert(QStringLiteral("files"), files);
+        result.insert(QStringLiteral("skipped"), QJsonArray::fromStringList(plan.skipped));
+        result.insert(QStringLiteral("notReordered"), QJsonArray::fromStringList(plan.notReordered));
+        if (plan.nOutOfOrder == 0) return true;
+        QString log;
+        const int sorted = sortSpikesByTime(plan, log);
+        result.insert(QStringLiteral("sorted"), sorted);
+        result.insert(QStringLiteral("log"), log);
+        return sorted == 1;
+    }
     if (step.contains(QStringLiteral("collisionRows"))) {
         // {"collisionRows": {...}}: the collision rows (.eap rows naming a partner unit) as corrected.
         //   "prefs": {"enabled": bool}   Preferences > Cluster view > Subtract the partner from collision rows;

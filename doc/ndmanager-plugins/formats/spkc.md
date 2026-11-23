@@ -66,8 +66,14 @@ The amplitudes are not stored. The file is derived data: from the `.spk`, the
 ## Staleness
 
 `nSpikes` must equal the group's spike count. After the spike set changes
-(re-detection, a dedup), or after a listed row's time or a named unit has
-changed without the record being redone, the file is stale and is rebuilt.
+(re-detection), or after a listed row's time or a named unit has changed
+without the record being redone, the file is stale and is rebuilt.
+
+Two operations renumber rows and carry the file instead: Klusters' Sort Spikes
+by Time renames each listed row to where it moved and reorders the records, and
+fiber-kit's dedup keeps the records of the rows kept under their new numbers.
+Either leaves a file over any other spike count as it is (the dedup moves it
+aside).
 
 ---
 

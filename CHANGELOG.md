@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: Sort Spikes by Time carries the .eap and the .spkc](#2026-11-23--klusters-sort-spikes-by-time-carries-the-eap-and-the-spkc) |
 | 2026-11-23 | [Klusters: collision-row state is dropped with the document](#2026-11-23--klusters-collision-row-state-is-dropped-with-the-document) |
 | 2026-11-23 | [Klusters: a corrected collision row is placed by its corrected features](#2026-11-23--klusters-a-corrected-collision-row-is-placed-by-its-corrected-features) |
 | 2026-11-23 | [Klusters: collision rows, four faults found in a review](#2026-11-23--klusters-collision-rows-four-faults-found-in-a-review) |
@@ -232,6 +233,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: Sort Spikes by Time carries the .eap and the .spkc
+
+The sort moved the rows of the `.res`, `.spk`, `.fet`, `.clu` and `.clc` and listed the `.eap` as
+"not reordered (regenerate it)"; the `.spkc` it did not know.  After a sort the membership table
+named the wrong rows.
+
+<details>
+<summary>Details</summary>
+
+- **`.eap`**: one record of `nClasses` bytes per spike after the 32-byte header, permuted like any
+  other row file.  A cell is an offset from the row's own time, so the rows move unchanged.  Every
+  `.eap` of the group (stage copies too) with the group's spike count; another count is skipped.
+- **`.spkc`**: each listed row is renamed to where it moved and the records put in the new
+  ascending order.  A file over another spike count, or unreadable, is skipped; another group's is
+  not touched.
+- Both are written beside the originals and swapped in with the rest: on a failure every file is
+  put back, as before.  The `.col` sidecar is still only reported.
+- The close / rewrite / reopen part of the action is `KlustersApp::sortSpikesByTime`, which the new
+  self-test step `timeSort` runs without the dialog.
+- `test_time_sort_collision_files.py`: 60 rows (collision rows among them) out of order in all six
+  files; after the sort each is byte for byte the time-ordered file; the reopened session corrects
+  the same 40 rows and serves the same records.  That last check needs the reset of the entry
+  below (without it: 0 of 40 corrected after the reopen).  Synthetic session only.
+
+</details>
 
 ---
 

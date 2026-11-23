@@ -2209,6 +2209,9 @@ public:
         QString path;
         qint64  header = 0;
         qint64  record = 0;
+        /// A sparse .spkc: its index names rows, so each is renamed to the row it
+        /// moved to and the records put in the new ascending order.
+        bool    sparse = false;
     };
     /** What a full time sort would do.  @c order[k] is the 0-based row that
      *  moves to row k (a stable sort of the .res by time). */
@@ -2217,11 +2220,13 @@ public:
         qint64       nOutOfOrder = 0;   ///< rows whose time is below the previous row's
         std::vector<RowFile> files;     ///< every file permuted together
         QStringList  skipped;           ///< group files without this spike count (left as is)
-        QStringList  notReordered;      ///< row-indexed files this cannot permute (.eap)
+        QStringList  notReordered;      ///< row-indexed files this cannot permute (.col)
         QStringList  otherGroupFiles;   ///< other files naming this group, left as is
     };
     /** Read the saved .res and list every row-indexed file of this group: each
-     *  method's .res/.spk/.fet and every .clu/.clc (stage-tagged copies too).
+     *  method's .res/.spk/.fet and every .clu/.clc (stage-tagged copies too), the
+     *  template-class membership tables (.eap, whose offsets are relative to the
+     *  row's own time and move with it) and the sparse corrected waveforms (.spkc).
      *  Reads the saved files, so the document must be saved first. */
     bool planTimeSort(TimeSortPlan& plan, QString& errorInformation) const;
     /** Apply @p plan: write each file with its rows in time order, then swap all

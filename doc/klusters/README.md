@@ -140,12 +140,14 @@ that does not matter, because every `.spk` and `.fet` follows the one `.res`.
 **Putting rows back in time order.** **Actions → Sort Spikes by Time** sorts
 the saved `.res` by time and moves the same rows in every file of the group that
 is indexed by spike: the group's `.res`, each waveform file (`.spk`), each
-method's `.fet`, and every `.clu` and `.clc` (stage-tagged copies too). A file
+method's `.fet`, every `.clu` and `.clc` (stage-tagged copies too), every
+`.eap` template-class table of the group, and every sparse `.spkc` (its index
+is renamed to the rows' new numbers). A file
 shared by several spaces — the one `.res`, or the `.spk.stderiv_C5` that
 `stderiv_C5_D34` also reads — is one file and is permuted once. It works on the saved files, so save
 first; it then reopens the document, which clears undo history. A file without
-the group's spike count is left as is, and an `.eap` template-class file or a
-`.col` decollide sidecar is listed as not reordered (regenerate it). The sort
+the group's spike count is left as is, and a `.col` decollide sidecar is
+listed as not reordered (regenerate it). The sort
 closes the document, rewrites the files, and opens it again; if the document
 cannot be closed yet, nothing is sorted. All files are written first and
 swapped in together; if anything fails, every file is left as it was.
@@ -1214,8 +1216,7 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   file values come back exactly.  Only the PCA columns are replaced; a space without a `.pca`, or
   whose basis does not fit the records, keeps the raw features (reported as skipped).
 
-Not done yet: a super-sampled space shows the raw records; time-sort and dedup do not carry the
-`.spkc`.
+Not done yet: a super-sampled space shows the raw records.
 
 ### Plugins
 
