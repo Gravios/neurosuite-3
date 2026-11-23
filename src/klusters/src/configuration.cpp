@@ -156,6 +156,7 @@ void Configuration::read() {
     projectionScopeMode        = settings.value("projectionScopeMode",        0).toInt();
     projectionScopeMinutes     = settings.value("projectionScopeMinutes",     12.0).toDouble();
     projectionOutOfScopeHidden = settings.value("projectionOutOfScopeHidden", false).toBool();
+    correctCollisionRows       = settings.value("correctCollisionRows",       true).toBool();
     showEapCollisions          = settings.value("showEapCollisions",          false).toBool();
     showEapClassMembers        = settings.value("showEapClassMembers",        false).toBool();
     setDensitySigmaPx(settings.value("densitySigmaPx", 3.0).toDouble());
@@ -365,6 +366,7 @@ void Configuration::write() const {
     settings.setValue("projectionScopeMode",        projectionScopeMode);
     settings.setValue("projectionScopeMinutes",     projectionScopeMinutes);
     settings.setValue("projectionOutOfScopeHidden", projectionOutOfScopeHidden);
+    settings.setValue("correctCollisionRows",       correctCollisionRows);
     settings.setValue("showEapCollisions",          showEapCollisions);
     settings.setValue("showEapClassMembers",        showEapClassMembers);
     settings.setValue("densitySigmaPx",             densitySigmaPx);

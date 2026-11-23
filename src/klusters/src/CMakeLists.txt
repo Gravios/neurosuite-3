@@ -95,6 +95,7 @@ set(klusters_SRCS
     klustersdoc_timesort.cpp    # KlustersDoc full time sort (one row permutation over .res/.spk/.fet/.clu/.clc)
     klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
     klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
+    klustersdoc_spkc.cpp        # KlustersDoc collision rows with the .eap partner subtracted
     klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)
     klustersview.cpp
     klustersyamlreader.cpp

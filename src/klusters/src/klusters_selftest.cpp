@@ -426,6 +426,62 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("waveformViews"), views);
         return true;
     }
+    if (step.contains(QStringLiteral("collisionRows"))) {
+        // {"collisionRows": {...}}: the collision rows (.eap rows naming a partner unit) as corrected.
+        //   "prefs": {"enabled": bool}   Preferences > Cluster view > Subtract the partner from collision rows;
+        //   "refresh": true              rebuild (or drop) them now, as Apply does;
+        //   "rows": [r, ...]             0-based rows whose record is reported: "served" (what every
+        //                                reader gets) and "raw" (what the .spk holds);
+        //   "writeSpkc": path            the corrected rows shown now, as a sparse .spkc.
+        // Reports what the last rebuild found: the .eap read, the rows with two or more classes, the
+        // rows corrected, the partners fitted and subtracted, and how many corrected rows are served.
+        const QJsonObject o = step.value(QStringLiteral("collisionRows")).toObject();
+        if (o.contains(QStringLiteral("prefs"))) {
+            const QJsonObject pr = o.value(QStringLiteral("prefs")).toObject();
+            if (pr.contains(QStringLiteral("enabled")))
+                configuration().setCorrectCollisionRows(pr.value(QStringLiteral("enabled")).toBool());
+        }
+        KlustersDoc::CollisionRowsReport rep;
+        if (o.value(QStringLiteral("refresh")).toBool()) doc->refreshCollisionRows();
+        if (configuration().getCorrectCollisionRows()) doc->rebuildCollisionRows(&rep);
+        result.insert(QStringLiteral("enabled"), configuration().getCorrectCollisionRows());
+        result.insert(QStringLiteral("eap"), QFileInfo(rep.eapPath).fileName());
+        result.insert(QStringLiteral("eapFound"), rep.eapFound);
+        result.insert(QStringLiteral("skipped"), rep.skipped);
+        result.insert(QStringLiteral("collisionRows"), static_cast<double>(rep.collisionRows));
+        result.insert(QStringLiteral("corrected"), static_cast<double>(rep.corrected));
+        result.insert(QStringLiteral("partnersFitted"), rep.partnersFitted);
+        result.insert(QStringLiteral("partnersSubtracted"), rep.partnersSubtracted);
+        result.insert(QStringLiteral("partnersWithoutTemplate"), rep.partnersWithoutTemplate);
+        result.insert(QStringLiteral("offsetsDiffer"), rep.offsetsDiffer);
+        QJsonArray deltas;                                      // accepted fits by (fitted - stored) offset, -4 .. +4
+        for (const int v : rep.offsetDeltas) deltas.append(v);
+        result.insert(QStringLiteral("offsetDeltas"), deltas);
+        result.insert(QStringLiteral("active"), static_cast<double>(doc->collisionRowsActive()));
+        result.insert(QStringLiteral("stale"), doc->collisionRowsStale());
+        QJsonArray records;
+        for (const QJsonValue& v : o.value(QStringLiteral("rows")).toArray()) {
+            std::vector<int16_t> served, raw;
+            QJsonObject r;
+            r.insert(QStringLiteral("row"), v.toInt());
+            if (doc->spikeRecord(v.toInt(), served, raw)) {
+                QJsonArray s, w;
+                for (const int16_t x : served) s.append(x);
+                for (const int16_t x : raw) w.append(x);
+                r.insert(QStringLiteral("served"), s);
+                r.insert(QStringLiteral("raw"), w);
+            }
+            records.append(r);
+        }
+        result.insert(QStringLiteral("records"), records);
+        if (o.contains(QStringLiteral("writeSpkc"))) {
+            QString why;
+            const bool ok = doc->writeSpkc(o.value(QStringLiteral("writeSpkc")).toString(), &why);
+            result.insert(QStringLiteral("spkcWritten"), ok);
+            if (!ok) result.insert(QStringLiteral("spkcError"), why);
+        }
+        return true;
+    }
     if (step.contains(QStringLiteral("waveformQuality"))) {
         // {"waveformQuality": {...}}: the quality dots of every waveform view of the active display.
         //   "show": [ids]      shows those clusters first ("children": true reads them as children);

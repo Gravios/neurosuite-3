@@ -81,6 +81,12 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
     projHideOutOfScopeCheckBox->setToolTip(tr(
         "In temporally-restricted mode: hide out-of-scope spikes entirely, or (unchecked)\n"
         "keep them greyed and non-selectable for context."));
+    correctCollisionRowsCheckBox->setToolTip(tr(
+        "A spike row whose .eap row names two or more template classes holds two units'\n"
+        "spikes.  Checked: every waveform read of such a row gets the record with the\n"
+        "partner's fitted template subtracted, so the row shows as its own unit's spike.\n"
+        "The .spk file is never changed; the corrected rows are rebuilt from it and are\n"
+        "written as a sparse .spkc at Save.  Unchecked: the raw records."));
     showCollisionsCheckBox->setToolTip(tr(
         "Overlay a ring on feature-view spikes whose .eap row has two or more template\n"
         "classes set (collisions) — so multi-membership is visible over the .clu colours."));
@@ -283,6 +289,14 @@ void PrefClusterView::setProjectionOutOfScopeHidden(bool b){
 
 bool PrefClusterView::getProjectionOutOfScopeHidden() const{
     return projHideOutOfScopeCheckBox->isChecked();
+}
+
+void PrefClusterView::setCorrectCollisionRows(bool b){
+    correctCollisionRowsCheckBox->setChecked(b);
+}
+
+bool PrefClusterView::getCorrectCollisionRows() const{
+    return correctCollisionRowsCheckBox->isChecked();
 }
 
 void PrefClusterView::setShowEapCollisions(bool b){

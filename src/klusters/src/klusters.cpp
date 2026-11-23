@@ -2010,6 +2010,8 @@ void KlustersApp::executePreferencesDlg(){
 
 void KlustersApp::applyPreferences() {
     configuration().write();
+    // Collision rows corrected or raw: rebuild (or drop) them for the open session.
+    if (doc) doc->refreshCollisionRows();
     // The recluster engine may have been changed on the Reclustering page: re-check the Engine
     // action (the menu, the wheel's dot) and refresh the Recluster action's status tip.
     populateReclusterEngineMenu();

@@ -1681,6 +1681,20 @@ public:
     * to the descriptor.*/
     void clearSpkOverlay();
 
+    /**Installs the corrected collision rows (keys: byte offsets in the .spk
+    * this layer reads now, values: whole records; null or empty = none),
+    * drops the waveform caches of @p clusters -- every cluster holding a
+    * row that is, or was, corrected -- and publishes a new epoch.*/
+    void setSpkcOverlay(std::shared_ptr<const SpkOverlay> overlay, const QList<int>& clusters);
+    /**Shows or hides the corrected rows without discarding them.*/
+    void setSpkcShown(bool shown, const QList<int>& clusters);
+    bool isSpkcShown() const { return spkcShown; }
+    /**Corrected rows a read is served from now (0 when hidden or stale).*/
+    qint64 spkcActiveRecordCount() const;
+    /**True when corrected rows are held but were built against another
+    * .spk than the one read now (a space switch, a re-opened file).*/
+    bool spkcIsStale() const;
+
 private:
     /**The live overlay generation (guarded by mutex; published into every
     * snapshot).  Null until the first batch.*/
@@ -1688,6 +1702,17 @@ private:
     /**Superseded generations, one per uncommitted batch, for the reject
     * path; cleared at Save.*/
     QList<std::shared_ptr<const SpkOverlay>> spkOverlayHistory;
+    /**The corrected collision rows (guarded by mutex), the reader they were
+    * built against, and whether they are shown.  A snapshot carries them
+    * only while that reader is still the live one: after a space switch or
+    * a re-opened file the same byte offsets are other waveforms.*/
+    std::shared_ptr<const SpkOverlay> spkcLive;
+    std::shared_ptr<SpkReader> spkcReader;
+    bool spkcShown = true;
+    /**spkcLive when it applies to what is read now (call with mutex held).*/
+    std::shared_ptr<const SpkOverlay> spkcForSnapshot() const {
+        return (spkcShown && spkcLive && spkcReader == spkReaderInstance) ? spkcLive : nullptr;
+    }
 
     /**The published snapshot (guarded by mutex; read via currentSnapshot()).*/
     std::shared_ptr<const ClusteringSnapshot> snapshot;
@@ -2657,12 +2682,35 @@ struct Data::ClusteringSnapshot {
     * from it before the pinned descriptor, so in-place rewrites by LATER
     * batches never show through to this epoch.*/
     std::shared_ptr<const SpkOverlay> spkOverlay;
+    /**The CORRECTED collision rows as this epoch shows them (Data::
+    * setSpkcOverlay): the records of the spike rows whose .eap row names a
+    * partner unit, with that partner subtracted.  Never written into the
+    * .spk -- which stays the raw cut of the recording -- and null when
+    * there are none, when they are switched off, or when they were built
+    * against another .spk than this epoch reads.*/
+    std::shared_ptr<const SpkOverlay> spkcOverlay;
 
-    /**Positioned .spk read for this epoch: the overlay's record at exactly
-    * (@p offset, @p bytes) when one exists, the pinned descriptor
-    * otherwise.  Every caller reads one whole record at a record-aligned
-    * offset, so a real read either hits exactly or misses entirely.*/
+    /**Positioned .spk read for this epoch: a corrected collision row first,
+    * then the overlay's record at exactly (@p offset, @p bytes) when one
+    * exists, the pinned descriptor otherwise.  Every caller reads one whole
+    * record at a record-aligned offset, so a real read either hits exactly
+    * or misses entirely.*/
     bool readSpk(void* dst, qint64 bytes, qint64 offset) const {
+        if(spkcOverlay){
+            const auto it = spkcOverlay->records.constFind(offset);
+            if(it != spkcOverlay->records.constEnd() &&
+               static_cast<qint64>((*it)->size()) == bytes){
+                memcpy(dst, (*it)->constData(), static_cast<size_t>(bytes));
+                return true;
+            }
+        }
+        return readSpkRaw(dst, bytes, offset);
+    }
+
+    /**readSpk() without the corrected collision rows: what the recording
+    * holds at the row's time (the rewritten record of an uncommitted
+    * realign / nudge included).  What the correction itself is built from.*/
+    bool readSpkRaw(void* dst, qint64 bytes, qint64 offset) const {
         if(spkOverlay){
             const auto it = spkOverlay->records.constFind(offset);
             if(it != spkOverlay->records.constEnd() &&

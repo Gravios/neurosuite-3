@@ -561,6 +561,9 @@ void KlustersApp::flushRealignBatchRefresh()
         // features were reprojected, so mark it changed for the error matrix.
         doc->notifyClusterFeaturesReprojected(id);
     }
+    // The realigned rows were re-cut and their units' waveforms moved: the corrected
+    // collision rows -- theirs, and other units' rows that name them -- are rebuilt.
+    doc->refreshCollisionRows();
     for (int id : realignBatchTouched)
         doc->forceClusterRefresh(id);
     realignBatchTouched.clear();
@@ -729,6 +732,7 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
             doc->refeaturizeRealignedClusters(QList<int>{ realignTargetIsChild ? realignTargetParent : realignClusterId });
             doc->invalidateWaveformCache(realignClusterId);
             doc->invalidateCorrelogramCache(realignClusterId);
+            doc->refreshCollisionRows();          // re-cut rows, moved templates: rebuild the corrected collision rows
             doc->forceClusterRefresh(realignClusterId);
             // Realign reprojected this cluster's .fet features (membership
             // unchanged), so no group/split/renumber signal fires for it.  Tell

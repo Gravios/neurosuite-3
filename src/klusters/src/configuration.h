@@ -162,6 +162,7 @@ public:
     void setProjectionScopeMode(int m)         {projectionScopeMode = (m == 1) ? 1 : 0;}      // 0 session-spanning, 1 temporally-restricted
     void setProjectionScopeMinutes(double v)   {projectionScopeMinutes = qBound(0.1, v, 600.0);}
     void setProjectionOutOfScopeHidden(bool b) {projectionOutOfScopeHidden = b;}               // false = grey/non-selectable
+    void setCorrectCollisionRows(bool b)       {correctCollisionRows = b;}                     // subtract the .eap partner from collision rows
     void setShowEapCollisions(bool b)          {showEapCollisions = b;}                        // ring spikes with >=2 .eap classes
     void setShowEapClassMembers(bool b)        {showEapClassMembers = b;}                      // ring the highlighted class's .eap members
     void setDensitySigmaPx(double v)           {densitySigmaPx = qBound(0.0, v, 30.0);}        // heatmap smoothing kernel, 0 = none
@@ -335,6 +336,7 @@ public:
     int    getProjectionScopeMode()        const {return projectionScopeMode;}
     double getProjectionScopeMinutes()     const {return projectionScopeMinutes;}
     bool   getProjectionOutOfScopeHidden() const {return projectionOutOfScopeHidden;}
+    bool   getCorrectCollisionRows()       const {return correctCollisionRows;}
     bool   getShowEapCollisions()          const {return showEapCollisions;}
     bool   getShowEapClassMembers()        const {return showEapClassMembers;}
     double getDensitySigmaPx()             const {return densitySigmaPx;}
@@ -502,6 +504,7 @@ public:
     int    getProjectionScopeModeDefault()        const {return 0;}      // session-spanning
     double getProjectionScopeMinutesDefault()     const {return 12.0;}   // 12-min chunk granularity
     bool   getProjectionOutOfScopeHiddenDefault() const {return false;}  // grey/non-selectable
+    bool   getCorrectCollisionRowsDefault()       const {return true;}   // a collision row is shown as its own unit's spike
     bool   getShowEapCollisionsDefault()          const {return false;}  // overlay off by default
     bool   getShowEapClassMembersDefault()        const {return false;}  // overlay off by default
     double getDensitySigmaPxDefault()             const {return 3.0;}    // ~ a point's own footprint
@@ -743,6 +746,7 @@ private:
     int     projectionScopeMode;        ///< 0 = session-spanning, 1 = temporally-restricted
     double  projectionScopeMinutes;     ///< scope-chunk granularity (minutes); default 12
     bool    projectionOutOfScopeHidden; ///< true = hide out-of-scope spikes; false = grey/non-selectable
+    bool    correctCollisionRows;       ///< serve collision rows (>=2 .eap classes) with the partner subtracted
     bool    showEapCollisions;          ///< ring feature-view spikes with >=2 active .eap classes
     bool    showEapClassMembers;        ///< ring the highlighted template class's .eap members
     double  densitySigmaPx;             ///< density heatmap Gaussian kernel sigma (screen px); 0 = no smoothing

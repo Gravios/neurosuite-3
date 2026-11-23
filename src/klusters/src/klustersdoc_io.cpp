@@ -704,6 +704,9 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         }
     }
 
+    // Collision rows (.eap rows naming a partner unit) shown as their own unit's spike.
+    refreshCollisionRows();
+
     return OK;
 }
 
@@ -1013,6 +1016,16 @@ void KlustersDoc::finishSave(bool ok){
     lastSaveAdoptedSpace = ok && savePlan.adoptedSpace;
     savePlan = SavePlan();
     if (ok) {
+        // The saved .spk is read through a fresh reader: the corrected collision rows are
+        // rebuilt against it once the save has unwound, and written out for other tools.
+        QTimer::singleShot(0, this, [this]() {
+            refreshCollisionRows();
+            const QString path = spkcPathFor(activeFeatureMethod());
+            if (!path.isEmpty() && (collisionRowsActive() > 0 || QFileInfo::exists(path))) {
+                QString why;
+                if (!writeSpkc(path, &why)) qWarning().noquote() << "[collision rows]" << why;
+            }
+        });
         unitsInfoModified = false;
         removeRescueFiles();               // the real files now hold what they protected
         // The files on disk now hold these decisions; let the log hold them too,

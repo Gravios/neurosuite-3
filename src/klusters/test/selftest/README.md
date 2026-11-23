@@ -55,6 +55,9 @@ and the refresh a realign ends with -- the `tabRefresh` step -- never leaves tha
 `hierarchy` step's `childScope`, `shown` and `layerSwitches`),
 `test_child_view_parent_click.py` (from the child view a click on the curated parent in the parent
 palette -- the `clickParent` step -- shows that parent on the parent layer),
+`test_collision_rows.py` (rows whose `.eap` row names a partner unit are served with it subtracted --
+the `collisionRows` step: 40 planted collisions corrected, the `.spk` untouched, rows without a
+partner served raw, the preference, the `.spkc`, and the rows rebuilt after a nudge),
 `test_waveform_quality.py` (the waveform view's quality dots -- the `waveformQuality` step: values equal
 to numpy's on the `.spk` for parents and children, colours by the thresholds, the hollow dot of a
 small cluster, where the dots are, the preference),

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: a collision row is shown as its own unit's spike](#2026-11-23--klusters-a-collision-row-is-shown-as-its-own-units-spike) |
 | 2026-11-23 | [Core: collision rows with the partner subtracted, and the sparse `.spkc` that holds them](#2026-11-23--core-collision-rows-with-the-partner-subtracted-and-the-sparse-spkc-that-holds-them) |
 | 2026-11-22 | [Klusters: the quality dot has no perimeter](#2026-11-22--klusters-the-quality-dot-has-no-perimeter) |
 | 2026-11-22 | [Klusters: a quality dot per cluster in the waveform view](#2026-11-22--klusters-a-quality-dot-per-cluster-in-the-waveform-view) |
@@ -226,6 +227,49 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: a collision row is shown as its own unit's spike
+
+A spike row whose `.eap` row names a partner unit is served with that partner's fitted template
+subtracted.  The `.spk` is not changed.
+
+<details>
+<summary>Details</summary>
+
+Both Data layers hold the corrected records in memory beside the realign overlay
+(`Data::setSpkcOverlay`; `ClusteringSnapshot::readSpk` serves a corrected row first, `readSpkRaw`
+never does), so the waveform view, the mean and median waveforms and every tool that reads a record
+through a snapshot see the row as its own unit's spike.  `KlustersDoc::rebuildCollisionRows`
+(`klustersdoc_spkc.cpp`) builds them from the raw records, the stage's `.eap` and the clustering
+with `core/decollide_fit.hpp`: own class and home cluster from the membership, templates from the
+300 non-collision rows of a unit nearest in time.
+
+They are rebuilt on open, after a realign, a nudge, a rejected realign, a space switch, a save and
+a preference change, and written as a sparse `.spkc` at Save.  *Preferences > Cluster view >
+Subtract the partner from collision rows* (on by default) switches to the raw records.  The corrected
+rows are tied to the `.spk` reader they were built against: after a file is re-opened or the space
+changes they are not served until rebuilt.
+
+`test_collision_rows.py` (the `collisionRows` self-test step), two synthetic units, 40 collisions
+planted in the recording at 9-13 samples, the `.eap` offsets written up to 2 samples off either way:
+all 40 corrected, the error against the record before the partner was added a median 0.4 % (worst
+4.5 %) of the raw row's; at most 2 of 40 fitted offsets off the planted one, by a sample.  Negative
+controls: a row whose `.eap` names a partner that is not in it, rows without a partner, an `.eap`
+without partners, no `.eap` -- nothing corrected, raw records served.  After a nudge of the unit by
+one sample the rows are corrected from the re-cut records (median error 0.4 %; the records served
+before the nudge would be at 55 %).
+
+Running that test found a fault in the first version of `decollide_fit::fitPartner`: the search
+never moved to a shift EARLIER than the stored one.  Fixed in the core patch, with a check there.
+
+Not done: the features of a collision row are still those of its raw record; fitted offsets are not
+written back to the `.eap` (a row moved more than about 4 samples in all loses its partner); a
+super-sampled space shows raw records; time-sort and dedup do not carry the `.spkc`; `spkc` is not
+a custody type token.  No real session has been through it.
+
+</details>
 
 ---
 

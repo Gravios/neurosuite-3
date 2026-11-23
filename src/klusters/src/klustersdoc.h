@@ -1984,6 +1984,50 @@ public:
     const QString& cluMethod() const { return originMethod; }
     /** Method whose .fet/.spk are currently loaded. */
     const QString& activeFeatureMethod() const { return activeMethod; }
+
+    // ── collision rows shown as their own unit's spike (klustersdoc_spkc.cpp) ──
+    /** What rebuildCollisionRows() found and did. */
+    struct CollisionRowsReport {
+        QString eapPath;                    ///< the .eap read (the stage's, else the base one)
+        bool    eapFound = false;
+        QString skipped;                    ///< why nothing was corrected although an .eap exists
+        qint64  collisionRows = 0;          ///< rows with two or more classes
+        qint64  corrected = 0;              ///< of them, rows with at least one partner subtracted
+        int     partnersFitted = 0;         ///< partners that had a template
+        int     partnersSubtracted = 0;     ///< of them, fits that were accepted
+        int     partnersWithoutTemplate = 0;
+        int     offsetsDiffer = 0;          ///< accepted fits whose whole-sample offset is not the .eap's
+        QVector<int> offsetDeltas = QVector<int>(9, 0);   ///< accepted fits by (fitted - stored) offset, -4 .. +4
+        qint64  milliseconds = 0;
+    };
+    /** Rebuilds the corrected record of every collision row of the open stage --
+     *  a row whose .eap row names two or more template classes -- from the raw
+     *  records, the .eap and the clustering as they are now, and has both Data
+     *  layers serve them in place of the .spk's.  The .spk and the .eap are not
+     *  written.  With no .eap, or one that does not fit the session, the
+     *  corrected rows are dropped.  False when nothing was built. */
+    bool rebuildCollisionRows(CollisionRowsReport* report = nullptr);
+    /** rebuildCollisionRows() when the preference asks for corrected rows, else
+     *  drops them; then has the views of every cluster that held or holds one
+     *  fetch its waveforms again.  Called after open, a space switch, a save and
+     *  a preference change -- whenever the records read or the rule changed. */
+    void refreshCollisionRows();
+    /** Shows the corrected rows (the default) or the raw records, keeping what was built. */
+    void setCollisionRowsShown(bool shown);
+    /** Corrected rows served now (0 when hidden, stale or none). */
+    qint64 collisionRowsActive() const;
+    /** True when corrected rows are held for another .spk than the one read now. */
+    bool collisionRowsStale() const;
+    /** The stage's .eap, else (a stage without one) the untagged base .eap; @p inherited says which. */
+    QString stageEapPath(bool* inherited = nullptr) const;
+    /** Writes the corrected rows shown now as a sparse .spkc at @p path (an empty one when there are none). */
+    bool writeSpkc(const QString& path, QString* error = nullptr) const;
+    /** Row @p row (0-based) as every reader gets it (@p served) and as the .spk holds it
+     *  (@p raw); they differ only for a corrected collision row.  False on a read error. */
+    bool spikeRecord(qint64 row, std::vector<int16_t>& served, std::vector<int16_t>& raw) const;
+    /** <base>.spkc.<method>.<group>[.<stage>] of the open stage. */
+    QString spkcPathFor(const QString& method) const;
+
     /** The .spk the shown space reads (a pending copy when there is one). */
     const QString& activeSpkFilePath() const { return activeSpkPath; }
     /** The session's recording, for the public callers of the super-sample action. */
@@ -3076,6 +3120,7 @@ private:
     QList<int>           scopeResolvedClusters;         // held children of the scoped parent(s)
     QList<int>           scopeResolvedParents;          // held contributing parents, block order
     QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
+    QList<int>           collisionRowClusters;       // clusters holding a corrected collision row (klustersdoc_spkc.cpp)
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
     QVector<dataType>    reclusterSubsessionRows;   // the last sub-session's feature rows, in its spike order

@@ -14,7 +14,9 @@ when the row is listed there, and from the `.spk` otherwise.
 
 **Writers / readers.** `neurofileio::readSpkc` / `writeSpkc` / `spkcFind` in
 `libneurosuite-core`; the subtraction itself is `core/decollide_fit.hpp`.
-Nothing writes the file yet: Klusters and fiber-kit follow.
+Klusters builds the rows when a session opens and writes the file at Save
+(*Preferences > Cluster view > Subtract the partner from collision rows*);
+fiber-kit follows.
 
 ## Layout
 

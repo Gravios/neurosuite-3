@@ -310,6 +310,7 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     connect(prefclusterView->projModeCombo,  &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->projScopeMinutesLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView->projHideOutOfScopeCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
+    connect(prefclusterView->correctCollisionRowsCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
     connect(prefclusterView->showCollisionsCheckBox,     &QCheckBox::toggled, this, &PrefDialog::enableApply);
     connect(prefclusterView->showClassMembersCheckBox,   &QCheckBox::toggled, this, &PrefDialog::enableApply);
     connect(prefclusterView->densitySigmaSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
@@ -450,6 +451,7 @@ void PrefDialog::updateDialog()
     prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeMode());
     prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutes());
     prefclusterView->setProjectionOutOfScopeHidden(configuration().getProjectionOutOfScopeHidden());
+    prefclusterView->setCorrectCollisionRows(configuration().getCorrectCollisionRows());
     prefclusterView->setShowEapCollisions(configuration().getShowEapCollisions());
     prefclusterView->setShowEapClassMembers(configuration().getShowEapClassMembers());
     prefclusterView->setDensitySigmaPx(configuration().getDensitySigmaPx());
@@ -572,6 +574,7 @@ void PrefDialog::updateConfiguration()
     configuration().setProjectionScopeMode(prefclusterView->getProjectionScopeMode());
     configuration().setProjectionScopeMinutes(prefclusterView->getProjectionScopeMinutes());
     configuration().setProjectionOutOfScopeHidden(prefclusterView->getProjectionOutOfScopeHidden());
+    configuration().setCorrectCollisionRows(prefclusterView->getCorrectCollisionRows());
     configuration().setShowEapCollisions(prefclusterView->getShowEapCollisions());
     configuration().setShowEapClassMembers(prefclusterView->getShowEapClassMembers());
     configuration().setDensitySigmaPx(prefclusterView->getDensitySigmaPx());
@@ -705,6 +708,7 @@ void PrefDialog::slotDefault()
     prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeModeDefault());
     prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutesDefault());
     prefclusterView->setProjectionOutOfScopeHidden(configuration().getProjectionOutOfScopeHiddenDefault());
+    prefclusterView->setCorrectCollisionRows(configuration().getCorrectCollisionRowsDefault());
     prefclusterView->setShowEapCollisions(configuration().getShowEapCollisionsDefault());
     prefclusterView->setShowEapClassMembers(configuration().getShowEapClassMembersDefault());
     prefclusterView->setDensitySigmaPx(configuration().getDensitySigmaPxDefault());

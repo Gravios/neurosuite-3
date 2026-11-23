@@ -3018,6 +3018,8 @@ void KlustersDoc::rejectLastRealign()
     // Re-seed pending files from the untouched originals so the waveform
     // viewer immediately reflects the restored state.
     initPendingFiles();
+    // The records are the earlier ones again: so are the corrected collision rows.
+    refreshCollisionRows();
 }
 
 // ---------------------------------------------------------------------------
@@ -4228,6 +4230,8 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     ++spikeTimesGeneration;          // synced feature spaces are now stale
     // ... except the one just written: its working copy IS the new times.
     if (!ws.isOrigin) syncedGeneration.insert(ws.fetCommitted, spikeTimesGeneration.load());
+    // The nudged rows were re-cut: the corrected collision rows are rebuilt from the new records.
+    refreshCollisionRows();
     return true;
 }
 

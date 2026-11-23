@@ -1172,6 +1172,35 @@ dialog and no confirmation box, and each split is one undo step.
   an NVIDIA device, clusters of 4,000 spikes or more are ordered on the GPU and the
   status bar says so.
 
+### Collision rows — a row that holds two units, shown as its own unit's spike
+
+A spike row whose [`.eap`](../ndmanager-plugins/formats/eap.md) row names two or more template
+classes holds two units' spikes: its own unit's (the cluster it is in) and a partner's.  With
+*Preferences > Cluster view > Subtract the partner from collision rows* (on by default) every read
+of such a row — the waveform view, the mean and median waveforms, the tools that work on waveforms
+— gets the record with the partner's fitted template subtracted.
+
+- The `.spk` is never changed.  It stays the raw cut of the recording, so realign, nudge and every
+  other tool that re-cuts it work as before, and a row cannot be subtracted twice.
+- What the `.eap` holds is which partner and about where.  The amplitude and the exact shift are
+  fitted from the row and the templates as they now are, within 4 samples of the stored offset,
+  jointly with the row's own template.  A partner is subtracted only when its fitted amplitude is
+  plausible (0.3–2.5 of its template) and it removes at least 5 % of what the own template leaves.
+- The templates are the mean of up to 300 rows of the unit that are *not* collisions, nearest in
+  time to the row.  A unit with fewer than 30 such rows has no template; its partners are left in.
+- Which cluster a class is, is read off the membership — the cluster holding most of the rows that
+  name only that class — so renumbering, merging and splitting need no bookkeeping.  A class with no
+  row of its own falls back on the cluster the `.tcl` says it was made from.
+- The corrected rows are rebuilt when a session opens, after a realign, a nudge or a rejected
+  realign (the rows were re-cut and the templates moved), after a switch of feature space, after a
+  save and when the preference changes.  At Save they are written as a sparse
+  [`.spkc`](../ndmanager-plugins/formats/spkc.md) for other tools.
+
+Not done yet: the features (`.fet`) of a collision row are still those of its raw record; the
+offsets the fit finds are not written back to the `.eap`, so a row moved by more than about 4
+samples in all loses its partner; a super-sampled space shows the raw records; time-sort and dedup
+do not carry the `.spkc`.
+
 ### Plugins
 
 The **Plugins** menu lists the plugins found in the plugin description

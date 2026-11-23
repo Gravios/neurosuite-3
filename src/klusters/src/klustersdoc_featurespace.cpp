@@ -34,6 +34,8 @@ using klustersdoc_internal::resolveFeature;
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QScopeGuard>
+#include <QTimer>
 #include <QStringList>
 
 #include <cstdint>
@@ -164,6 +166,11 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
         return false;
     }
     if (method == activeMethod) return true;
+    // Whatever happens below, the corrected collision rows belong to the space left:
+    // rebuild them for the one shown once the switch has unwound.
+    const auto rebuildAfter = qScopeGuard([this]() {
+        QTimer::singleShot(0, this, [this]() { refreshCollisionRows(); });
+    });
     // A pending (unsaved) realignment does not stop a switch: it lives in the
     // .clu space's working copies, which the switch holds and restores.
 

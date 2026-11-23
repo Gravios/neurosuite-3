@@ -301,6 +301,7 @@ void Data::publishSnapshot(){
     snap->clusterInfoMap  = clusterInfoMap;
     snap->spk             = spkReaderInstance;
     snap->spkOverlay      = spkOverlayLive;
+    snap->spkcOverlay     = spkcForSnapshot();
     snapshot = std::move(snap);
 }
 
@@ -342,6 +343,37 @@ void Data::clearSpkOverlay(){
     publishSnapshot();
 }
 
+void Data::setSpkcOverlay(std::shared_ptr<const SpkOverlay> overlay, const QList<int>& clusters){
+    {
+        QMutexLocker lk(&mutex);
+        spkcLive = (overlay && !overlay->records.isEmpty()) ? std::move(overlay) : nullptr;
+        spkcReader = spkReaderInstance;
+    }
+    publishSnapshot();
+    for(const int id : clusters) invalidateWaveformCache(id);
+}
+
+void Data::setSpkcShown(bool shown, const QList<int>& clusters){
+    {
+        QMutexLocker lk(&mutex);
+        if(spkcShown == shown) return;
+        spkcShown = shown;
+    }
+    publishSnapshot();
+    for(const int id : clusters) invalidateWaveformCache(id);
+}
+
+qint64 Data::spkcActiveRecordCount() const{
+    QMutexLocker lk(&mutex);
+    const std::shared_ptr<const SpkOverlay> o = spkcForSnapshot();
+    return o ? static_cast<qint64>(o->records.size()) : 0;
+}
+
+bool Data::spkcIsStale() const{
+    QMutexLocker lk(&mutex);
+    return spkcLive && spkcReader != spkReaderInstance;
+}
+
 void Data::publishSnapshotAdopting(const std::shared_ptr<const ClusteringSnapshot>& source){
     //Adopt the popped epoch's caches wholesale when its byte context is
     //still the live one: its stores describe exactly the tables being
@@ -358,7 +390,8 @@ void Data::publishSnapshotAdopting(const std::shared_ptr<const ClusteringSnapsho
     if(source){
         QMutexLocker lk(&mutex);
         adoptable = (source->spk == spkReaderInstance) &&
-                    (source->spkOverlay == spkOverlayLive);
+                    (source->spkOverlay == spkOverlayLive) &&
+                    (source->spkcOverlay == spkcForSnapshot());
     }
     if(!adoptable){
         publishSnapshot();
@@ -373,6 +406,7 @@ void Data::publishSnapshotAdopting(const std::shared_ptr<const ClusteringSnapsho
     snap->clusterInfoMap  = clusterInfoMap;
     snap->spk             = spkReaderInstance;
     snap->spkOverlay      = spkOverlayLive;
+    snap->spkcOverlay     = spkcForSnapshot();
     snapshot = std::move(snap);
 }
 
