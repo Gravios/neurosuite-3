@@ -575,6 +575,9 @@ private:
     QTimer*     selfTestTimer_ = nullptr;
     int         selfTestIndex_ = 0;
     int         selfTestIdleTicks_ = 0;
+    /** Rebuilds the corrected collision rows when the clustering changed under them, once the
+     *  application is idle (KlustersDoc::collisionRowsOutdated). */
+    QTimer*     collisionRowsTimer = nullptr;
     int         selfTestWaitTicks_ = 0;
     bool        selfTestStepPending_ = false;
 public:

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: collision rows, four faults found in a review](#2026-11-23--klusters-collision-rows-four-faults-found-in-a-review) |
 | 2026-11-23 | [Klusters: the quality dot of a cluster without a value is a white circle](#2026-11-23--klusters-the-quality-dot-of-a-cluster-without-a-value-is-a-white-circle) |
 | 2026-11-23 | [Klusters: collision offsets follow realign and nudge, and are saved](#2026-11-23--klusters-collision-offsets-follow-realign-and-nudge-and-are-saved) |
 | 2026-11-23 | [Klusters: a collision row is shown as its own unit's spike](#2026-11-23--klusters-a-collision-row-is-shown-as-its-own-units-spike) |
@@ -229,6 +230,45 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: collision rows, four faults found in a review
+
+A read-through of the collision-row patches of this day, on both sides (fiber-kit 0.71.2 has the
+same rules).
+
+<details>
+<summary>Details</summary>
+
+1. **An edit of the clustering left the corrected rows as they were.**  They are built on the
+   clustering -- which unit a row is, which rows make a template -- and were rebuilt after a
+   realign, a nudge, a save, but not after a move, a merge, a split or an undo.  The application
+   now checks when idle whether the membership table is still the one they were built on
+   (`KlustersDoc::collisionRowsOutdated`) and rebuilds.
+2. **A class's home could be a mixture.**  It was the cluster holding most of the rows naming only
+   that class.  A sort that leaves many of a unit's spikes outside it -- fiber-unmix's cluster of
+   one-unit spikes holds every unit's -- makes that cluster the largest holder, and its mean the
+   "template".  `decollide_fit::preferProvenance`: the cluster the `.tcl` says the class was made
+   from, while it still holds at least 30 of those rows.
+3. **A partner was fitted, and subtracted, without the row's own template.**  Fitted alone, a
+   look-alike partner within reach of the peak takes the own spike for itself.  `correctRow` now
+   subtracts nothing from a row whose own unit has no template; the report counts such rows.
+4. **Save.**  A partner the fit never placed kept its old offset in the `.eap` although its row
+   had moved -- right in memory, wrong after a reopen: its offset is now carried to the saved times
+   too.  A stage reading the base `.eap` no longer gets a copy of it when nothing changed.  With
+   the preference off, an existing `.spkc` is left alone instead of being rewritten empty.
+
+The `collisionRows` self-test step no longer rebuilds: it reports the rebuild the application made
+itself and how many there have been, so a missing hook shows.  `test_collision_rows.py` counts
+them (open, preference, each nudge, Save) and adds a core cut of the partner's unit: rebuilt, 40
+rows corrected.  Klusters and fiber-kit still write the same `.spkc`, byte for byte, on a session
+where three in four spikes of both units sit in one mixed cluster.
+
+Looked at and left: time-sort / dedup and the `.eap` (a known gap); realign finds a row's peak on
+the raw record; a Save As to a new stage name does not carry the stage's `.eap`.
+
+</details>
 
 ---
 

@@ -1188,12 +1188,16 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   plausible (0.3–2.5 of its template) and it removes at least 5 % of what the own template leaves.
 - The templates are the mean of up to 300 rows of the unit that are *not* collisions, nearest in
   time to the row.  A unit with fewer than 30 such rows has no template; its partners are left in.
-- Which cluster a class is, is read off the membership — the cluster holding most of the rows that
-  name only that class — so renumbering, merging and splitting need no bookkeeping.  A class with no
-  row of its own falls back on the cluster the `.tcl` says it was made from.
+- Which cluster a class is: the cluster the `.tcl` says it was made from, while that cluster still
+  holds at least 30 rows naming only that class; else the cluster holding most of those rows.  So a
+  renumbering needs no bookkeeping, and a sort that leaves many of a unit's spikes in a mixed
+  cluster (fiber-unmix's one-unit spikes) does not make that mixture the unit.
+- A row whose own unit has no template is left as it is: fitted alone, a look-alike partner would
+  take the row's own spike for itself.
 - The corrected rows are rebuilt when a session opens, after a realign, a nudge or a rejected
   realign (the rows were re-cut and the templates moved), after a switch of feature space, after a
-  save and when the preference changes.  At Save they are written as a sparse
+  save, when the preference changes, and -- once the application is idle -- after any edit of the
+  clustering (a move, a merge, a split, an undo: which unit a row is may have changed).  At Save they are written as a sparse
   [`.spkc`](../ndmanager-plugins/formats/spkc.md) for other tools.
 
 - The `.eap`'s offsets are relative to the spike times it was written for, and realign and nudge

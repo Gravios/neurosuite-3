@@ -241,6 +241,32 @@ inline std::vector<int> homeClusters(const neurofileio::EapFile& e, const std::v
     return home;
 }
 
+/** The home of a class is the cluster its .tcl entry says it was made from, when that cluster
+ *  still holds at least @p minRows rows naming only that class -- whatever cluster holds MOST of
+ *  them.  A sort can leave many of a unit's spikes outside the unit (fiber-unmix's cluster of
+ *  one-unit spikes holds every unit's): the largest holder is then a mixture, and the unit itself,
+ *  smaller, is the one whose rows make its template.  @p provenance: per class, the .tcl's
+ *  provenance cluster or -1.  A provenance that no longer holds the class (the clusters were
+ *  renumbered) changes nothing: the membership decides, as before. */
+inline void preferProvenance(std::vector<int>& home, const neurofileio::EapFile& e, const std::vector<int>& clu,
+                             const std::vector<int>& provenance, int minRows = 30)
+{
+    if (!e.ok || static_cast<int64_t>(clu.size()) != e.nSpikes) return;
+    std::vector<int64_t> held(home.size(), 0);
+    for (int64_t i = 0; i < e.nSpikes; ++i) {
+        const int8_t* row = &e.cells[static_cast<std::size_t>(i) * e.nClasses];
+        int only = -1, count = 0;
+        for (int j = 0; j < e.nClasses; ++j)
+            if (neurofileio::eapPresent(row[j])) { only = j; if (++count > 1) break; }
+        if (count != 1 || static_cast<std::size_t>(only) >= provenance.size()
+            || static_cast<std::size_t>(only) >= home.size()) continue;
+        const int p = provenance[static_cast<std::size_t>(only)];
+        if (p > 1 && clu[static_cast<std::size_t>(i)] == p) ++held[static_cast<std::size_t>(only)];
+    }
+    for (std::size_t j = 0; j < home.size() && j < provenance.size(); ++j)
+        if (held[j] >= minRows) home[j] = provenance[j];
+}
+
 /** One class in a row. */
 struct Member { int classId = -1; int offset = 0; };
 
@@ -278,8 +304,9 @@ inline bool splitRow(const neurofileio::EapFile& e, int64_t i, int cluster, cons
 /** A collision row corrected: every partner whose template is given is fitted
  *  (strongest stored first is not known, so in class order, each on what the
  *  ones before left) and, when accepted, subtracted.  @p templates: class id ->
- *  window-layout template; a partner without one is skipped.  @p fits gets one
- *  entry per partner, in @p partners order (not accepted for a skipped one).
+ *  window-layout template; a partner without one is skipped, and a row whose
+ *  OWN class has none is left as it is.  @p fits gets one entry per partner, in
+ *  @p partners order (not accepted, at its stored offset, for a skipped one).
  *  Returns the number of partners subtracted. */
 inline int correctRow(std::vector<float>& w, int nSamples, int nChannels, const Member& own,
                       const std::vector<Member>& partners,
@@ -287,6 +314,11 @@ inline int correctRow(std::vector<float>& w, int nSamples, int nChannels, const 
                       std::vector<Fit>& fits, const Params& p = {})
 {
     fits.assign(partners.size(), Fit{});
+    for (std::size_t k = 0; k < partners.size(); ++k) { fits[k].tau = partners[k].offset; fits[k].shift = partners[k].offset; }
+    // Without the own unit's template nothing is subtracted: a partner fitted alone takes whatever
+    // of the row's OWN spike it can explain, and subtracting that would damage the row.
+    if (templates.find(own.classId) == templates.end()
+        || templates.find(own.classId)->second.size() != static_cast<std::size_t>(nSamples) * nChannels) return 0;
     const auto ownIt = templates.find(own.classId);
     const float* ownT = (ownIt != templates.end()
                          && ownIt->second.size() == static_cast<std::size_t>(nSamples) * nChannels)

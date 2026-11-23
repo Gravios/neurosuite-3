@@ -429,7 +429,8 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("collisionRows"))) {
         // {"collisionRows": {...}}: the collision rows (.eap rows naming a partner unit) as corrected.
         //   "prefs": {"enabled": bool}   Preferences > Cluster view > Subtract the partner from collision rows;
-        //   "refresh": true              rebuild (or drop) them now, as Apply does;
+        //   "refresh": true              rebuild (or drop) them now, as Apply does (without it the
+        //                                step only reports: "builds" counts the rebuilds so far);
         //   "rows": [r, ...]             0-based rows whose record is reported: "served" (what every
         //                                reader gets) and "raw" (what the .spk holds);
         //   "writeSpkc": path            the corrected rows shown now, as a sparse .spkc.
@@ -442,9 +443,12 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             if (pr.contains(QStringLiteral("enabled")))
                 configuration().setCorrectCollisionRows(pr.value(QStringLiteral("enabled")).toBool());
         }
-        KlustersDoc::CollisionRowsReport rep;
         if (o.value(QStringLiteral("refresh")).toBool()) doc->refreshCollisionRows();
-        if (configuration().getCorrectCollisionRows()) doc->rebuildCollisionRows(&rep);
+        // The report is of the rebuild the application made ITSELF (on open, after a realign, a
+        // nudge, a save, an edit): the step does not rebuild, so a hook that is missing shows.
+        const KlustersDoc::CollisionRowsReport rep = doc->collisionRowsLastReport();
+        result.insert(QStringLiteral("builds"), doc->collisionRowsBuildCount());
+        result.insert(QStringLiteral("outdated"), doc->collisionRowsOutdated());
         result.insert(QStringLiteral("enabled"), configuration().getCorrectCollisionRows());
         result.insert(QStringLiteral("eap"), QFileInfo(rep.eapPath).fileName());
         result.insert(QStringLiteral("eapFound"), rep.eapFound);
@@ -454,6 +458,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("partnersFitted"), rep.partnersFitted);
         result.insert(QStringLiteral("partnersSubtracted"), rep.partnersSubtracted);
         result.insert(QStringLiteral("partnersWithoutTemplate"), rep.partnersWithoutTemplate);
+        result.insert(QStringLiteral("rowsWithoutOwnTemplate"), static_cast<double>(rep.rowsWithoutOwnTemplate));
         result.insert(QStringLiteral("offsetsDiffer"), rep.offsetsDiffer);
         QJsonArray deltas;                                      // accepted fits by (fitted - stored) offset, -4 .. +4
         for (const int v : rep.offsetDeltas) deltas.append(v);

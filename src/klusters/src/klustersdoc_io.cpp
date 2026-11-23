@@ -1032,8 +1032,11 @@ void KlustersDoc::finishSave(bool ok){
                 }
             }
             refreshCollisionRows();
+            // With the preference off the file is left alone: an .spkc written now would say
+            // "no row is corrected" of a stage whose .eap names partners.
             const QString path = spkcPathFor(activeFeatureMethod());
-            if (!path.isEmpty() && (collisionRowsActive() > 0 || QFileInfo::exists(path))) {
+            if (configuration().getCorrectCollisionRows() && !path.isEmpty()
+                && (collisionRowsActive() > 0 || QFileInfo::exists(path))) {
                 QString why;
                 if (!writeSpkc(path, &why)) qWarning().noquote() << "[collision rows]" << why;
             }

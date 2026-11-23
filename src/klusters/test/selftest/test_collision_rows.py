@@ -30,7 +30,10 @@ Through the `collisionRows` step:
   - at Save the fitted offsets are written to the .eap, relative to the saved times, and the
     .spkc is written; rebuilt from the saved files, the 40 rows are corrected with (at least 38 of)
     the fitted offsets exactly where the .eap now says, and no row counts as moved; the saved .spk
-    is the raw cut of the recording at the saved times.
+    is the raw cut of the recording at the saved times; a partner the fit never placed has its
+    offset carried to the saved times as well;
+  - the application rebuilds by itself -- on open, per nudge, at Save, and after an edit of the
+    clustering (a core cut); the step only reports, so a missing hook would show.
 """
 import os
 import struct
@@ -141,6 +144,8 @@ def main():
             {"collisionRows": {"rows": [int(i) for i in coll]}},
             {"save": True},
             {"collisionRows": {}},
+            {"coreCut": [3], "onsetFactor": 1.5},
+            {"collisionRows": {"rows": [int(i) for i in coll[:5]]}},
         ]
         rep = R.run(klusters, f"{base}.clu.standard.1", steps, d)
         st = rep.get("results", [])
@@ -239,8 +244,21 @@ def main():
         check((np.abs(got_tau - want_tau) <= 1).all() and (got_tau != want_tau).sum() <= 2,
               "the saved .eap: partner offsets = planted - 5 (the row's move) - 2 (the partner unit's), at most 2 of 40 a sample off",
               f"saved {got_tau.tolist()} planted-7 {want_tau.tolist()}")
-        check((saved[a, 0] == 0).all() and (saved[b, 1] == 0).all() and saved[ghost, 1] == 11,
-              "... own classes and the partner that was never found are untouched")
+        check((saved[a, 0] == 0).all() and (saved[b, 1] == 0).all(), "... own classes are untouched")
+        check(saved[ghost, 1] == 11 - 5 - 2,
+              "... and a partner the fit never placed has its offset carried to the saved times too (11 - 5 - 2)",
+              str(int(saved[ghost, 1])))
+        # the application rebuilds by itself: the step only reports
+        nb = [st[k].get("builds") for k in (0, 4, 9, 12, 14)]
+        check(nb[0] == 1 and nb[1] == nb[0] + 2 and nb[2] == nb[1] + 4 and nb[3] == nb[2] + 2 and nb[4] == nb[3] + 1,
+              "rebuilds: one on open, one when the preference comes back on, one per nudge, one at Save -- none made by the step",
+              str(nb))
+        r16 = st[16]
+        cut = st[15]
+        print(f"      core cut of cluster 3: {str(cut)[:160]}")
+        check(r16.get("builds", 0) > nb[4] and r16.get("outdated") is False and r16.get("corrected") == 40,
+              "after an EDIT of the clustering (a core cut of the partner's unit) the rows are rebuilt on the new clustering",
+              str({k: r16.get(k) for k in ("builds", "outdated", "corrected")}))
         sp = f"{base}.spkc.standard.1"
         check(os.path.exists(sp) and np.array_equal(read_spkc(sp)[4], coll), "Save wrote the sparse .spkc with the 40 rows")
 
@@ -268,7 +286,8 @@ def main():
         s2 = (rep2.get("results") or [{}])[0]
         check(rep2.get("rc") == 0 and s2.get("collisionRows") == 0 and s2.get("active") == 0
               and all(x["served"] == x["raw"] for x in s2.get("records", [{}]) if "served" in x),
-              "NEGATIVE CONTROL: an .eap without a partner anywhere corrects nothing")
+              "NEGATIVE CONTROL: an .eap without a partner anywhere corrects nothing",
+              str({k: s2.get(k) for k in ("collisionRows", "active", "eapFound", "skipped", "builds")}) + " rc " + str(rep2.get("rc")))
         os.remove(f"{base}.eap.1")
         rep3 = R.run(klusters, f"{base}.clu.standard.1", [{"collisionRows": {}}], d)
         s3 = (rep3.get("results") or [{}])[0]

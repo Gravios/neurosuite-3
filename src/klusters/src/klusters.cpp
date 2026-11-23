@@ -210,6 +210,17 @@ KlustersApp::KlustersApp()
 {
     setObjectName("Klusters");
 
+    // Corrected collision rows are built on the clustering as it was; when an edit has changed
+    // it (a move, a merge, a split, an undo) they are rebuilt, once nothing else is running.
+    collisionRowsTimer = new QTimer(this);
+    collisionRowsTimer->setInterval(300);
+    connect(collisionRowsTimer, &QTimer::timeout, this, [this]() {
+        if (doc && !isInit && !fileJobRunning() && processFinished && processOutputsFinished
+            && doc->collisionRowsOutdated())
+            doc->refreshCollisionRows();
+    });
+    collisionRowsTimer->start();
+
     initView();
 
     mMainToolBar = new QToolBar(tr("Main Actions"));

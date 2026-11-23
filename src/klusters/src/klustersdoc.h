@@ -1996,6 +1996,7 @@ public:
         int     partnersFitted = 0;         ///< partners that had a template
         int     partnersSubtracted = 0;     ///< of them, fits that were accepted
         int     partnersWithoutTemplate = 0;
+        qint64  rowsWithoutOwnTemplate = 0; ///< collision rows left raw: their own unit has no template
         int     offsetsDiffer = 0;          ///< accepted fits whose whole-sample offset is not the .eap's
         QVector<int> offsetDeltas = QVector<int>(9, 0);   ///< accepted fits by (fitted - searched-from) offset, -4 .. +4
         qint64  rowsMoved = 0;              ///< collision rows whose time is not the one the .eap was written for
@@ -2014,6 +2015,14 @@ public:
      *  fetch its waveforms again.  Called after open, a space switch, a save and
      *  a preference change -- whenever the records read or the rule changed. */
     void refreshCollisionRows();
+    /** True when the clustering has changed since the corrected rows were built (a move, a
+     *  merge, a split, an undo): which unit a row is, and which rows make a template, may no
+     *  longer be what they were built on.  Always false without an .eap or with the preference
+     *  off.  The application polls it when idle and calls refreshCollisionRows(). */
+    bool collisionRowsOutdated() const;
+    /** What the last rebuild found, and how many rebuilds this session has had. */
+    const CollisionRowsReport& collisionRowsLastReport() const { return lastCollisionReport; }
+    int collisionRowsBuildCount() const { return collisionRowBuilds; }
     /** Shows the corrected rows (the default) or the raw records, keeping what was built. */
     void setCollisionRowsShown(bool shown);
     /** Corrected rows served now (0 when hidden, stale or none). */
@@ -3128,6 +3137,9 @@ private:
     QList<int>           scopeResolvedParents;          // held contributing parents, block order
     QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
     QList<int>           collisionRowClusters;       // clusters holding a corrected collision row (klustersdoc_spkc.cpp)
+    CollisionRowsReport  lastCollisionReport;        // of the last rebuildCollisionRows()
+    int                  collisionRowBuilds = 0;
+    std::shared_ptr<const void> collisionRowsBuiltOn; // the membership table the corrected rows were built on
     // The .eap's offsets are relative to the spike times it was written for.  Realign and nudge
     // move times in memory long before a Save, so the times the .eap holds for are kept (taken
     // when the .eap is first read after open, and again when the offsets are written back), and
@@ -3136,6 +3148,7 @@ private:
     std::vector<qint64>  collisionRefTimes;          // per row: the time the .eap's offsets hold for
     QString              collisionRefEap;            // the .eap those times belong to
     struct CollisionFit { qint64 row; int classId; int tau; };
+    QHash<int, qint64>   collisionClassShift;        // per partner class: its unit's time change, at the last rebuild
     std::vector<CollisionFit> collisionFits;         // accepted fits of the last rebuild (row, partner class, fitted offset)
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild

@@ -176,6 +176,26 @@ int main()
               "splitRow: a row whose cluster is nobody's home -> own = the class nearest offset 0");
         check(!df::splitRow(e, 0, clu[0], home, own, partners) && own.classId == 0 && partners.empty(),
               "splitRow: a single-class row has an own class and no partner");
+        {   // most of a class's rows sit OUTSIDE its unit (a cluster of one-unit spikes of every unit)
+            nf::EapFile big;
+            big.nSpikes = 200; big.nClasses = 2; big.ok = true;
+            big.cells.assign(400, nf::EAP_ABSENT);
+            std::vector<int> c2(200);
+            for (int r = 0; r < 200; ++r) {
+                big.cells[static_cast<std::size_t>(r) * 2 + (r % 2)] = 0;      // class 0 on even rows, class 1 on odd
+                c2[static_cast<std::size_t>(r)] = r < 80 ? (r % 2 ? 9 : 5) : 77;   // 40 rows each in units 5 and 9, 120 in cluster 77
+            }
+            std::vector<int> h = df::homeClusters(big, c2);
+            check(h == std::vector<int>({77, 77}), "homeClusters alone: the mixed cluster holds most rows of both classes");
+            df::preferProvenance(h, big, c2, {5, 9});
+            check(h == std::vector<int>({5, 9}), "preferProvenance: the unit each class was made from, as it still holds 40 of its rows");
+            h = df::homeClusters(big, c2);
+            df::preferProvenance(h, big, c2, {31, -1});           // a provenance that holds none of the class
+            check(h == std::vector<int>({77, 77}), "preferProvenance: a provenance that no longer holds the class changes nothing");
+            h = df::homeClusters(big, c2);
+            df::preferProvenance(h, big, c2, {5, 9}, 41);
+            check(h == std::vector<int>({77, 77}), "preferProvenance: fewer rows than minRows is not enough");
+        }
         for (int& c : clu) c = c == 5 ? 31 : c == 9 ? 12 : c;  // the clusters are renumbered
         home = df::homeClusters(e, clu);
         check(home[0] == 31 && home[2] == 12 && df::splitRow(e, 7, clu[7], home, own, partners) && own.classId == 0,
@@ -200,6 +220,10 @@ int main()
         x = w;
         check(df::correctRow(x, NS, NC, me, partners, T, fits) == 1 && fits[0].accepted && !fits[1].accepted
               && fits[1].tau == -11, "correctRow: a partner without a template is skipped and keeps its stored offset");
+        T = {{1, B}, {2, C}};                                  // the OWN unit has no template
+        x = w;
+        check(df::correctRow(x, NS, NC, me, partners, T, fits) == 0 && !fits[0].accepted && !fits[1].accepted
+              && fits[0].tau == 13 && x == w, "correctRow: without the own unit's template nothing is subtracted");
         std::vector<int16_t> i16(REC);
         std::vector<float> big(REC, 40000.0f); big[1] = -40000.0f; big[2] = std::nanf("");
         df::toInt16(big, i16.data());
