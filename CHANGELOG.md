@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: a corrected collision row is placed by its corrected features](#2026-11-23--klusters-a-corrected-collision-row-is-placed-by-its-corrected-features) |
 | 2026-11-23 | [Klusters: collision rows, four faults found in a review](#2026-11-23--klusters-collision-rows-four-faults-found-in-a-review) |
 | 2026-11-23 | [Klusters: the quality dot of a cluster without a value is a white circle](#2026-11-23--klusters-the-quality-dot-of-a-cluster-without-a-value-is-a-white-circle) |
 | 2026-11-23 | [Klusters: collision offsets follow realign and nudge, and are saved](#2026-11-23--klusters-collision-offsets-follow-realign-and-nudge-and-are-saved) |
@@ -230,6 +231,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: a corrected collision row is placed by its corrected features
+
+A collision row was drawn with its partner subtracted in the waveform views, but in the cluster
+views it still sat where the sum of the two spikes had been projected.  Its features are now the
+projection of the corrected record.
+
+<details>
+<summary>Details</summary>
+
+- After each rebuild of the corrected rows, every corrected record is projected onto the PCA basis
+  of the open space (its `.pca`) and the row's PCA columns are replaced, in memory.  The clusters
+  touched are re-featurized and their views refreshed.
+- **In memory only**, like the corrected records: the `.fet` on disk stays the projection of the
+  raw `.spk`.  The file values of every replaced row are held; they come back exactly when the
+  preference is turned off or the row stops being corrected, and Save writes them, not the
+  corrected ones.  A realign or nudge rewrites a row's features from its raw record; the rebuild
+  that follows takes that as the new file value and projects the new corrected record.
+- A space without a `.pca`, or whose basis does not fit the records (channels, window, number of
+  feature columns), keeps the raw features; the report counts the rows as skipped.
+- Self-test `test_collision_rows.py`: the features of the 40 corrected rows equal the projection
+  of their corrected records exactly; their distance to where the rows sat before the partner was
+  added is 0.063 (median) and 0.375 (worst) of the collision's displacement; rows not corrected
+  keep the file's values; preference off restores all 40 exactly; after nudges the features follow
+  the new corrected records; the saved `.fet` holds the raw projections.  Synthetic session only.
+
+</details>
 
 ---
 

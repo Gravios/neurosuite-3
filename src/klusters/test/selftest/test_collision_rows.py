@@ -32,6 +32,12 @@ Through the `collisionRows` step:
     the fitted offsets exactly where the .eap now says, and no row counts as moved; the saved .spk
     is the raw cut of the recording at the saved times; a partner the fit never placed has its
     offset carried to the saved times as well;
+  - FEATURES: a corrected row's feature values in memory are the projection of its corrected
+    record onto the space's PCA basis -- close to where the row sat before the partner was added,
+    far from where the collision put it; other rows keep the file's values; with the preference
+    off the file's values are back, exactly; after the nudges they are the projection of the new
+    corrected records; the saved .fet holds the projection of the RAW records (nothing corrected
+    is written to it);
   - the application rebuilds by itself -- on open, per nudge, at Save, and after an edit of the
     clustering (a core cut); the step only reports, so a missing hook would show.
 """
@@ -117,6 +123,15 @@ def main():
         far = [i for i in untouched if np.array_equal(spk16[i], before[i].astype(np.int16))]
         spk_path = f"{base}.spk.standard.1"
         spk16.tofile(spk_path)
+        # the .fet as a pipeline leaves it: the projection of the records the .spk holds
+        means, evecs = S.write_pca(os.path.join(d, "again.pca"), m["spk"], nch, S.NSAMP, S.NCOMP)
+        proj = lambda w: S.project(np.asarray(w).reshape(-1, S.NSAMP * nch), means, evecs, nch, S.NSAMP, S.NCOMP)   # noqa: E731
+        fet_raw = proj(spk16)
+        fet_path = f"{base}.fet.standard.1"
+        with open(fet_path, "wb") as fh:
+            np.array([fet_raw.shape[1] + 1], np.int32).tofile(fh)
+            np.concatenate([fet_raw, res[:, None]], axis=1).astype(np.int64).tofile(fh)
+        fet_before = proj(before)
         on_disk = open(spk_path, "rb").read()
 
         cells = np.full((n, 4), ABSENT, np.int16)
@@ -184,13 +199,36 @@ def main():
               f"fitted - stored, -4..+4: {r0.get('offsetDeltas')}, planted: {want}")
         saved_spk = np.fromfile(spk_path, np.int16).reshape(-1, S.NSAMP * nch)
         res_s = res.copy(); res_s[clu == 2] += 5; res_s[clu == 3] -= 2
+        with open(fet_path, "rb") as fh:
+            nd = int(np.fromfile(fh, np.int32, 1)[0]); saved_fet = np.fromfile(fh, np.int64).reshape(-1, nd)
+        check(np.array_equal(saved_fet[coll, :-1], proj(saved_spk[coll])),
+              "the saved .fet holds the projection of the RAW records for the collision rows: corrected features stay in memory")
         check(np.array_equal(saved_spk, S.cut(fil, res_s, S.CHANS, S.NSAMP, S.PEAK)),
               "the saved .spk is the RAW cut of the recording at the saved times: no corrected record was written into it")
 
+        # features
+        f0 = {i: np.array(recs[i]["features"], np.int64) for i in ask}
+        check(r0.get("featuresProjected") == 40 and not r0.get("featuresSkipped"), "the 40 corrected rows had their features re-projected",
+              str({k: r0.get(k) for k in ("featuresProjected", "featuresSkipped")}))
+        check(all(np.array_equal(f0[int(i)], proj(np.array(recs[int(i)]["served"], np.int16))[0]) for i in coll),
+              "a corrected row's features are the projection of its corrected record, exactly")
+        d_raw = np.array([np.abs(fet_raw[i] - fet_before[i]).sum() for i in coll], float)
+        d_cor = np.array([np.abs(f0[int(i)] - fet_before[i]).sum() for i in coll], float)
+        print(f"      features: distance to where the row sat before the partner, as a share of the collision's: "
+              f"median {np.median(d_cor / d_raw):.3f}, worst {(d_cor / d_raw).max():.3f}")
+        check(np.median(d_cor / d_raw) < 0.15 and (d_cor / d_raw).max() < 0.5,
+              "... which puts it back near where the row sat before the partner was added")
+        check(all(np.array_equal(f0[i], fet_raw[i]) for i in clean + [ghost]),
+              "NEGATIVE CONTROL: rows that are not corrected keep the file's feature values")
         r1, r2 = st[1], st[2]
         off = all(x["served"] == x["raw"] for x in r1.get("records", []))
         check(r1.get("enabled") is False and r1.get("active") == 0 and off, "with the preference off the raw records are served",
               str({k: r1.get(k) for k in ("enabled", "active")}))
+        check(all(np.array_equal(np.array(x["features"], np.int64), fet_raw[x["row"]]) for x in r1.get("records", []))
+              and r1.get("featuresRestored") == 40,
+              "... and the feature values are the file's again, exactly (40 rows restored)", str(r1.get("featuresRestored")))
+        check(all(x["features"] == recs[x["row"]]["features"] for x in r2.get("records", [])),
+              "on again: the corrected rows' features are the projection again")
         on = all(x["served"] == recs[x["row"]]["served"] for x in r2.get("records", []))
         check(r2.get("enabled") is True and r2.get("active") == 40 and on, "on again: the same corrected records",
               str({k: r2.get(k) for k in ("enabled", "active")}))
@@ -227,6 +265,9 @@ def main():
               "after five nudges of unit 2 (5 samples, more than the fit searches) the 40 rows are still corrected",
               str({k: r9.get(k) for k in ("corrected", "rowsMoved", "classesMoved", "offsetDeltas")}))
         check(np.median(e_cor / e_raw) < 0.10, "... to the records the recording held there before the partners were added")
+        check(all(np.array_equal(np.array(rec9[int(i)]["features"], np.int64), proj(np.array(rec9[int(i)]["served"], np.int16))[0])
+                  for i in coll) and r9.get("featuresProjected") == 40,
+              "... and their features are the projection of the NEW corrected records (the nudge had rewritten them raw)")
         r12 = st[12]
         check(r12.get("corrected") == 40 and r12.get("classesMoved") == 1,
               "after two nudges of unit 3 -- the PARTNER's unit -- they are still corrected, the partner's move counted",
@@ -273,6 +314,9 @@ def main():
         # the first run saved: put the session's files back as they were
         spk16.tofile(spk_path)
         res.tofile(f"{base}.res.standard.1")
+        with open(fet_path, "wb") as fh:
+            np.array([fet_raw.shape[1] + 1], np.int32).tofile(fh)
+            np.concatenate([fet_raw, res[:, None]], axis=1).astype(np.int64).tofile(fh)
         for stale in (f"{base}.spkc.standard.1",):
             if os.path.exists(stale):
                 os.remove(stale)

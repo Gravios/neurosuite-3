@@ -1206,8 +1206,16 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   not collisions), and Save writes the offsets the fit found -- relative to the saved times -- to
   the stage's own `.eap`.  A row can be moved any distance, and so can its partner's unit.
 
-Not done yet: the features (`.fet`) of a collision row are still those of its raw record; a
-super-sampled space shows the raw records; time-sort and dedup do not carry the `.spkc`.
+- **Features.**  A corrected row's features are re-projected from its corrected record onto the
+  space's PCA basis (the `.pca` of the open space), so the row sits in the cluster views where its
+  own unit's spike belongs, not where the sum of two spikes fell.  Like the records, this is in
+  memory only: the `.fet` on disk stays the projection of the raw `.spk`, and Save writes the raw
+  projection for these rows.  With the preference off, or when a row stops being corrected, its
+  file values come back exactly.  Only the PCA columns are replaced; a space without a `.pca`, or
+  whose basis does not fit the records, keeps the raw features (reported as skipped).
+
+Not done yet: a super-sampled space shows the raw records; time-sort and dedup do not carry the
+`.spkc`.
 
 ### Plugins
 

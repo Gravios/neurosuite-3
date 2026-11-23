@@ -1999,6 +1999,9 @@ public:
         qint64  rowsWithoutOwnTemplate = 0; ///< collision rows left raw: their own unit has no template
         int     offsetsDiffer = 0;          ///< accepted fits whose whole-sample offset is not the .eap's
         QVector<int> offsetDeltas = QVector<int>(9, 0);   ///< accepted fits by (fitted - searched-from) offset, -4 .. +4
+        qint64  featuresProjected = 0;      ///< corrected rows whose feature row was re-projected from the corrected record
+        qint64  featuresRestored = 0;       ///< rows no longer corrected whose feature row was put back
+        QString featuresSkipped;            ///< why no feature row was touched (no basis for the shown space, ...)
         qint64  rowsMoved = 0;              ///< collision rows whose time is not the one the .eap was written for
         int     classesMoved = 0;           ///< partner classes whose unit moved since then (its rows' median time change)
         qint64  milliseconds = 0;
@@ -2041,6 +2044,8 @@ public:
     /** Row @p row (0-based) as every reader gets it (@p served) and as the .spk holds it
      *  (@p raw); they differ only for a corrected collision row.  False on a read error. */
     bool spikeRecord(qint64 row, std::vector<int16_t>& served, std::vector<int16_t>& raw) const;
+    /** The feature values row @p row (0-based) has in memory, without the time column. */
+    QVector<double> spikeFeatures(qint64 row) const;
     /** <base>.spkc.<method>.<group>[.<stage>] of the open stage. */
     QString spkcPathFor(const QString& method) const;
 
@@ -3137,6 +3142,15 @@ private:
     QList<int>           scopeResolvedParents;          // held contributing parents, block order
     QList<int>           modifiedParents;            // parent parents created/modified since the last post-edit drain
     QList<int>           collisionRowClusters;       // clusters holding a corrected collision row (klustersdoc_spkc.cpp)
+    // A corrected row's FEATURES are re-projected from its corrected record, in memory only (the
+    // .fet on disk stays the projection of the .spk).  Per waveform space, per row: the feature
+    // values the row had before (to put back when it is no longer corrected) and the ones written.
+    struct CollisionFeatureRow { QVector<dataType> original, written; };
+    QHash<QString, QHash<qint64, CollisionFeatureRow>> collisionFeatureRows;
+    /** Brings the feature rows in step with the corrected rows @p overlay holds (null = none):
+     *  projects each corrected record onto the shown space's PCA basis, restores the rows that
+     *  are no longer corrected, refreshes the extrema and tells the views. */
+    void applyCollisionFeatures(const std::shared_ptr<const SpkOverlay>& overlay, CollisionRowsReport& rep);
     CollisionRowsReport  lastCollisionReport;        // of the last rebuildCollisionRows()
     int                  collisionRowBuilds = 0;
     std::shared_ptr<const void> collisionRowsBuiltOn; // the membership table the corrected rows were built on

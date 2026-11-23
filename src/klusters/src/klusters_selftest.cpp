@@ -463,6 +463,9 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         QJsonArray deltas;                                      // accepted fits by (fitted - stored) offset, -4 .. +4
         for (const int v : rep.offsetDeltas) deltas.append(v);
         result.insert(QStringLiteral("offsetDeltas"), deltas);
+        result.insert(QStringLiteral("featuresProjected"), static_cast<double>(rep.featuresProjected));
+        result.insert(QStringLiteral("featuresRestored"), static_cast<double>(rep.featuresRestored));
+        result.insert(QStringLiteral("featuresSkipped"), rep.featuresSkipped);
         result.insert(QStringLiteral("rowsMoved"), static_cast<double>(rep.rowsMoved));
         result.insert(QStringLiteral("classesMoved"), rep.classesMoved);
         result.insert(QStringLiteral("active"), static_cast<double>(doc->collisionRowsActive()));
@@ -478,6 +481,9 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
                 for (const int16_t x : raw) w.append(x);
                 r.insert(QStringLiteral("served"), s);
                 r.insert(QStringLiteral("raw"), w);
+                QJsonArray f;                               // the row's feature values in memory (without the time)
+                for (const double x : doc->spikeFeatures(v.toInt())) f.append(x);
+                r.insert(QStringLiteral("features"), f);
             }
             records.append(r);
         }

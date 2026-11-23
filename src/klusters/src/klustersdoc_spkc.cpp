@@ -32,6 +32,8 @@
 
 #include "configuration.h"
 #include "data.h"
+#include "klustersdoc_internal.h"
+#include "pca_row_projection.h"
 #include "spkoverlay.h"
 
 #include "neurosuite/core/custody.hpp"
@@ -42,6 +44,7 @@
 #include <QElapsedTimer>
 #include <QFileInfo>
 #include <QHash>
+#include <QSet>
 #include <QDebug>
 #include <cstring>
 
@@ -98,6 +101,7 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
     // The clusters that hold a corrected row now: their caches go whatever happens next.
     QList<int> touched = collisionRowClusters;
     auto publish = [&](std::shared_ptr<const SpkOverlay> overlay, const QList<int>& clusters) {
+        applyCollisionFeatures(overlay, rep);
         QList<int> all = touched;
         for (const int c : clusters) if (!all.contains(c)) all.append(c);
         collisionRowClusters = clusters;
@@ -306,6 +310,96 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
     return finish(true);
 }
 
+void KlustersDoc::applyCollisionFeatures(const std::shared_ptr<const SpkOverlay>& overlay, CollisionRowsReport& rep)
+{
+    if (!clusteringData) return;
+    const QString method = activeFeatureMethod();
+    QHash<qint64, CollisionFeatureRow>& held = collisionFeatureRows[method];
+    const int nSamp = clusteringData->nbSamplesPerWaveform(), nChan = clusteringData->nbOfChannels();
+    const int nFeat = clusteringData->nbOfDimensionsTotal() - 1;          // every column but the time
+    const qint64 nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    const qint64 recBytes = static_cast<qint64>(nSamp) * nChan * static_cast<qint64>(sizeof(int16_t));
+
+    auto readRow = [&](qint64 row) {
+        QVector<dataType> v(nFeat);
+        for (int d = 0; d < nFeat; ++d) v[d] = clusteringData->featureValue(static_cast<dataType>(row + 1), d + 1);
+        return v;
+    };
+    QList<int> clusters;
+    auto writeRow = [&](qint64 row, const QVector<dataType>& v) {
+        const QList<dataType> values(v.begin(), v.end());
+        clusteringData->updateFeatureRow(static_cast<dataType>(row + 1), values);
+        if (childData) childData->updateFeatureRow(static_cast<dataType>(row + 1), values);
+    };
+
+    // The basis of the shown space; without one no feature row is projected (the ones held are put back).
+    neurosuite::core::PcaBasis pca;
+    bool usable = false;
+    if (overlay && !overlay->records.isEmpty()) {
+        const QString pcaPath = klustersdoc_internal::resolveFeature(documentDirectory() + QLatin1Char('/') + documentBaseName(),
+                                               QStringLiteral("pca"), currentElectrodeGroupID(), method);
+        if (!QFileInfo::exists(pcaPath) || !neurosuite::core::loadPca(pcaPath.toStdString(), pca) || !pca.valid())
+            rep.featuresSkipped = QStringLiteral("no PCA basis for the shown space");
+        else if (pca.nCh > nChan || pca.recShift < 0 || pca.recShift + pca.data2use > nSamp || pca.nCh * pca.nComp > nFeat)
+            rep.featuresSkipped = QStringLiteral("the PCA basis does not fit the shown records");
+        else
+            usable = true;
+    }
+
+    // Rows whose features someone else has rewritten since (a realign, a nudge, a reject): what
+    // they hold now is their new uncorrected value.
+    for (auto it = held.begin(); it != held.end(); ++it) {
+        if (it.key() < 0 || it.key() >= nSpikes) continue;
+        const QVector<dataType> now = readRow(it.key());
+        if (now != it.value().written) it.value().original = now;
+    }
+    // Rows no longer corrected: their own features back.
+    std::vector<qint64> gone;
+    for (auto it = held.constBegin(); it != held.constEnd(); ++it)
+        if (!usable || !overlay->records.contains(it.key() * recBytes)) gone.push_back(it.key());
+    QSet<qint64> touchedRows;
+    for (const qint64 row : gone) {
+        if (row >= 0 && row < nSpikes && static_cast<int>(held[row].original.size()) == nFeat) {
+            writeRow(row, held[row].original);
+            touchedRows.insert(row);
+            ++rep.featuresRestored;
+        }
+        held.remove(row);
+    }
+    // Corrected rows: the projection of the corrected record; the other feature columns as they are.
+    if (usable) {
+        const int nPca = pca.nCh * pca.nComp;
+        std::vector<int64_t> coef(static_cast<std::size_t>(nPca));
+        for (auto it = overlay->records.constBegin(); it != overlay->records.constEnd(); ++it) {
+            if (it.key() % recBytes != 0 || static_cast<qint64>(it.value()->size()) != recBytes) continue;
+            const qint64 row = it.key() / recBytes;
+            if (row < 0 || row >= nSpikes) continue;
+            const int16_t* rec = reinterpret_cast<const int16_t*>(it.value()->constData());
+            klusters::projectSpikeOntoPca(pca, [&](int ch, int j) {
+                return static_cast<double>(rec[static_cast<std::size_t>(pca.recShift + j) * nChan + ch]);
+            }, coef.data());
+            CollisionFeatureRow& h = held[row];
+            if (h.original.isEmpty()) h.original = readRow(row);
+            QVector<dataType> v = h.original;
+            for (int k = 0; k < nPca; ++k) v[k] = static_cast<dataType>(coef[static_cast<std::size_t>(k)]);
+            h.written = v;
+            writeRow(row, v);
+            touchedRows.insert(row);
+            ++rep.featuresProjected;
+        }
+    }
+    if (touchedRows.isEmpty()) return;
+    // The clusters those rows are in: their extrema, and the views that draw them.
+    QHash<qint64, int> clusterOfRow;
+    for (const dataType id : clusteringData->clusterIds())
+        for (const int r : clusteringData->clusterSpkIndices(static_cast<int>(id)))
+            if (touchedRows.contains(r)) clusterOfRow.insert(r, static_cast<int>(id));
+    for (auto it = clusterOfRow.constBegin(); it != clusterOfRow.constEnd(); ++it)
+        if (!clusters.contains(it.value())) clusters.append(it.value());
+    refeaturizeRealignedClusters(clusters);
+    for (const int c : clusters) notifyClusterFeaturesReprojected(c);
+}
+
 bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error)
 {
     namespace nf = neurofileio;
@@ -379,6 +473,7 @@ void KlustersDoc::refreshCollisionRows()
         const QList<int> held = collisionRowClusters;
         collisionRowClusters.clear();
         lastCollisionReport = CollisionRowsReport();
+        applyCollisionFeatures(nullptr, lastCollisionReport);
         clusteringData->setSpkcOverlay(nullptr, held);
         if (childData) {
             QList<int> kids;
@@ -456,6 +551,16 @@ bool KlustersDoc::spikeRecord(qint64 row, std::vector<int16_t>& served, std::vec
     const qint64 recBytes = static_cast<qint64>(rec * sizeof(int16_t));
     served.resize(rec); raw.resize(rec);
     return snap->readSpk(served.data(), recBytes, row * recBytes) && snap->readSpkRaw(raw.data(), recBytes, row * recBytes);
+}
+
+QVector<double> KlustersDoc::spikeFeatures(qint64 row) const
+{
+    QVector<double> v;
+    if (!clusteringData || row < 0 || row >= static_cast<qint64>(clusteringData->totalNbOfSpikes())) return v;
+    const int nFeat = clusteringData->nbOfDimensionsTotal() - 1;
+    for (int d = 0; d < nFeat; ++d)
+        v.append(static_cast<double>(clusteringData->featureValue(static_cast<dataType>(row + 1), d + 1)));
+    return v;
 }
 
 QString KlustersDoc::spkcPathFor(const QString& method) const
