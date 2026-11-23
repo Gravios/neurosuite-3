@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Roadmap brought up to date](#2026-11-23--roadmap-brought-up-to-date) |
 | 2026-11-23 | [Klusters: Recluster Against References](#2026-11-23--klusters-recluster-against-references) |
 | 2026-11-23 | [Roadmap: what the collision-row work left open, and reclustering against references](#2026-11-23--roadmap-what-the-collision-row-work-left-open-and-reclustering-against-references) |
 | 2026-11-23 | [Self-test: test_recluster_klustakwik read the chunk count off any line](#2026-11-23--self-test-test_recluster_klustakwik-read-the-chunk-count-off-any-line) |
@@ -240,6 +241,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Roadmap brought up to date
+
+`doc/dev/ROADMAP.md` only; it was last updated on 2026-10-19.
+
+<details>
+<summary>Details</summary>
+
+- **Done** gains Recluster Against References, a by-theme summary of November's entries of this
+  file (super-sampled spaces, recluster engines and plugins, curation tools, hierarchy, ndm,
+  KiloKlustaKwik), and fiber-kit's `.mti`/`.mtf` readers -- that planned item was already done.
+- The `process_pca` `setFailed()` item said no exit path calls it; three do.  Reworded.
+- The real-session item records that the run was started and what the flag steps reported.
+- Checked against the code: the two items above.  Not re-checked: the other planned and
+  considered items from October (Metal, the schema migrator, the KiloKlustaKwik audit and sweeps,
+  the Template Library tab, templates per feature space, the session-YAML writers, events from
+  spikes) and the cross-cutting debt lists.
+
+</details>
 
 ---
 

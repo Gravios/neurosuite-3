@@ -59,7 +59,10 @@ curated `cur_pl`; in Klusters, whether the corrected collision rows of a
 few units look like the unit (waveform view) and sit in it (cluster view);
 the size of the `.eap` and the time of the rebuild on 800,000 spikes (only
 measured on 800).  The two plans are not in fiber-kit's `plans/` yet.
-Estimate: 1 session once the run is back.
+Started 2026-11-23 on the user's workstation: the flag steps wrote the mask
+(6 artifacts, 48,978 probable collisions = 6.0 % of 815,728 spikes; 46,008
+by the score, 8,099 with another detection within 26 samples); the sort was
+running when this was written.  Estimate: 1 session once the run is back.
 
 **Make the CI `-Wshadow` warnings a hard gate.**
 CI exists (`.github/workflows/ci-linux.yml`, Ubuntu 24.04 / 25.10 / 26.04 /
@@ -103,10 +106,11 @@ paths; for KiloKlustaKwik the bar is "no further from the CPU than CUDA
 is", so record the CUDA-vs-CPU figure on the workstation first.  Full plan:
 [`doc/design/metal-backend.md`](../design/metal-backend.md).
 
-**Wire `process_pca` exit paths to call `setFailed()`.**
-The `setFailed()` API exists on `ProgressBar` but `process_pca.cpp`'s
-`exit(1)` paths don't call it.  Means red ✗ on direct CLI failure.
-Five lines of code.  Estimate: trivial.
+**Wire the rest of `process_pca`'s exit paths to `setFailed()`.**
+Three of the `exit(1)` paths in `process_pca.cpp` call `progress->setFailed()`
+(checked 2026-11-23); about thirty do not, most of them before or outside the
+progress bar's life.  Those that run while a bar is shown should end it with
+the red ✗.  Estimate: trivial.
 
 **Session-schema migrator chain.**
 The writer and modifier already stamp `parameters.version` with
@@ -149,13 +153,6 @@ time of the median-waveform computation for every `.spk` type, from waveforms
 synced to the current spike times (Actions → Sync Feature Spaces provides the
 synced `.spk`).  Design first — when to trigger, and how the per-variant
 `.wtf` relate to the method-less `.wti`.  Estimate: 1–2 sessions.
-
-**fiber-kit `.mti`/`.mtf` reader mirror.**
-fiber-kit's `neuro_io.read_wtl` reads `.wtl` v2 since fiber-kit patch 0006
-(2026-10-16), so lineage files from Klusters now read on both sides.  The
-committed template model (`.mti`/`.mtf`, the `.wti`/`.spk` layouts) has no
-fiber-kit reader yet.  A separate fiber-kit patch, never cross-applied from
-ns3.  Estimate: a quarter session.
 
 **Klusters — Recluster Against References: what the first version leaves.**
 Built 2026-11-23 (Actions → Recluster → Recluster Against References…, `CHANGELOG.md`,
@@ -312,6 +309,47 @@ git history / `CHANGELOG.md` after roughly a quarter.)
 
 <details>
 <summary>Completed items</summary>
+
+### ✅ Klusters: Recluster Against References *(2026-11-23)*
+
+A cluster that is a mixture of known cells is sorted pooled with the clean
+clusters of those cells; only the mixed cluster is replaced, by the pieces
+of it the sorter's clusters hold.  A dialog asks which selected cluster is
+the mixed one; the summary names the reference each piece was sorted with.
+Reference: `doc/klusters/README.md` "Recluster Against References".  What
+the first version leaves is under Soon.
+
+### ✅ November 2026, by theme *(2026-11-02 → 11-22)*
+
+Ninety-odd `CHANGELOG.md` entries; the entries are the reference.
+
+- **Super-sampled waveform spaces** (11-11 → 11-20): the `_U<factor>` token,
+  one tick `.res` per factor, `ndm_pca` and the extraction engines on
+  super-sampled waveforms, realign and nudge in the shown space with the
+  `.clu`'s own space following, spaces read when first shown.
+- **Recluster engines and plugins** (11-07 → 11-10, 11-19): Recluster with
+  fiber-kit on a sub-session, typed plugin descriptors and Preferences →
+  Plugins, the active engine, the Refine mode, the Time chunks preference.
+- **Curation tools** (11-18 → 11-22): Strip Residual Outliers (per time
+  chunk, on children, from a seed cluster), Split Burst Followers, Split
+  Off Spurious Spikes (the core cut, on the GPU), the quality dot, the
+  spike under the cursor, Preferences pages that scroll.
+- **Hierarchy** (11-07 → 11-21): child-level delete, watershed and sorts,
+  where the selection lands after an edit, the curation matrices at the
+  atom level, child ids disjoint from parent ids, the curation log's
+  hierarchy commands.
+- **ndm** (11-02 → 11-09): one `ndm` command for the plugins, man pages and
+  tab completion, `--group`, `ndm_estimategeometry` (wire-bundle layout from
+  coherence, the estimate in the probe file).
+- **KiloKlustaKwik** (11-19 → 11-20): the time column is always the time
+  axis; a heap overflow in the split trial; binary `.fet`/`.clu` no longer
+  misread as text.
+
+### ✅ fiber-kit reads the committed template model *(by 2026-11-20)*
+
+`neuro_io.read_mti` / `read_mtf` exist and are checked by fiber-kit's
+`test_golden_formats.py` against the shared reference files; the planned
+"`.mti`/`.mtf` reader mirror" is done.
 
 ### ✅ Collision rows: `.eap` + sparse `.spkc` *(2026-11-23)*
 
@@ -629,5 +667,5 @@ measurement that identifies the actual bottleneck.
 
 ---
 
-*Last updated: 2026-10-19.  Update this date whenever items shift between
+*Last updated: 2026-11-23.  Update this date whenever items shift between
 sections, complete, or are added.*
