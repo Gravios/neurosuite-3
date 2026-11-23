@@ -1105,6 +1105,38 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // move (or cannot be re-cut), this stored row at its old time.
     const std::vector<int16_t> storedWav = wavBuf;
 
+    // A collision row is MEASURED on its corrected record (the partner unit's
+    // spike subtracted, klustersdoc_spkc.cpp): with the partner in it, the lag
+    // that fits the unit's mean best is pulled toward the partner.  Only the
+    // working copy changes -- what is written is the stored row or a fresh cut
+    // from the recording, never this -- and the corrected rows are rebuilt at
+    // the new times when the realign is done.  Not while the corrected rows
+    // wait for a rebuild (they would be of another clustering).
+    std::vector<char> measuredCorrected(static_cast<size_t>(N), 0);
+    {
+        const std::shared_ptr<const Data::ClusteringSnapshot> snap = clusteringData->currentSnapshot();
+        qint64 n = 0;
+        if (snap && snap->spkcOverlay && !collisionRowsOutdated()) {
+            for (int64_t i = 0; i < N; ++i) {
+                const auto it = snap->spkcOverlay->records.constFind(
+                    static_cast<qint64>(gidx[static_cast<size_t>(i)] * bytesPerSpike));
+                if (it == snap->spkcOverlay->records.constEnd()
+                    || static_cast<int64_t>((*it)->size()) != bytesPerSpike) continue;
+                // reinterpret_cast: the record's bytes are the .spk's int16 samples, sample-major.
+                const int16_t* src = reinterpret_cast<const int16_t*>((*it)->constData());
+                int16_t* dst = wavBuf.data() + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+                for (int s = 0; s < nSamp; ++s)
+                    for (int ch = 0; ch < nChan; ++ch)
+                        dst[ch * nSamp + s] = src[s * nChan + ch];
+                measuredCorrected[static_cast<size_t>(i)] = 1;
+                ++n;
+            }
+        }
+        if (n > 0)
+            log << n << " collision row(s) measured on their corrected record (partner subtracted)\n";
+        realignRowsMeasuredCorrected = static_cast<int>(n);
+    }
+
     // Capture before-mean in channel-major order for the review dialog.
     if (meanBefore) {
         meanBefore->resize(static_cast<int>(spkElems));
@@ -1713,6 +1745,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     static_cast<size_t>(nSamp) * totalNbChanP82);
                 for (int64_t i = 0; i < N; ++i) {
                     if (!validRow[static_cast<size_t>(i)]) { ++nClamped; continue; }
+                    // The candidates are raw cuts: a collision row keeps the lag its
+                    // corrected record gave.
+                    if (measuredCorrected[static_cast<size_t>(i)]) continue;
                     const int bestS = bestShiftGpu[static_cast<size_t>(i)];
                     if (bestS == 0) continue;
 
@@ -1763,6 +1798,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     [&](int64_t i, FILE* spikeFp,
                         std::vector<int16_t>& frameBuf,
                         std::vector<int16_t>& candBuf) -> RefineResult {
+                // The candidates are raw cuts: a collision row keeps the lag its
+                // corrected record gave.
+                if (measuredCorrected[static_cast<size_t>(i)]) return RefineResult::None;
                 const int   curr = cumShift[static_cast<size_t>(i)];
                 const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
                 int bestS = 0;

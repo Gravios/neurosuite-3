@@ -2025,6 +2025,8 @@ public:
     bool collisionRowsOutdated() const;
     /** What the last rebuild found, and how many rebuilds this session has had. */
     const CollisionRowsReport& collisionRowsLastReport() const { return lastCollisionReport; }
+    /** Rows the last realign measured on their corrected record instead of the raw one. */
+    int realignMeasuredCorrectedRows() const { return realignRowsMeasuredCorrected; }
     int collisionRowsBuildCount() const { return collisionRowBuilds; }
     /** Shows the corrected rows (the default) or the raw records, keeping what was built. */
     void setCollisionRowsShown(bool shown);
@@ -3161,6 +3163,7 @@ private:
      *  new stage name would read the base .eap, or none. */
     void carryEapToSavedName();
     QString eapBeforeSaveAs;                         // set by a Save As, used once by carryEapToSavedName()
+    int realignRowsMeasuredCorrected = 0;            // of the last realignSpikes(): rows measured on their corrected record
     /** Forgets everything held about the collision rows of the document that was open (the
      *  times the offsets hold for, the feature values put aside, the last fits and report):
      *  all of it is indexed by that document's rows. */

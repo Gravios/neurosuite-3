@@ -1207,6 +1207,13 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   less the row's time change plus the partner unit's (the median time change of its rows that are
   not collisions), and Save writes the offsets the fit found -- relative to the saved times -- to
   the stage's own `.eap`.  A row can be moved any distance, and so can its partner's unit.
+- **Realign.**  A realign measures a collision row on its corrected record: with the partner in
+  the record, the lag that fits the unit's mean best is pulled toward the partner.  Only the
+  measuring copy holds the corrected record; what is written for the row is a fresh cut of the
+  recording at its new time (or its stored record if it does not move), and the corrected rows
+  are rebuilt at the new times afterwards.  The optional PCA refinement, which compares raw cuts,
+  leaves these rows at the lag their corrected record gave.  Not done while the corrected rows
+  wait for a rebuild after an edit, and not with the preference off.
 - **Save As.**  The `.eap` the session read goes with it: it is copied to the new name's own
   (`<base>.eap.<group>[.<stage>]`) unless the new name reads that same file, so a new stage name
   does not fall back to the base `.eap`.

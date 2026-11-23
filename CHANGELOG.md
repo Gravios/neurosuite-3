@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: realign measures a collision row on its corrected record](#2026-11-23--klusters-realign-measures-a-collision-row-on-its-corrected-record) |
 | 2026-11-23 | [Core: a reference .spkc and shared cases for the collision fit](#2026-11-23--core-a-reference-spkc-and-shared-cases-for-the-collision-fit) |
 | 2026-11-23 | [Klusters: Save As takes the stage's .eap with it](#2026-11-23--klusters-save-as-takes-the-stages-eap-with-it) |
 | 2026-11-23 | [Klusters: Sort Spikes by Time carries the .eap and the .spkc](#2026-11-23--klusters-sort-spikes-by-time-carries-the-eap-and-the-spkc) |
@@ -235,6 +236,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: realign measures a collision row on its corrected record
+
+A realign took each spike's lag from its raw record.  For a collision row that record holds two
+spikes, and the lag that fits the unit's mean best is pulled toward the partner.
+
+<details>
+<summary>Details</summary>
+
+- **Measured first** (`analysis/realign-collision-rows` in the project): 19,800 collisions made on
+  real spikes of jg05-20120312 group 8 (a real record of one curated unit plus another unit's mean
+  at a known offset, 0.7-1.2 of its amplitude).  Against the lag of the record before the partner,
+  the raw collision record gives another lag in 44.2 % (by 2 samples or more in 16.6 %); the
+  corrected record in 8.9 % (0.3 %).  Worst where the partner is larger than the spike (66 % /
+  40 %) or within 6 samples of it (67 % / 29 %).  The partners there are made, with the template
+  known exactly; real collisions were not measured.
+- `realignSpikes` puts the corrected record of every collision row of the cluster into its
+  measuring copy, after the stored records are set aside.  The cross-correlation passes, the mean
+  they align to and the centroid mode all read that copy.  What is written is unchanged: a fresh
+  cut of the recording at the new time, or the stored (raw) record for a row that does not move.
+- The optional PCA refinement compares raw cuts at candidate lags; collision rows are left out of
+  it (CPU and GPU path) and keep the lag their corrected record gave.
+- Only when corrected rows are shown (the preference) and built on the present clustering.  The
+  log names the count; the corrected rows are rebuilt at the new times as after any realign.
+- `test_realign_collision_rows.py`: 60 planted collisions 3-7 samples from the spike, in a session
+  whose true spike times are known.  Off their true time after the realign: 1 of 60 measured
+  corrected, 33 of 60 (6 by two samples or more) with the preference off; the rows without a
+  partner end the same (5 and 6 of 340 off).  Synthetic session.
+
+</details>
 
 ---
 

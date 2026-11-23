@@ -1006,6 +1006,7 @@ void KlustersApp::selfTestNoteRealign(bool ok, int nShifted)
     QJsonObject r;
     r.insert(QStringLiteral("realignDone"), ok);
     r.insert(QStringLiteral("nShifted"), nShifted);
+    r.insert(QStringLiteral("measuredCorrected"), doc ? doc->realignMeasuredCorrectedRows() : 0);
     r.insert(QStringLiteral("log"), selfTestRealignLog_.right(20000));
     selfTestRealignLog_.clear();
     selfTestResults_.append(r);
