@@ -43,6 +43,8 @@
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
  *        {"save": true}                  File > Save
+ *        {"reopen": true}                close the document and open it again (unsaved changes dropped);
+ *                                        {"reopen": {"replace": {file: with}}} overwrites files in between
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
  *        {"dump": true, "cluster": <id>} the spaces, their files, whether each is held
@@ -243,6 +245,24 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         const bool ok = doc->followMovedSpikes(log);
         result.insert(QStringLiteral("log"), log);
         return ok;
+    }
+    if (step.contains(QStringLiteral("reopen"))) {
+        // {"reopen": true | {"replace": {file: with, ...}}}: File > Close, then open the same file
+        // again, in this process.  Unsaved changes are dropped without the question File > Close
+        // would ask.  "replace": while it is closed, each file is overwritten with a copy of
+        // another (what a tool run between the two does).
+        const QString url = doc->url();
+        doc->setModified(false);
+        slotFileClose();
+        if (mainDock) return false;                 // the close did not complete
+        const QJsonObject swaps = step.value(QStringLiteral("reopen")).toObject()
+                                      .value(QStringLiteral("replace")).toObject();
+        for (auto it = swaps.begin(); it != swaps.end(); ++it) {
+            QFile::remove(it.key());
+            if (!QFile::copy(it.value().toString(), it.key())) return false;
+        }
+        openDocumentFile(url);
+        return doc && !doc->url().isEmpty();
     }
     if (step.contains(QStringLiteral("save"))) {
         if (doc->isBorrowedSpace()) {

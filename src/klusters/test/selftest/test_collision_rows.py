@@ -38,6 +38,10 @@ Through the `collisionRows` step:
     off the file's values are back, exactly; after the nudges they are the projection of the new
     corrected records; the saved .fet holds the projection of the RAW records (nothing corrected
     is written to it);
+  - closed and opened again in one process, with the files rewritten in between (unit 2 realigned
+    8 samples later by a tool: times, records, features and .eap offsets), the 40 rows are
+    corrected on the new files and none counts as moved -- nothing held for the closed document
+    (the times its offsets were for, feature values put aside) reaches the new one;
   - the application rebuilds by itself -- on open, per nudge, at Save, and after an edit of the
     clustering (a core cut); the step only reports, so a missing hook would show.
 """
@@ -320,6 +324,59 @@ def main():
         for stale in (f"{base}.spkc.standard.1",):
             if os.path.exists(stale):
                 os.remove(stale)
+
+        # Close and open again in one process, the files rewritten in between as a tool would:
+        # unit 2 realigned 8 samples later -- its times, its records and features cut again, and
+        # the .eap's offsets (relative to the row's time) 8 less.  What Klusters held for the
+        # closed document -- the times its offsets were for, by row -- is not of this one: kept,
+        # every row of unit 2 would count as moved by 8 and each partner be sought 8 samples off.
+        write_eap(f"{base}.eap.1", cells)
+        crows = [int(i) for i in coll]
+        res8 = res.copy()
+        gap = np.append(np.diff(res), 10**6)
+        late = a[gap[a] > 8]                             # the rows of unit 2 that stay before the next spike
+        res8[late] += 8
+        check(bool(np.all(np.diff(res8) >= 0)) and np.isin(coll, late).all() and len(late) > 0.95 * len(a),
+              "fixture: the rewritten times are in order, with every collision row and nearly all of unit 2 moved",
+              f"{len(late)} of {len(a)}")
+        spk8 = S.cut(fil, res8, S.CHANS, S.NSAMP, S.PEAK).reshape(-1, S.NSAMP * nch)
+        cells8 = cells.copy()
+        cells8[coll, 1] = stored - 8
+        cells8[ghost, 1] = 3
+        alt = {k: os.path.join(d, "alt." + k) for k in ("res", "spk", "fet", "eap")}
+        res8.tofile(alt["res"])
+        spk8.astype(np.int16).tofile(alt["spk"])
+        with open(alt["fet"], "wb") as fh:
+            np.array([fet_raw.shape[1] + 1], np.int32).tofile(fh)
+            np.concatenate([proj(spk8), res8[:, None]], axis=1).astype(np.int64).tofile(fh)
+        write_eap(alt["eap"], cells8)
+        swap = {f"{base}.res.standard.1": alt["res"], spk_path: alt["spk"], fet_path: alt["fet"], f"{base}.eap.1": alt["eap"]}
+        repo = R.run(klusters, f"{base}.clu.standard.1",
+                     [{"collisionRows": {"rows": crows}}, {"reopen": {"replace": swap}}, {"collisionRows": {"rows": crows}}], d)
+        so = (repo.get("results") or []) + [{}] * 3
+        o0, o2 = so[0], so[2]
+        rec8 = {x["row"]: x for x in o2.get("records", [])}
+        check(repo.get("rc") == 0 and o0.get("corrected") == 40 and len(rec8) == 40
+              and all(np.array_equal(np.array(rec8[i]["raw"], np.int16), spk8[i]) for i in crows),
+              "reopen: the rewritten session is the one open (raw records are the new cut)")
+        check(o2.get("corrected") == 40 and o2.get("rowsMoved") == 0 and o2.get("classesMoved") == 0,
+              "reopen: the 40 rows are corrected, and none counts as moved",
+              str({k: o2.get(k) for k in ("corrected", "partnersSubtracted", "rowsMoved", "classesMoved", "builds")}))
+        before8 = S.cut(fil0, res8, S.CHANS, S.NSAMP, S.PEAK).reshape(-1, S.NSAMP * nch).astype(np.float64)
+        e8 = np.array([np.abs(np.array(rec8[i]["served"], float) - before8[i]).sum()
+                       / np.abs(spk8[i].astype(float) - before8[i]).sum() for i in crows]) if len(rec8) == 40 else np.ones(1)
+        print(f"      reopened on the rewritten files: error as a share of the raw row's: median {np.median(e8):.3f}, worst {e8.max():.3f}")
+        check(np.median(e8) < 0.10, "reopen: ... to the records the recording held there before the partners were added")
+        check(o2.get("featuresRestored") == 0 and o2.get("featuresProjected") == 40
+              and all(np.array_equal(np.array(rec8[i]["features"], np.int64), proj(np.array(rec8[i]["served"], np.int16))[0]) for i in crows),
+              "reopen: no feature value of the closed document is put into the new one",
+              str({k: o2.get(k) for k in ("featuresRestored", "featuresProjected")}))
+        # back to the session as it was
+        spk16.tofile(spk_path)
+        res.tofile(f"{base}.res.standard.1")
+        with open(fet_path, "wb") as fh:
+            np.array([fet_raw.shape[1] + 1], np.int32).tofile(fh)
+            np.concatenate([fet_raw, res[:, None]], axis=1).astype(np.int64).tofile(fh)
 
         # NEGATIVE CONTROL: an .eap that names no partner
         cells2 = np.full((n, 4), ABSENT, np.int16)

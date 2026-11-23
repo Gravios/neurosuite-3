@@ -310,6 +310,17 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
     return finish(true);
 }
 
+void KlustersDoc::resetCollisionRows()
+{
+    collisionFeatureRows.clear();
+    collisionRefTimes.clear();
+    collisionRefEap.clear();
+    collisionClassShift.clear();
+    collisionFits.clear();
+    collisionRowsBuiltOn.reset();
+    lastCollisionReport = CollisionRowsReport();
+}
+
 void KlustersDoc::applyCollisionFeatures(const std::shared_ptr<const SpkOverlay>& overlay, CollisionRowsReport& rep)
 {
     if (!clusteringData) return;

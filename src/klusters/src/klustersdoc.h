@@ -3151,6 +3151,10 @@ private:
      *  projects each corrected record onto the shown space's PCA basis, restores the rows that
      *  are no longer corrected, refreshes the extrema and tells the views. */
     void applyCollisionFeatures(const std::shared_ptr<const SpkOverlay>& overlay, CollisionRowsReport& rep);
+    /** Forgets everything held about the collision rows of the document that was open (the
+     *  times the offsets hold for, the feature values put aside, the last fits and report):
+     *  all of it is indexed by that document's rows. */
+    void resetCollisionRows();
     CollisionRowsReport  lastCollisionReport;        // of the last rebuildCollisionRows()
     int                  collisionRowBuilds = 0;
     std::shared_ptr<const void> collisionRowsBuiltOn; // the membership table the corrected rows were built on

@@ -146,6 +146,7 @@ void KlustersDoc::closeDocument(){
     discardSyncedFeatureSpaces();
     releaseFeatureSpaces();
     dropMovedSpikes();
+    resetCollisionRows();
     parameterFile.clear();
     qDeleteAll(clusterColorListUndoList);
     clusterColorListUndoList.clear();
@@ -704,7 +705,9 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         }
     }
 
-    // Collision rows (.eap rows naming a partner unit) shown as their own unit's spike.
+    // Collision rows (.eap rows naming a partner unit) shown as their own unit's spike.  What
+    // was held is of the document open before: its rows, its times, its feature values.
+    resetCollisionRows();
     refreshCollisionRows();
 
     return OK;

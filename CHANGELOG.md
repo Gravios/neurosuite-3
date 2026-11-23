@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: collision-row state is dropped with the document](#2026-11-23--klusters-collision-row-state-is-dropped-with-the-document) |
 | 2026-11-23 | [Klusters: a corrected collision row is placed by its corrected features](#2026-11-23--klusters-a-corrected-collision-row-is-placed-by-its-corrected-features) |
 | 2026-11-23 | [Klusters: collision rows, four faults found in a review](#2026-11-23--klusters-collision-rows-four-faults-found-in-a-review) |
 | 2026-11-23 | [Klusters: the quality dot of a cluster without a value is a white circle](#2026-11-23--klusters-the-quality-dot-of-a-cluster-without-a-value-is-a-white-circle) |
@@ -231,6 +232,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: collision-row state is dropped with the document
+
+What Klusters holds about collision rows is indexed by row -- the times the `.eap`'s offsets were
+written for, the feature values put aside for corrected rows, the last fits.  It was kept when the
+document was closed and used for the next one whenever the `.eap` had the same name and the group
+the same spike count.
+
+<details>
+<summary>Details</summary>
+
+- Close, let a tool rewrite the session (a realign that moves a unit and writes the new offsets),
+  open it again in the same Klusters: every moved row counted as moved once more, each partner was
+  sought that many samples off, and feature values of the closed document were put into rows of
+  the new one.  In the test below 19 of 40 collision rows were left uncorrected and the other 21
+  were corrected wrongly (error at 1.0 of the raw row's).
+- `KlustersDoc::resetCollisionRows()` at close and before the first rebuild at open.
+- Reopening the same unchanged files was not affected (the stale times were the right ones), which
+  is why the earlier tests did not show it.
+- Self-test step `reopen` (close and open again in the same process; `replace` overwrites files
+  in between).  `test_collision_rows.py`: unit 2 moved 8 samples later on disk between close and
+  open -- 40 rows corrected, none counted as moved, error 0.056 (median) of the raw row's; with
+  the reset disabled the three checks fail as described.
+
+</details>
 
 ---
 
