@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Roadmap: what the collision-row work left open, and reclustering against references](#2026-11-23--roadmap-what-the-collision-row-work-left-open-and-reclustering-against-references) |
 | 2026-11-23 | [Self-test: test_recluster_klustakwik read the chunk count off any line](#2026-11-23--self-test-test_recluster_klustakwik-read-the-chunk-count-off-any-line) |
 | 2026-11-23 | [Klusters: a line of a child process is no longer cut where the other stream speaks](#2026-11-23--klusters-a-line-of-a-child-process-is-no-longer-cut-where-the-other-stream-speaks) |
 | 2026-11-23 | [Klusters: realign measures a collision row on its corrected record](#2026-11-23--klusters-realign-measures-a-collision-row-on-its-corrected-record) |
@@ -238,6 +239,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Roadmap: what the collision-row work left open, and reclustering against references
+
+`doc/dev/ROADMAP.md` only; no code.
+
+<details>
+<summary>Details</summary>
+
+- **Next:** the collision loop on a real session (the first run is group 8 of jg05-20120312) and
+  what to read off it.
+- **Planned:** reclustering a mixed cluster against reference clusters (a new Klusters action:
+  pool, sort, keep only the mixed cluster's pieces, references untouched); collision rows in
+  super-sampled spaces.
+- **Considered:** the smaller open points of the collision rows, and fiber-kit's open points
+  (it has no roadmap of its own).
+- **Done:** collision rows, `.eap` + sparse `.spkc`.
+
+</details>
 
 ---
 

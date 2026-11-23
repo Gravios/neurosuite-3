@@ -45,6 +45,22 @@ theme (the Standard rows now come from it).
 Check Preferences ▸ Input / Reset all before suspecting a regression (a
 stale saved override reads exactly like one).  Estimate: 1 session.
 
+**Collision loop on a real session (fiber-kit + Klusters).**
+Everything about collision rows (2026-11-23, see Done) was validated on
+synthetic sessions and on collisions made on real spikes; no real session
+had its `.fil` at hand.  The first run is sirotaA-jg-000005-20120312
+group 8 with fiber-kit's two plans (flag-artifacts, flag-collisions,
+fiber-session, fiber-polish -> `fc_polish`; then fiber-clean, fiber-unmix
+-> `fc_unmix` with its `.eap` / `.tcl` / sparse `.spkc`).  To read off it:
+the shares of the noise that `fiber-unmix` calls one / collision / shadow /
+partial / unexplained, against the 71-79 % "single known unit" measured by
+hand on `fs_polish`; purity and held spikes of `fc_unmix` against the
+curated `cur_pl`; in Klusters, whether the corrected collision rows of a
+few units look like the unit (waveform view) and sit in it (cluster view);
+the size of the `.eap` and the time of the rebuild on 800,000 spikes (only
+measured on 800).  The two plans are not in fiber-kit's `plans/` yet.
+Estimate: 1 session once the run is back.
+
 **Make the CI `-Wshadow` warnings a hard gate.**
 CI exists (`.github/workflows/ci-linux.yml`, Ubuntu 24.04 / 25.10 / 26.04 /
 26.10, CPU, Qt6) and builds
@@ -141,7 +157,90 @@ committed template model (`.mti`/`.mtf`, the `.wti`/`.spk` layouts) has no
 fiber-kit reader yet.  A separate fiber-kit patch, never cross-applied from
 ns3.  Estimate: a quarter session.
 
+**Klusters — recluster a mixed cluster against reference clusters.**
+(User's design, 2026-11-23.)  A cluster that holds spikes of two known
+cells is hard to split by itself: the sorter sees one blob.  Pool it with
+the two clean clusters it is a mixture of and sort the pool; the references
+give each mode its weight.  Then only the mixed cluster changes: every
+output cluster that holds spikes of the mixed cluster becomes a NEW
+cluster of just those spikes; output clusters without any are ignored; the
+reference clusters keep every spike and their ids.
+
+- *Gesture.*  Select the mixed cluster and one or more references;
+  **Actions → Recluster Against References**.  Which one is the mixed
+  cluster must be unambiguous -- proposed: the first one selected (the
+  primary selection), named in the status line before the job starts.
+- *Job.*  The existing recluster path (`klusters_recluster.cpp`: sub-session
+  files of the selected clusters, the active engine, the output pane) with
+  the pool as input, in the shown space's features.  `-MinClusters` = the
+  number of references.
+- *Apply.*  A new step beside `Data::integrateReclusteredClusters`: read the
+  sorter's labels, keep the rows of the mixed cluster, give each label
+  present among them a free cluster id, leave every other row as it is.
+  One undo step.  Nothing is merged into a reference: the user sees the
+  pieces first (over-split before a false merge).
+- *Report.*  Per new cluster: its spikes, and how the references' spikes
+  fell over the sorter's clusters (e.g. "new 301: 412 spikes, with 96 % of
+  reference 12") -- which reference a piece goes with, and whether the
+  references themselves came out whole (a reference the sorter split is a
+  warning that the pool was not separable).
+- *Open.*  References much larger than the mixed cluster: cap them (the
+  spikes nearest in time to the mixed cluster's, which also keeps drift
+  out).  Collision rows enter with their corrected features.  Whether to
+  seed the sorter with the references instead of only pooling them.
+- *Test.*  Self-test on a synthetic session: two units, a third cluster
+  made of 200 spikes of each; after the action two new clusters with the
+  right spikes, the references byte for byte as before; NEGATIVE CONTROL: a
+  plain recluster of the mixed cluster alone does not separate it.
+Estimate: 1-2 sessions.
+
+**Klusters — collision rows in super-sampled spaces.**
+A `_U<f>` space still shows the raw record of a collision row (the rebuild
+skips it and says so).  Proposed: no second fit in ticks.  The base-rate
+fit already knows what was subtracted (raw - corrected, at base rate);
+super-sample that with the space's own interpolation at the row's phase and
+subtract it from the `_U` record.  One source of truth for offset and
+amplitude, and fiber-kit can write `.spkc.<method>_U<f>` the same way.
+Needs the base-rate space's records and templates while a `_U` space is
+shown, and the partner part is only known inside the base-rate window (the
+interpolation's edge samples).  Estimate: 1 session.
+
 ### 💭 considered
+
+**Collision rows — smaller open points** (from the 2026-11-23 work).
+- *Corrected features in the `.fet`.*  They are in memory only, as the
+  corrected records are (a corrected value on disk cannot be told from a raw
+  one).  A sparse sidecar beside the `.spkc` would let fiber-kit stages
+  cluster on them; nothing asks for it yet.
+- *The partner's tail.*  A partner template ends at its own window; what
+  lies beyond stays in the row (`fiber-unmix` extends by 8 samples for the
+  same reason).  Longer templates for the subtraction only.
+- *PCA refinement of a realign* compares raw cuts at candidate lags and
+  leaves collision rows out.  It could subtract the partner part, shifted,
+  from each candidate.
+- *`spkc` as a custody type token*, so `parseAnchor` knows the file (today
+  time-sort and dedup find it by name).
+- *The `.col` decollide sidecar* is still only reported by Sort Spikes by
+  Time, not rewritten.
+
+**fiber-kit — open points noted here for want of a roadmap there.**
+- `test_profiles` ("fk run --config <file> runs that file's plan") fails on
+  an unpatched checkout; never looked at.
+- Stages called by hand with the bare family name (`stderiv`) still stop on
+  a group that holds a base-rate and a super-sampled `.spk`; the launcher
+  pins the base-rate token since 0.71.5, the later stages were not run on
+  such a group.
+- The polish residue cluster's id has to be copied from `fiber-polish`'s log
+  into `fiber-clean --junk`; the stage could record it.
+- A second sorting round on the cleaned noise gave poorer units (84 %
+  against 96 % pure); not pursued.  Pre-flagging collisions keeps them out
+  of the units but does not improve the sort of the rest (76.5 against
+  76.4 %).
+- `analysis/cluster-253-two-cells` in the project is wrong about the split
+  (the user separated the two cells by hand in the story space); to be
+  corrected from his `.clu`.
+- High-density probes: `docs/neuropixels-plan.md` in fiber-kit is a plan
+  only; nothing in it is built.
 
 **One write path for the session YAML.**
 All three GUIs read and write the session `.yaml` through libklustersshared,
@@ -241,6 +340,20 @@ git history / `CHANGELOG.md` after roughly a quarter.)
 
 <details>
 <summary>Completed items</summary>
+
+### ✅ Collision rows: `.eap` + sparse `.spkc` *(2026-11-23)*
+
+A spike row that holds two units is shown, featurised and realigned as its
+own unit's spike.  The `.eap` says which rows and which partner; the
+partner's template is fitted (jointly with the own one) and subtracted into
+a sparse `.spkc`, held in memory; the `.spk` and `.fet` stay raw.  Rebuilt
+after every realign, nudge, edit, save and space switch; offsets follow the
+moves and are written back at Save; carried through Sort Spikes by Time,
+Save As and fiber-kit's dedup.  The fit exists in `core/decollide_fit.hpp`
+and in fiber-kit's `fiber_spkc.py`, held together by shared cases in
+`test/golden/`.  Reference: `doc/klusters/README.md` "Collision rows",
+`doc/ndmanager-plugins/formats/spkc.md`, the 2026-11-23 `CHANGELOG.md`
+entries.  What is open is under Now and Soon.
 
 ### ✅ `pickInputPath` deployment in KiloKlustaKwik
 
