@@ -23,6 +23,7 @@ THE CHUNKING PREFERENCE (Preferences > Reclustering > Time chunks):
   - the classic KlustaKwik (no such flag) and a -ChunkFile template get nothing added.
 """
 import os
+import re
 import sys
 import tempfile
 
@@ -53,6 +54,15 @@ def sorter():
         if os.path.exists(cand):
             return cand
     return ""
+
+
+def n_chunks(log):
+    """The number of chunks the sorter cut the session into, from its "[Stage 1] Chunking (.., N
+    chunks, ..)" line; 0 when the line is not there.  Not `"1 chunks" in log`: other lines hold a
+    chunk count too (the sorter prints "DipSplit per-chunk: N splits across M chunks" and "noise --
+    N spikes across M chunks"), and what they hold differs from run to run of a 3-chunk sort."""
+    m = re.search(r"\[Stage 1\] Chunking \([^,]*, (\d+) chunks", log)
+    return int(m.group(1)) if m else 0
 
 
 def recluster(klusters, kkk, mode="", **opts):
@@ -86,20 +96,20 @@ def main():
     cmd, log, off = recluster(klusters, kkk, args=T + "1111111111110")
     check(on[:2] == [381, 381], "12 features + time: the two units come back (381, 381)", str(on))
     check(off == on, "12 features with the time bit off: the same result as with it on", f"off {off}  on {on}")
-    check("1 chunks" in log and "13 dims" in log, "  ... sorted as one chunk on 13 columns (12 features and the time axis)")
+    check(n_chunks(log) == 1 and "13 dims" in log, "  ... sorted as one chunk on 13 columns (12 features and the time axis)")
     _, log, ch = recluster(klusters, kkk, mode="channel")
     check(ch[:2] == [381, 381], "Shift+C (channel variance): the two units", str(ch))
     _, log, med = recluster(klusters, kkk, mode="median")
-    check("1 chunks" in log and 2 <= len(med) <= 6, f"Shift+M (median residual): one chunk, {len(med)} clusters (was 24 chunks and 30 clusters)", str(med))
+    check(n_chunks(log) == 1 and 2 <= len(med) <= 6, f"Shift+M (median residual): one chunk, {len(med)} clusters (was 24 chunks and 30 clusters)", str(med))
 
     # ── the chunking preference ─────────────────────────────────────────────
     F = T + "%features"
     cmd, log, _ = recluster(klusters, kkk, args=F, chunking=0)
     check("-ChunkMinutes" not in cmd and "mode: chunked" in log, "as the sorter decides: no flag, chunked")
     cmd, log, sz = recluster(klusters, kkk, args=F, chunking=1)
-    check(cmd.endswith("-ChunkMinutes 1000000") and "1 chunks" in log and sz[:2] == [381, 381], "one chunk: -ChunkMinutes 1000000, 1 chunk, the two units", cmd[-60:])
+    check(cmd.endswith("-ChunkMinutes 1000000") and n_chunks(log) == 1 and sz[:2] == [381, 381], "one chunk: -ChunkMinutes 1000000, 1 chunk, the two units", cmd[-60:])
     cmd, log, _ = recluster(klusters, kkk, args=F, chunking=2, chunkMinutes=0.1)
-    check(cmd.endswith("-ChunkMinutes 0.1") and "mode: chunked" in log and "1 chunks" not in log, "chunks of 0.1 min: the flag, and several chunks over 20 s", cmd[-60:])
+    check(cmd.endswith("-ChunkMinutes 0.1") and "mode: chunked" in log and n_chunks(log) >= 2, "chunks of 0.1 min: the flag, and several chunks over 20 s", cmd[-60:])
     cmd, log, _ = recluster(klusters, kkk, args=F, chunking=3)
     check(cmd.endswith("-ChunkMinutes 0") and "two-phase" in log, "off: -ChunkMinutes 0, the two-phase pass", cmd[-60:])
     cmd, log, _ = recluster(klusters, kkk, args=F + " -ChunkMinutes 0.2", chunking=3)

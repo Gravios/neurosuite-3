@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Self-test: test_recluster_klustakwik read the chunk count off any line](#2026-11-23--self-test-test_recluster_klustakwik-read-the-chunk-count-off-any-line) |
 | 2026-11-23 | [Klusters: a line of a child process is no longer cut where the other stream speaks](#2026-11-23--klusters-a-line-of-a-child-process-is-no-longer-cut-where-the-other-stream-speaks) |
 | 2026-11-23 | [Klusters: realign measures a collision row on its corrected record](#2026-11-23--klusters-realign-measures-a-collision-row-on-its-corrected-record) |
 | 2026-11-23 | [Core: a reference .spkc and shared cases for the collision fit](#2026-11-23--core-a-reference-spkc-and-shared-cases-for-the-collision-fit) |
@@ -237,6 +238,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Self-test: test_recluster_klustakwik read the chunk count off any line
+
+`test_recluster_klustakwik.py` failed on some runs (4 of 6 at one point, then none of 15) at
+"chunks of 0.1 min: the flag, and several chunks over 20 s".
+
+<details>
+<summary>Details</summary>
+
+- The test took "sorted as one chunk" to be the text `1 chunks` anywhere in the sorter's log, and
+  "several chunks" to be its absence.  In a failing run the log did hold `mode: chunked ... ~3
+  chunks`, so it was the `1 chunks` half that failed.  KiloKlustaKwik prints a chunk count on
+  other lines too ("DipSplit per-chunk: N splits across M chunks", "noise -- N spikes across M
+  chunks"), and those differ from run to run.  The matching line itself was not captured: the
+  failure did not come back while I was printing it.  The cause is therefore inferred.
+- The test now reads the count from the one line that states it, `[Stage 1] Chunking (.., N
+  chunks, ..)`: 1 for the one-chunk cases, 2 or more for the chunked one.
+- An earlier note of mine blamed a truncated log; that was wrong (the pane is not truncated).
+
+</details>
 
 ---
 
