@@ -2,8 +2,9 @@
 //
 // test/golden/ holds one small file per format, written by neurofileio's C++
 // writers: golden.wti.1 (v1), golden.wti.2 (v2, with parents),
-// golden.wtf.standard.1, golden.wtl.1 (v2 summaries), golden.eap.1 and
-// golden.tcl.1.  fk.wti.1, fk.wti.2 and fk.wtl.1 (v1, spike lists) are written
+// golden.wtf.standard.1, golden.wtl.1 (v2 summaries), golden.eap.1,
+// golden.tcl.1 and golden.spkc.standard.1.  spkc_fit_cases.bin (written by
+// fiber-kit) holds collision records and the partner fit expected of them.  fk.wti.1, fk.wti.2 and fk.wtl.1 (v1, spike lists) are written
 // by fiber-kit's neuro_io.  fiber-kit ships byte-identical copies of all of
 // them (test/test_golden_formats.py); contract.yaml records their hashes.
 //
@@ -18,6 +19,10 @@
 //
 // The content is spelled out once here and once in fiber-kit's test; keep the
 // two in step.
+#include "neurosuite/core/decollide_fit.hpp"
+#include <cstdlib>
+#include <algorithm>
+#include <cstring>
 #include <neurosuite/core/neurofileio.h>
 
 #include <cstdio>
@@ -97,6 +102,20 @@ static nf::TclRegistry tcl() {
     return r;
 }
 
+// A sparse .spkc over 9 spikes: rows 1, 4 and 8, with the extreme sample values.
+static const int SPKC_N = 9, SPKC_GROUP = 1;
+static const uint32_t SPKC_FLAGS = 2;
+static nf::SpkcFile spkc() {
+    nf::SpkcFile f;
+    f.nSpikes = SPKC_N; f.nSamples = NS; f.nChannels = NCH; f.group = SPKC_GROUP; f.flags = SPKC_FLAGS;
+    f.rows = {1, 4, 8};
+    for (int k = 0; k < 3 * NS * NCH; ++k) f.waveforms.push_back(static_cast<int16_t>((k * 37) % 211 - 100));
+    f.waveforms[5] = -32768;
+    f.waveforms[18] = 32767;
+    f.ok = true;
+    return f;
+}
+
 static bool writeAll(const fs::path& d) {
     const std::string b = (d / "golden").string();
     return nf::writeWti(b + ".wti.1", wti(false))
@@ -104,11 +123,13 @@ static bool writeAll(const fs::path& d) {
         && nf::writeSpk(b + ".wtf.standard.1", NS, NCH, wtf())
         && nf::writeWtl(b + ".wtl.1", wtl())
         && nf::writeEap(b + ".eap.1", EAP_N, EAP_T, EAP_GROUP, EAP_FLAGS, eap())
-        && nf::writeTcl(b + ".tcl.1", tcl());
+        && nf::writeTcl(b + ".tcl.1", tcl())
+        && nf::writeSpkc(b + ".spkc.standard.1", spkc());
 }
 
 static const char* const kFiles[] = {"golden.wti.1", "golden.wti.2", "golden.wtf.standard.1",
-                                     "golden.wtl.1", "golden.eap.1", "golden.tcl.1"};
+                                     "golden.wtl.1", "golden.eap.1", "golden.tcl.1",
+                                     "golden.spkc.standard.1"};
 
 static std::string slurp(const fs::path& p) {
     std::ifstream in(p, std::ios::binary);
@@ -183,6 +204,60 @@ int main(int argc, char** argv) {
                   && g.provenanceClu == w.provenanceClu && g.provenanceStage == w.provenanceStage
                   && g.created == w.created && g.mergedInto == w.mergedInto,
               "golden.tcl.1: entry " + std::to_string(i));
+    }
+
+    const nf::SpkcFile gs = nf::readSpkc(b + ".spkc.standard.1"), ws = spkc();
+    check(gs.ok && gs.nSpikes == SPKC_N && gs.nSamples == NS && gs.nChannels == NCH
+              && gs.group == SPKC_GROUP && gs.flags == SPKC_FLAGS,
+          "golden.spkc.standard.1: header");
+    check(gs.rows == ws.rows && gs.waveforms == ws.waveforms, "golden.spkc.standard.1: the index and every sample");
+    check(nf::spkcFind(gs, 4) == 1 && nf::spkcFind(gs, 5) == -1, "golden.spkc.standard.1: a listed row is found, another is not");
+
+    // The partner fit of a collision row, on cases shared with fiber-kit (inputs and the
+    // expected result; written by fiber-kit's tools/gen_spkc_fit_cases.py, layout there).
+    // Whether a partner is accepted and its offset must agree; a corrected sample may differ
+    // by one unit (the two implementations sum in a different order).
+    {
+        const std::string cases = slurp(golden / "spkc_fit_cases.bin");
+        uint32_t head[3] = {0, 0, 0};
+        const bool sized = cases.size() >= 16 && cases.compare(0, 4, std::string("SFC\x01", 4)) == 0;
+        if (sized) std::memcpy(head, cases.data() + 4, sizeof(head));
+        const size_t nCases = head[0], rec = static_cast<size_t>(head[1]) * head[2];
+        const size_t each = 4 + 2 * rec + 4 * rec + 4 * rec + 4 + 4 + 2 * rec;
+        check(sized && nCases > 0 && rec > 0 && cases.size() == 16 + nCases * each, "spkc_fit_cases.bin: header and size");
+        size_t agree = 0, exact = 0, accepted = 0, within = 0;
+        if (sized && cases.size() == 16 + nCases * each) {
+            namespace df = neurosuite::decollide_fit;
+            const char* at = cases.data() + 16;
+            std::vector<int16_t> w16(rec), want(rec), got(rec);
+            std::vector<float> w(rec), own(rec), partner(rec);
+            for (size_t i = 0; i < nCases; ++i, at += each) {
+                int32_t tau = 0, wantTau = 0; uint32_t wantAccepted = 0;
+                std::memcpy(&tau, at, 4);
+                std::memcpy(w16.data(), at + 4, 2 * rec);
+                std::memcpy(own.data(), at + 4 + 2 * rec, 4 * rec);
+                std::memcpy(partner.data(), at + 4 + 6 * rec, 4 * rec);
+                std::memcpy(&wantAccepted, at + 4 + 10 * rec, 4);
+                std::memcpy(&wantTau, at + 8 + 10 * rec, 4);
+                std::memcpy(want.data(), at + 12 + 10 * rec, 2 * rec);
+                for (size_t k = 0; k < rec; ++k) w[k] = static_cast<float>(w16[k]);
+                const df::Fit f = df::fitPartner(w.data(), own.data(), partner.data(),
+                                                 static_cast<int>(head[1]), static_cast<int>(head[2]), tau);
+                df::subtractPartner(w, partner.data(), static_cast<int>(head[1]), static_cast<int>(head[2]), f);
+                df::toInt16(w, got.data());
+                if (f.accepted == (wantAccepted != 0) && f.tau == wantTau) ++agree;
+                if (f.accepted) ++accepted;
+                int worst = 0;
+                for (size_t k = 0; k < rec; ++k) worst = std::max(worst, std::abs(static_cast<int>(got[k]) - static_cast<int>(want[k])));
+                if (worst == 0) ++exact;
+                if (worst <= 1) ++within;
+            }
+        }
+        std::printf("  spkc_fit_cases.bin: %zu cases, %zu accepted, %zu agree, %zu records identical, %zu within one unit\n",
+                    nCases, accepted, agree, exact, within);
+        check(agree == nCases, "spkc_fit_cases.bin: every partner accepted or refused, and at the offset, as fiber-kit has it");
+        check(within == nCases, "spkc_fit_cases.bin: every corrected record within one unit of fiber-kit's");
+        check(accepted > 0 && accepted < nCases, "spkc_fit_cases.bin: the cases hold both accepted and refused partners");
     }
 
     // 3. The files fiber-kit writes: v1/v2 .wti with its trailing provenance

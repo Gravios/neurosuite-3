@@ -45,7 +45,8 @@ SHARED = {
 }
 # The template-library reference files (golden_formats_test.cpp,
 # fiber-kit's test_golden_formats.py).
-for _g in ['fk.wti.1', 'fk.wti.2', 'fk.wtl.1', 'golden.eap.1', 'golden.tcl.1', 'golden.wtf.standard.1', 'golden.wti.1', 'golden.wti.2', 'golden.wtl.1']:
+for _g in ['fk.wti.1', 'fk.wti.2', 'fk.wtl.1', 'golden.eap.1', 'golden.tcl.1', 'golden.wtf.standard.1', 'golden.wti.1', 'golden.wti.2', 'golden.wtl.1',
+           'golden.spkc.standard.1', 'spkc_fit_cases.bin']:
     SHARED["golden/" + _g] = "test/golden/" + _g
 
 bad = 0

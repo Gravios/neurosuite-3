@@ -129,6 +129,15 @@ changes on purpose, regenerate (`core_test_golden_formats <dir> --write`, or
 `test_golden_formats.py --write`), copy the files to the other repository and
 record their new MD5s in both `contract.yaml` files, as for a table.
 
+`golden.spkc.standard.1` is the sparse `.spkc` in the same way. `spkc_fit_cases.bin`
+is different in kind: it holds inputs and the expected result of the partner fit of a
+collision row (26 records, each with the own and the partner template, the stored
+offset, and whether the partner is accepted, at which offset, and the corrected
+record). The fit exists twice (`core/decollide_fit.hpp`, fiber-kit's `fiber_spkc.py`)
+and each side's golden test runs its own on the file. It is written by fiber-kit's
+`tools/gen_spkc_fit_cases.py`; after a deliberate change of the fit on both sides,
+regenerate it there, copy it here and record the MD5 in both `contract.yaml` files.
+
 ### 2.2 Add a PCAE method
 
 A PCAE `Method` value is stored in every `.pca` basis header. Readers in two

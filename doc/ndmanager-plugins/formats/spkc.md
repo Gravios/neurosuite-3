@@ -63,6 +63,14 @@ partner is not listed.
 The amplitudes are not stored. The file is derived data: from the `.spk`, the
 `.eap` and the clustering it can be rebuilt.
 
+## Reference file
+
+`golden.spkc.standard.1` (in `test/golden/` of both repositories, hash in
+`contract.yaml`) is written by `writeSpkc` and reproduced byte for byte by
+fiber-kit's `write_spkc`. `spkc_fit_cases.bin` beside it holds 26 collision
+records with the fit expected of them; both implementations of the fit are run
+on it by their golden tests.
+
 ## Staleness
 
 `nSpikes` must equal the group's spike count. After the spike set changes

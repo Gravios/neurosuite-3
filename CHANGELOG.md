@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Core: a reference .spkc and shared cases for the collision fit](#2026-11-23--core-a-reference-spkc-and-shared-cases-for-the-collision-fit) |
 | 2026-11-23 | [Klusters: Save As takes the stage's .eap with it](#2026-11-23--klusters-save-as-takes-the-stages-eap-with-it) |
 | 2026-11-23 | [Klusters: Sort Spikes by Time carries the .eap and the .spkc](#2026-11-23--klusters-sort-spikes-by-time-carries-the-eap-and-the-spkc) |
 | 2026-11-23 | [Klusters: collision-row state is dropped with the document](#2026-11-23--klusters-collision-row-state-is-dropped-with-the-document) |
@@ -234,6 +235,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Core: a reference .spkc and shared cases for the collision fit
+
+The `.spkc` format and the partner fit are each implemented in both repositories, and their
+agreement had only been measured by hand.
+
+<details>
+<summary>Details</summary>
+
+- `golden.spkc.standard.1` in `test/golden/`: written by `writeSpkc`, read field by field here and
+  in fiber-kit, and reproduced byte for byte by fiber-kit's `write_spkc`.
+- `spkc_fit_cases.bin`: 26 collision records (true partners at whole and fractional offsets, stored
+  offsets up to 4 samples off, amplitudes inside and outside the accepted range, partners that are
+  not in the record, a look-alike partner, a partner at the window's edge), each with the result
+  expected: accepted or not, the offset, the corrected record.  Written by fiber-kit
+  (`tools/gen_spkc_fit_cases.py`); `core_test_golden_formats` runs `decollide_fit.hpp` on it.
+- Result here: 26 of 26 agree on accepted and offset, and 26 of 26 corrected records are identical
+  to fiber-kit's.  The test allows a corrected sample to differ by one unit (the two sum in a
+  different order); accepted and offset must agree exactly.
+- Both files are in `vectors:` of `contract.yaml` and in `test_shared_contract.py`.  No contract
+  version change.
+
+</details>
 
 ---
 
