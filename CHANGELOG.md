@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | [Klusters: a line of a child process is no longer cut where the other stream speaks](#2026-11-23--klusters-a-line-of-a-child-process-is-no-longer-cut-where-the-other-stream-speaks) |
 | 2026-11-23 | [Klusters: realign measures a collision row on its corrected record](#2026-11-23--klusters-realign-measures-a-collision-row-on-its-corrected-record) |
 | 2026-11-23 | [Core: a reference .spkc and shared cases for the collision fit](#2026-11-23--core-a-reference-spkc-and-shared-cases-for-the-collision-fit) |
 | 2026-11-23 | [Klusters: Save As takes the stage's .eap with it](#2026-11-23--klusters-save-as-takes-the-stages-eap-with-it) |
@@ -236,6 +237,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-23 — Klusters: a line of a child process is no longer cut where the other stream speaks
+
+The output pane (recluster, plugins) showed some lines of a program in two pieces.
+
+<details>
+<summary>Details</summary>
+
+- `ProcessLineMaker` keeps one buffer per stream and emits a line at its newline.  When data
+  arrived on one stream it first emitted whatever the OTHER stream had buffered, finished or not:
+  a stderr line read in two pieces with a stdout line between them came out as two lines.
+- Each stream's unfinished line now waits for its newline.  What is left when the process has
+  exited or was killed is emitted then (before, a last line without a newline was shown only if
+  the other stream happened to speak after it).  `reset()` clears both buffers.
+- `klusters_test_processlinemaker` (ctest, POSIX): a shell child writes a stderr line and a stdout
+  line each in two pieces around a line of the other stream, and ends both streams without a
+  newline.  All lines arrive whole and in order; on the old code 4 of 5 checks fail.
+- Found while looking for the cause of the intermittent failure of `test_recluster_klustakwik.py`;
+  it was not that cause (next entry up).
+
+</details>
 
 ---
 

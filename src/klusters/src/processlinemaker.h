@@ -45,6 +45,8 @@ public:
     explicit ProcessLineMaker(QProcess*);
     void processKilled(){isProcessKilled = true;}
     void reset(){
+        stdoutbuf.clear();
+        stderrbuf.clear();
         counterOut = 0;
         counterErr = 0;
         isProcessKilled = false;
@@ -60,8 +62,10 @@ public Q_SLOTS:
     void slotProcessExited(){
         processExited = true;
         //In case the outputs from the process are already finished.
-        if(counterOut == 0 && counterErr == 0)
+        if(counterOut == 0 && counterErr == 0){
+            flushUnfinishedLines();
             emit outputTreatmentOver();
+        }
     }
 
 
@@ -71,6 +75,8 @@ Q_SIGNALS:
     void outputTreatmentOver();
 
 private:
+    /** Emits what is left of a stream's last line (no newline) once the process is over. */
+    void flushUnfinishedLines();
     QProcess *mProc;
     QString stdoutbuf;
     QString stderrbuf;

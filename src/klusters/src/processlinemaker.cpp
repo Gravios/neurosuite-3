@@ -47,11 +47,9 @@ void ProcessLineMaker::slotReceivedStdout()
 
     counterOut++;
     
-    // Flush stderr buffer
-    if (!stderrbuf.isEmpty()) {
-        emit receivedStderrLine(stderrbuf);
-        stderrbuf.clear();
-    }
+    // The other stream's unfinished line stays in its buffer until its newline
+    // arrives: flushing it here cut a stderr line in two whenever stdout spoke
+    // between two reads of it.
     stdoutbuf += s;
     int pos;
     while ( (pos = stdoutbuf.indexOf('\n')) != -1) {
@@ -69,8 +67,10 @@ void ProcessLineMaker::slotReceivedStdout()
 
     //The process has benn killed and all the process'outputs sent to be print,
     //warn the processWidget.
-    if(counterOut == 0 && (isProcessKilled || isWidgetHidden || processExited))
+    if(counterOut == 0 && (isProcessKilled || isWidgetHidden || processExited)){
+        flushUnfinishedLines();
         emit outputTreatmentOver();
+    }
 }
 
 
@@ -79,12 +79,7 @@ void ProcessLineMaker::slotReceivedStderr()
     const QString s = QString::fromLocal8Bit(mProc->readAllStandardError());
     counterErr++;
 
-    // Flush stdout buffer
-    if (!stdoutbuf.isEmpty()) {
-        emit receivedStdoutLine(stdoutbuf);
-        stdoutbuf.clear();
-    }
-    
+    // (stdout's unfinished line stays in its buffer, as above)
     stderrbuf += s;
     int pos;
     while ( (pos = stderrbuf.indexOf('\n')) != -1) {
@@ -104,7 +99,25 @@ void ProcessLineMaker::slotReceivedStderr()
     //warn the processWidget.  processExited must be checked here to mirror slotReceivedStdout —
     //KlustaKwik writes exclusively to stderr, so omitting this flag caused the hang: the
     //outputTreatmentOver signal was never emitted after process exit.
-    if(counterErr == 0 && (isProcessKilled || isWidgetHidden || processExited))
+    if(counterErr == 0 && (isProcessKilled || isWidgetHidden || processExited)){
+        flushUnfinishedLines();
         emit outputTreatmentOver();
+    }
 }
 
+void ProcessLineMaker::flushUnfinishedLines()
+{
+    // The process is over: a last line it did not end with a newline is shown.
+    // (Not for a hidden pane alone: its process still runs and the line is unfinished.)
+    if (!processExited && !isProcessKilled) return;
+    if (!stdoutbuf.isEmpty()) {
+        const QString rest = stdoutbuf;
+        stdoutbuf.clear();
+        emit receivedStdoutLine(rest);
+    }
+    if (!stderrbuf.isEmpty()) {
+        const QString rest = stderrbuf;
+        stderrbuf.clear();
+        emit receivedStderrLine(rest);
+    }
+}

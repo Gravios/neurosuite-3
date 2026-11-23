@@ -150,6 +150,20 @@ if(Qt6_FOUND)
     target_link_libraries(klusters_test_matrixtemplatestrip PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_matrixtemplatestrip COMMAND klusters_test_matrixtemplatestrip)
 
+    # ProcessLineMaker: a child's stdout and stderr cut into lines for the output pane.
+    # Runs /bin/sh, so POSIX only.
+    if(UNIX)
+        add_executable(klusters_test_processlinemaker
+            processlinemaker_test.cpp
+            "${_klu_src}/processlinemaker.cpp"
+            "${_klu_src}/processlinemaker.h")
+        set_target_properties(klusters_test_processlinemaker PROPERTIES AUTOMOC ON)
+        target_compile_features(klusters_test_processlinemaker PRIVATE cxx_std_20)
+        target_include_directories(klusters_test_processlinemaker PRIVATE "${_klu_src}")
+        target_link_libraries(klusters_test_processlinemaker PRIVATE Qt6::Core)
+        add_test(NAME klusters_test_processlinemaker COMMAND klusters_test_processlinemaker)
+    endif()
+
     # Input binding core (input-remapping plan §3/§4): Chord round-trip + the
     # BindingRegistry resolver/override/conflict logic.  Compiles the two Qt-light
     # module sources directly; links Qt6 Core+Gui (QString/Qt flags + QKeySequence
