@@ -69,7 +69,7 @@ const QString Configuration::fiberKitReclusterCommandDefault =
         "fk run %electrodeGroupID --session %fileBaseName --final-clu %fileBaseName.clu.klusters.%electrodeGroupID";
 // The active recluster ENGINE -- what Shift+R (Recluster) runs: "klustakwik" (the built-in
 // KlustaKwik path), "fiber-kit" (the fiber-kit plan on the selection's sub-session), or
-// "plugin:<name>" (another installed `recluster` descriptor).  Chosen in Actions > Recluster >
+// "plugin:<name>" (another installed `recluster` descriptor).  Chosen in Recluster >
 // Engine, or on the radial menu's Recluster > Plugin ring.
 const QString Configuration::reclusterEngineDefault = QLatin1String("klustakwik");
 const QString Configuration::realignExecutableDefault = QLatin1String("");

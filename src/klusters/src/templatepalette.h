@@ -57,7 +57,7 @@ public:
 
 Q_SIGNALS:
     void classSelected(int col);                 ///< list row changed -> this class is active/primary
-    void obliqueRequested(const QList<int>& cols);///< pin oblique basis (now reached via Actions > Set Oblique Basis...; signal kept for a future palette binding)
+    void obliqueRequested(const QList<int>& cols);///< pin oblique basis (now reached via Split > Set Oblique Basis...; signal kept for a future palette binding)
     void newClassRequested();                    ///< "New" clicked -> KlustersApp gathers the selection
     void classDeleted(int col);                  ///< a class was tombstoned -> the overlay drops its nodes
     void classesChanged();                       ///< a create/delete here -> the tab should reload

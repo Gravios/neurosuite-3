@@ -73,12 +73,12 @@ RadialLayout defaults()
     using N = RadialLayoutNode;
     return {
         N::group(tr("Tools"), {
-            N::action(QStringLiteral("menu:Tools/New Cluster")),
-            N::action(QStringLiteral("menu:Tools/Split Clusters")),
-            N::action(QStringLiteral("menu:Tools/Multi-Lasso")),
-            N::action(QStringLiteral("menu:Tools/Split by Lassos")),
-            N::action(QStringLiteral("menu:Tools/Delete Artifact Spikes")),
-            N::action(QStringLiteral("menu:Tools/Delete Noisy Spikes")),
+            N::action(QStringLiteral("tools.newCluster")),
+            N::action(QStringLiteral("tools.splitClusters")),
+            N::action(QStringLiteral("tools.multiLasso")),
+            N::action(QStringLiteral("tools.applyMultiLasso")),
+            N::action(QStringLiteral("tools.deleteArtifactSpikes")),
+            N::action(QStringLiteral("tools.deleteNoisySpikes")),
         }),
         N::group(tr("Clusters"), {
             N::action(QStringLiteral("action.deleteArtifact")),
@@ -91,7 +91,7 @@ RadialLayout defaults()
             // built-in recluster), fiber-kit (its plan on the selection's sub-session) or Refine
             // (fiber-kit-manifold: the unit's children from its field manifold, parents kept), the
             // active one marked with the checked dot.  Other installed `recluster` plugins' engine entries
-            // are placed from the catalogue (Actions > Recluster > Engine) in Preferences > Radial menu.
+            // are placed from the catalogue (Recluster > Engine) in Preferences > Radial menu.
             // An action sits in ONE wedge: the wheel's short label is per action.
             N::action(QStringLiteral("recluster.recluster")),
             N::group(tr("Plugin"), {
@@ -123,7 +123,7 @@ RadialLayout defaults()
             N::action(QStringLiteral("sort.byContamination"),  tr("Contam.")),
             N::action(QStringLiteral("sort.bySnr"),            tr("SNR")),
             N::action(QStringLiteral("sort.byAmplitude"),      tr("Amplitude")),
-            N::action(QStringLiteral("menu:Actions/Sort Clusters/Sort Clusters by Largest Amplitude by Channel"),
+            N::action(QStringLiteral("sort.byAmplitudeByChannel"),
                       tr("Amp. / channel")),
             N::action(QStringLiteral("sort.byErrorPval"),      tr("Error p")),
             N::action(QStringLiteral("sort.byResidualGated"),  tr("Residual")),

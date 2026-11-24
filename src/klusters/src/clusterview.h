@@ -96,7 +96,7 @@ public:
      *  persists across view toggles until re-set, cleared, or invalidated by a
      *  later edit.  Returns false with *message set on a bad id, true with a
      *  confirming *message otherwise.  Public for the same reason as the toggle:
-     *  it is driven from the Actions menu (Set Oblique Basis…). */
+     *  it is driven from the Split menu (Set Oblique Basis…). */
     bool setObliqueBasis(const QList<int>& ids, QString* message);
     /** The currently pinned oblique basis (empty when none), so the dialog can
      *  pre-fill it. */

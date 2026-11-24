@@ -101,7 +101,7 @@ Auto-Merge complements manual `G` group-merge:
 ### 3. Realign
 
 ```
-Actions → Realign Spikes  (Shift+L)
+Spikes → Realign Spikes  (Shift+L)
 ```
 
 Recomputes spike timestamps so each spike's peak sits at the same
@@ -113,7 +113,7 @@ algorithm; results are in a `.pending` sidecar so you can reject.
 ### 4. Recluster
 
 ```
-Actions → Recluster → Recluster  (Shift+R)
+Recluster → Recluster  (Shift+R)
 ```
 
 Runs KiloKlustaKwik on the selected cluster(s) only. Useful when one

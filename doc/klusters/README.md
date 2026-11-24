@@ -114,7 +114,7 @@ space; pick the `(.clu)` entry to go back.
 - **Save As**, **decollide** and **template generation** still need the
   `.clu`'s own space. **Recluster** works, using the shown space's features.
 - **Ctrl+Tab** shows the next space and **Ctrl+Shift+Tab** the previous one
-  (Actions → Next / Previous Feature Space; rebindable in Preferences →
+  (View → Next / Previous Feature Space; rebindable in Preferences →
   Input). Spaces that cannot be loaded are skipped. Plain Tab / Shift+Tab
   still move keyboard focus around the window.
 - The box is locked while saving, realigning or reclustering.
@@ -137,7 +137,7 @@ and Klusters keeps it that way: realign and nudge rewrite each spike in its own
 row and never move rows. A spike's new time may pass a neighbouring spike's;
 that does not matter, because every `.spk` and `.fet` follows the one `.res`.
 
-**Putting rows back in time order.** **Actions → Sort Spikes by Time** sorts
+**Putting rows back in time order.** **Spikes → Sort Spikes by Time** sorts
 the saved `.res` by time and moves the same rows in every file of the group that
 is indexed by spike: the group's `.res`, each waveform file (`.spk`), each
 method's `.fet`, every `.clu` and `.clc` (stage-tagged copies too), every
@@ -161,7 +161,7 @@ already current and only its `.fet` is followed; a space over a different
 waveform file (`standard`, say) gets both. A space counts as current when
 its feature times are the session's and, super-sampled, its phases are the
 group's (one set per factor, in the tick `.res`); one that is behind gets a
-full sync instead of a follow. **Actions → Sync Feature Spaces** brings every other space up
+full sync instead of a follow. **Spikes → Sync Feature Spaces** brings every other space up
 to date: it re-extracts each waveform file the `.clu` space does not use from
 the `.fil` at the current spike times (once, however many spaces read it) and
 re-projects every other space's `.fet` through its own `.pca` basis (lag `_D`
@@ -229,7 +229,7 @@ super-sampled token* the `.clu` is saved as `<base>.clu.<token>_U4.N` and
 reopened there, so realign and nudge run at sub-sample resolution without a
 further step. A super-sampled `.clu` opened while its `.spk.<token>_U4.N` is
 missing (copied without the big file) is rebuilt the same way through the base
-space. **Actions → Super-sample ×2 / ×4…** does it by hand; it builds, over the
+space. **Spikes → Super-sample ×2 / ×4…** does it by hand; it builds, over the
 `.clu`'s space, `<base>.spk.<token>_U4.N` (every spike
 re-cut from the `.fil` with a margin of raw samples on either side so the
 edges are exact; from the stored windows when there is no recording), a PCA
@@ -271,7 +271,7 @@ spikes' phases. The phase lives in the `.fet`, so every row
 operation (sort by time, sub-sessions, recluster plugins) carries it for free;
 a `.fet` of such a space has `nCh × nComp + 2` columns.
 
-**Export at the recording's sampling** (*Actions*, from a saved `_U`
+**Export at the recording's sampling** (*Spikes*, from a saved `_U`
 session): copies the saved `.clu` — with its `.clc`/`.clp`/`.cli` — under
 the base-rate token (`<base>.clu.<token>.N`), beside the base-rate files it
 reads: the shared `.res` (whole samples, moved by every realign or nudge in
@@ -308,12 +308,33 @@ The window is divided into:
 
 - **Left — Cluster palette**: colored buttons, one per cluster ID. Shows/hides clusters, drives per-cluster color editing, and optionally shows cluster metadata.
 - **Center — Display tabs**: one tab per open view. The default opening tab is the **Overview Display** (cluster scatter + waveform side by side).
-- **Top — Toolbars** (each can be hidden from the **Settings** menu):
+- **Top — Toolbars** (each can be hidden from **View → Toolbars and Panels**):
   - **Main**: Open, Save, Print, Undo, Redo.
   - **Actions**: Delete Artifact Cluster(s), Delete Noisy Cluster(s), Update Display, Update Error Matrix, Reorder Clusters by Similarity, Group Clusters, Auto-Merge.
   - **Tools**: New Cluster, Split Clusters, Multi-Lasso, Split by Lassos, Delete Artifact Spikes, Delete Noisy Spikes.
   - **Cluster bar**: Previous Spike, Next Spike (trace view).
   - **Parameters**: feature axes, waveform and correlogram settings, the feature space box — see [Parameters toolbar reference](#parameters-toolbar-reference).
+
+- **Menu bar**: the commands by what they do.
+
+  | Menu | What is in it |
+  |---|---|
+  | **File** | open, import, save, print, close |
+  | **Edit** | undo and redo (of both layers), Cancel Running Job, select all, **Preferences** |
+  | **View** | what the left column shows, the time chunks, the feature space shown, Update Display and Update Error Matrix; the settings of the waveform, correlogram and trace views (**Waveforms**, **Correlations**, **Traces**); the toolbars, the point size and the update mode |
+  | **Clusters** | whole clusters: group, delete, renumber, purge, auto-merge, templates, **Sort Clusters** |
+  | **Split** | cutting a cluster: watershed, DipSplit, KNN, by time, burst followers, spurious spikes, the strip commands, the oblique basis |
+  | **Recluster** | the recluster commands and the **Engine** they run |
+  | **Spikes** | spike times and features: realign, sort by time, feature spaces, super-sampling, drift |
+  | **Hierarchy** | parents and children |
+  | **Tools** | the mouse tools of the cluster view |
+  | **Displays** | open, rename and close displays |
+  | **Plugins**, **Help** | the installed plugins; the shortcuts, the handbook |
+
+  Until 2026-11-24 the Clusters, Split, Recluster and Spikes commands were one **Actions**
+  menu, Waveforms, Correlations and Traces were on the bar, and a **Settings** menu held
+  Preferences and the toolbar toggles. Key bindings and radial-menu layouts made before
+  are unaffected.
 
 The **View** menu shows or hides parts of the left column. Each entry starts
 checked and holds until Klusters closes.
@@ -346,7 +367,7 @@ matrices) opens a ring menu centred on the cursor. Two right-clicks keep their
 own meaning: while a lasso is being drawn, Right still removes the last point,
 and with the lineage overlay engaged it opens the overlay's menu. By default the root ring holds Tools,
 Clusters, Recluster, Undo, Redo, Hierarchy, Sort, the two feature axes
-**X: n** and **Y: n**, and **N: n**; hovering a group opens its actions as the next ring out. An open ring is not closed by a cursor that is still moving: its ring is wider than the group's own wedge, so the straight way to most of its entries crosses a neighbouring group, and that crossing is ignored. Another group takes over once the cursor **stops** on it (stays within 4 px for 100 ms); the same holds for going back to an inner ring or to the hub. A click, a release or a wheel step always acts on the wedge under the cursor at once. Sort holds the Actions ▸ Sort Clusters entries
+**X: n** and **Y: n**, and **N: n**; hovering a group opens its actions as the next ring out. An open ring is not closed by a cursor that is still moving: its ring is wider than the group's own wedge, so the straight way to most of its entries crosses a neighbouring group, and that crossing is ignored. Another group takes over once the cursor **stops** on it (stays within 4 px for 100 ms); the same holds for going back to an inner ring or to the hub. A click, a release or a wheel step always acts on the wedge under the cursor at once. Sort holds the Clusters ▸ Sort Clusters entries
 under short labels (Count, Time, SNR, Spectral, …); the status bar shows each
 one's full name. Recluster holds the Recluster action and a **Plugin** wedge
 whose ring chooses the **active engine** -- **KlustaKwik** (the built-in
@@ -354,7 +375,7 @@ recluster) or **fiber-kit** (its plan on the selection) -- the active one
 marked with the checked dot; then the other split tools. **Recluster
 (`Shift+R`) runs whichever engine is active**, as does the Recluster wedge, so
 switching engine is one flick and the shortcuts follow. The same choice is
-*Actions ▸ Recluster ▸ Engine*, where every installed `recluster` plugin is an
+*Recluster ▸ Engine*, where every installed `recluster` plugin is an
 entry too (placeable on the wheel from the catalogue in Preferences ▸ Radial
 menu). `Shift+M` / `Shift+C` stay KlustaKwik on other features, `Shift+Q` is
 fiber-kit explicitly. A layout saved before this ring existed keeps its own
@@ -411,7 +432,7 @@ black instead of transparent.
 ## Keyboard and mouse
 
 **Help → Keyboard Shortcuts** (`H`) lists every live key and mouse binding,
-including the ones you have changed. Bindings are edited in **Settings →
+including the ones you have changed. Bindings are edited in **Edit →
 Preferences → Input**, which also saves and loads named keymap layouts
 (*Keymap layout*: Apply, Save As…, Rename, Delete, Reset all to defaults).
 Each row's **Reset** restores that command's shipped binding. On a row that is
@@ -435,7 +456,7 @@ The defaults for the most-used actions:
 | `U` | Update the error, template and residual matrices |
 | `E` | Next matrix tab |
 | `Shift+D` / `Shift+W` | DipSplit / Watershed split |
-| `Shift+R` | Recluster with the active engine (Actions ▸ Recluster ▸ Engine: KlustaKwik, fiber-kit, a plugin) |
+| `Shift+R` | Recluster with the active engine (Recluster ▸ Engine: KlustaKwik, fiber-kit, a plugin) |
 | `Shift+Q` | Recluster with fiber-kit (the plan of `fiber-kit.yaml` on the selection) |
 | `Shift+L` / `Page Up` / `Page Down` | Realign / nudge the selected cluster +1 / −1 sample |
 | `A` / `F` | Auto-scale / t-SNE presentation in the Cluster Display |
@@ -477,7 +498,7 @@ Double-click a cluster button to open a color picker. Colors last for the sessio
 
 ### Cluster information panel
 
-**Settings → Show Cluster Info** (or `Settings` menu toggle) expands each cluster button to show the user-editable metadata fields (the non-empty ones, in this order):
+**View → Toolbars and Panels → Show Cluster Info** expands each cluster button to show the user-editable metadata fields (the non-empty ones, in this order):
 
 | Field | Description |
 |---|---|
@@ -563,7 +584,7 @@ Multiple Cluster Displays can be open simultaneously with different axis pairs, 
 
 Shows spike waveforms for the selected clusters on all channels of the electrode group.
 
-**Presentation modes** (Waveforms menu):
+**Presentation modes** (View → Waveforms):
 
 | Mode | Key | Description |
 |---|---|---|
@@ -572,7 +593,7 @@ Shows spike waveforms for the selected clusters on all channels of the electrode
 | Overlay | `O` | All clusters drawn in the same color space on top of each other |
 | Mean ± SD | `M` | Shows the cluster mean waveform with ±1 SD envelope; hides individual spikes |
 
-**Amplitude controls** (Waveforms menu):
+**Amplitude controls** (View → Waveforms):
 
 | Action | Key |
 |---|---|
@@ -621,7 +642,7 @@ Shows auto-correlograms (diagonal) and cross-correlograms (off-diagonal) for sel
 | Bin size | Width of each correlogram bin in milliseconds |
 | Half duration | Time span on each side of zero lag (total window = 2 × half duration) |
 
-**Correlations menu:**
+**View → Correlations:**
 
 | Entry | Key | Description |
 |---|---|---|
@@ -631,7 +652,7 @@ Shows auto-correlograms (diagonal) and cross-correlograms (off-diagonal) for sel
 | Asymptote Line | `L` | Show the baseline level as a line |
 | Increase / Decrease Amplitude | — | Scale the correlograms up or down |
 
-Correlograms are computed on a background thread and update asynchronously. `Actions → Update Display` forces a recompute.
+Correlograms are computed on a background thread and update asynchronously. `View → Update Display` forces a recompute.
 
 ### Overview Display
 
@@ -646,7 +667,7 @@ Entry (r, c) is the mean posterior probability that a spike from cluster r was a
 - High (r, c) alone → spikes of cluster r are frequently misclassified as cluster c (possible contaminant).
 - High (r, c) **and** (c, r) symmetrically → the two clusters are strongly overlapping and are candidates for merging.
 
-**Actions → Update Error Matrix** (`U`) recomputes the matrix after editing. `U` also refreshes the template and residual matrices that are open.
+**View → Update Error Matrix** (`U`) recomputes the matrix after editing. `U` also refreshes the template and residual matrices that are open.
 
 ### Template Matrix
 
@@ -695,7 +716,7 @@ moves spikes.
 ### Template Library Display
 
 Shows the template library of the open group: the units marked as templates
-(**Actions → Mark/Unmark as Template**) and their linked waveform series
+(**Clusters → Mark/Unmark as Template**) and their linked waveform series
 (`.wtf` / `.wti`). Pick a unit and a link (drift / adapt) and scrub its bins;
 select two or more units to pin them as the [oblique basis](#oblique-projection-and-decollide).
 See [Template library](#template-library).
@@ -705,9 +726,9 @@ See [Template library](#template-library).
 Shows raw or high-pass filtered signal (`session.dat` or `session.fil`). Spike timestamps from the current electrode group are overlaid as colored tick marks.
 
 - Navigate with the start / duration fields in the Parameters toolbar.
-- **Traces → Next Spike** (`Ctrl+Shift+Right`) and **Previous Spike** (`Ctrl+Shift+Left`) scroll the trace to the next or previous spike of the selected clusters.
-- **Traces → Increase / Decrease Channel Amplitudes** (`Ctrl+Shift+I` / `Ctrl+Shift+D`) scale the selected channels.
-- **Traces → Show Labels** (`Ctrl+L`): display channel names on the trace view.
+- **View → Traces → Next Spike** (`Ctrl+Shift+Right`) and **Previous Spike** (`Ctrl+Shift+Left`) scroll the trace to the next or previous spike of the selected clusters.
+- **View → Traces → Increase / Decrease Channel Amplitudes** (`Ctrl+Shift+I` / `Ctrl+Shift+D`) scale the selected channels.
+- **View → Traces → Show Labels** (`Ctrl+L`): display channel names on the trace view.
 - A click in the Cluster Display (no tool on) scrolls the trace to the nearest spike.
 
 ---
@@ -726,7 +747,7 @@ All operations push onto the undo stack. The full session history is preserved u
 | New cluster from lasso | `Ctrl+1` (Tools → New Cluster) | Creates one new cluster from the lasso-enclosed spikes |
 | Delete selected spikes → artefact (0) | `Ctrl+3` (Tools → Delete Artifact Spikes) | Moves lasso-enclosed spikes to cluster 0 (artefact) |
 | Delete selected spikes → noise (1) | `Ctrl+4` (Tools → Delete Noisy Spikes) | Moves lasso-enclosed spikes to cluster 1 (noise/MUA) |
-| Strip feature outliers (5σ) | menu only (Actions → Strip Feature Outliers) | Across **all** clusters, moves every spike lying more than 5σ from its cluster's per-dimension feature mean (in any single feature dimension) into the artefact cluster (0). A non-mutating scan runs first and asks for confirmation with the exact spike/cluster count; undoable. Per-dimension (not Mahalanobis) is deliberate — a raw 5σ Mahalanobis cut in ~24-D would flag roughly half of every cluster |
+| Strip feature outliers (5σ) | menu only (Split → Strip Feature Outliers) | Across **all** clusters, moves every spike lying more than 5σ from its cluster's per-dimension feature mean (in any single feature dimension) into the artefact cluster (0). A non-mutating scan runs first and asks for confirmation with the exact spike/cluster count; undoable. Per-dimension (not Mahalanobis) is deliberate — a raw 5σ Mahalanobis cut in ~24-D would flag roughly half of every cluster |
 | Delete cluster(s) → artefact (0) | `Shift+Delete` | Moves all spikes of selected clusters to cluster 0 |
 | Delete cluster(s) → noise (1) | `Delete` | Moves all spikes of selected clusters to cluster 1 |
 | Renumber selected to end | `T` | Reassigns the selected cluster IDs to be greater than the current maximum, moving them to the tail of the palette |
@@ -744,7 +765,7 @@ returns to the normal cursor.
 
 Operations that change cluster **order** rather than membership — Reorder
 by Similarity (`Shift+S`) and the standalone sorts (by spike count, time,
-contamination, SNR, waveform, …) — live under **Actions → Sort Clusters**
+contamination, SNR, waveform, …) — live under **Clusters → Sort Clusters**
 and are documented separately in
 **[Cluster sorting and reordering](cluster-sorting.md)**.
 
@@ -838,7 +859,7 @@ If the tests reject the cluster (too small, already unimodal, no valley,
 BIC worse, …) nothing changes and the status bar gives the reason. Every
 decision is recorded in the curation log (see below).
 
-Preferences live under **Settings → Preferences → Curation → Splitting**
+Preferences live under **Edit → Preferences → Curation → Splitting**
 (DipSplit group):
 
 | Preference | Default | Effect |
@@ -1032,7 +1053,7 @@ lasso and `Esc` discards them all.
 
 `Shift+O` projects the shown spikes onto axes given by the selected
 clusters' templates (the oblique, template-axis view); `Shift+O` again
-returns. **Actions → Set Oblique Basis…** pins chosen clusters as the axes,
+returns. **Split → Set Oblique Basis…** pins chosen clusters as the axes,
 so that a different cluster can then be selected and projected onto them.
 In the oblique view a New Cluster lasso waits for confirmation: `Enter`
 cuts the new cluster, `Esc` discards the lasso, and `D` instead
@@ -1061,21 +1082,21 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 
 ### Template library
 
-- **Actions → Mark/Unmark as Template** toggles the selected clusters as
+- **Clusters → Mark/Unmark as Template** toggles the selected clusters as
   template units. On **Save** their linked template waveforms (`.wtf`) are
   written in every available method.
-- **Actions → Generate Template for Selected Cluster(s)** runs fiber-template
+- **Clusters → Generate Template for Selected Cluster(s)** runs fiber-template
   for the selected clusters now (save first: it reads the files on disk).
 - **Displays → New Template Library Display** shows the library.
-- **Actions → Recluster → Strip by Template…** (`Shift+J`) uses one selected
+- **Split → Strip by Template…** (`Shift+J`) uses one selected
   cluster as a template and pulls matching spikes out of the other selected
   clusters.
 
 ### Probe drift
 
-- **Actions → Generate Probe Drift…** runs `ndm_estimatedrift` on the group
+- **Spikes → Generate Probe Drift…** runs `ndm_estimatedrift` on the group
   and writes `SESSION.drift` (the group must already have a `.clu`).
-- **Actions → Apply Drift + Recluster Siblings…** (`Shift+F`) computes
+- **Spikes → Apply Drift + Recluster Siblings…** (`Shift+F`) computes
   drift-adaptive chunk boundaries from `SESSION.drift` and can re-run
   KlustaKwik on the other groups of the same probe.
 - Neither starts while a recluster, another drift job or a plugin is
@@ -1083,25 +1104,25 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 - **Displays → New Drift Matrix Display** shows which cluster pairs are one
   unit split by drift.
 
-### Other Actions-menu entries
+### Other entries of the Clusters, Split, Spikes and View menus
 
 | Entry | Key | What it does |
 |---|---|---|
-| Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
-| Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
-| Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
-| Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
-| Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; with three, two references sort the third; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
-| Split Off Spurious Spikes | Ctrl+Space | For each selected cluster, keeps its core and splits the spikes that are not it into a new cluster; see [below](#split-off-spurious-spikes--a-clusters-core-and-the-rest) |
-| Time-Chunk Mode | — | Steps through the session one chunk of the length you enter at a time, with only that chunk's clusters active; **Previous Chunk** / **Next Chunk** move between chunks |
-| Sync Feature Spaces, Next / Previous Feature Space, Sort Spikes by Time | — / `Ctrl+Tab` / `Ctrl+Shift+Tab` / — | See [Feature spaces](#feature-spaces--one-clu-through-another-method) |
+| Split ▸ Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
+| Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
+| Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
+| Split ▸ Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
+| Split ▸ Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; with three, two references sort the third; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
+| Split ▸ Split Off Spurious Spikes | Ctrl+Space | For each selected cluster, keeps its core and splits the spikes that are not it into a new cluster; see [below](#split-off-spurious-spikes--a-clusters-core-and-the-rest) |
+| View ▸ Time-Chunk Mode | — | Steps through the session one chunk of the length you enter at a time, with only that chunk's clusters active; **Previous Chunk** / **Next Chunk** move between chunks |
+| Spikes ▸ Sync Feature Spaces, View ▸ Next / Previous Feature Space, Spikes ▸ Sort Spikes by Time | — / `Ctrl+Tab` / `Ctrl+Shift+Tab` / — | See [Feature spaces](#feature-spaces--one-clu-through-another-method) |
 
 ### Split Burst Followers — two similar cells, told apart by their bursts
 
 A bursting cell's later spikes are smaller than its first, and when a second cell has a
 similar waveform they are easily clustered with it. The waveform cannot settle it; the
 timing can, because two different cells seldom fire one behind the other inside a burst
-interval. Select the two clusters and choose **Actions → Split Burst Followers** (no
+interval. Select the two clusters and choose **Split → Split Burst Followers** (no
 key; bind `action.splitBurstFollowers` in Preferences → Input).
 
 - **Bursts.** The two clusters' spikes are pooled in time. A burst is a run whose
@@ -1142,7 +1163,7 @@ key; bind `action.splitBurstFollowers` in Preferences → Input).
 ### Split Off Spurious Spikes — a cluster's core, and the rest
 
 A cluster that is mostly one cell with other spikes in it: select it (or several, or
-children in the child palette) and press **Ctrl+Space**, or choose **Actions → Split Off
+children in the child palette) and press **Ctrl+Space**, or choose **Split → Split Off
 Spurious Spikes** (rebind `action.splitOffSpurious` in Preferences → Input). The spikes that are not
 the core become one new cluster per selected cluster, shown beside it; in child scope,
 a new child beside the one they came from. The core stays where it is. There is no
@@ -1374,7 +1395,7 @@ actions per kind, undone ones included; gestures as `GESTURE:<name>`).
 | `DELETE_REGION_ARTEFACT` | Lasso → cluster 0 (`Ctrl+3` tool) | 1+ | — | No |
 | `MOVE_SPIKES` | Manual subset reassignment | 1 | 1 | No |
 | `RENUMBER_PARTIAL` | Renumber selected to end (`T`) | renamed | renamed | No |
-| `SORT_ALL` | Any renumbering sort: **Actions → Sort Clusters**, `Shift+S` | — | — | Yes (the id map) |
+| `SORT_ALL` | Any renumbering sort: **Clusters → Sort Clusters**, `Shift+S` | — | — | Yes (the id map) |
 | `GESTURE` | A hierarchy command (see Layers, gestures) | — | — | Yes (plan, outcome) |
 | `HIERARCHY_EDIT` | `mergeChildren` (atom layer) | N atoms | 1 atom | Yes: the edit, and one `pair` record per pair of children merged |
 | `UNDO`, `REDO` | Reverts/replays a previous action | — | — | No |
@@ -1618,9 +1639,9 @@ and locks editing while it runs — see [Saving: all or nothing](#saving-all-or-
 
 ## Update modes
 
-**Settings → Immediate Update** (default): all views redraw immediately after every editing operation. Appropriate for small datasets.
+**View → Immediate Update** (default): all views redraw immediately after every editing operation. Appropriate for small datasets.
 
-**Settings → Delayed Update**: views are not updated until **Actions → Update Display** is triggered manually. Useful for large datasets where recomputing all views after every lasso operation is slow.
+**View → Delayed Update**: views are not updated until **View → Update Display** is triggered manually. Useful for large datasets where recomputing all views after every lasso operation is slow.
 
 ---
 
@@ -1629,11 +1650,11 @@ and locks editing while it runs — see [Saving: all or nothing](#saving-all-or-
 Klusters can launch KiloKlustaKwik on the current electrode group:
 
 1. Select the clusters to recluster (or select all).
-2. **Actions → Recluster → Recluster** (`Shift+R`).
+2. **Recluster → Recluster** (`Shift+R`).
 3. KiloKlustaKwik runs as a subprocess. By default no tab opens for it: the
    status bar says when it starts and how many clusters it made. If the
    recluster fails, a **Recluster output** tab opens with KiloKlustaKwik's
-   output. Uncheck **Suppress the Recluster output tab** in **Settings →
+   output. Uncheck **Suppress the Recluster output tab** in **Edit →
    Preferences → Curation → Reclustering** to open that tab with every
    recluster. With the tab suppressed, closing the last display stops a
    running recluster, as **File → Close** does.
@@ -1649,7 +1670,7 @@ deleted afterwards. A program configured under another name (the original
 `KlustaKwik`, say) gets the untagged `….fet.N` and is expected to write
 `….clu.N`.
 
-The **Actions → Recluster** submenu also holds:
+The **Recluster** submenu also holds:
 
 | Entry | Key | What it does |
 |---|---|---|
@@ -1666,7 +1687,7 @@ The **Actions → Recluster** submenu also holds:
 A cluster that holds spikes of two known cells is hard to split by itself: the sorter sees
 one blob. Sorted together with the two clean clusters, each cell's mode has its weight.
 
-Select the mixed cluster **and** the clusters it is a mixture of, then **Actions → Recluster →
+Select the mixed cluster **and** the clusters it is a mixture of, then **Recluster →
 Recluster Against References…** (no key; bind `recluster.against` in Preferences → Input). A
 dialog lists the selected clusters with their spike counts and asks which one is the mixed
 one; the others are the references.
@@ -1689,13 +1710,13 @@ one; the others are the references.
   session a pool of 600 spikes in 13 dimensions came back as one cluster, 780 as the two
   units. A mixed cluster that returns in one piece is reported as such.
 
-It runs KiloKlustaKwik whatever engine Actions → Recluster → Engine has checked. Compare
+It runs KiloKlustaKwik whatever engine Recluster → Engine has checked. Compare
 **Split by KNN voting…**, which assigns a cluster's spikes to reference clusters by vote
 and chooses the references itself.
 
 ### Recluster with fiber-kit
 
-**Actions → Recluster → Recluster with fiber-kit** (`Shift+Q`) runs a whole fiber-kit
+**Recluster → Recluster with fiber-kit** (`Shift+Q`) runs a whole fiber-kit
 pipeline on the selected clusters only -- in the child palette, on the selected
 atoms -- and replaces them with the clusters it finds, as a recluster does (one
 undo step, the result in the parent or the atom layer the selection came from).
@@ -1735,7 +1756,7 @@ are.  See fiber-kit's `docs/pipeline.md`, "Reclustering a selection".
 
 **Preferences → Curation → Reclustering** is built around the engine: the
 choice at the top (KlustaKwik, fiber-kit, or any installed `recluster` plugin
--- the same choice as *Actions → Recluster → Engine* and the wheel's Plugin
+-- the same choice as *Recluster → Engine* and the wheel's Plugin
 ring) with a summary of what the chosen engine runs and *Parameters…*, which
 jumps to its page under *Preferences → Plugins*; below it the KlustaKwik
 engine's own settings (executable path, arguments, UseFeatures and the
@@ -1790,9 +1811,9 @@ When no clusters are selected or auto-select is disabled, klusters falls back to
 
 ## Spike realignment
 
-**Actions → Realign Spikes…** (`Shift+L`) realigns the first selected
+**Spikes → Realign Spikes…** (`Shift+L`) realigns the first selected
 cluster (ID above 1) of the active display at once, with the settings in
-**Settings → Preferences → Curation → Realignment**; there is no dialog. **Actions →
+**Edit → Preferences → Curation → Realignment**; there is no dialog. **Spikes →
 Align All Clusters** (`Shift+P`) runs the same alignment, with the same
 settings (including the Parameters toolbar's top-channels box and the
 post-alignment mode), over every cluster except 0 and 1. Before 2026-10-21 it
@@ -1805,7 +1826,7 @@ that behaviour.
 For each spike in the cluster:
 
 1. The cluster mean waveform is computed.
-2. The spike's waveform is cross-correlated against the mean template at each lag within ±*Max shift* samples — over the whole window by default, or under a **correlation window** (**Settings → Preferences → Curation → Realignment → Correlation window**): a Gaussian or Hann bell of the given half-width centred on the peak sample, or the template's own energy profile. Under a window the score is the normalised correlation of the template with the part of the spike the window admits, normalised by that part's energy, so a second spike in the tail or the lead-in of the window — a collision — neither feeds the score nor its normalisation and cannot pull the lag toward itself. *None* is the classic kernel (every GPU back end); a window runs on the CPU kernel. Argument form: `--kernel none|gauss|hann|template`, `--kernel-width N` (samples each side of the peak; 0 = half the peak position, like the automatic max shift; in a super-sampled space the width applies in ticks). The post-alignment pass runs under the same window. The **RMS circular recenter** takes the centroid of the windowed energy; a Gaussian or Hann bell is followed from the peak sample onto the energy lobe it finds there (measured once under a bell that sits on the target, the centroid is pulled toward the bell's centre and the shift comes out short), the template-energy window is used as it stands. The log gives the whole-window centroid beside it. The **PCA projection refine** projects through the basis under the window, Σ w·ev·(x − mean). It is not normalised by the windowed energy as the correlation is, so the window narrows what votes on a spike's position but does not make the refine a collision guard. The per-spike centroid mode is template-free and does not use the window.
+2. The spike's waveform is cross-correlated against the mean template at each lag within ±*Max shift* samples — over the whole window by default, or under a **correlation window** (**Edit → Preferences → Curation → Realignment → Correlation window**): a Gaussian or Hann bell of the given half-width centred on the peak sample, or the template's own energy profile. Under a window the score is the normalised correlation of the template with the part of the spike the window admits, normalised by that part's energy, so a second spike in the tail or the lead-in of the window — a collision — neither feeds the score nor its normalisation and cannot pull the lag toward itself. *None* is the classic kernel (every GPU back end); a window runs on the CPU kernel. Argument form: `--kernel none|gauss|hann|template`, `--kernel-width N` (samples each side of the peak; 0 = half the peak position, like the automatic max shift; in a super-sampled space the width applies in ticks). The post-alignment pass runs under the same window. The **RMS circular recenter** takes the centroid of the windowed energy; a Gaussian or Hann bell is followed from the peak sample onto the energy lobe it finds there (measured once under a bell that sits on the target, the centroid is pulled toward the bell's centre and the shift comes out short), the template-energy window is used as it stands. The log gives the whole-window centroid beside it. The **PCA projection refine** projects through the basis under the window, Σ w·ev·(x − mean). It is not normalised by the windowed energy as the correlation is, so the window narrows what votes on a spike's position but does not make the refine a collision guard. The per-spike centroid mode is template-free and does not use the window.
 3. If the peak correlation exceeds the *Threshold*, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`). A spike whose snippet is all zeros (or a cluster whose mean is all zeros) has no defined correlation; it is never shifted, whatever the threshold is, and its score counts as 0.
 4. Each spike is written back to its own row; rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's.
 
@@ -1857,7 +1878,7 @@ Overview Display with the realigned cluster selected, and the change is
 written by the next **Save**. To discard it, use **Undo**, or close without
 saving.
 
-Realignment parameters are set in **Settings → Preferences → Curation →
+Realignment parameters are set in **Edit → Preferences → Curation →
 Realignment**: *Threshold* (minimum score, default 0.10: a spike whose best
 correlation is lower is not moved in that pass — at a high threshold the
 low-scoring spikes of a cluster stay behind while the rest move), *Iterations*,
@@ -1898,7 +1919,7 @@ immediately step to the next cluster with the arrow keys.
 ## Autosave and crash recovery
 
 While the clustering has unsaved changes, Klusters writes a rescue copy of it
-every few minutes (**Settings → Preferences → General → Session**): `.<clu file>.autosave`
+every few minutes (**Edit → Preferences → General → Session**): `.<clu file>.autosave`
 next to the `.clu` and, in a hierarchical session, `.<clc file>.autosave` next
 to the `.clc`. Both come from one snapshot, taken on the GUI thread, so the
 two always belong together; no rescue copy is written while a save runs. A
@@ -1937,7 +1958,7 @@ still differs from the files (an edit that was undone does not count).
 
 ## Preferences
 
-**Settings → Preferences** (`P`) opens a tree of three groups; each setting is
+**Edit → Preferences** (`P`) opens a tree of three groups; each setting is
 described by its tooltip.
 
 | Group | Page | What it sets |
@@ -1958,7 +1979,7 @@ described by its tooltip.
 
 ## Parameters toolbar reference
 
-The **Parameters** toolbar (Settings → Show Parameters) shows context-sensitive controls depending on the active view:
+The **Parameters** toolbar (View → Toolbars and Panels → Show Parameters) shows context-sensitive controls depending on the active view:
 
 | Control | Context | Description |
 |---|---|---|

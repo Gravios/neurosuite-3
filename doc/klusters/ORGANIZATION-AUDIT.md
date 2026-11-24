@@ -114,7 +114,9 @@ row for each of 132 menu commands: id, category, text, key, tips, check state, s
 whether it edits. The registry and the edit lock's set are loops over it; `createMenus` places
 each with `addCommand(menu, id)`. `createMenus` went from 1,368 lines to 688 and
 `registerInputBindings` from 716 to 593; the total did not shrink — the 660 lines are the
-table. Still outside it: the layout of the menus (which menu, the separators, the submenus),
+table. Since the redistribution of the menus (same day) the layout of Edit, View, Clusters, Split,
+Recluster and Spikes is one block of lists at the end of `createMenus`, and every row's id
+is the command's id everywhere. Still outside the table: the layout of the other menus,
 the per-state lists of `slotStateChanged`, the icon table, the `QAction` members and their
 three naming patterns, 4 menu entries built by hand, and the
 commands of the registry that are not actions. `test_command_table.py` pins what a curator

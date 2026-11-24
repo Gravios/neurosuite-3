@@ -15,10 +15,10 @@
  *        {"nudge": [<cluster>, <delta>]} nudgeClusterTimestamps + the follow
  *        {"supersample": <factor>}       buildSupersampledSpace (no Save As offer)
  *        {"follow": true}                followMovedSpikes now
- *        {"burstFollowers": [a, b]}      Actions > Split Burst Followers on two clusters;
+ *        {"burstFollowers": [a, b]}      Split > Split Burst Followers on two clusters;
  *                                        with "mixed": c, references a and b sort cluster c;
  *                                        with "children": true, the ids are children
- *        {"coreCut": [ids]}              Actions > Split Off Spurious Spikes on each cluster;
+ *        {"coreCut": [ids]}              Split > Split Off Spurious Spikes on each cluster;
  *                                        with "children": true, the ids are children; with
  *                                        "onsetFactor": f, that preference is set first (not
  *                                        written to disk); the result carries "shortcut", the
@@ -45,7 +45,7 @@
  *                                        layer), "undoChild" / "redoChild": true; none: only
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
- *        {"purge": n}                    Actions > Purge Small Clusters below n spikes, confirmed
+ *        {"purge": n}                    Clusters > Purge Small Clusters below n spikes, confirmed
  *        {"childPalette": {...}}         "show": View > Show Child Cluster Palette; "click": a left
  *                                        click on that child in it; reports what it lists and selects
  *        {"matrixSelect": [ids]}         a click on a cell of a curation matrix ("add": true: Ctrl);
@@ -398,7 +398,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         return true;
     }
     if (step.contains(QStringLiteral("reclusterAgainst"))) {
-        // {"reclusterAgainst": <mixed id>, "opts": {"exe", "args", ...}}: Actions > Recluster >
+        // {"reclusterAgainst": <mixed id>, "opts": {"exe", "args", ...}}: Recluster >
         // Recluster Against References on the current selection, with that cluster as the mixed
         // one (the dialog's answer).  {"reclusterAgainstReport": true} reports what the last one found.
         const QJsonObject o = step.value(QStringLiteral("opts")).toObject();
@@ -555,7 +555,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         return true;
     }
     if (step.contains(QStringLiteral("timeSort"))) {
-        // {"timeSort": {}}: Actions > Sort Spikes by Time without its dialog -- plan, then close,
+        // {"timeSort": {}}: Spikes > Sort Spikes by Time without its dialog -- plan, then close,
         // rewrite and reopen.  Reports the plan: "outOfOrder", the "files" rewritten, those
         // "skipped" (another spike count) and "notReordered", and "sorted" (1 / 0 / -1).
         KlustersDoc::TimeSortPlan plan;
@@ -766,7 +766,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         return true;
     }
     if (step.contains(QStringLiteral("purge"))) {
-        // {"purge": n}: Actions > Purge Small Clusters with n spikes, both its boxes answered yes.
+        // {"purge": n}: Clusters > Purge Small Clusters with n spikes, both its boxes answered yes.
         // Reports the ids it purged and the layer shown before and after.
         result.insert(QStringLiteral("childScopeBefore"), doc->isChildClusteringActive());
         QJsonArray a;
@@ -979,7 +979,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         return true;
     }
     if (step.contains(QStringLiteral("burstFollowers"))) {
-        // {"burstFollowers": [a, b]}: Actions > Split Burst Followers on the two clusters.
+        // {"burstFollowers": [a, b]}: Split > Split Burst Followers on the two clusters.
         const QJsonArray ids = step.value(QStringLiteral("burstFollowers")).toArray();
         // "children": true reads the ids as children (the .clc layer), as the action
         // does in child scope.
@@ -1142,7 +1142,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         return true;
     }
     if (step.contains(QStringLiteral("coreCut"))) {
-        // {"coreCut": [ids]}: Actions > Split Off Spurious Spikes on each of the clusters.
+        // {"coreCut": [ids]}: Split > Split Off Spurious Spikes on each of the clusters.
         const QJsonArray ids = step.value(QStringLiteral("coreCut")).toArray();
         const bool children = step.value(QStringLiteral("children")).toBool(false);
         if (children) {

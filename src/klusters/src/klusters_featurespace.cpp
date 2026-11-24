@@ -62,7 +62,7 @@ void KlustersApp::populateFeatureSpaceCombo()
         if (s.synced)
             tip += s.syncStale
                 ? tr("\nSynced this session, but spike times have changed since: "
-                     "sync again (Actions > Sync Feature Spaces).")
+                     "sync again (Spikes > Sync Feature Spaces).")
                 : tr("\nSynced to the current spike times this session (written by Save).");
         featureSpaceCombo->setItemData(row, tip, Qt::ToolTipRole);
         if (!s.usable && model)
@@ -357,7 +357,7 @@ void KlustersApp::applySupersampleMode()
     if (neurosuite::custody::supersampleOf(doc->cluMethod().toStdString()) > 1) return;
     // Built if missing, NOT shown: the base-rate space stays on screen and the
     // super-sampled files are read when the user switches to them (Space box,
-    // Ctrl+Tab, Actions > Super-sample).
+    // Ctrl+Tab, Spikes > Super-sample).
     const QString token = buildAndShowSupersampledSpace(mode, /*quiet*/ true, /*show*/ false);
     if (token.isEmpty()) return;
     const bool adopt = configuration().getSupersampleAdopt() || !mSupersampleReopenUrl.isEmpty();

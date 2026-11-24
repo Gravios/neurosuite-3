@@ -489,7 +489,7 @@ void KlustersApp::slotApplyDriftSiblings()
     if (!QFile::exists(driftPath)) {
         QMessageBox::warning(this, tr("Apply Drift + Recluster Siblings"),
             tr("Drift file not found:\n  %1\n\n"
-               "Run 'Generate Probe Drift' first (Actions → Generate Probe Drift…).").arg(driftPath));
+               "Run 'Generate Probe Drift' first (Spikes → Generate Probe Drift…).").arg(driftPath));
         return;
     }
 

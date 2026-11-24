@@ -315,7 +315,7 @@
              <string>Sync a feature space to the current spike times when switching to it</string>
             </property>
             <property name="toolTip">
-             <string>When you pick another method in the Space box, first re-extract that space's .spk from the .fil at the session's current spike times and re-project its .fet through its own .pca basis, so realign / nudge done in the .clu's space carry over. The results are working copies, saved with Save and discarded if you close without saving. Off by default; when on, each switch costs one .fil pass over the group. Actions → Sync Feature Spaces does the same for every space on demand.</string>
+             <string>When you pick another method in the Space box, first re-extract that space's .spk from the .fil at the session's current spike times and re-project its .fet through its own .pca basis, so realign / nudge done in the .clu's space carry over. The results are working copies, saved with Save and discarded if you close without saving. Off by default; when on, each switch costs one .fil pass over the group. Spikes → Sync Feature Spaces does the same for every space on demand.</string>
             </property>
             <property name="checked">
              <bool>false</bool>
@@ -347,7 +347,7 @@
       </item>
       <item row="0" column="1">
        <widget class="QComboBox" name="supersampleModeCombo">
-        <property name="toolTip"><string>Off: nothing changes.  ×2 / ×4: a waveform space with 2 or 4 spline-interpolated ticks per acquisition sample (&lt;base&gt;.spk.&lt;token&gt;_U4.N, its own PCA basis and features) is built over the .clu's space when a session opens, unless it already exists.  The session still opens in the .clu's own space: the super-sampled files are read when you switch to that space (the Space box, Ctrl+Tab), and stay in memory from then on.  Actions → Super-sample ×2 / ×4 build one by hand and show it.  Realign and nudge in such a space work at sub-sample resolution: the .res keeps whole samples, the rest is each spike's phase (the space's last feature column), and the window is re-cut from the recording at the exact fractional time.  The .spk is 2× / 4× the size, every waveform read and PCA 2× / 4× the work: for machines with the memory and cores to spare.</string></property>
+        <property name="toolTip"><string>Off: nothing changes.  ×2 / ×4: a waveform space with 2 or 4 spline-interpolated ticks per acquisition sample (&lt;base&gt;.spk.&lt;token&gt;_U4.N, its own PCA basis and features) is built over the .clu's space when a session opens, unless it already exists.  The session still opens in the .clu's own space: the super-sampled files are read when you switch to that space (the Space box, Ctrl+Tab), and stay in memory from then on.  Spikes → Super-sample ×2 / ×4 build one by hand and show it.  Realign and nudge in such a space work at sub-sample resolution: the .res keeps whole samples, the rest is each spike's phase (the space's last feature column), and the window is re-cut from the recording at the exact fractional time.  The .spk is 2× / 4× the size, every waveform read and PCA 2× / 4× the work: for machines with the memory and cores to spare.</string></property>
         <item><property name="text"><string>Off</string></property></item>
         <item><property name="text"><string>×2</string></property></item>
         <item><property name="text"><string>×4</string></property></item>
@@ -356,7 +356,7 @@
       <item row="2" column="0" colspan="2">
        <widget class="QCheckBox" name="supersampleAdoptCheckBox">
         <property name="text"><string>Also save the clustering under the super-sampled token when a session opens (realign and nudge run in that space)</string></property>
-        <property name="toolTip"><string>Realign and nudge run in the .clu's own space.  With this on, a session opened in super-sample mode whose .clu is not yet under the _U token is saved as &lt;base&gt;.clu.&lt;token&gt;_U4.N (the original .clu is left as it is) and reopened there, so realign and nudge work at sub-sample resolution right away.  Off: the super-sampled space is only built; Actions → Super-sample offers the Save As.</string></property>
+        <property name="toolTip"><string>Realign and nudge run in the .clu's own space.  With this on, a session opened in super-sample mode whose .clu is not yet under the _U token is saved as &lt;base&gt;.clu.&lt;token&gt;_U4.N (the original .clu is left as it is) and reopened there, so realign and nudge work at sub-sample resolution right away.  Off: the super-sampled space is only built; Spikes → Super-sample offers the Save As.</string></property>
         <property name="checked"><bool>false</bool></property>
        </widget>
       </item>

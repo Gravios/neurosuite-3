@@ -3463,7 +3463,7 @@ void ClusterView::startOblique(){
     if (!usePinned && shown.size() < 2) {
         if (statusBar) statusBar->showMessage(
             tr("oblique: select at least two clusters — they are the template axes "
-               "(or pin a basis with Actions ▸ Set Oblique Basis…)"), 4000);
+               "(or pin a basis with Split ▸ Set Oblique Basis…)"), 4000);
         return;
     }
     const int allDims = d.nbOfDimensionsTotal() - 1;         // every dim except time

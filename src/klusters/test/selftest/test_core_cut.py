@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actions > Split Off Spurious Spikes: a cluster's spikes are ordered by least change of the
+"""Split > Split Off Spurious Spikes: a cluster's spikes are ordered by least change of the
 cumulative mean waveform and cut where a channel's cumulative kurtosis starts to rise; the spikes
 past the cut become one new cluster and the core stays.
 

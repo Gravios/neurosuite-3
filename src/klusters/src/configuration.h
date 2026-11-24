@@ -346,7 +346,7 @@ public:
     int    getKnnMinNew()    const {return knnMinNew;}
     int    getKnnMinRef()    const {return knnMinRef;}
 
-    /// Actions > Split Off Spurious Spikes (corecut.h), Preferences > Splitting.
+    /// Split > Split Off Spurious Spikes (corecut.h), Preferences > Splitting.
     /// The window is in ms relative to the spike's first half crossing.
     struct CoreCut {
         double onsetFactor  =  5.0;    ///< the kurtosis rise that counts as the onset, x its level in 20-50% of the order
@@ -716,7 +716,7 @@ private:
     bool    reextractSpikesOnSave;  // re-extract .spk from .fil at save (off)
     bool    syncFeatureSpaceOnSwitch = false;  // re-extract + re-project a feature space when switching to it (off)
     bool    realignFromAnySpace = true;        // realign/nudge from any space; other spaces follow moved spikes (on)
-    int     supersampleMode = 0;               // 0 off, 2, 4: super-sampled waveform spaces (built on open; Actions > Super-sample); high-end machines only
+    int     supersampleMode = 0;               // 0 off, 2, 4: super-sampled waveform spaces (built on open; Spikes > Super-sample); high-end machines only
     bool    supersampleAdopt = false;          // on open in super-sample mode: Save As under the _U token so realign / nudge run there
     int     supersampleInterp = 2;             // 0 cubic spline, 1 Lanczos-3, 2 smoothing spline (default)
     bool    matrixFollowSelection = true;      // View > Follow Selection in Matrices: the matrices centre on the selected parent / child

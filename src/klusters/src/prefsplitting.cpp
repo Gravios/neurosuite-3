@@ -12,10 +12,10 @@
 PrefSplitting::PrefSplitting(QWidget* parent)
     : PrefSplittingLayout(parent)
 {
-    // ── Split Off Spurious Spikes (Actions menu, Ctrl+Space) ──
+    // ── Split Off Spurious Spikes (Split menu, Ctrl+Space) ──
     QGroupBox* box = new QGroupBox(tr("Split Off Spurious Spikes"), this);
     box->setToolTip(tr(
-        "Actions > Split Off Spurious Spikes: a cluster's spikes are put in the order in which each next one\n"
+        "Split > Split Off Spurious Spikes: a cluster's spikes are put in the order in which each next one\n"
         "changes the cumulative mean waveform least, and the order is cut where a channel's cumulative\n"
         "kurtosis starts to rise.  The spikes past the cut become a new cluster."));
     QFormLayout* form = new QFormLayout(box);

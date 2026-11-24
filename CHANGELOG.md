@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the menus are arranged by what a command does](#2026-11-24--klusters-the-menus-are-arranged-by-what-a-command-does) |
 | 2026-11-24 | [Klusters: the editing keys refuse while a job runs](#2026-11-24--klusters-the-editing-keys-refuse-while-a-job-runs) |
 | 2026-11-24 | [Klusters: two commands shared the id hierarchy.dissolveParent](#2026-11-24--klusters-two-commands-shared-the-id-hierarchydissolveparent) |
 | 2026-11-24 | [ndmanager-plugins: ndm_alignspikes_pca removed](#2026-11-24--ndmanager-plugins-ndmalignspikespca-removed) |
@@ -270,6 +271,46 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the menus are arranged by what a command does
+
+The Actions menu is divided into Clusters, Split, Recluster and Spikes; Waveforms, Correlations and Traces are under View; Preferences is under Edit and the Settings menu is gone. Keys, key bindings and radial-menu layouts are unchanged.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** One **Actions** menu held 54 commands of every kind; **Waveforms**,
+  **Correlations** and **Traces** were on the menu bar; a **Settings** menu held Preferences
+  and the toolbar toggles.
+- **Now**, by what a command does:
+  - **Clusters** — group, delete, renumber, purge, auto-merge, templates, *Sort Clusters*;
+  - **Split** — watershed, DipSplit, KNN, by time, burst followers, spurious spikes, the four
+    strip commands, the oblique basis;
+  - **Recluster** — the recluster commands and their *Engine*;
+  - **Spikes** — realign, align all, sort by time, sync feature spaces, super-sample, export,
+    drift;
+  - **View** gains the time chunks, Next / Previous Feature Space, Update Display, Update
+    Error Matrix, the submenus *Waveforms*, *Correlations*, *Traces* and *Toolbars and
+    Panels*, the point size and the update mode;
+  - **Edit** gains Undo / Redo Child-Layer Edit (from Hierarchy) and **Preferences**.
+  The menu bar: File, Edit, View, Clusters, Split, Recluster, Spikes, Hierarchy, Tools,
+  Displays, Plugins, Help. No command was added, removed or renamed, and no key changed.
+- **Key bindings are unaffected**: they name a command by its id, and no id of a bindable
+  command changed. In Preferences ▸ Input the commands are grouped by the new menus.
+- **Radial-menu layouts are unaffected.** 14 commands had no id but their menu path
+  (`menu:Settings/Preferences`), which the move changes. Every command of the table is now
+  named by its row's id (`edit.preferences`, `tools.newCluster`) wherever it is; the old
+  paths still resolve. `test_command_ids_stable.py` checks all 134 ids of before.
+- **In the code** the commands of the six menus are created without a place and one block
+  of lists at the end of `createMenus` lays the menus out.
+- The manual, the workflow and realign pages, the status messages and the comments name
+  the new paths; the manual has a table of the menus. The **Actions** toolbar keeps its name.
+- Not tried by hand in the GUI; the snapshot of all commands (menu, order, text, keys) is the
+  check.
+
+</details>
 
 ---
 

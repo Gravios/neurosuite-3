@@ -292,7 +292,7 @@ void KlustersApp::slotRecluster(){
         reclusterRetryTimer = nullptr;
     }
 
-    // The ACTIVE ENGINE: a plain Recluster (Shift+R, the wheel, the menu) runs whatever Actions >
+    // The ACTIVE ENGINE: a plain Recluster (Shift+R, the wheel, the menu) runs whatever
     // Recluster > Engine has checked.  The one-shot modes (Shift+M / Shift+C: KlustaKwik on other
     // features; Shift+Q: fiber-kit explicitly; a plugin's own entry) carry their engine themselves.
     if (reclusterOnce == ReclusterOnce::None) {
@@ -312,7 +312,7 @@ void KlustersApp::slotRecluster(){
             }
             QMessageBox::warning(this, tr("Recluster"),
                                  tr("The active recluster engine \"%1\" is not installed (Plugins > Reload Plugins, or "
-                                    "choose another engine under Actions > Recluster > Engine).  Running KlustaKwik.").arg(name));
+                                    "choose another engine under Recluster > Engine).  Running KlustaKwik.").arg(name));
         }
     }
 

@@ -85,34 +85,34 @@ QList<CommandSpec> KlustersApp::commandTable()
     t << CommandSpec("view.showTemplatePalette", "View", tr("Show &Template Palette"), ON(toggled, slotShowTemplatePalette))
             .toolTip(tr("Show the template-class palette (Templates mode).")).checkable().checked().enabledIf(configuration().getTemplatesMode());
 
-    // ── Actions ───────────────────────────────────────────────────────────────────────────
-    t << CommandSpec("action.deleteArtifact", "Actions", tr("Delete &Artifact Cluster(s)"))
+    // ── Clusters, Split, Spikes, View (were Actions) ──────────────────────────────────
+    t << CommandSpec("action.deleteArtifact", "Clusters", tr("Delete &Artifact Cluster(s)"))
             .shortcut(Qt::SHIFT | Qt::Key_Delete).editing();
-    t << CommandSpec("action.deleteNoisy", "Actions", tr("Delete &Noisy Cluster(s)"))
+    t << CommandSpec("action.deleteNoisy", "Clusters", tr("Delete &Noisy Cluster(s)"))
             .shortcut(Qt::Key_Delete).editing();
-    t << CommandSpec("action.groupClusters", "Actions", tr("&Group Clusters")).shortcut(Qt::Key_G).editing();
-    t << CommandSpec("action.chunkMode", "Actions", tr("Time-&Chunk Mode"), ON(toggled, slotChunkModeToggled))
+    t << CommandSpec("action.groupClusters", "Clusters", tr("&Group Clusters")).shortcut(Qt::Key_G).editing();
+    t << CommandSpec("action.chunkMode", "View", tr("Time-&Chunk Mode"), ON(toggled, slotChunkModeToggled))
             .checkable().editing();
-    t << CommandSpec("action.prevChunk", "Actions", tr("Previous Chunk"), ON(triggered, slotPrevChunk))
+    t << CommandSpec("action.prevChunk", "View", tr("Previous Chunk"), ON(triggered, slotPrevChunk))
             .shortcut(Qt::Key_PageUp).disabled();
-    t << CommandSpec("action.nextChunk", "Actions", tr("Next Chunk"), ON(triggered, slotNextChunk))
+    t << CommandSpec("action.nextChunk", "View", tr("Next Chunk"), ON(triggered, slotNextChunk))
             .shortcut(Qt::Key_PageDown).disabled();
     // Patch 0069 — Auto-Merge action.
     // Uses the same template-cross-correlation mechanism as KKE; settings
     // come from the Auto-Merge preferences tab (patch 0068).  Shortcut Shift+G
     // by analogy with G for Group.
-    t << CommandSpec("action.autoMerge", "Actions", tr("&Auto-Merge Similar Clusters…"), ON(triggered, slotAutoMerge))
+    t << CommandSpec("action.autoMerge", "Clusters", tr("&Auto-Merge Similar Clusters…"), ON(triggered, slotAutoMerge))
             .shortcut(Qt::SHIFT | Qt::Key_G).editing();
     // Purge: move every cluster smaller than a user-entered spike count into the
     // noise cluster (1).  Bulk analogue of "Delete Noisy Cluster(s)"; asks for N
     // then a Yes/No confirmation (default Yes) before moving.
-    t << CommandSpec("action.purgeSmallClusters", "Actions", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
+    t << CommandSpec("action.purgeSmallClusters", "Clusters", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
             .editing();
     // Bulk artefact removal: move every spike more than 5 sigma from its cluster's
     // per-dimension feature mean (in any one dimension) into the artefact cluster.
     // Non-mutating scan first, then a Yes/No confirmation showing the exact spike
     // count (default No, since it is destructive); undoable.
-    t << CommandSpec("action.stripOutliers", "Actions", tr("Strip Feature &Outliers (5\u03c3)\u2026"), ON(triggered, slotStripFeatureOutliers))
+    t << CommandSpec("action.stripOutliers", "Split", tr("Strip Feature &Outliers (5\u03c3)\u2026"), ON(triggered, slotStripFeatureOutliers))
             .editing();
     // Waveform counterpart of the feature strip, and the interactive twin of
     // fiber-kit's consolidate mode=shed: strip each SELECTED cluster's own
@@ -122,7 +122,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     // Selection-scoped (not bulk) because it is shortcut-driven -- Shift+X acts
     // on the cluster under inspection.  Same non-mutating scan -> confirm ->
     // undoable split as the feature strip's scan -> confirm -> move.
-    t << CommandSpec("action.stripWaveformOutliers", "Actions", tr("Strip &Waveform Outliers\u2026"), ON(triggered, slotStripWaveformOutliers))
+    t << CommandSpec("action.stripWaveformOutliers", "Split", tr("Strip &Waveform Outliers\u2026"), ON(triggered, slotStripWaveformOutliers))
             .shortcut(Qt::SHIFT | Qt::Key_X)
             .toolTip(tr("Split each selected cluster's waveform outliers (residual to its own "
                      "median waveform) off into a new cluster.  Undoable.")).editing();
@@ -134,14 +134,14 @@ QList<CommandSpec> KlustersApp::commandTable()
     // calibrated to fiber-kit's shed knee, so the two stay comparable on the
     // same cluster.  Dialog-driven (five knobs, unit-dependent) and
     // deliberately unbound: bind it in the input registry if it earns a chord.
-    t << CommandSpec("action.stripResidualOutliers", "Actions", tr("Strip &Residual Outliers\u2026"), ON(triggered, slotStripResidualOutliers))
+    t << CommandSpec("action.stripResidualOutliers", "Split", tr("Strip &Residual Outliers\u2026"), ON(triggered, slotStripResidualOutliers))
             .toolTip(tr("Split each selected cluster's gain-free residual outliers -- "
                      "on-channel (shape) and off-channel (position) terms, separately "
                      "thresholded -- off into new clusters.  Undoable.")).editing();
     // Two similarly shaped cells: the later, smaller spikes of one cell's bursts
     // are easily clustered with the other.  The waveform cannot tell (that is the
     // premise); the timing can.  Unbound: bind it in the input registry.
-    t << CommandSpec("action.splitBurstFollowers", "Actions", tr("Split &Burst Followers"), ON(triggered, slotSplitBurstFollowers))
+    t << CommandSpec("action.splitBurstFollowers", "Split", tr("Split &Burst Followers"), ON(triggered, slotSplitBurstFollowers))
             .toolTip(tr("With two similarly shaped clusters selected: every burst is given to the "
                      "cluster of its first spike, and the later spikes of the burst that are in "
                      "the other cluster are split off into a new cluster -- one per reference "
@@ -154,7 +154,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     // One cluster: the spikes in the order that changes the cumulative mean
     // waveform least, cut where a channel's cumulative kurtosis starts to rise.
     // Its knobs are in Preferences > Splitting.
-    t << CommandSpec("action.splitOffSpurious", "Actions", tr("Split Off Sp&urious Spikes"), ON(triggered, slotSplitOffSpurious))
+    t << CommandSpec("action.splitOffSpurious", "Split", tr("Split Off Sp&urious Spikes"), ON(triggered, slotSplitOffSpurious))
             .shortcut(Qt::CTRL | Qt::Key_Space)
             .toolTip(tr("For each selected cluster: its spikes, centred on the first half crossing "
                      "of their falling flank and seen through a tapered window around it on every "
@@ -170,27 +170,27 @@ QList<CommandSpec> KlustersApp::commandTable()
     // chosen pair (or more) as the axes so a DIFFERENT cluster can be examined
     // against them -- select the third and press Shift+O.  Set via a dialog, as
     // it is a configuration rather than a per-view gesture.
-    t << CommandSpec("action.setObliqueBasis", "Actions", tr("Set Oblique &Basis…"), ON(triggered, slotSetObliqueBasis))
+    t << CommandSpec("action.setObliqueBasis", "Split", tr("Set Oblique &Basis…"), ON(triggered, slotSetObliqueBasis))
             .toolTip(tr("Pin cluster(s) as the fixed axes of the oblique (template-axis) view, "
                      "so a different cluster can be projected onto them with Shift+O."));
     // Mark/unmark the selected cluster(s) as template units.  Marked units are the
     // template library for this clustering; a save persists the set and (re)writes
     // their .wtf via the fiber-template plugin.  A gesture on the selection, like
     // the move-to-noise/artefact actions, rather than a configuration dialog.
-    t << CommandSpec("action.markAsTemplate", "Actions", tr("Mark/Unmark as &Template"), ON(triggered, slotToggleTemplate))
+    t << CommandSpec("action.markAsTemplate", "Clusters", tr("Mark/Unmark as &Template"), ON(triggered, slotToggleTemplate))
             .toolTip(tr("Toggle the selected cluster(s) as template units.  On save their linked "
                      "template waveforms (.wtf) are written in every available method.")).editing();
     // Run fiber-template on demand for the selected cluster(s) only — the
     // per-cluster "refine this unit now" step of the curation workflow, distinct
     // from the on-save run over the whole marked set.
-    t << CommandSpec("action.generateTemplate", "Actions", tr("&Generate Template for Selected Cluster(s)"), ON(triggered, slotGenerateTemplateForSelection))
+    t << CommandSpec("action.generateTemplate", "Clusters", tr("&Generate Template for Selected Cluster(s)"), ON(triggered, slotGenerateTemplateForSelection))
             .toolTip(tr("Run fiber-template now for the selected cluster(s) only, writing their "
                      "linked template waveforms (.wti/.wtf).  Save first — the tool reads the "
                      "clustering files on disk.")).editing();
-    t << CommandSpec("action.updateDisplay", "Actions", tr("&Update Display"));
-    t << CommandSpec("action.renumberClusters", "Actions", tr("&Renumber Clusters"))
+    t << CommandSpec("action.updateDisplay", "View", tr("&Update Display"));
+    t << CommandSpec("action.renumberClusters", "Clusters", tr("&Renumber Clusters"))
             .shortcut(Qt::Key_R).editing();
-    t << CommandSpec("action.updateErrorMatrix", "Actions", tr("&Update Error Matrix"), ON(triggered, slotUpdateErrorMatrix))
+    t << CommandSpec("action.updateErrorMatrix", "View", tr("&Update Error Matrix"), ON(triggered, slotUpdateErrorMatrix))
             .shortcut(Qt::Key_U);
 
     // ── Sort ──────────────────────────────────────────────────────────────────────────────
@@ -251,7 +251,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     // amplitude (channel order, so the blocks run down the probe), and order each
     // block by descending amplitude.  Groups units by site while keeping the
     // biggest first within a site.
-    t << CommandSpec("sort.sortClustersByAmplitudeByChannel", "", tr("Sort Clusters by Largest Amplitude by C&hannel"), ON(triggered, slotSortClustersByAmplitudeByChannel))
+    t << CommandSpec("sort.byAmplitudeByChannel", "", tr("Sort Clusters by Largest Amplitude by C&hannel"), ON(triggered, slotSortClustersByAmplitudeByChannel))
             .toolTip(tr("Renumber clusters in blocks: one block per channel, in channel order,\n"
                      "each holding the clusters whose largest peak-to-trough amplitude falls\n"
                      "on that channel, ordered biggest first.  Requires computed mean\n"
@@ -336,7 +336,7 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "(the parents keep their ids; the manifold becomes a feature space under Space)")).checkable();
 
     // ── Recluster ─────────────────────────────────────────────────────────────────────────
-    t << CommandSpec("recluster.splitByKnn", "Recluster", tr("Split by &KNN voting…"), ON(triggered, slotSplitClusterByKnn))
+    t << CommandSpec("recluster.splitByKnn", "Split", tr("Split by &KNN voting…"), ON(triggered, slotSplitClusterByKnn))
             .shortcut(Qt::SHIFT | Qt::Key_K)
             .toolTip(tr("Partition the selected cluster into new sub-clusters using "
                      "a K-nearest-neighbour vote against existing well-isolated "
@@ -346,35 +346,35 @@ QList<CommandSpec> KlustersApp::commandTable()
     // way (Shift+T and Shift+S, the mnemonic choices, are taken by
     // partition-by-time and the similarity sort).  auditKeyBindings()
     // re-checks this at startup.
-    t << CommandSpec("recluster.stripByTemplate", "Recluster", tr("Strip by &Template…"), ON(triggered, slotStripByTemplate))
+    t << CommandSpec("recluster.stripByTemplate", "Split", tr("Strip by &Template…"), ON(triggered, slotStripByTemplate))
             .shortcut(Qt::SHIFT | Qt::Key_J)
             .toolTip(tr("Designate one selected cluster as a waveform template and pull "
                      "matching spikes out of the other selected clusters — normalized "
                      "kernel-weighted median-waveform residual, restricted to the "
                      "current channel selection.  Works in both scopes.")).disabled().editing();
 
-    // ── Actions ───────────────────────────────────────────────────────────────────────────
-    // Watershed lives on the Actions menu proper, not in the Recluster submenu.
+    // ── Clusters, Split, Spikes, View (were Actions) ──────────────────────────────────
+    // Watershed is in the Split menu.
     // Its construction used to sit in the middle of the Tools menu block -- it was
     // added to reclusterMenu 121 lines after that submenu was built and after the
     // Tools menu had been created, so anyone adding a Tools item beside it would
     // have landed in the Recluster submenu instead.
-    t << CommandSpec("action.watershed", "Actions", tr("&Watershed Split"), ON(triggered, slotWatershedSplit))
+    t << CommandSpec("action.watershed", "Split", tr("&Watershed Split"), ON(triggered, slotWatershedSplit))
             .shortcut(Qt::SHIFT | Qt::Key_W)
             .statusTip(tr("Split the selection into one new cluster per density basin in the "
                      "active scatter view — selected atoms (one parent) in children view, "
                      "selected parents otherwise.")).editing();
-    t << CommandSpec("action.realignSpikes", "Actions", tr("R&ealign Spikes…"), ON(triggered, slotRealignSpikes))
+    t << CommandSpec("action.realignSpikes", "Spikes", tr("R&ealign Spikes…"), ON(triggered, slotRealignSpikes))
             .shortcut(Qt::SHIFT | Qt::Key_L)
             .toolTip(tr("Re-align spikes in the selected cluster to their true peak, "
                      "update .res/.spk/.fet files, and swap ordering if needed.")).editing();
-    t << CommandSpec("action.partitionByTime", "Actions", tr("Partition Cluster by &Time…"), ON(triggered, slotPartitionClusterByTime))
+    t << CommandSpec("action.partitionByTime", "Split", tr("Partition Cluster by &Time…"), ON(triggered, slotPartitionClusterByTime))
             .shortcut(Qt::SHIFT | Qt::Key_T)
             .toolTip(tr("Cut the selected cluster into consecutive blocks of recording time.\n"
                      "Blocks start at the origin of the session, so the boundaries are the "
                      "same for every cluster and the pieces line up in time.\n"
                      "Works on a parent or, in child view, on an atom.")).editing();
-    t << CommandSpec("action.pcaAlignAllClusters", "Actions", tr("&Align All Clusters"), ON(triggered, slotPcaAlignAllClusters))
+    t << CommandSpec("action.pcaAlignAllClusters", "Spikes", tr("&Align All Clusters"), ON(triggered, slotPcaAlignAllClusters))
             .shortcut(Qt::SHIFT | Qt::Key_P)
             .toolTip(tr("Run Realign Spikes on every cluster (skipping noise=0 and "
                      "artifact=1) with its settings: the Refinement preferences and the "
@@ -386,20 +386,20 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "features through its own PCA basis.  Use after realigning or nudging in "
                      "the .clu's own space.  The results are working copies, written by Save.")).editing();
     // Super-sampled waveform spaces (Preferences > Realignment > Super-sampling gates them).
-    t << CommandSpec("space.supersample2", "Space", tr("Super-sample ×2…")).editing();
-    t << CommandSpec("space.supersample4", "Space", tr("Super-sample ×4…")).editing();
-    t << CommandSpec("space.exportBaseRate", "Space", tr("Export at the Recording's Sampling…"), ON(triggered, slotExportBaseRate))
+    t << CommandSpec("space.supersample2", "Spikes", tr("Super-sample ×2…")).editing();
+    t << CommandSpec("space.supersample4", "Spikes", tr("Super-sample ×4…")).editing();
+    t << CommandSpec("space.exportBaseRate", "Spikes", tr("Export at the Recording's Sampling…"), ON(triggered, slotExportBaseRate))
             .toolTip(tr("From a super-sampled (_U) session: copy the saved .clu (and its .clc/.clp/.cli)\n"
                      "under the base-rate token, beside the base-rate .res/.spk/.fet -- the shared\n"
                      ".res and the synced base space -- without leaving this session.")).disabled().editing();
     // Step through the Space box without the mouse.  Ctrl+Tab, because plain
     // Tab / Shift+Tab move keyboard focus around the window.
-    t << CommandSpec("action.nextFeatureSpace", "Actions", tr("Ne&xt Feature Space"))
+    t << CommandSpec("action.nextFeatureSpace", "View", tr("Ne&xt Feature Space"))
             .shortcut(Qt::CTRL | Qt::Key_Tab)
             .toolTip(tr("Show the next feature space in the Space box "
                      "(spaces that cannot be loaded are skipped).")).editing();
     // Shift+Tab arrives as Backtab, so the chord is Ctrl+Shift+Backtab.
-    t << CommandSpec("action.previousFeatureSpace", "Actions", tr("Previous Feature Spa&ce"))
+    t << CommandSpec("action.previousFeatureSpace", "View", tr("Previous Feature Spa&ce"))
             .shortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_Backtab)
             .toolTip(tr("Show the previous feature space in the Space box.")).editing();
     t << CommandSpec("action.sortSpikesByTime", "", tr("Sort Spikes by &Time"), ON(triggered, slotSortSpikesByTime))
@@ -409,22 +409,22 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "reopens the document.  Save first; undo history is cleared.")).editing();
 
     // ── Recluster ─────────────────────────────────────────────────────────────────────────
-    t << CommandSpec("recluster.dipSplit", "Recluster", tr("&DipSplit Selected Cluster"), ON(triggered, slotDipSplit))
+    t << CommandSpec("recluster.dipSplit", "Split", tr("&DipSplit Selected Cluster"), ON(triggered, slotDipSplit))
             .shortcut(Qt::SHIFT | Qt::Key_D)
             .toolTip(tr("Test the selected cluster for hidden bimodality.  If a valley is\n"
                      "detected along one of its top-3 principal components AND the two-\n"
                      "cluster model beats the single-cluster BIC, split the cluster in two.")).editing();
 
-    // ── Actions ───────────────────────────────────────────────────────────────────────────
+    // ── Clusters, Split, Spikes, View (were Actions) ──────────────────────────────────
     // No keyboard shortcut: Shift+P is owned by "PCA-Center Align All Clusters"
     // (mPcaAlignAllClusters, above).  Both actions used to bind Shift+P, so Qt
     // reported an ambiguous shortcut overload and dispatched neither; probe
-    // drift is now reachable from the Actions menu only.
-    t << CommandSpec("action.generateProbeDrift", "Actions", tr("&Generate Probe Drift…"), ON(triggered, slotGenerateProbeDrift))
+    // drift is now reachable from the Spikes menu only.
+    t << CommandSpec("action.generateProbeDrift", "Spikes", tr("&Generate Probe Drift…"), ON(triggered, slotGenerateProbeDrift))
             .toolTip(tr("Run ndm_estimatedrift on the current electrode group to estimate probe "
                      "displacement over time.  Requires that this group is already curated "
                      "(a .clu.N file exists).  Produces SESSION.drift alongside the data files.")).editing();
-    t << CommandSpec("action.applyDriftSiblings", "Actions", tr("Apply Drift + &Recluster Siblings…"), ON(triggered, slotApplyDriftSiblings))
+    t << CommandSpec("action.applyDriftSiblings", "Spikes", tr("Apply Drift + &Recluster Siblings…"), ON(triggered, slotApplyDriftSiblings))
             .shortcut(Qt::SHIFT | Qt::Key_F)
             .toolTip(tr("Compute drift-adaptive chunk boundaries from SESSION.drift and optionally "
                      "re-run KlustaKwik on the other electrode groups that share this probe.  "
@@ -473,7 +473,7 @@ QList<CommandSpec> KlustersApp::commandTable()
 
     // ── Correlations ──────────────────────────────────────────────────────────────────────
     // Shift+M is now the median-residual recluster shortcut; Scale-by-Maximum
-    // stays available from the Correlations menu (no accelerator).
+    // stays available from View > Correlations (no accelerator).
     //Initialize the presentation mode to scale by maximum.
     t << CommandSpec("correlations.scaleByMax", "Correlations", tr("Scale by &Maximum"), ON(triggered, slotScaleByMax))
             .checkable().checked();
@@ -570,9 +570,9 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "(numbered parent + 10000), so the atom layer becomes a copy of the\n"
                      "parent layer.  Discards all sub-mode structure -- undo with\n"
                      "Ctrl+Shift+Z.")).disabled().editing();
-    t << CommandSpec("hierarchy.undoChildEdit", "Hierarchy", tr("&Undo Child-Layer Edit"), ON(triggered, slotUndoChildEdit))
+    t << CommandSpec("hierarchy.undoChildEdit", "Edit", tr("&Undo Child-Layer Edit"), ON(triggered, slotUndoChildEdit))
             .shortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_Z).disabled().editing();
-    t << CommandSpec("hierarchy.redoChildEdit", "Hierarchy", tr("&Redo Child-Layer Edit"), ON(triggered, slotRedoChildEdit))
+    t << CommandSpec("hierarchy.redoChildEdit", "Edit", tr("&Redo Child-Layer Edit"), ON(triggered, slotRedoChildEdit))
             .shortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_Y).disabled().editing();
 
     // ── Display ───────────────────────────────────────────────────────────────────────────
@@ -610,26 +610,26 @@ QList<CommandSpec> KlustersApp::commandTable()
             .shortcut(Qt::CTRL | Qt::Key_W);
 
     // ── Settings ──────────────────────────────────────────────────────────────────────────
-    t << CommandSpec("settings.viewMainToolBar", "", tr("Show Main Toolbar"), ON(triggered, slotViewMainToolBar))
+    t << CommandSpec("view.showMainToolbar", "", tr("Show Main Toolbar"), ON(triggered, slotViewMainToolBar))
             .checkable().checked();
-    t << CommandSpec("settings.viewActionBar", "", tr("Show Actions"), ON(triggered, slotViewActionBar))
+    t << CommandSpec("view.showActionsToolbar", "", tr("Show Actions"), ON(triggered, slotViewActionBar))
             .checkable().checked();
-    t << CommandSpec("settings.viewToolBar", "", tr("Show Tools"), ON(triggered, slotViewToolBar))
+    t << CommandSpec("view.showToolsToolbar", "", tr("Show Tools"), ON(triggered, slotViewToolBar))
             .checkable().checked();
-    t << CommandSpec("settings.viewParameterBar", "", tr("Show Parameters"), ON(triggered, slotViewParameterBar))
+    t << CommandSpec("view.showParametersToolbar", "", tr("Show Parameters"), ON(triggered, slotViewParameterBar))
             .checkable().checked();
-    t << CommandSpec("settings.viewClusterInfo", "", tr("Show Cluster Info"), ON(triggered, slotViewClusterInfo))
+    t << CommandSpec("view.showClusterInfo", "", tr("Show Cluster Info"), ON(triggered, slotViewClusterInfo))
             .checkable();
-    t << CommandSpec("settings.viewStatusBar", "", tr("Show StatusBar"), ON(triggered, slotViewStatusBar))
+    t << CommandSpec("view.showStatusBar", "", tr("Show StatusBar"), ON(triggered, slotViewStatusBar))
             .checkable().checked();
-    t << CommandSpec("settings.increasePointSize", "", tr("Increase Point Size"), ON(triggered, slotIncreasePointSize));
-    t << CommandSpec("settings.decreasePointSize", "", tr("Decrease Point Size"), ON(triggered, slotDecreasePointSize));
+    t << CommandSpec("view.increasePointSize", "", tr("Increase Point Size"), ON(triggered, slotIncreasePointSize));
+    t << CommandSpec("view.decreasePointSize", "", tr("Decrease Point Size"), ON(triggered, slotDecreasePointSize));
     //Initialize the update mode
-    t << CommandSpec("settings.immediateSelection", "", tr("Immediate Update"), ON(triggered, slotImmediateSelection))
+    t << CommandSpec("view.immediateUpdate", "", tr("Immediate Update"), ON(triggered, slotImmediateSelection))
             .checkable().checked();
-    t << CommandSpec("settings.delaySelection", "", tr("Delayed Update"), ON(triggered, slotDelaySelection))
+    t << CommandSpec("view.delayedUpdate", "", tr("Delayed Update"), ON(triggered, slotDelaySelection))
             .checkable();
-    t << CommandSpec("settings.preferenceAction", "", tr("&Preferences"), ON(triggered, executePreferencesDlg))
+    t << CommandSpec("edit.preferences", "", tr("&Preferences"), ON(triggered, executePreferencesDlg))
             .shortcut(Qt::Key_P);
 
     // ── Help ──────────────────────────────────────────────────────────────────────────────
@@ -645,9 +645,11 @@ QAction* KlustersApp::addCommand(QMenu* menu, const char* id)
 {
     const auto it = commandSpecs.constFind(QString::fromLatin1(id));
     Q_ASSERT_X(it != commandSpecs.constEnd(), "KlustersApp::addCommand", id);
-    if (it == commandSpecs.constEnd()) return menu->addAction(QString::fromLatin1(id));   // visibly wrong, not a crash
+    // Without a menu the command is created only: createMenus() places it in its layout block.
+    auto make = [this, menu](const QString& text) { return menu ? menu->addAction(text) : new QAction(text, this); };
+    if (it == commandSpecs.constEnd()) return make(QString::fromLatin1(id));   // visibly wrong, not a crash
     const CommandSpec& s = it.value();
-    QAction* a = menu->addAction(s.text);
+    QAction* a = make(s.text);
     if (!s.key.isEmpty())    a->setShortcut(s.key);
     if (!s.status.isEmpty()) a->setStatusTip(s.status);
     if (!s.tip.isEmpty())    a->setToolTip(s.tip);

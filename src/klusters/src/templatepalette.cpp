@@ -193,7 +193,7 @@ void TemplatePalette::keyPressEvent(QKeyEvent* e)
     // `s` marks/unmarks the selected class as the PRIMARY (★) — the same toggle a
     // click performs, so it works while the list has focus (where the QListWidget
     // would otherwise swallow the key for type-ahead).  Oblique-basis pinning, which
-    // `s` used to do, is reached from Actions > Set Oblique Basis... (and the Template
+    // `s` used to do, is reached from Split > Set Oblique Basis... (and the Template
     // Library's "pin selected").
     if (loaded_ && (e->key() == Qt::Key_S) && e->modifiers() == Qt::NoModifier
         && selectedClass() >= 0) {

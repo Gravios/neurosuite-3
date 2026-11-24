@@ -34,7 +34,7 @@ PrefReclustering::PrefReclustering(QWidget* parent)
     QHBoxLayout* row = new QHBoxLayout();
     row->addWidget(new QLabel(tr("Recluster the selection with:"), engineBox));
     engineCombo = new QComboBox(engineBox);
-    engineCombo->setToolTip(tr("The same choice as Actions > Recluster > Engine and the radial menu's Recluster > Plugin ring.  "
+    engineCombo->setToolTip(tr("The same choice as Recluster > Engine and the radial menu's Recluster > Plugin ring.  "
                                "Shift+M / Shift+C always run KlustaKwik on other features; Shift+Q always runs fiber-kit."));
     row->addWidget(engineCombo, 1);
     engineConfigure = new QPushButton(tr("Parameters…"), engineBox);

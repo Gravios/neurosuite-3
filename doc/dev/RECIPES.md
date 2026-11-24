@@ -360,9 +360,9 @@ visible there too.
 
 ### 2.6 Give a Klusters action an icon
 
-1. Find the action's id: its row in `klusters_commands.cpp` if the row has a
-   category (§2.7), or, if it has none, `menu:` + its menu path (`menu:Tools/Split Clusters`;
-   mnemonics and a trailing "…" dropped — `actionid.h`). Preferences ▸ Radial
+1. Find the action's id: the id of its row in `klusters_commands.cpp` (§2.7;
+   `tools.splitClusters`). An entry without a row, such as a plugin's, is
+   `menu:` + its menu path (`actionid.h`). Preferences ▸ Radial
    menu shows every id as a tooltip in *Available actions*.
 2. Pick the kind (STANDARDIZATION.md §2.11):
    - **Standard** (a generic action): the freedesktop icon name; if the bundled
@@ -397,10 +397,16 @@ t << CommandSpec("clusters.frobnicate", "Clusters", tr("&Frobnicate"), ON(trigge
    edit lock then disables it while a job runs (klusters CONCURRENCY.md §7.4).
    If the slot can be reached without its action (a context menu, a mouse
    tool), begin it with `refuseWhileBlocked()` as well.
-2. Declare the `QAction*` member in `klusters.h` and place it in its menu in
-   `createMenus()`: `mFrobnicate = addCommand(clustersMenu, "clusters.frobnicate");`.
-   A connection that is not one signal to one member slot (a lambda, an action
-   group, `setData`) stays there, under that line.
+   The id is permanent: stored key bindings and radial-menu layouts name the
+   command by it. It says what the command is, not which menu it is in.
+2. Declare the `QAction*` member in `klusters.h` and create it in
+   `createMenus()`: `mFrobnicate = addCommand(nullptr, "clusters.frobnicate");`,
+   then put it in its menu's list in the layout block at the end of that
+   function (`fill(clustersMenu, { … })`; `nullptr` there is a separator).
+   File, Tools, Displays, Hierarchy and Help are filled where the command is
+   created instead: `addCommand(toolsMenu, "…")`. A connection that is not one
+   signal to one member slot (a lambda, an action group, `setData`) stays under
+   the `addCommand` line.
 3. If it is off in some state, add it to that state's list in
    `slotStateChanged()`.
 4. Run `test_command_table.py --update`, read the diff of

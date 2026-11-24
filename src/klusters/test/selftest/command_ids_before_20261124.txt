@@ -1,0 +1,137 @@
+# The id of every menu command before the menus were redistributed on 2026-11-24.
+# Stored radial-menu layouts name commands by these: each must still resolve
+# (test_command_ids_stable.py).  Do not edit; add a new file for a later move.
+action.applyDriftSiblings
+action.autoMerge
+action.chunkMode
+action.deleteArtifact
+action.deleteNoisy
+action.generateProbeDrift
+action.generateTemplate
+action.groupClusters
+action.markAsTemplate
+action.nextChunk
+action.nextFeatureSpace
+action.partitionByTime
+action.pcaAlignAllClusters
+action.prevChunk
+action.previousFeatureSpace
+action.purgeSmallClusters
+action.realignSpikes
+action.renumberClusters
+action.setObliqueBasis
+action.splitBurstFollowers
+action.splitOffSpurious
+action.stripOutliers
+action.stripResidualOutliers
+action.stripWaveformOutliers
+action.updateDisplay
+action.updateErrorMatrix
+action.watershed
+correlations.asymptoteLine
+correlations.decreaseAmplitude
+correlations.increaseAmplitude
+correlations.scaleByAsymptote
+correlations.scaleByMax
+correlations.uniformScale
+display.closeActive
+display.hierarchicalSession
+display.newCluster
+display.newCorrelation
+display.newDriftMatrix
+display.newGroupingAssistant
+display.newOverview
+display.newResidualMatrix
+display.newTemplateLibrary
+display.newTrace
+display.newWaveform
+display.renameActive
+edit.cancelJob
+edit.redo
+edit.selectAll
+edit.selectAllExcept
+edit.undo
+file.close
+file.import
+file.open
+file.print
+file.quit
+file.renumberAndSave
+file.save
+file.saveAs
+help.shortcuts
+hierarchy.breakUpParents
+hierarchy.compactIds
+hierarchy.dissolveParent
+hierarchy.dropChildNoise
+hierarchy.flatten
+hierarchy.groupChildren
+hierarchy.mergeChildren
+hierarchy.mergeOrphanChildren
+hierarchy.mergeOrphanParents
+hierarchy.mergeParents
+hierarchy.promoteChild
+hierarchy.promoteToHierarchical
+hierarchy.redoChildEdit
+hierarchy.repairNesting
+hierarchy.undoChildEdit
+menu:Actions/Sort Clusters/Sort Clusters by Largest Amplitude by Channel
+menu:Actions/Sort Spikes by Time
+menu:Actions/Sync Feature Spaces
+menu:Help/About
+menu:Help/Handbook
+menu:Settings/Decrease Point Size
+menu:Settings/Delayed Update
+menu:Settings/Immediate Update
+menu:Settings/Increase Point Size
+menu:Settings/Preferences
+menu:Settings/Show Actions
+menu:Settings/Show Cluster Info
+menu:Settings/Show Main Toolbar
+menu:Settings/Show Parameters
+menu:Settings/Show StatusBar
+menu:Settings/Show Tools
+menu:Tools/Delete Artifact Spikes
+menu:Tools/Delete Noisy Spikes
+menu:Tools/Multi-Lasso
+menu:Tools/New Cluster
+menu:Tools/Split Clusters
+menu:Tools/Split by Lassos
+recluster.against
+recluster.channelVar
+recluster.dipSplit
+recluster.engine.fiberkit
+recluster.engine.klustakwik
+recluster.engine.manifold
+recluster.fiberkit
+recluster.median
+recluster.recluster
+recluster.splitByKnn
+recluster.stripByTemplate
+sort.byAmplitude
+sort.byContamination
+sort.byErrorPval
+sort.byResidualGated
+sort.bySimilarity
+sort.bySnr
+sort.bySpikeCount
+sort.byTime
+sort.byWaveformNN
+sort.byWaveformSpectral
+space.exportBaseRate
+space.supersample2
+space.supersample4
+trace.decreaseChannelAmplitudes
+trace.increaseChannelAmplitudes
+trace.nextSpike
+trace.previousSpike
+trace.showLabels
+view.followSelectionInMatrices
+view.showChildPalette
+view.showReservedClusters
+view.showTemplatePalette
+waveforms.decreaseAmplitude
+waveforms.increaseAmplitude
+waveforms.meanStd
+waveforms.overlay
+waveforms.timeFrame

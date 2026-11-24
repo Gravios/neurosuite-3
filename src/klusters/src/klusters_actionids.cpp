@@ -3,7 +3,8 @@
     ----------------------
     KlustersApp's catalogue of menu-bar actions with their stable ids
     (actionid.h): the registry id where the action is mirrored as an app
-    command, else its menu path.  Used by the radial menu's layout and its
+    command, else the id of its row in the command table, else its menu path
+    (the entries plugins add).  Used by the radial menu's layout and its
     Preferences editor, and by the action icon table (applyActionIcons()).
 
     Copyright (C) 2026  neurosuite-3 contributors
@@ -40,6 +41,12 @@ QList<ActionCatalogEntry> KlustersApp::actionCatalog() const
     for (auto it = appActionCommands_.constBegin(); it != appActionCommands_.constEnd(); ++it)
         if (it.value() && !registryId.contains(it.value())) registryId.insert(it.value(), it.key());
 
+    // Else the id of its row in the command table (klusters_commands.cpp): an id that does
+    // not change when the command moves to another menu.
+    QHash<const QAction*, QString> tableId;
+    for (auto it = commandActions.constBegin(); it != commandActions.constEnd(); ++it)
+        if (it.value()) tableId.insert(it.value(), it.key());
+
     QList<ActionCatalogEntry> out;
     QSet<QString> seen;
     std::function<void(const QMenu*, const QStringList&)> walk =
@@ -53,7 +60,7 @@ QList<ActionCatalogEntry> KlustersApp::actionCatalog() const
                 continue;
             }
             ActionCatalogEntry e;
-            e.id = registryId.value(a, actionid::menuPathId(path, a->text()));
+            e.id = registryId.value(a, tableId.value(a, actionid::menuPathId(path, a->text())));
             e.path = path;
             e.text = text;
             e.action = a;
@@ -73,10 +80,36 @@ QHash<QString, QAction*> KlustersApp::actionsById() const
     // Both ids resolve for every action: the registry id the catalogue prefers and
     // the menu path, so a stored id survives an action gaining a registry id.
     QHash<QString, QAction*> map;
+    const QString enginePath = QStringLiteral("menu:Recluster/Engine/");
     for (const ActionCatalogEntry& e : actionCatalog()) {
         map.insert(e.id, e.action);
-        map.insert(actionid::menuPathId(e.path, e.action->text()), e.action);
+        const QString pathId = actionid::menuPathId(e.path, e.action->text());
+        map.insert(pathId, e.action);
+        // The engines of the installed plugins have no row: their id is their path, which
+        // was under Actions until 2026-11-24.
+        if (pathId.startsWith(enginePath))
+            map.insert(QStringLiteral("menu:Actions/Recluster/Engine/") + pathId.mid(enginePath.size()), e.action);
     }
+    // The menu-path ids of the commands that had no other id when the menus were
+    // redistributed (2026-11-24): a radial layout stored before still names them so.
+    static const struct { const char* was; const char* id; } movedSince20261124[] = {
+        { "menu:Settings/Show Main Toolbar",   "view.showMainToolbar" },
+        { "menu:Settings/Show Actions",        "view.showActionsToolbar" },
+        { "menu:Settings/Show Tools",          "view.showToolsToolbar" },
+        { "menu:Settings/Show Parameters",     "view.showParametersToolbar" },
+        { "menu:Settings/Show Cluster Info",   "view.showClusterInfo" },
+        { "menu:Settings/Show StatusBar",      "view.showStatusBar" },
+        { "menu:Settings/Increase Point Size", "view.increasePointSize" },
+        { "menu:Settings/Decrease Point Size", "view.decreasePointSize" },
+        { "menu:Settings/Immediate Update",    "view.immediateUpdate" },
+        { "menu:Settings/Delayed Update",      "view.delayedUpdate" },
+        { "menu:Settings/Preferences",         "edit.preferences" },
+        { "menu:Actions/Sync Feature Spaces",  "action.syncFeatureSpaces" },
+        { "menu:Actions/Sort Spikes by Time",  "action.sortSpikesByTime" },
+        { "menu:Actions/Sort Clusters/Sort Clusters by Largest Amplitude by Channel", "sort.byAmplitudeByChannel" },
+    };
+    for (const auto& m : movedSince20261124)
+        if (QAction* a = map.value(QLatin1String(m.id))) map.insert(QLatin1String(m.was), a);
     return map;
 }
 

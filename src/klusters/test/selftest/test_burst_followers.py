@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actions > Split Burst Followers: of two clusters, the spikes of one that follow the other's
+"""Split > Split Burst Followers: of two clusters, the spikes of one that follow the other's
 burst leaders are split off into a new cluster, and nothing else is.
 
 Session: the synthetic one, with its spike times and labels replaced (the action reads times

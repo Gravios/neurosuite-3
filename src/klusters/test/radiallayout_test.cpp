@@ -69,7 +69,7 @@ int main()
                 }),
             }),
             N::value(QStringLiteral("dimX"), QStringLiteral("Abscissa")),
-            N::action(QStringLiteral("menu:Tools/New Cluster")),
+            N::action(QStringLiteral("tools.newCluster")),
         };
         RadialLayout back;
         CHECK(radiallayout::fromJson(radiallayout::toJson(edited), &back));

@@ -64,14 +64,14 @@ palette -- the `clickParent` step -- shows that parent on the parent layer),
 `test_collision_rows.py` (rows whose `.eap` row names a partner unit are served with it subtracted --
 the `collisionRows` step: 40 planted collisions corrected, the `.spk` untouched, rows without a
 partner served raw, the preference, the `.spkc`, and the rows rebuilt after a nudge),
-`test_recluster_against_references.py` (Actions > Recluster > Recluster Against References, the
+`test_recluster_against_references.py` (Recluster > Recluster Against References, the
 `reclusterAgainst` step: a cluster of 150 + 150 spikes of two units pooled with the units' own
 clusters -- the references keep their rows and ids, the mixed cluster becomes the two units' pieces,
 the summary names the right reference for each; an ordinary recluster replaces the references too),
 `test_realign_collision_rows.py` (a realign measures a collision row on its corrected record: 60
 planted collisions 3-7 samples from the spike, every true time known -- 1 of 60 ends off its true
 time, against 33 of 60 with the preference off; the records written are raw cuts),
-`test_time_sort_collision_files.py` (the `timeSort` step, Actions > Sort Spikes by Time: 60 rows out
+`test_time_sort_collision_files.py` (the `timeSort` step, Spikes > Sort Spikes by Time: 60 rows out
 of order in every file -- the `.eap` and the `.spkc` come back byte for byte with the `.res`, files
 over another spike count are skipped, and the reopened session corrects the same 40 rows),
 `test_waveform_quality.py` (the waveform view's quality dots -- the `waveformQuality` step: values equal
@@ -79,12 +79,12 @@ to numpy's on the `.spk` for parents and children, colours by the thresholds, th
 small cluster, where the dots are, the preference),
 `test_pref_pages.py` (the Preferences dialog at 1000 x 700: every page in a scroll area and drawn at
 the height it was laid out for, the Cluster view page scrolling to its last group),
-`test_core_cut.py` (the `coreCut` step, Actions > Split Off Spurious Spikes: a unit with 100 spikes of
+`test_core_cut.py` (the `coreCut` step, Split > Split Off Spurious Spikes: a unit with 100 spikes of
 another in it loses those and few of its own; a unit alone keeps three quarters or more; the same on
 children, the new child under the source's parent; its key is Ctrl+Space, the cut sensitivity of
 Preferences > Splitting reaches the analysis, and the page has the action's group -- the `prefPage`
 step, which builds the Preferences dialog without showing it),
-`test_burst_followers.py` (the `burstFollowers` step, Actions > Split Burst Followers: the followers of
+`test_burst_followers.py` (the `burstFollowers` step, Split > Split Burst Followers: the followers of
 one cluster's bursts found in another are split into one new cluster and nothing else moves; a correct
 clustering is left alone; with `"mixed": c`, two references sort a third cluster into one new cluster
 per reference; with `"children": true` on the child layer, the new child placed under the parent its

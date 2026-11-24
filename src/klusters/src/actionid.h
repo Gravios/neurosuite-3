@@ -8,12 +8,17 @@
  *   - the input registry's id where the action is mirrored there as an app
  *     command (KlustersApp::registerActionCommand: "sort.bySnr",
  *     "edit.undo", "file.save", ...);
- *   - else its menu path, "menu:Tools/New Cluster" — menu titles and the
- *     action text with mnemonics and a trailing ellipsis removed.
+ *   - else the id of its row in the command table (klusters_commands.cpp:
+ *     "tools.newCluster", "edit.preferences");
+ *   - else, for an entry without a row (what a plugin adds), its menu path,
+ *     "menu:Plugins/<name>" — menu titles and the action text with mnemonics
+ *     and a trailing ellipsis removed.
  *
+ * An id does not change when the command moves to another menu.
  * KlustersApp::actionCatalog() lists every menu-bar action with its id;
- * actionsById() resolves both forms for every action, so a stored id
- * survives an action gaining a registry id later.
+ * actionsById() also resolves an action's menu path, and the paths of the
+ * commands that were named by one before the menus were redistributed on
+ * 2026-11-24, so a stored id survives.
  *
  * Qt Core only (unit-tested in test/radiallayout_test.cpp).
  *

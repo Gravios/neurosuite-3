@@ -42,17 +42,17 @@ constexpr std::array<ActionIconSpec, 25> kTable{{
     { "action.updateErrorMatrix", S::Bundled, "update-error-matrix" },
     { "sort.bySimilarity",        S::Bundled, "reorder-by-similarity" },
     // Tools
-    { "menu:Tools/New Cluster",            S::Bundled, "new-cluster" },
-    { "menu:Tools/Split Clusters",         S::Bundled, "split-clusters" },
-    { "menu:Tools/Multi-Lasso",            S::Drawn,   "multi-lasso" },
-    { "menu:Tools/Split by Lassos",        S::Drawn,   "split-by-lassos" },
-    { "menu:Tools/Delete Artifact Spikes", S::Bundled, "delete-artifact-spikes" },
-    { "menu:Tools/Delete Noisy Spikes",    S::Bundled, "delete-noisy-spikes" },
+    { "tools.newCluster",            S::Bundled, "new-cluster" },
+    { "tools.splitClusters",         S::Bundled, "split-clusters" },
+    { "tools.multiLasso",            S::Drawn,   "multi-lasso" },
+    { "tools.applyMultiLasso",        S::Drawn,   "split-by-lassos" },
+    { "tools.deleteArtifactSpikes", S::Bundled, "delete-artifact-spikes" },
+    { "tools.deleteNoisySpikes",    S::Bundled, "delete-noisy-spikes" },
     // Traces
     { "trace.nextSpike",      S::Bundled, "next-spike" },
     { "trace.previousSpike",  S::Bundled, "previous-spike" },
     // Settings
-    { "menu:Settings/Preferences", S::Standard, "configure" },
+    { "edit.preferences", S::Standard, "configure" },
 }};
 
 // The two multi-lasso icons: two overlapping loops, dashed for the tool, filled in

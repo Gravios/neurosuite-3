@@ -211,9 +211,9 @@ for changing one is in [CORE_API.md](../../src/libneurosuite-core/docs/CORE_API.
 An action's icon is data, not a line at the action's creation site.
 
 1. **One table.** Every action icon is a row in the application's icon table,
-   keyed by the action's stable id — the input registry's id where the action
-   is mirrored there (`sort.bySnr`, `edit.undo`), else its menu path
-   (`menu:Tools/New Cluster`); the id rules live in `actionid.h`. The table is
+   keyed by the action's stable id — the id of its row in the command table
+   (`sort.bySnr`, `edit.undo`, `tools.newCluster`); the id rules live in
+   `actionid.h`. The table is
    applied in one pass once the actions exist. Do not call `setIcon()` where the
    action is created.
 2. **One loading form per kind:**

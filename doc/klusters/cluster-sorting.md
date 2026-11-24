@@ -1,6 +1,6 @@
 # Cluster sorting and reordering
 
-**Actions → Sort Clusters** collects the operations that change the
+**Clusters → Sort Clusters** collects the operations that change the
 *order* of clusters. They fall into two families:
 
 1. **Reorder by Similarity** — a matrix-driven seriation that places

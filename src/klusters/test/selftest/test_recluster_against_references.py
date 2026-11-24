@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Actions > Recluster > Recluster Against References: a mixed cluster sorted pooled with the
+"""Recluster > Recluster Against References: a mixed cluster sorted pooled with the
 clusters it is a mixture of; only the mixed cluster changes.
 
 Two synthetic units of 400 spikes.  150 spikes of each are moved into a third cluster (4, "the

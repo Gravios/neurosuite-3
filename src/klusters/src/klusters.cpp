@@ -413,81 +413,80 @@ void KlustersApp::createMenus()
     //Edit Menu
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
 
-    mUndo = addCommand(editMenu, "edit.undo");
+    mUndo = addCommand(nullptr, "edit.undo");
 
-    mRedo = addCommand(editMenu, "edit.redo");
+    mRedo = addCommand(nullptr, "edit.redo");
 
-    mCancelJob = addCommand(editMenu, "edit.cancelJob");
+    mCancelJob = addCommand(nullptr, "edit.cancelJob");
 
-    editMenu->addSeparator();
 
-    mSelectAllAction = addCommand(editMenu, "edit.selectAll");
+    mSelectAllAction = addCommand(nullptr, "edit.selectAll");
 
-    editMenu->addSeparator();
 
-    mSelectAllExceptAction = addCommand(editMenu, "edit.selectAllExcept");
+    mSelectAllExceptAction = addCommand(nullptr, "edit.selectAllExcept");
 
     //View menu: what the left column lists and shows.  Each entry starts checked
     //and holds until Klusters closes.
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setToolTipsVisible(true);
-    mShowReservedClusters = addCommand(viewMenu, "view.showReservedClusters");
-    viewMenu->addSeparator();
-    mShowChildPalette = addCommand(viewMenu, "view.showChildPalette");
-    mFollowSelectionInMatrices = addCommand(viewMenu, "view.followSelectionInMatrices");
-    mShowTemplatePalette = addCommand(viewMenu, "view.showTemplatePalette");
+    mShowReservedClusters = addCommand(nullptr, "view.showReservedClusters");
+    mShowChildPalette = addCommand(nullptr, "view.showChildPalette");
+    mFollowSelectionInMatrices = addCommand(nullptr, "view.followSelectionInMatrices");
+    mShowTemplatePalette = addCommand(nullptr, "view.showTemplatePalette");
 
-    //Actions menu
-    QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
-    mDeleteArtifact = addCommand(actionMenu, "action.deleteArtifact");
+    //The Clusters, Split, Recluster and Spikes menus
+    // Four menus by what a command does (2026-11-24; they were one "Actions" menu of 54).
+    // The commands are created below in their old order; layOutMenus() places them.
+    QMenu *clustersMenu = menuBar()->addMenu(tr("&Clusters"));
+    QMenu *splitMenu    = menuBar()->addMenu(tr("&Split"));
+    QMenu *reclusterMenu = menuBar()->addMenu(tr("&Recluster"));
+    QMenu *spikesMenu   = menuBar()->addMenu(tr("Sp&ikes"));
+    mDeleteArtifact = addCommand(nullptr, "action.deleteArtifact");
     connect(mDeleteArtifact, &QAction::triggered, this, [this]{ slotDeleteSelected(0); });
 
-    mDeleteNoisy = addCommand(actionMenu, "action.deleteNoisy");
+    mDeleteNoisy = addCommand(nullptr, "action.deleteNoisy");
     connect(mDeleteNoisy, &QAction::triggered, this, [this]{ slotDeleteSelected(1); });
 
-    mGroupeClusters = addCommand(actionMenu, "action.groupClusters");
+    mGroupeClusters = addCommand(nullptr, "action.groupClusters");
     connect(mGroupeClusters, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::groupClusters));
 
     //Time-chunk curation: step through the session one chunk at a time, with
     //only the chunk's clusters active (masking) so merge decisions are local.
-    actionMenu->addSeparator();
-    mChunkMode = addCommand(actionMenu, "action.chunkMode");
+    mChunkMode = addCommand(nullptr, "action.chunkMode");
 
-    mPrevChunk = addCommand(actionMenu, "action.prevChunk");
+    mPrevChunk = addCommand(nullptr, "action.prevChunk");
 
-    mNextChunk = addCommand(actionMenu, "action.nextChunk");
+    mNextChunk = addCommand(nullptr, "action.nextChunk");
 
-    mAutoMerge = addCommand(actionMenu, "action.autoMerge");
+    mAutoMerge = addCommand(nullptr, "action.autoMerge");
 
-    mPurgeSmallClusters = addCommand(actionMenu, "action.purgeSmallClusters");
+    mPurgeSmallClusters = addCommand(nullptr, "action.purgeSmallClusters");
 
-    mStripOutliers = addCommand(actionMenu, "action.stripOutliers");
+    mStripOutliers = addCommand(nullptr, "action.stripOutliers");
 
-    mStripWaveformOutliers = addCommand(actionMenu, "action.stripWaveformOutliers");
+    mStripWaveformOutliers = addCommand(nullptr, "action.stripWaveformOutliers");
 
-    mStripResidualOutliers = addCommand(actionMenu, "action.stripResidualOutliers");
+    mStripResidualOutliers = addCommand(nullptr, "action.stripResidualOutliers");
 
-    mSplitBurstFollowers = addCommand(actionMenu, "action.splitBurstFollowers");
+    mSplitBurstFollowers = addCommand(nullptr, "action.splitBurstFollowers");
 
-    mSplitOffSpurious = addCommand(actionMenu, "action.splitOffSpurious");
+    mSplitOffSpurious = addCommand(nullptr, "action.splitOffSpurious");
 
-    mSetObliqueBasis = addCommand(actionMenu, "action.setObliqueBasis");
+    mSetObliqueBasis = addCommand(nullptr, "action.setObliqueBasis");
 
-    mMarkAsTemplate = addCommand(actionMenu, "action.markAsTemplate");
+    mMarkAsTemplate = addCommand(nullptr, "action.markAsTemplate");
 
-    mGenerateTemplate = addCommand(actionMenu, "action.generateTemplate");
+    mGenerateTemplate = addCommand(nullptr, "action.generateTemplate");
 
-    mUpdateDisplay = addCommand(actionMenu, "action.updateDisplay");
+    mUpdateDisplay = addCommand(nullptr, "action.updateDisplay");
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
 
-    actionMenu->addSeparator();
 
-    mRenumberClusters = addCommand(actionMenu, "action.renumberClusters");
+    mRenumberClusters = addCommand(nullptr, "action.renumberClusters");
     connect(mRenumberClusters,&QAction::triggered, doc,&KlustersDoc::renumberClusters);
 
-    actionMenu->addSeparator();
 
-    mUpdateErrorMatrix = addCommand(actionMenu, "action.updateErrorMatrix");
+    mUpdateErrorMatrix = addCommand(nullptr, "action.updateErrorMatrix");
 
     // Open a mean-waveform residual matrix on the active display.  Diagnostic
     // display (asymmetric: cell(row A,col B) = variance of A's spikes about
@@ -495,7 +494,7 @@ void KlustersApp::createMenus()
     // Group the cluster-ordering actions under a "Sort Clusters" submenu; they
     // keep their shortcuts, icons, and enabled-state wiring -- only the parent
     // menu changes.
-    mClusterSortMenu = actionMenu->addMenu(tr("Sort Clusters"));
+    mClusterSortMenu = new QMenu(tr("Sort Clusters"), this);
     QMenu* sortMenu = mClusterSortMenu;
 
     mReorderClustersBySimilarity = addCommand(sortMenu, "sort.bySimilarity");
@@ -510,7 +509,7 @@ void KlustersApp::createMenus()
 
     mSortClustersByAmplitude = addCommand(sortMenu, "sort.byAmplitude");
 
-    mSortClustersByAmplitudeByChannel = addCommand(sortMenu, "sort.sortClustersByAmplitudeByChannel");
+    mSortClustersByAmplitudeByChannel = addCommand(sortMenu, "sort.byAmplitudeByChannel");
 
     mSortClustersByErrorPval = addCommand(sortMenu, "sort.byErrorPval");
 
@@ -520,24 +519,22 @@ void KlustersApp::createMenus()
 
     mSortByWaveformSpectral = addCommand(sortMenu, "sort.byWaveformSpectral");
 
-    actionMenu->addSeparator();
 
     // Recluster + split methods grouped into their own Actions submenu.
-    QMenu* reclusterMenu = actionMenu->addMenu(tr("&Recluster"));
 
-    mReCluster = addCommand(reclusterMenu, "recluster.recluster");
+    mReCluster = addCommand(nullptr, "recluster.recluster");
 
-    mReclusterMedian = addCommand(reclusterMenu, "recluster.median");
+    mReclusterMedian = addCommand(nullptr, "recluster.median");
 
-    mReclusterChannelVar = addCommand(reclusterMenu, "recluster.channelVar");
+    mReclusterChannelVar = addCommand(nullptr, "recluster.channelVar");
 
-    mReclusterAgainst = addCommand(reclusterMenu, "recluster.against");
+    mReclusterAgainst = addCommand(nullptr, "recluster.against");
 
-    mReclusterFiberKit = addCommand(reclusterMenu, "recluster.fiberkit");
+    mReclusterFiberKit = addCommand(nullptr, "recluster.fiberkit");
 
     // The ENGINE Recluster (Shift+R) runs: checkable, exclusive.  KlustaKwik and fiber-kit are
     // built in; populateReclusterEngineMenu adds one entry per installed `recluster` descriptor.
-    mReclusterEngineMenu = reclusterMenu->addMenu(tr("&Engine"));
+    mReclusterEngineMenu = new QMenu(tr("&Engine"), this);
     mReclusterEngineMenu->setToolTipsVisible(true);
     mReclusterEngineGroup = new QActionGroup(this);
     mReclusterEngineGroup->setExclusive(true);
@@ -556,26 +553,24 @@ void KlustersApp::createMenus()
     const QString engine = configuration().getReclusterEngine();
     (engine == QLatin1String("fiber-kit") ? mEngineFiberKit : mEngineKlustaKwik)->setChecked(true);
 
-    reclusterMenu->addSeparator();
 
-    mSplitByKnn = addCommand(reclusterMenu, "recluster.splitByKnn");
+    mSplitByKnn = addCommand(nullptr, "recluster.splitByKnn");
 
-    mStripByTemplate = addCommand(reclusterMenu, "recluster.stripByTemplate");
+    mStripByTemplate = addCommand(nullptr, "recluster.stripByTemplate");
 
-    mWatershed = addCommand(actionMenu, "action.watershed");
+    mWatershed = addCommand(nullptr, "action.watershed");
 
-    actionMenu->addSeparator();
 
-    mRealignSpikes = addCommand(actionMenu, "action.realignSpikes");
+    mRealignSpikes = addCommand(nullptr, "action.realignSpikes");
 
-    mPartitionByTime = addCommand(actionMenu, "action.partitionByTime");
+    mPartitionByTime = addCommand(nullptr, "action.partitionByTime");
 
-    mPcaAlignAllClusters = addCommand(actionMenu, "action.pcaAlignAllClusters");
+    mPcaAlignAllClusters = addCommand(nullptr, "action.pcaAlignAllClusters");
 
-    mSyncFeatureSpaces = addCommand(actionMenu, "action.syncFeatureSpaces");
+    mSyncFeatureSpaces = addCommand(nullptr, "action.syncFeatureSpaces");
 
-    mSupersampleX2 = addCommand(actionMenu, "space.supersample2");
-    mSupersampleX4 = addCommand(actionMenu, "space.supersample4");
+    mSupersampleX2 = addCommand(nullptr, "space.supersample2");
+    mSupersampleX4 = addCommand(nullptr, "space.supersample4");
     for (QAction* a : {mSupersampleX2, mSupersampleX4})
         a->setToolTip(tr("Build a waveform space with %1 spline-interpolated ticks per acquisition sample over the "
                          "shown space (its own .spk, PCA basis and features), listed under Space.  Realign and nudge in "
@@ -584,22 +579,21 @@ void KlustersApp::createMenus()
                          "Super-sampling enables it.").arg(a == mSupersampleX2 ? 2 : 4));
     connect(mSupersampleX2, &QAction::triggered, this, [this]() { slotSupersample(2); });
     connect(mSupersampleX4, &QAction::triggered, this, [this]() { slotSupersample(4); });
-    mExportBaseRate = addCommand(actionMenu, "space.exportBaseRate");
+    mExportBaseRate = addCommand(nullptr, "space.exportBaseRate");
 
-    mNextFeatureSpace = addCommand(actionMenu, "action.nextFeatureSpace");
+    mNextFeatureSpace = addCommand(nullptr, "action.nextFeatureSpace");
     connect(mNextFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(+1); });
-    mPreviousFeatureSpace = addCommand(actionMenu, "action.previousFeatureSpace");
+    mPreviousFeatureSpace = addCommand(nullptr, "action.previousFeatureSpace");
     connect(mPreviousFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(-1); });
 
-    mSortSpikesByTime = addCommand(actionMenu, "action.sortSpikesByTime");
+    mSortSpikesByTime = addCommand(nullptr, "action.sortSpikesByTime");
 
-    mDipSplit = addCommand(reclusterMenu, "recluster.dipSplit");
+    mDipSplit = addCommand(nullptr, "recluster.dipSplit");
 
-    actionMenu->addSeparator();
 
-    mGenerateProbeDrift = addCommand(actionMenu, "action.generateProbeDrift");
+    mGenerateProbeDrift = addCommand(nullptr, "action.generateProbeDrift");
 
-    mApplyDriftSiblings = addCommand(actionMenu, "action.applyDriftSiblings");
+    mApplyDriftSiblings = addCommand(nullptr, "action.applyDriftSiblings");
 
     //Tools menu
     QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
@@ -626,58 +620,53 @@ void KlustersApp::createMenus()
     //  normal-cursor click now jumps the trace to the picked time; see slotSingleNew's
     //  sibling cluster.pickTime command.)
 
-    //Waveforms menu
-    QMenu *waveFormsMenu = menuBar()->addMenu(tr("&Waveforms"));
-    timeFrameMode = addCommand(waveFormsMenu, "waveforms.timeFrame");
+    //View > Waveforms
+    QMenu *waveFormsMenu = new QMenu(tr("&Waveforms"), this);       // submenus of View
+    timeFrameMode = addCommand(nullptr, "waveforms.timeFrame");
 
-    overlayPresentation = addCommand(waveFormsMenu, "waveforms.overlay");
+    overlayPresentation = addCommand(nullptr, "waveforms.overlay");
 
-    meanPresentation = addCommand(waveFormsMenu, "waveforms.meanStd");
+    meanPresentation = addCommand(nullptr, "waveforms.meanStd");
 
-    waveFormsMenu->addSeparator();
 
-    mIncreaseAmplitude = addCommand(waveFormsMenu, "waveforms.increaseAmplitude");
+    mIncreaseAmplitude = addCommand(nullptr, "waveforms.increaseAmplitude");
 
-    mDecreaseAmplitude = addCommand(waveFormsMenu, "waveforms.decreaseAmplitude");
+    mDecreaseAmplitude = addCommand(nullptr, "waveforms.decreaseAmplitude");
 
-    //Correlations menu
-    QMenu *correlationsMenu = menuBar()->addMenu(tr("&Correlations"));
-    scaleByMax = addCommand(correlationsMenu, "correlations.scaleByMax");
+    //View > Correlations
+    QMenu *correlationsMenu = new QMenu(tr("C&orrelations"), this);
+    scaleByMax = addCommand(nullptr, "correlations.scaleByMax");
 
     QActionGroup *grp = new QActionGroup(this);
     grp->addAction(scaleByMax);
 
-    scaleByShouler = addCommand(correlationsMenu, "correlations.scaleByAsymptote");
+    scaleByShouler = addCommand(nullptr, "correlations.scaleByAsymptote");
     grp->addAction(scaleByShouler);
 
-    noScale = addCommand(correlationsMenu, "correlations.uniformScale");
+    noScale = addCommand(nullptr, "correlations.uniformScale");
     grp->addAction(noScale);
 
-    correlationsMenu->addSeparator();
 
-    shoulderLine = addCommand(correlationsMenu, "correlations.asymptoteLine");
+    shoulderLine = addCommand(nullptr, "correlations.asymptoteLine");
 
-    correlationsMenu->addSeparator();
 
-    mIncreaseAmplitudeCorrelation = addCommand(correlationsMenu, "correlations.increaseAmplitude");
+    mIncreaseAmplitudeCorrelation = addCommand(nullptr, "correlations.increaseAmplitude");
 
-    mDecreaseAmplitudeCorrelation = addCommand(correlationsMenu, "correlations.decreaseAmplitude");
+    mDecreaseAmplitudeCorrelation = addCommand(nullptr, "correlations.decreaseAmplitude");
 
-    //Traces menu
-    QMenu *traceMenu = menuBar()->addMenu(tr("T&races"));
-    mIncreaseChannelAmplitudes = addCommand(traceMenu, "trace.increaseChannelAmplitudes");
+    //View > Traces
+    QMenu *traceMenu = new QMenu(tr("Tr&aces"), this);
+    mIncreaseChannelAmplitudes = addCommand(nullptr, "trace.increaseChannelAmplitudes");
 
-    mDecreaseChannelAmplitudes = addCommand(traceMenu, "trace.decreaseChannelAmplitudes");
+    mDecreaseChannelAmplitudes = addCommand(nullptr, "trace.decreaseChannelAmplitudes");
 
-    traceMenu->addSeparator();
 
-    mNextSpike = addCommand(traceMenu, "trace.nextSpike");
+    mNextSpike = addCommand(nullptr, "trace.nextSpike");
 
-    mPreviousSpike = addCommand(traceMenu, "trace.previousSpike");
+    mPreviousSpike = addCommand(nullptr, "trace.previousSpike");
 
-    traceMenu->addSeparator();
 
-    showHideLabels = addCommand(traceMenu, "trace.showLabels");
+    showHideLabels = addCommand(nullptr, "trace.showLabels");
 
     //Displays menu
     QMenu *displayMenu = menuBar()->addMenu(tr("&Displays"));
@@ -709,8 +698,8 @@ void KlustersApp::createMenus()
     hierarchyMenu->addSeparator();
     mMergeChildren = addCommand(hierarchyMenu, "hierarchy.mergeChildren");
     mMergeAllChildren = addCommand(hierarchyMenu, "hierarchy.flatten");
-    mUndoChildEdit = addCommand(hierarchyMenu, "hierarchy.undoChildEdit");
-    mRedoChildEdit = addCommand(hierarchyMenu, "hierarchy.redoChildEdit");
+    mUndoChildEdit = addCommand(nullptr, "hierarchy.undoChildEdit");
+    mRedoChildEdit = addCommand(nullptr, "hierarchy.redoChildEdit");
     newClusterDisplay = addCommand(displayMenu, "display.newCluster");
 
     newWaveformDisplay = addCommand(displayMenu, "display.newWaveform");
@@ -737,44 +726,40 @@ void KlustersApp::createMenus()
 
     mCloseActiveDisplay = addCommand(displayMenu, "display.closeActive");
 
-    //Settings menu
-    QMenu *settingsMenu = menuBar()->addMenu(tr("&Settings"));
+    //The toolbar toggles, the point size and the update mode (View), Preferences (Edit)
+    QMenu *toolbarsMenu = new QMenu(tr("Tool&bars and Panels"), this);   // was the Settings menu
 
-    viewMainToolBar = addCommand(settingsMenu, "settings.viewMainToolBar");
+    viewMainToolBar = addCommand(nullptr, "view.showMainToolbar");
 
-    viewActionBar = addCommand(settingsMenu, "settings.viewActionBar");
+    viewActionBar = addCommand(nullptr, "view.showActionsToolbar");
 
-    viewToolBar = addCommand(settingsMenu, "settings.viewToolBar");
+    viewToolBar = addCommand(nullptr, "view.showToolsToolbar");
 
-    viewParameterBar = addCommand(settingsMenu, "settings.viewParameterBar");
+    viewParameterBar = addCommand(nullptr, "view.showParametersToolbar");
 
-    viewClusterInfo = addCommand(settingsMenu, "settings.viewClusterInfo");
+    viewClusterInfo = addCommand(nullptr, "view.showClusterInfo");
 
-    mViewStatusBar = addCommand(settingsMenu, "settings.viewStatusBar");
+    mViewStatusBar = addCommand(nullptr, "view.showStatusBar");
 
-    settingsMenu->addSeparator();
 
-    mIncreasePointSize = addCommand(settingsMenu, "settings.increasePointSize");
+    mIncreasePointSize = addCommand(nullptr, "view.increasePointSize");
     mIncreasePointSize->setShortcuts({QKeySequence(Qt::Key_Equal),
                                       QKeySequence(Qt::SHIFT | Qt::Key_Equal)});
 
-    mDecreasePointSize = addCommand(settingsMenu, "settings.decreasePointSize");
+    mDecreasePointSize = addCommand(nullptr, "view.decreasePointSize");
     mDecreasePointSize->setShortcuts({QKeySequence(Qt::Key_Minus),
                                       QKeySequence(Qt::Key_Underscore)});
 
-    settingsMenu->addSeparator();
 
-    mImmediateSelection = addCommand(settingsMenu, "settings.immediateSelection");
+    mImmediateSelection = addCommand(nullptr, "view.immediateUpdate");
     grp = new QActionGroup(this);
     grp->addAction(mImmediateSelection);
 
-    mDelaySelection = addCommand(settingsMenu, "settings.delaySelection");
+    mDelaySelection = addCommand(nullptr, "view.delayedUpdate");
     grp->addAction(mDelaySelection);
 
-    settingsMenu->addSeparator();
-    mPreferenceAction = addCommand(settingsMenu, "settings.preferenceAction");
+    mPreferenceAction = addCommand(nullptr, "edit.preferences");
 
-    settingsMenu->addSeparator();
 
     mPluginsMenu = menuBar()->addMenu(tr("&Plugins"));
     mPluginsMenu->setToolTipsVisible(true);
@@ -791,6 +776,47 @@ void KlustersApp::createMenus()
     QAction *about = helpMenu->addAction(tr("About"));
     connect(about,&QAction::triggered, this,&KlustersApp::slotAbout);
 
+
+    // ── The layout of the menus whose commands were created above without a place ──
+    // nullptr is a separator.  File, Tools, Displays, Hierarchy, Plugins and Help are filled
+    // where their commands are created.
+    auto fill = [](QMenu* m, std::initializer_list<QAction*> actions) {
+        for (QAction* a : actions) { if (a) m->addAction(a); else m->addSeparator(); }
+    };
+    fill(editMenu, { mUndo, mRedo, mUndoChildEdit, mRedoChildEdit, nullptr, mCancelJob, nullptr,
+                     mSelectAllAction, mSelectAllExceptAction, nullptr, mPreferenceAction });
+    fill(waveFormsMenu, { timeFrameMode, overlayPresentation, meanPresentation, nullptr,
+                          mIncreaseAmplitude, mDecreaseAmplitude });
+    fill(correlationsMenu, { scaleByMax, scaleByShouler, noScale, nullptr, shoulderLine, nullptr,
+                             mIncreaseAmplitudeCorrelation, mDecreaseAmplitudeCorrelation });
+    fill(traceMenu, { mIncreaseChannelAmplitudes, mDecreaseChannelAmplitudes, nullptr,
+                      mNextSpike, mPreviousSpike, nullptr, showHideLabels });
+    fill(toolbarsMenu, { viewMainToolBar, viewActionBar, viewToolBar, viewParameterBar, viewClusterInfo, mViewStatusBar });
+    fill(viewMenu, { mShowReservedClusters, nullptr, mShowChildPalette, mFollowSelectionInMatrices, mShowTemplatePalette, nullptr,
+                     mChunkMode, mPrevChunk, mNextChunk, nullptr, mNextFeatureSpace, mPreviousFeatureSpace, nullptr,
+                     mUpdateDisplay, mUpdateErrorMatrix, nullptr });
+    viewMenu->addMenu(waveFormsMenu);
+    viewMenu->addMenu(correlationsMenu);
+    viewMenu->addMenu(traceMenu);
+    viewMenu->addSeparator();
+    viewMenu->addMenu(toolbarsMenu);
+    fill(viewMenu, { mIncreasePointSize, mDecreasePointSize, nullptr, mImmediateSelection, mDelaySelection });
+
+    fill(clustersMenu, { mGroupeClusters, mDeleteArtifact, mDeleteNoisy, nullptr,
+                         mRenumberClusters, mPurgeSmallClusters, mAutoMerge, nullptr,
+                         mMarkAsTemplate, mGenerateTemplate, nullptr });
+    clustersMenu->addMenu(mClusterSortMenu);
+    fill(splitMenu, { mWatershed, mDipSplit, mSplitByKnn, mPartitionByTime, nullptr,
+                      mSplitBurstFollowers, mSplitOffSpurious, nullptr,
+                      mStripOutliers, mStripWaveformOutliers, mStripResidualOutliers, mStripByTemplate, nullptr,
+                      mSetObliqueBasis });
+    fill(reclusterMenu, { mReCluster, mReclusterMedian, mReclusterChannelVar, mReclusterAgainst, mReclusterFiberKit, nullptr });
+    reclusterMenu->addMenu(mReclusterEngineMenu);
+    fill(spikesMenu, { mRealignSpikes, mPcaAlignAllClusters, nullptr, mSortSpikesByTime, mSyncFeatureSpaces, nullptr,
+                       mSupersampleX2, mSupersampleX4, mExportBaseRate, nullptr,
+                       mGenerateProbeDrift, mApplyDriftSiblings });
+    // Hierarchy sits with the other editing menus, before Tools.
+    menuBar()->insertMenu(toolsMenu->menuAction(), hierarchyMenu);
     //Custom connections
     connect(clusterPalette, &ClusterPalette::singleChangeColor, this, &KlustersApp::slotSingleColorUpdate);
     connect(clusterPalette, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotUpdateShownClusters);
@@ -2492,7 +2518,7 @@ void KlustersApp::registerInputBindings()
                           decollideLassoAgainstBasis(rows, basis); });
                   } else {
                       slotStatusMsg(tr("Decollide: pin a 2-cluster oblique basis first "
-                                       "(Actions > Set Oblique Basis), then Enter=cut, D=decollide."));
+                                       "(Split > Set Oblique Basis), then Enter=cut, D=decollide."));
                   }
               });
     }
@@ -3019,7 +3045,7 @@ void KlustersApp::initDisplay(){
     //   Display → New Grouping Assistant Display
     //   (within GA) add Error Matrix dock
     //   (within GA) add Template Matrix dock
-    //   Actions → Update Error Matrix
+    //   View → Update Error Matrix
     // on every document open.
     //
     // The matrices are added directly to the Overview Display rather
@@ -8009,7 +8035,7 @@ void KlustersApp::slotResidualMatrixInteracted()
 // ---------------------------------------------------------------------------
 // slotNewResidualMatrix — add a ResidualMatrixView dock to the active display.
 // Mirrors the auto-show path for the error/template matrices but is user-
-// initiated from the Actions menu, so a residual matrix can be opened on
+// initiated from the menus, so a residual matrix can be opened on
 // demand (it is not part of the default auto-show layout).
 // ---------------------------------------------------------------------------
 void KlustersApp::slotNewResidualMatrix()
@@ -8449,7 +8475,7 @@ void KlustersApp::slotSplitClusterByKnn()
     outer->addWidget(intro);
 
     QFormLayout* form = new QFormLayout();
-    // Prefill from the persisted user preferences (Settings → Preferences →
+    // Prefill from the persisted user preferences (Edit → Preferences →
     // General → KNN voting split).  On accept we write the values back so
     // the dialog also acts as a "remember last-used" knob — matches what
     // the user expects when the same action is invoked repeatedly during a
@@ -8483,7 +8509,7 @@ void KlustersApp::slotSplitClusterByKnn()
     const int    minRef      = minRefBox->value();
 
     // Persist the user's choices so the next Shift+K invocation prefills
-    // them (and so the values surface in Settings → Preferences).  Done
+    // them (and so the values surface in Edit → Preferences).  Done
     // unconditionally on accept, before any chance of an early return
     // from the actual split — even a "no useful split" result is
     // informative about the user's intent for the next attempt.

@@ -2191,7 +2191,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         if (nCrossed > 0) {
             log << "WARNING: " << nCrossed << " spike(s) of this cluster now come before the "
                    "previous spike of the same cluster in time.  Correlograms and ISI\n"
-                   "         assume each cluster's rows are in time order: run Actions > "
+                   "         assume each cluster's rows are in time order: run Spikes > "
                    "Sort Spikes by Time after saving.\n";
             emitFlush();
         }

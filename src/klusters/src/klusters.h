@@ -543,13 +543,13 @@ private Q_SLOTS:
     /** The Parameters-toolbar feature-space combo was used: load that method
      *  space's .fet/.spk under the open .clu (KlustersDoc::switchFeatureSpace). */
     void slotFeatureSpaceActivated(int index);
-    /** Actions > Sync Feature Spaces: re-extract and re-project every other
+    /** Spikes > Sync Feature Spaces: re-extract and re-project every other
      *  method space at this session's spike times (KlustersDoc::syncAllFeatureSpaces). */
     void slotSyncFeatureSpaces();
     /** Build the super-sampled space over the shown one (factor 2 or 4) and show it;
      *  offers to Save As into it so realign / nudge run there (KlustersDoc::buildSupersampledSpace). */
     void slotSupersample(int factor);
-    /** Actions > Export at the Recording's Sampling: KlustersDoc::exportAtBaseRate. */
+    /** Spikes > Export at the Recording's Sampling: KlustersDoc::exportAtBaseRate. */
     void slotExportBaseRate();
 
 public:
@@ -625,7 +625,7 @@ public:
     /** Show the next (@p step +1) or previous (-1) usable space of the Space
      *  box, wrapping around; same path as picking it in the box. */
     void slotCycleFeatureSpace(int step);
-    /** Actions > Sort Spikes by Time: put the group's spike rows back in time
+    /** Spikes > Sort Spikes by Time: put the group's spike rows back in time
      *  order in every row-indexed file, then reopen (KlustersDoc::planTimeSort). */
     void slotSortSpikesByTime();
     /** Shift timestamps of the selected cluster by ±1 sample. */
@@ -757,9 +757,9 @@ public:
     void slotErrorMatrixInteracted();
     void slotTemplateMatrixInteracted();
     void slotResidualMatrixInteracted();
-    /** Add a ResidualMatrixView dock to the active display (Actions menu). */
+    /** Add a ResidualMatrixView dock to the active display (Displays menu). */
     void slotNewResidualMatrix();
-    /** Add a DriftMatrixView dock to the active display (Actions menu). */
+    /** Add a DriftMatrixView dock to the active display (Displays menu). */
     void slotNewDriftMatrix();
 
     /**Select all the clusters.*/
@@ -779,7 +779,7 @@ public:
     /** Recluster the selected cluster(s) forcing the raw-waveform
      *  median-residual feature path (pooled median) for this run only (Shift+M). */
     void slotReclusterMedianResidual();
-    /** Actions > Recluster > Recluster Against References…: of the selected clusters one is a
+    /** Recluster > Recluster Against References…: of the selected clusters one is a
      *  mixture of the others.  Asks which, sorts the pool, and replaces ONLY the mixed cluster,
      *  by the pieces of it the sorter's clusters hold; the references are not changed. */
     void slotReclusterAgainstReferences();
@@ -1569,7 +1569,7 @@ private:
     QAction *mReCluster;
     QAction *mReclusterMedian;
     QAction *mReclusterFiberKit = nullptr;   // Recluster with fiber-kit (a plan on the selection's sub-session)
-    /** Actions > Recluster > Engine: checkable, exclusive -- the ACTIVE engine Recluster (Shift+R)
+    /** Recluster > Engine: checkable, exclusive -- the ACTIVE engine Recluster (Shift+R)
      *  runs.  KlustaKwik and fiber-kit are built in; one more per installed `recluster` descriptor
      *  (rebuilt by populatePluginsMenu).  The radial menu's Recluster > Plugin ring shows them, the
      *  checked one with its dot. */
@@ -1602,7 +1602,7 @@ private:
     void showReclusterAgainstSummary(bool settled);
     QStringList reclusterAgainstShown;
     bool reclusterAgainstSettlePending = false;
-    QAction *mReclusterAgainst = nullptr;    // Actions > Recluster > Recluster Against References…
+    QAction *mReclusterAgainst = nullptr;    // Recluster > Recluster Against References…
     /** The plugin a Subsession recluster runs (a `recluster` descriptor), with its parameters; unset
      *  (reclusterPluginSet false) = the preferences' fiber-kit command. */
     KlustersPlugin reclusterPlugin;
@@ -1629,16 +1629,16 @@ private:
      *  commit (Save) or discard (close without saving) the batch as a
      *  whole.*/
     QAction *mPcaAlignAllClusters;
-    QAction *mSyncFeatureSpaces = nullptr;   ///< Actions > Sync Feature Spaces
-    QAction *mSupersampleX2 = nullptr;       ///< Actions > Super-sample x2 (a super-sampled waveform space; Preferences gate)
-    QAction *mSupersampleX4 = nullptr;       ///< Actions > Super-sample x4
+    QAction *mSyncFeatureSpaces = nullptr;   ///< Spikes > Sync Feature Spaces
+    QAction *mSupersampleX2 = nullptr;       ///< Spikes > Super-sample x2 (a super-sampled waveform space; Preferences gate)
+    QAction *mSupersampleX4 = nullptr;       ///< Spikes > Super-sample x4
     /** A super-sampled .clu opened while its .spk was missing: the session was opened
      *  through the base space instead and, once the space is rebuilt, saved back under
      *  this url and reopened (applySupersampleMode).  Empty otherwise. */
     QString  mSupersampleReopenUrl;
-    QAction *mSortSpikesByTime  = nullptr;   ///< Actions > Sort Spikes by Time
-    QAction *mNextFeatureSpace     = nullptr;   ///< Actions > Next Feature Space (Ctrl+Tab)
-    QAction *mPreviousFeatureSpace = nullptr;   ///< Actions > Previous Feature Space (Ctrl+Shift+Tab)
+    QAction *mSortSpikesByTime  = nullptr;   ///< Spikes > Sort Spikes by Time
+    QAction *mNextFeatureSpace     = nullptr;   ///< View > Next Feature Space (Ctrl+Tab)
+    QAction *mPreviousFeatureSpace = nullptr;   ///< View > Previous Feature Space (Ctrl+Shift+Tab)
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;

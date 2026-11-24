@@ -5,8 +5,8 @@ by normalized circular cross-correlation, correcting jitter in
 threshold-crossing detection. It is used interactively in Klusters and by
 KiloKlustaKwik as Phase 1.5 of chunked CEM sorting.
 
-In Klusters it is **Actions → Realign Spikes…** (`Shift+L`), which realigns
-the first selected cluster of the active display, and **Actions →
+In Klusters it is **Spikes → Realign Spikes…** (`Shift+L`), which realigns
+the first selected cluster of the active display, and **Spikes →
 Align All Clusters** (`Shift+P`), which runs it, with the same settings, over
 every cluster except 0 and 1.
 
@@ -34,7 +34,7 @@ The realignment runs once per cluster:
    - (b) Re-extract the shifted waveform from the `.fil` (or `.dat`) at the new timestamp.
    - (c) Write the new waveform to the `.spk` in the same row.
    - (d) Re-project it through the PCA basis of the session method (`.pca.<method>.N`) and update the `.fet.<method>.N` row.
-   - (e) Rows are never reordered, so every method's files and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's; **Actions → Sort Spikes by Time** puts the rows back in time order.
+   - (e) Rows are never reordered, so every method's files and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's; **Spikes → Sort Spikes by Time** puts the rows back in time order.
 
 Sign convention (consistent with `realign_xcorr.h`): a positive shift `τ` means the spike peak is *late* by `τ` samples relative to the template. Correcting by `newTimestamp = oldTimestamp + τ` moves the spike earlier in the waveform window so its peak aligns with the template.
 
@@ -64,7 +64,7 @@ views switch to the Overview Display with the realigned cluster selected, and
 the change is written by the next Save.
 To discard it, use **Undo** (`Ctrl+Z`) or close without saving.
 
-The settings are in **Settings → Preferences → Refinement → Realignment
+The settings are in **Edit → Preferences → Refinement → Realignment
 (built-in xcorr)**: threshold (minimum score), iterations, maximum shift
 (0 = automatic) and an optional post-alignment pass. See
 [Spike realignment](../klusters/README.md#spike-realignment) in the Klusters

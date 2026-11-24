@@ -31,7 +31,7 @@ H = lambda **k: {"hierarchy": k}          # noqa: E731
 AE = {"actionsEnabled": True}
 BUSY = {"actionsEnabled": True, "whileBusy": True}
 FREE = {"action.nextChunk", "action.prevChunk", "action.updateDisplay", "action.updateErrorMatrix", "action.setObliqueBasis"}
-MENUS = ("menu:Tools/", "menu:Hierarchy/", "menu:Actions/Sort Spikes by Time", "menu:Actions/Sync Feature Spaces")
+MENUS = ("tools.",)
 
 
 def editing(i):
