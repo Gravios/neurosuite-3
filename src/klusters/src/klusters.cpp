@@ -6227,10 +6227,11 @@ void KlustersApp::slotMergeOrphanParents(){
                       "parents they were compared with are not changed.  The details list every orphan.")
                        .arg(nOrphans).arg(where).arg(minSpikes).arg(nTemplates)
                        .arg(besideOrphans).arg(besideMerges).arg(minCorr, 0, 'f', 2).arg(stay);
-    if(besideMerges > nbUndo)
-        text += tr("\n\nUndo takes the whole command back in one step, but each new parent is one "
-                   "level of the undo depth and only the last %1 are kept: Undo will take back "
-                   "only those (Preferences ▸ General ▸ Session).").arg(nbUndo);
+    if(besideMerges > Data::maxUndoLevels())
+        text += tr("\n\nUndo takes a command back in one step, but this one makes %1 new parents and "
+                   "Klusters keeps at most %2 changes for one (ten times the undo depth, Preferences ▸ "
+                   "General ▸ Session): Undo will take back only the last %2.")
+                    .arg(besideMerges).arg(Data::maxUndoLevels());
     QMessageBox box(QMessageBox::Question, tr("Merge Orphan Parents"), text,
                     QMessageBox::Yes | QMessageBox::No, this);
     box.setDefaultButton(QMessageBox::Yes);
@@ -6339,11 +6340,12 @@ void KlustersApp::slotBreakUpParents(){
                 (keepers.isEmpty() ? QStringLiteral(".") : tr(", and %1.").arg(keepers.join(QStringLiteral(", "))));
     text += QStringLiteral("\n\n") + tr("Every child keeps its id.  The details list every child with its best match.");
     const int steps = static_cast<int>(moves.size()) + own;
-    if(steps > nbUndo)
+    if(steps > Data::maxUndoLevels())
         text += QStringLiteral("\n\n") +
-                tr("Undo takes the whole command back in one step, but it needs %1 levels of the undo depth and "
-                   "only the last %2 are kept: Undo will take back only those (Preferences ▸ General ▸ Session).")
-                    .arg(steps).arg(nbUndo);
+                tr("Undo takes a command back in one step, but this one makes %1 changes and Klusters keeps at "
+                   "most %2 for one (ten times the undo depth, Preferences ▸ General ▸ Session): Undo will take "
+                   "back only the last %2.")
+                    .arg(steps).arg(Data::maxUndoLevels());
     QMessageBox box(QMessageBox::Question, title, text, QMessageBox::Yes | QMessageBox::No, this);
     box.setDefaultButton(QMessageBox::Yes);
     box.setDetailedText(details.join(QLatin1Char('\n')));

@@ -21,6 +21,9 @@ child labelling to restore.
   7. a change to the children that is no edit of one is a step of its own: an id compaction
      that moved only atoms is undone alone, and the child merge before it by the next Undo
      (undoing the merge took the compaction along).
+  8. the depth counts steps: at depth 2, a child merge and then a promotion of three children
+     (three levels) are two steps and both are undone whole (the promotion lost its first
+     level and the merge could not be reached), and the log writes all three moves bad.
 Also: Ctrl+Z with nothing to undo flips no log entry.
 """
 import json
@@ -184,6 +187,24 @@ def main():
               "(merge 2 + 3 with renumbering on: clusters 2 and 3 afterwards)", pal[1] if len(pal) > 1 else pal)
         check(len(pal) == 4 and pal[2] == pal[0], "ONE Undo takes back the merge and the renumbering (it took two)", pal[2] if len(pal) > 2 else pal)
         check(len(pal) == 4 and pal[3] == pal[1], "one Redo makes both again")
+
+    # ---- 8. the depth counts steps, not levels
+    with tempfile.TemporaryDirectory() as d:
+        base = hier(d, "n")
+        rep = R.run(klusters, f"{base}.clu.{M}.1",
+                    [H(), H(mergeChildren=[20000, 20001]), H(promoteChildren=[20004, 20005, 20006]), H(undo=True), H(undo=True),
+                     H(redo=True), H(redo=True), H(undo=True), {"save": True}], d, timeout=900, autoRenumber=False, nbUndo=2)
+        res = [r for r in rep.get("results", []) if "childParents" in r]
+        start, cm, prom, u1, u2, r1, r2, u3 = res
+        check(prom.get("undoSteps") == 2, "depth 2: a child merge and a promotion of three children are two steps", prom.get("undoSteps"))
+        check(kids(u1) == kids(cm) and u1["parentSizes"] == cm["parentSizes"],
+              "Undo takes the whole promotion back (three levels at depth 2: it lost the first)", (kids(u1), u1["parentSizes"]))
+        check(kids(u2) == kids(start) and u2.get("undoSteps") == 0, "the next Undo reaches the child merge", kids(u2))
+        check(kids(r2) == kids(prom) and r2["parentSizes"] == prom["parentSizes"], "two Redos make both again", kids(r2))
+        check(kids(u3) == kids(cm), "... and the promotion undoes again")
+        st = status(T.log_lines(d, "n"))
+        check([v[1] for k, v in sorted(st.items()) if v[0] == "MOVE_SPIKES"] == ["bad"] * 3,
+              "the log: the three moves are bad (the buffer keeps the entries of the steps)", st)
 
     # ---- 7. an atom-only compaction is its own step
     with tempfile.TemporaryDirectory() as d:

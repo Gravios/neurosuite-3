@@ -4300,6 +4300,11 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     }
 }
 
+static int undoLevelsNeeded = 0;      // by the document's undo history (KlustersDoc::pushUndoEntry)
+int  Data::maxUndoLevels() { return undoLevelsPerStep * qMax(1, nbUndo); }
+int  Data::undoLevelCap() { return qMin(maxUndoLevels(), qMax(qMax(1, nbUndo), undoLevelsNeeded)); }
+void Data::setUndoLevelsNeeded(int levels) { undoLevelsNeeded = levels; }
+
 QVector<dataType> Data::labelsOfLastUndoLevel() const
 {
     if (undoSnapshots.isEmpty() || !undoSnapshots.first() || !undoSnapshots.first()->spikesByCluster)
@@ -4730,10 +4735,10 @@ void Data::prepareUndo(SortableTable* spikesByClusterTemp,ClusterInfoMap* cluste
 
     //if the number of undo has been reached, remove the oldest element
     //(the shared_ptr releases the epoch — tables, stores — with its last reference)
-    int currentNbUndo = undoSnapshots.count();
-    if(currentNbUndo > nbUndo){
-        undoSnapshots.removeAt(currentNbUndo - 1);
-        dimensionChangedUndo.removeAt(currentNbUndo - 1);
+    //(levels, not steps: see undoLevelCap().  A loop, since the cap also falls.)
+    while(undoSnapshots.count() > undoLevelCap()){
+        undoSnapshots.removeLast();
+        if(!dimensionChangedUndo.isEmpty()) dimensionChangedUndo.removeLast();
     }
 
     //Clear the redo history (including dimensionChangedRedo which must stay in sync)

@@ -106,9 +106,9 @@ void KlustersDoc::prepareClusterColorUndo(){
     clusterColorList = clusterColorListTemp;
 
     //if the number of undo has been reach remove the last element in the undo list (first inserted)
-    int currentClusterColorsNbUndo = clusterColorListUndoList.count();
-    if(currentClusterColorsNbUndo > nbUndo)
-        delete clusterColorListUndoList.takeAt(currentClusterColorsNbUndo - 1);
+    //(levels, not steps: Data::undoLevelCap)
+    while(clusterColorListUndoList.count() > Data::undoLevelCap())
+        delete clusterColorListUndoList.takeLast();
 
     //Clear the redoList
     qDeleteAll(clusterColorListRedoList);
@@ -138,7 +138,7 @@ void KlustersDoc::prepareUndo(ClusterEditUndo action){
     //if the number of undo has been reached remove the last element in the
     //undo list (first inserted); prepareClusterColorUndo() capped the color
     //stack the same way, keeping the two in lockstep.
-    if(editUndoList.count() > nbUndo)
+    while(editUndoList.count() > Data::undoLevelCap())
         editUndoList.removeLast();
 
     //Clear the redoList: the actions which could be redone are now lost,
@@ -204,6 +204,7 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
         // The shared history is as deep as the new depth; what it dropped cannot be redone.
         while (undoTimeline.size() > qMax(1, newNbUndo)) undoTimeline.removeLast();
         redoTimeline.clear();
+        Data::setUndoLevelsNeeded(0);
         refreshUndoRedoEnable();
     }
 }

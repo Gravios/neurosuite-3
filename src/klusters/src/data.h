@@ -960,6 +960,18 @@ public:
      *  level.  KlustersDoc keeps it with a child edit so that undoing the edit
      *  restores that state itself, whatever was pushed on this history since. */
     QVector<dataType> labelsOfLastUndoLevel() const;
+    /** How many undo LEVELS the histories keep (this one, the document's colour and
+     *  edit lists, the views' lists -- every one trims to it at a push).
+     *
+     *  The undo depth of the preferences counts STEPS.  A step is one command, and
+     *  a command can push many levels (Break Up: one per new parent), so the levels
+     *  kept are those of the last `nbUndo` steps: the document says how many it
+     *  needs (setUndoLevelsNeeded) and this is never below the depth itself.
+     *  maxUndoLevels() bounds it: each level holds a labelling. */
+    static int  undoLevelCap();
+    static void setUndoLevelsNeeded(int levels);
+    static int  maxUndoLevels();                 ///< undoLevelsPerStep x the depth
+    static constexpr int undoLevelsPerStep = 10;
 
     /** Compute the feature-space centroid for every cluster currently in memory.
      *  Returns a map: clusterId → centroid vector of length (nbDimensions-1).

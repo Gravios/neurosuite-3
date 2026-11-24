@@ -86,11 +86,10 @@ outstanding from the Qt 6.4–6.12 work: the per-release matrix covers
 The audit fixed five faults and the single undo history closed the four behaviour gaps
 (CHANGELOG, 2026-11-24, two entries).  Left:
 
-- **A command larger than the depth.**  One Undo takes a whole hierarchy command back, but each
-  parent it creates is one level of the depth (20 by default): a Break Up into 30 parents is
-  undone for its last 20 only, and the box says so before it runs.  Wanted: one level per
-  command (the labelling before and after), which needs `Data` to open and close a level
-  explicitly.
+- **Memory of a large command.**  The depth counts steps, and a step keeps every level it
+  pushed (up to ten times the depth): a Break Up into 100 parents holds 100 labellings until
+  it leaves the history.  Wanted: one level per command, which needs `Data` to open and close
+  a level explicitly and one merged edit descriptor for the views.
 - **Not undoable**: realign (the automatic ones too), nudge, Sort Spikes by Time, the `.cli`
   annotations.
 - **Memory**: every level of the history holds one atom labelling (4 bytes a spike) next to the

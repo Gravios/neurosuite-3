@@ -1659,7 +1659,7 @@ void KlustersView::prepareUndo(QList<int>* removedClustersTemp){
     ++numberUndo;
 
     //if the number of undo has been reach remove the last elements in the undo list (first ones inserted)
-    if(numberUndo > nbUndo){
+    while(numberUndo > Data::undoLevelCap()){       // levels, not steps (Data::undoLevelCap)
         delete removedClustersUndoList.takeAt(numberUndo - 1);
         --numberUndo;
     }

@@ -251,10 +251,9 @@ fiber at or above it a template. A high threshold merges little. A fiber
 with few spikes has a noisy mean waveform, so its correlation with a template
 stays well below 1 even when it is the same unit: at 0.99 often no orphan
 matches at all. The noise and artefact clusters and the reserved chunk clusters
-take no part. **Edit → Undo** takes the whole command back in one step. Each new
-fiber is one level of the undo depth (**Preferences → General → Session**, 20 by
-default), so a plan with more fibers than that is only partly undone; the box
-says so.
+take no part. **Edit → Undo** takes the whole command back in one step. Only a
+plan with more new fibers than ten times the undo depth (**Preferences → General
+→ Session**; 200 at the default of 20) is partly undone, and the box says so.
 
 ### Break Up Parent by Template
 
@@ -275,9 +274,9 @@ it belongs to.
    and correlation. Nothing changes until it is accepted.
 
 Every atom keeps its id. **Edit → Undo** takes the whole command back in one
-step. The atoms going to the same target are one level of the undo depth and
-each new fiber is another, so the box says so when the plan needs more levels
-than the depth (**Preferences → General → Session**) keeps.
+step. Only a plan of more changes (one per target and one per new fiber) than
+ten times the undo depth (**Preferences → General → Session**) is partly
+undone, and the box says so.
 The selection lands on every fiber that received an atom or now holds one. A
 fiber whose only atom matches nothing is left as it is.
 
@@ -311,6 +310,8 @@ on the atoms, and whichever layer is shown.
   `Ctrl+Shift+Y`) undoes the most recent edit only when it is an atom edit. It
   does not step over a newer fiber edit: undo that first.
 - The depth is **Preferences → General → Session** (20 by default; it was 2).
+  It counts steps: a command that makes many changes is one, and is kept whole
+  up to ten times the depth in changes.
   A 2 saved while that was the default is raised to 20 once; any other saved
   value is kept.
 - Not undoable: realign (also the automatic ones), nudge, Sort Spikes by Time.

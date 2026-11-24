@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the undo depth counts steps, not levels](#2026-11-24--klusters-the-undo-depth-counts-steps-not-levels) |
 | 2026-11-24 | [Klusters: an undone child edit is written bad in the curation log](#2026-11-24--klusters-an-undone-child-edit-is-written-bad-in-the-curation-log) |
 | 2026-11-24 | [Klusters: a saved undo depth of 2 is raised to 20](#2026-11-24--klusters-a-saved-undo-depth-of-2-is-raised-to-20) |
 | 2026-11-24 | [Klusters: Repair Nesting and an atom compaction are undo steps](#2026-11-24--klusters-repair-nesting-and-an-atom-compaction-are-undo-steps) |
@@ -248,6 +249,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the undo depth counts steps, not levels
+
+A command with more changes than the undo depth could only be partly undone.
+
+<details>
+<summary>Details</summary>
+
+- The depth of the preferences trimmed four lists of LEVELS (the labellings in `Data`, the
+  colours, the edit descriptors, each view's list).  A command pushes one level per change, so
+  a Break Up or a promotion with more changes than the depth lost its first ones, and one Undo
+  left it half reverted.
+- The history now drops whole steps, the oldest first, and the four lists keep the levels of the
+  steps it holds (`Data::undoLevelCap`, set by `KlustersDoc::pushUndoEntry`).  The curation
+  log's buffer follows, so every move of an undone command is written `bad`.
+- Bound: ten times the depth in levels (200 at the default).  Only a command larger than that
+  is partly undone; the boxes of Break Up and Merge Orphans warn from there, not from the depth.
+- Cost: a large command holds one labelling per change until it leaves the history.
+- `test_undo_pairing.py` scenario 8 (depth 2: a child merge, then a promotion of three).
+
+</details>
 
 ---
 

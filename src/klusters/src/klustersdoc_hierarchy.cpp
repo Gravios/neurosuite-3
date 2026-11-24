@@ -2248,8 +2248,20 @@ void KlustersDoc::pushUndoEntry(UndoEntry e){
     }
     undoJoinNext = false;
     undoTimeline.prepend(e);
-    while (undoTimeline.size() > qMax(1, nbUndo)) undoTimeline.removeLast();
+    // The depth counts STEPS: the oldest step goes whole.  Each entry holds a labelling,
+    // so the entries are bounded too, and a command larger than that loses its oldest.
+    while (undoTimeline.size() > 1
+           && (stepCount(undoTimeline) > qMax(1, nbUndo) || undoTimeline.size() > Data::maxUndoLevels()))
+        undoTimeline.removeLast();
     redoTimeline.clear();                          // a new edit ends every redo, of either layer
+    // The level histories (Data, the colours, the edit descriptors, the views) keep the
+    // levels of these steps, and one more for the push that comes next.
+    int parents = 0;
+    for (const UndoEntry& u : undoTimeline) parents += !u.child;
+    Data::setUndoLevelsNeeded(parents + 1);
+    // ... and the curation log keeps their entries, whose status an undo still flips.
+    if (curationLogger && curationLogger->isOpen())
+        curationLogger->setMaxBufferEntries(static_cast<int>(undoTimeline.size()) + qMax(1, nbUndo));
     refreshUndoRedoEnable();
 }
 
