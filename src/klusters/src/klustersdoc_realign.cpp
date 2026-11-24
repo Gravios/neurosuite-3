@@ -828,10 +828,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // Parse configurable parameters from args string.
     // Supported: --threshold F  --iterations N  --maxshift N  --topchannels N
     //            --pca-refine  --recenter-rms  --rmin F
-    // Defaults:  threshold=0.70  iterations=2  maxshift=peakSamp/2  rmin=0.40
+    // Defaults:  threshold=0.10  iterations=2  maxshift=peakSamp/2  rmin=0.40
     // -----------------------------------------------------------------------
     int   maxShift  = std::max(1, peakSamp0 / 2);
-    float minScore  = 0.70f;
+    float minScore  = 0.10f;
     int   nIter     = 2;
     int   nTopChan  = 0;   // 0 = use all channels (legacy behaviour)
     bool  pcaRefine = false;   // patch82: second-pass PCA-energy-max alignment

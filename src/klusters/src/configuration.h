@@ -453,7 +453,7 @@ public:
     /**Returns the default arguments for the realignment.*/
     QString getRealignArgumentsDefault() const{return realignArgsDefault;}
 
-    double getRealignThresholdDefault()  const {return 0.70;}
+    double getRealignThresholdDefault()  const {return 0.10;}
     int    getRealignIterationsDefault() const {return 2;}
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
     int    getRealignKernelDefault()     const {return 0;}  // none: the whole window, as before

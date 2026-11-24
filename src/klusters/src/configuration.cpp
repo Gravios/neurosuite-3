@@ -72,7 +72,7 @@ const QString Configuration::fiberKitReclusterCommandDefault =
 // Engine, or on the radial menu's Recluster > Plugin ring.
 const QString Configuration::reclusterEngineDefault = QLatin1String("klustakwik");
 const QString Configuration::realignExecutableDefault = QLatin1String("");
-const QString Configuration::realignArgsDefault = QLatin1String("--threshold 0.70 --iterations 2");
+const QString Configuration::realignArgsDefault = QLatin1String("--threshold 0.10 --iterations 2");
 const int  Configuration::markerSizeDefault = 2;
 const int  Configuration::selectionLineWidthDefault = 1;
 const bool Configuration::useWhiteColorDuringPrintingDefault = true;
@@ -111,7 +111,14 @@ void Configuration::read() {
     reclusterEngine = settings.value("reclusterEngine", reclusterEngineDefault).toString();
     realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
     realignArgs = settings.value("realignArgs",realignArgsDefault).toString();
-    realignThreshold  = settings.value("realignThreshold",  0.70).toDouble();
+    realignThreshold  = settings.value("realignThreshold",  getRealignThresholdDefault()).toDouble();
+    // The default was 0.70 until 2026-11-24, and every write() stores the value: once, a
+    // stored 0.70 becomes the default of today (0.10).  At 0.70 the spikes that score lower
+    // stay where they are while the rest of their cluster moves.  Any other value was set
+    // by hand and is kept, and so is a 0.70 set after this ran.
+    if (!settings.value("realignThresholdLoweredFromOldDefault", false).toBool()
+        && settings.contains("realignThreshold") && qAbs(realignThreshold - 0.70) < 1e-6)
+        realignThreshold = getRealignThresholdDefault();
     realignIterations = settings.value("realignIterations",  2).toInt();
     realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
     realignKernel     = settings.value("realignKernel",      0).toInt();
@@ -329,6 +336,7 @@ void Configuration::write() const {
     settings.setValue("realignExecutable",realignExecutable);
     settings.setValue("realignArgs",realignArgs);
     settings.setValue("realignThreshold",  realignThreshold);
+    settings.setValue("realignThresholdLoweredFromOldDefault", true);
     settings.setValue("realignIterations", realignIterations);
     settings.setValue("realignMaxShift",   realignMaxShift);
     settings.setValue("realignKernel",     realignKernel);

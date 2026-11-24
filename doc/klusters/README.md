@@ -1858,7 +1858,9 @@ written by the next **Save**. To discard it, use **Undo**, or close without
 saving.
 
 Realignment parameters are set in **Settings → Preferences → Curation →
-Realignment**: *Threshold* (minimum score), *Iterations*,
+Realignment**: *Threshold* (minimum score, default 0.10: a spike whose best
+correlation is lower is not moved in that pass — at a high threshold the
+low-scoring spikes of a cluster stay behind while the rest move), *Iterations*,
 *Max shift* (0 = automatic), the *Correlation window* (None / Gaussian / Hann /
 Template energy, with its half-width; the collision guard described above) and
 an optional post-alignment pass (PCA projection refine, RMS circular recenter,

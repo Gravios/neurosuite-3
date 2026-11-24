@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the realign threshold defaults to 0.10](#2026-11-24--klusters-the-realign-threshold-defaults-to-010) |
 | 2026-11-24 | [Klusters: the edit lock in the concurrency reference](#2026-11-24--klusters-the-edit-lock-in-the-concurrency-reference) |
 | 2026-11-24 | [Klusters: the undo history is one object](#2026-11-24--klusters-the-undo-history-is-one-object) |
 | 2026-11-24 | [Klusters: the menu commands are described in one table](#2026-11-24--klusters-the-menu-commands-are-described-in-one-table) |
@@ -266,6 +267,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the realign threshold defaults to 0.10
+
+Realign Spikes now moves a spike when its best correlation with the cluster's template is at least 0.10 (was 0.70), so the low-scoring spikes of a cluster are no longer left behind. A saved 0.70 that was the old default is lowered once.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** A spike whose best correlation with its cluster's template was under 0.70 was
+  left where it was. In a cluster of low amplitude that is most of the spikes, and in a
+  cluster whose template is off its peak sample the cluster separates into the spikes that
+  moved and the ones that did not (measured on g6 0316, 2026-10-24: up to 94 % of a unit
+  left behind at 0.70, at most 2.4 % at 0.10; the same on synthetic clusters, 2026-11-24).
+- **Now.** The default is 0.10: Preferences ▸ Curation ▸ Realignment ▸ Threshold, its
+  *Defaults* button, and `realignSpikes` when no `--threshold` is given.
+- **Saved settings.** Every save of the preferences stores the threshold, so settings
+  written before hold a 0.70 nobody chose. Once, a stored 0.70 becomes 0.10; any other value
+  is kept, and so is a 0.70 set afterwards (`realignThresholdLoweredFromOldDefault`).
+  Test: `test_realign_threshold_migration.py`.
+- **Not changed.** fiber-kit's `fiber-realign` still defaults to 0.70
+  (`FK_REALIGN_MIN_SCORE`), and so does `ndm_alignspikes_pca`.
+
+</details>
 
 ---
 
