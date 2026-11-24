@@ -641,16 +641,13 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
             {
                 //Update the cluster user information (every field).
                 const UnitAnnotation annotation = clusterInformationDialog->annotation();
-                // Through the document: one step of the undo history.
-                doc->setClusterAnnotation(showsChildScope, boundColors().itemId(item->data(INDEX).toInt()), annotation);
+                // Through the document: one step of the undo history.  By the id the
+                // dialog was opened on, not by `item`: a job ending while the dialog is
+                // open rebuilds the palette, and the item is then gone or another cluster.
+                doc->setClusterAnnotation(showsChildScope, clusterNumber, annotation);
 
-                //update the text of the item
-                if(isInUserClusterInfoMode){
-                    QString clusterText = clusterLabel(clusterNumber);
-                    if(!annotation.summary().isEmpty())
-                        clusterText.append(" - ").append(annotation.summary());
-                    item->setText(clusterText);
-                }
+                //update the texts shown (not through `item`: see above)
+                refreshUserClusterInformation(doc->currentElectrodeGroupID().toInt());
 
                 emit clusterInformationModified();
             }

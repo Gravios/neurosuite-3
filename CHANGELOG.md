@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the cluster information dialog keeps its cluster](#2026-11-24--klusters-the-cluster-information-dialog-keeps-its-cluster) |
 | 2026-11-24 | [Klusters: nothing edits the clustering while a job runs](#2026-11-24--klusters-nothing-edits-the-clustering-while-a-job-runs) |
 | 2026-11-24 | [Klusters: a move of spikes no longer wipes the cluster information](#2026-11-24--klusters-a-move-of-spikes-no-longer-wipes-the-cluster-information) |
 | 2026-11-24 | [Klusters: the children follow a palette merge of their parents](#2026-11-24--klusters-the-children-follow-a-palette-merge-of-their-parents) |
@@ -254,6 +255,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the cluster information dialog keeps its cluster
+
+The dialog wrote through a palette item that may be gone when it closes.
+
+<details>
+<summary>Details</summary>
+
+- The dialog (right click on a cluster) applied its result, and updated the text, through the
+  palette item it was opened on.  A job ending while it is open rebuilds the palette: the item
+  is then gone, or stands for another cluster.
+- It keeps the cluster id it was opened on, and the palette re-reads what it shows.
+- Read in the code, not reproduced.
+
+</details>
 
 ---
 
