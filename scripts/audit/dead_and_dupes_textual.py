@@ -14,15 +14,21 @@ texts = {f: open(f, errors='replace').read() for f in glob.glob(R + 'klusters/sr
 strip = lambda t: re.sub(r'//[^\n]*', '', re.sub(r'/\*.*?\*/', '', t, flags=re.S))
 blob = '\n'.join(strip(t) for t in texts.values()); words = collections.Counter(re.findall(r'[A-Za-z_]\w*', blob))
 defs = collections.Counter(f['name'].split('::')[-1] for f in fns)
+src_lines = {f.split('/')[-1]: t.splitlines() for f, t in texts.items() if '/klusters/src/' in f}
 dead = []
 for f in fns:
     if '::' not in f['name']: continue
     n = f['name'].split('::')[-1]
     if n.startswith(('~', 'operator')) or n == f['name'].split('::')[0]: continue
     if re.fullmatch(r'(paint|mouse|key|wheel|resize|show|hide|close|drag|drop|focus|context|timer|change|enter|leave|tablet|event)\w*Event|eventFilter|sizeHint|minimumSizeHint|run|data|rowCount|columnCount|headerData|flags|paintEvent|event|createEditor|setEditorData|setModelData|paint|metaObject|qt_\w+|initializeGL|paintGL|resizeGL', n): continue
-    if words[n] <= defs[n] + 1: dead.append(f)       # definitions + one declaration each at most
+    # A definition written outside its class (`T C::n(`) has a declaration too: the name then
+    # stands twice without a use.  One written inside the class body stands once.
+    L = src_lines.get(f['file'], [])
+    line = ' '.join(L[max(0, f['line'] - 2):f['line'] + 1])
+    outside = re.search(r'::\s*' + re.escape(n) + r'\s*\(', line) is not None
+    if words[n] <= defs[n] + (1 if outside else 0): dead.append(f)
 print('dead-code candidates (name used nowhere else in CODE; comments do not count):', len(dead), 'functions,', sum(f['length'] for f in dead), 'lines')
-for f in sorted(dead, key=lambda f: -f['length'])[:40]: print(f"  {f['length']:4d} lines  {f['file']}:{f['line']}  {f['name']}")
+for f in sorted(dead, key=lambda f: -f['length']): print(f"  {f['length']:4d} lines  {f['file']}:{f['line']}  {f['name']}")
 # duplicates
 src = {f.split('/')[-1]: t.splitlines() for f, t in texts.items() if '/klusters/src/' in f}
 def body(f):

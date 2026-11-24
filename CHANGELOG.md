@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Audit tool: the unused-function count was three times too high](#2026-11-24--audit-tool-the-unused-function-count-was-three-times-too-high) |
 | 2026-11-24 | [Klusters: every self-test is a ctest test](#2026-11-24--klusters-every-self-test-is-a-ctest-test) |
 | 2026-11-24 | [Klusters: legibility and organization audit](#2026-11-24--klusters-legibility-and-organization-audit) |
 | 2026-11-24 | [Klusters: Purge Small Clusters in the child view](#2026-11-24--klusters-purge-small-clusters-in-the-child-view) |
@@ -260,6 +261,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Audit tool: the unused-function count was three times too high
+
+The organization audit of this day overstated the unused functions.
+
+<details>
+<summary>Details</summary>
+
+- `scripts/audit/dead_and_dupes_textual.py` counted a function as unused when its name stood
+  at most twice in the code: once for the definition, once for the declaration.  A function
+  defined inside its class body has no separate declaration, so one that is called exactly
+  once was counted too.
+- The audit's figure of 388 unused functions (1,408 lines) is **107 (716 lines)**, and
+  `AutoMerge::computeProposalsByErrorMatrix`, which it named, is in use.
+- The script now tells the two kinds of definition apart, and prints the whole list.
+
+</details>
 
 ---
 
