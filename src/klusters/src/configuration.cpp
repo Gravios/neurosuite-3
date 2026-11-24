@@ -52,6 +52,7 @@ const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
 const int  Configuration::timeIntervalDefault = 60;
 const int  Configuration::nbUndoDefault = 20;
+const int  Configuration::nbUndoOldDefault = 2;   // until 2026-11-24
 const QColor Configuration::backgroundColorDefault = QColor(Qt::black);
 // KiloKlustaKwik's CPU build, which every neurosuite-3 build installs (the GPU
 // builds add KiloKlustaKwik); it reads the temporary <base>.fet.standard.N that
@@ -90,6 +91,12 @@ void Configuration::read() {
     crashRecovery = settings.value("crashRecovery",crashRecoveryDefault).toBool();
     crashRecoveryIndex = settings.value("crashRecoveryIndex",crashRecoveryIndexDefault).toInt();
     nbUndo = settings.value("nbUndo",nbUndoDefault).toInt();
+    // Every write() stores the value, so settings written while the default was 2 hold
+    // a 2 nobody chose.  Once, a stored 2 becomes the default of today; any other value
+    // was set by hand and is kept, and so is a 2 set after this ran.
+    if (!settings.value("nbUndoRaisedFromOldDefault", false).toBool() && settings.contains("nbUndo")
+        && nbUndo == nbUndoOldDefault)
+        nbUndo = nbUndoDefault;
     backgroundColor = settings.value("backgroundColor", backgroundColorDefault).value<QColor>();
     reclusteringExecutable = settings.value("reclusteringExecutable",reclusteringExecutableDefault).toString();
     // Settings written by earlier versions hold their default, "KlustaKwik" (every
@@ -313,6 +320,7 @@ void Configuration::write() const {
     settings.setValue("crashRecovery",crashRecovery);
     settings.setValue("crashRecoveryIndex",crashRecoveryIndex);
     settings.setValue("nbUndo",nbUndo);
+    settings.setValue("nbUndoRaisedFromOldDefault", true);
     settings.setValue("backgroundColor",backgroundColor);
     settings.setValue("reclusteringExecutable",reclusteringExecutable);
     settings.setValue("reclusteringArgs",reclusteringArgs);

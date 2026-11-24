@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: a saved undo depth of 2 is raised to 20](#2026-11-24--klusters-a-saved-undo-depth-of-2-is-raised-to-20) |
 | 2026-11-24 | [Klusters: Repair Nesting and an atom compaction are undo steps](#2026-11-24--klusters-repair-nesting-and-an-atom-compaction-are-undo-steps) |
 | 2026-11-24 | [Klusters: one undo history for both layers](#2026-11-24--klusters-one-undo-history-for-both-layers) |
 | 2026-11-24 | [Klusters: undo and redo, five faults from an audit](#2026-11-24--klusters-undo-and-redo-five-faults-from-an-audit) |
@@ -246,6 +247,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: a saved undo depth of 2 is raised to 20
+
+The default depth became 20, but a saved setting kept the old 2.
+
+<details>
+<summary>Details</summary>
+
+- Every write of the settings stores the depth, so every installation holds a saved 2 and the
+  new default of 20 reached nobody.
+- A stored 2 is raised to 20 once (`General/nbUndoRaisedFromOldDefault`).  Any other stored
+  value is kept, and so is a 2 set afterwards.  **A 2 chosen on purpose before this cannot be
+  told from the old default and is raised too**: set it again in Preferences ▸ General ▸ Session.
+- The self-test report carries `nbUndo`; `test_undo_depth_migration.py` (4 checks).
+
+</details>
 
 ---
 

@@ -311,7 +311,8 @@ on the atoms, and whichever layer is shown.
   `Ctrl+Shift+Y`) undoes the most recent edit only when it is an atom edit. It
   does not step over a newer fiber edit: undo that first.
 - The depth is **Preferences → General → Session** (20 by default; it was 2).
-  A setting saved earlier keeps its value.
+  A 2 saved while that was the default is raised to 20 once; any other saved
+  value is kept.
 - Not undoable: realign (also the automatic ones), nudge, Sort Spikes by Time.
 
 ## Repair Nesting

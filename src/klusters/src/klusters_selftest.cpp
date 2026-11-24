@@ -1134,6 +1134,7 @@ void KlustersApp::selfTestFinish(int code)
         QJsonObject rep;
         rep.insert(QStringLiteral("code"), code);
         rep.insert(QStringLiteral("results"), selfTestResults_);
+        rep.insert(QStringLiteral("nbUndo"), nbUndo);                 // the undo depth the run ended with
         QFile out(selfTestReport_);
         if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
             out.write(QJsonDocument(rep).toJson());

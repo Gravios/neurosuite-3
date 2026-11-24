@@ -828,6 +828,7 @@ private:
     static const int  gainDefault;
     static const int  timeIntervalDefault;
     static const int  nbUndoDefault;
+    static const int  nbUndoOldDefault;
     static const QColor backgroundColorDefault;
     static const QString reclusteringExecutableDefault;
     static const QString reclusteringArgsDefault;
