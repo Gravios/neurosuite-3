@@ -343,6 +343,54 @@ Because `done()` fires last, the curation lane stays occupied for the whole real
 - **`SaveThread` reads a snapshot, not `Data`.** `KlustersDoc::prepareSave` takes the unit/atom ids on the GUI thread before the thread starts, and the GUI swallows user input until the done-event (`SaveInputBlocker`), so nothing the thread reads changes under it.
 - **Crash recovery has no thread.** The former `AutoSaveThread` read the live `Data` off the GUI thread; `KlustersDoc::autoSaveTick` now runs from a `QTimer` on the GUI thread, snapshots the ids like a save, and writes the rescue copies (a few MB) directly.
 
+### 7.4 The edit lock — nothing edits while a job runs
+
+The pools of §1–§5 are safe under an edit because their jobs read a snapshot. The
+jobs of this section are not of that kind: a recluster returns a result computed
+from the clustering as it was, a realign or nudge rewrites the pending spike
+files, a save writes the ids it took, a plugin works on the session's files. An
+edit made meanwhile is lost, or applied to ids that have moved. So while one runs,
+every command that edits is off.
+
+- **One predicate.** `KlustersApp::editingBlocked(QString* why)`
+  (`klusters_state.cpp`) is true while the save thread runs, the recluster process
+  has not finished, a plugin runs, the realign lane is busy (`realignRunning`,
+  `realignBatchActive`, `realignQueue->isBusy()`, or a realign that still has to
+  return to its feature space — `realignReturnSpace`), or a nudge is in progress.
+  A new kind of job adds its flag **here**.
+- **One set of commands.** The rows of the command table marked `.editing()`
+  (`klusters_commands.cpp`; `collectEditLockActions`). A new editing command is
+  marked there and nowhere else.
+- **Held over later enables.** `refreshEditLock()` disables the set and remembers
+  what each action's state should be (`editLockDesired`). The per-state lists of
+  `slotStateChanged`, the undo counts and the selection all enable actions while a
+  job runs; a listener on each action's `changed` signal records the wish and
+  disables it again. When the job ends the recorded states are applied.
+- **Seen by a timer.** A job's end is not a state change everywhere (the queue, a
+  batch, a plugin), so `refreshEditLock()` also runs every 150 ms.
+- **Five slots refuse as well.** A disabled action stops the menu and its key
+  (a rebound one too: the registry asks `isEnabled()`), not a direct call of the slot. Save, Save As, Undo / Redo and
+  the child undo / redo begin with `if (refuseWhileBlocked(tr("…"))) return;`,
+  which says in the status bar what is waited for. The other editing slots have no
+  such guard: they are protected by the disabled action only.
+  `realignLaneBusy(what)` is the narrower test Quit, Open and Close use.
+- **Cancel** (`mCancelJob`, Ctrl+., and a status-bar button shown while it
+  applies) is the one command that is on during a job.
+  `cancellableJobRuns()` says whether there is something to stop: the recluster
+  process and a plugin are killed and their result dropped, the clustering
+  unchanged; a realign of several clusters stops after the cluster in progress
+  (`RealignWorker::cancel`) and the clusters already realigned stay realigned. A
+  save and the realign of one cluster run to their end.
+
+Tests: `test_edit_lock.py`, `test_cancel_job.py` (steps `actionsEnabled`,
+`"whileBusy": true`, `cancelJob`).
+
+**Not covered.** The lock is whole-document: a recluster of one cluster blocks
+edits of every other. What reaches an editing slot without its action is not
+stopped: an armed mouse tool, a palette's or a view's own context menu, the
+Recommended-merges panel, the template palette. The keys the resolver dispatches
+that are not actions were not checked.
+
 ---
 
 ## 8. Contributor rules — invariants a new background job must respect
@@ -355,6 +403,7 @@ Because `done()` fires last, the curation lane stays occupied for the whole real
 6. **Pick the lane by `Priority`.** Interactive for work the user is watching land, Batch for the O(clusters²) matrix computes, Background for caches/scans nobody is watching (`klustersjobpool.h`).
 7. **Never retire in-flight jobs with a blocking wait on the edit path.** Use `supersedeAllViewThreads()`; the snapshot makes the table swap safe without a wait (`klustersview.cpp`, `klustersdoc_undo.cpp`).
 8. **If the job references `Data`, it must be drainable.** The document's `drain()` before `delete Data` is the only lifetime choke point; a job that outlives the drain without being counted in `active` is a use-after-free (`klustersdoc.cpp`).
+9. **If the job's result is applied to the clustering or its files, it holds the edit lock.** Add its running flag to `KlustersApp::editingBlocked` (§7.4); do not disable actions by hand in a state list.
 
 ---
 

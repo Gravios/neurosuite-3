@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the edit lock in the concurrency reference](#2026-11-24--klusters-the-edit-lock-in-the-concurrency-reference) |
 | 2026-11-24 | [Klusters: the undo history is one object](#2026-11-24--klusters-the-undo-history-is-one-object) |
 | 2026-11-24 | [Klusters: the menu commands are described in one table](#2026-11-24--klusters-the-menu-commands-are-described-in-one-table) |
 | 2026-11-24 | [Klusters: a snapshot test of every command, and 24 command names cut short](#2026-11-24--klusters-a-snapshot-test-of-every-command-and-24-command-names-cut-short) |
@@ -265,6 +266,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the edit lock in the concurrency reference
+
+The internal threading reference now describes the edit lock and Cancel, and what they do not cover. Documentation only.
+
+<details>
+<summary>Details</summary>
+
+- `src/klusters/docs/CONCURRENCY.md` §7.4 (new): which jobs hold the lock and why they are
+  not covered by the snapshot rule, the one predicate (`editingBlocked`), the one set of
+  commands (the rows marked `.editing()`), how the lock is held over later enables, Cancel
+  and what it can and cannot stop, the tests. Contributor rule 9: a job whose result is
+  applied to the clustering adds its flag to `editingBlocked`.
+- It also states what the lock does not cover: it is whole-document, and only five slots
+  (Save, Save As, Undo / Redo, the child undo / redo) refuse when called directly; the
+  others rely on their action being disabled, so an armed mouse tool, a context menu, the
+  Recommended-merges panel and the template palette are not stopped.
+- RECIPES.md §2.7 said every editing slot must begin with `refuseWhileBlocked()`. That is
+  not what the code does; it now says when the guard is needed.
+
+</details>
 
 ---
 

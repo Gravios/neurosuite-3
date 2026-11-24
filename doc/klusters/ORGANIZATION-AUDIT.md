@@ -227,7 +227,8 @@ and 28 unused functions of four lines or more, among them `KlustersDoc::rejectLa
   `BUILD.md` beside them. `DOCUMENT_MODEL.md` §5.2 still says the child layer has its own
   undo stack and that the scope is switched to undo the other layer, and neither it nor
   `CONCURRENCY.md` knows the edit lock: the patches of
-  2026-11-24 changed the code and the manual and did not touch them.
+  2026-11-24 changed the code and the manual and did not touch them. *(Done, step 4:
+  `DOCUMENT_MODEL.md` §5.3 and `CONCURRENCY.md` §7.4.)*
 - `scripts/audit/find_dead_and_dupes.py` has its source root fixed to a `/tmp` path and needs a
   package that is not in the build environment.
 

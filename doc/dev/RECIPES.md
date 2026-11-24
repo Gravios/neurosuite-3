@@ -394,8 +394,9 @@ t << CommandSpec("clusters.frobnicate", "Clusters", tr("&Frobnicate"), ON(trigge
    and rebindable in Preferences ▸ Input under that category and id; a row
    with an empty category is in the menu only. `.editing()` if it changes the
    clustering, its files or the cluster ids, or starts a job that does: the
-   edit lock then disables it while a job runs, and the slot must also begin
-   with `refuseWhileBlocked()`.
+   edit lock then disables it while a job runs (klusters CONCURRENCY.md §7.4).
+   If the slot can be reached without its action (a context menu, a mouse
+   tool), begin it with `refuseWhileBlocked()` as well.
 2. Declare the `QAction*` member in `klusters.h` and place it in its menu in
    `createMenus()`: `mFrobnicate = addCommand(clustersMenu, "clusters.frobnicate");`.
    A connection that is not one signal to one member slot (a lambda, an action
