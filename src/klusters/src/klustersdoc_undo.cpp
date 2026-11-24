@@ -202,8 +202,7 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
         }
 
         // The shared history is as deep as the new depth; what it dropped cannot be redone.
-        while (undoTimeline.size() > qMax(1, newNbUndo)) undoTimeline.removeLast();
-        redoTimeline.clear();
+        undoHistory.limitEntries(newNbUndo);
         Data::setUndoLevelsNeeded(0);
         refreshUndoRedoEnable();
     }
@@ -428,7 +427,7 @@ void KlustersDoc::undo(){
     // is a strict superset of what was here, and it commits nothing when nothing is
     // loose -- no undo level, no cache invalidation -- so an undo that leaves the
     // layers consistent still costs only one scan.
-    // (The child layer is put back by the caller, undoOneEntry / redoOneEntry.)
+    // (The child layer is put back by the caller, stepOneEntry.)
 }
 
 
@@ -568,6 +567,156 @@ void KlustersDoc::redo(){
     // as harmless in the modelled scenarios, but it is the same asymmetry and the
     // no-op case is free, so repair symmetrically rather than rely on redo happening
     // to be safe.
-    // (The child layer is put back by the caller, undoOneEntry / redoOneEntry.)
+    // (The child layer is put back by the caller, stepOneEntry.)
 }
 
+// ── undo / redo: one history for both layers ────────────────────────────────
+// The entries and their steps are UndoHistory (undohistory.h); here they are pushed and
+// applied.  undo() / redo() above are the PARENT workers -- one level of clusteringData,
+// the colours, the views, the log -- and are reached through stepOneEntry only.
+
+int KlustersDoc::childUndoCount() const { return undoHistory.childEntriesOnTop(UndoHistory::Undo); }
+int KlustersDoc::childRedoCount() const { return undoHistory.childEntriesOnTop(UndoHistory::Redo); }
+int KlustersDoc::undoStepCount() const { return undoHistory.steps(UndoHistory::Undo); }
+int KlustersDoc::redoStepCount() const { return undoHistory.steps(UndoHistory::Redo); }
+
+void KlustersDoc::refreshUndoRedoEnable(){
+    emit updateUndoNb(undoStepCount());
+    emit updateRedoNb(redoStepCount());
+}
+
+void KlustersDoc::pushUndoEntry(const UndoEntry& e){
+    undoHistory.push(e, nbUndo, Data::maxUndoLevels());
+    // The level histories (Data, the colours, the edit descriptors, the views) keep the
+    // levels of these steps, and one more for the push that comes next.
+    Data::setUndoLevelsNeeded(undoHistory.parentLevels() + 1);
+    // ... and the curation log keeps their entries, whose status an undo still flips.
+    if (curationLogger && curationLogger->isOpen())
+        curationLogger->setMaxBufferEntries(undoHistory.entryCount(UndoHistory::Undo) + qMax(1, nbUndo));
+    refreshUndoRedoEnable();
+}
+
+void KlustersDoc::recordChildEdit(const ChildEdit& eIn){
+    UndoEntry u;
+    u.child = true;
+    u.edit = eIn;
+    u.edit.logIdx = childEditLogIdx;               // the log entry this edit was written as, if any
+    childEditLogIdx = -1;
+    // The state to go back to: what childData held before this edit, which is the level
+    // the edit itself just pushed (every caller records straight after its one commit).
+    if (childData) u.childLabels = childData->labelsOfLastUndoLevel();
+    pushUndoEntry(u);
+}
+
+bool KlustersDoc::setClusterAnnotation(bool childLayer, int id, const UnitAnnotation& annotation){
+    Data* layer = childLayer ? childData : clusteringData;
+    if (!layer) return false;
+    QList<QString> fields;
+    layer->getUserClusterInformation(id, fields);
+    if (fields.isEmpty()) return false;            // no such cluster
+    const UnitAnnotation before = UnitAnnotation::fromFields(fields);
+    if (before == annotation) return false;
+    layer->setUserClusterAnnotation(id, annotation);
+    clusterInformationModified();
+    UndoEntry u;
+    u.child = childLayer;
+    u.annotation = true;
+    u.annotatedCluster = id;
+    u.annotationToRestore = before;
+    pushUndoEntry(u);
+    return true;
+}
+
+bool KlustersDoc::recordChildChange(const QVector<dataType>& before){
+    if (!childData || before.isEmpty() || childData->labelByFeatureRow() == before) return false;
+    UndoEntry u;
+    u.child = true;
+    u.childLabels = before;
+    pushUndoEntry(u);
+    return true;
+}
+
+void KlustersDoc::afterChildLabelsRestored(KlustersView& activeView){
+    syncChildColors();
+    rebuildHierarchyFromData();
+    // A safety net, not the mechanism: the restored labelling was consistent with the
+    // parents when it was taken, so this finds nothing to re-cut.
+    collapseToSelfChildren();
+    if (childScopeActive) activeView.showAllWidgets();
+    emit hierarchyChanged();
+    modified = true;
+}
+
+// Put the entry's annotation back and keep the one it replaced, for the opposite direction.
+void KlustersDoc::swapAnnotation(UndoEntry& e){
+    Data* layer = e.child ? childData : clusteringData;
+    if (!layer) return;
+    QList<QString> fields;
+    layer->getUserClusterInformation(e.annotatedCluster, fields);
+    if (fields.isEmpty()) return;                  // the cluster is gone: nothing to put back
+    const UnitAnnotation now = UnitAnnotation::fromFields(fields);
+    layer->setUserClusterAnnotation(e.annotatedCluster, e.annotationToRestore);
+    e.annotationToRestore = now;
+    clusterInformationModified();
+    emit clusterAnnotationRestored(e.child, e.annotatedCluster);
+}
+
+bool KlustersDoc::stepOneEntry(UndoHistory::Direction d, KlustersView& activeView){
+    const bool isRedo = (d == UndoHistory::Redo);
+    const UndoHistory::Direction other = isRedo ? UndoHistory::Undo : UndoHistory::Redo;
+    if (undoHistory.isEmpty(d)) return false;
+    UndoEntry e = undoHistory.take(d);
+    if (e.annotation) { swapAnnotation(e); undoHistory.put(other, e); return true; }
+    const QVector<dataType> now = childData ? childData->labelByFeatureRow() : QVector<dataType>();
+    if (!e.child) {
+        // No level left for it (the depth was lowered): the entry is dropped.
+        if ((isRedo ? parentRedoCount() : parentUndoCount()) == 0) return false;
+        if (isRedo) redo(); else undo();           // one parent level: data, colours, views, log
+    }
+    if (childData && !e.childLabels.isEmpty() && e.childLabels != now) {
+        childData->restoreClusterLabels(e.childLabels);
+        afterChildLabelsRestored(activeView);
+    } else if (childData && !e.child) {
+        afterChildLabelsRestored(activeView);      // the parents moved under the children: re-derive
+    }
+    if (e.child) logChildUndoRedo(isRedo, e.edit.added, e.edit.modified, e.edit.deleted, e.edit.logIdx);
+    e.childLabels = now;                           // what the opposite step of this entry restores
+    undoHistory.put(other, e);
+    return true;
+}
+
+void KlustersDoc::stepDispatch(UndoHistory::Direction d){
+    KlustersView* v = app() ? app()->activeView() : nullptr;
+    if (!v || undoHistory.isEmpty(d)) return;
+    undoHistory.closeGroups();                     // no command can be open while the user undoes
+    // One step: the newest entry, and with it every entry of the same command.
+    const int g = undoHistory.newest(d).group;
+    do {
+        if (!stepOneEntry(d, *v)) break;
+    } while (g != 0 && !undoHistory.isEmpty(d) && undoHistory.newest(d).group == g);
+    refreshUndoRedoEnable();
+}
+
+// The forced child undo / redo (Ctrl+Shift+Z / Y): the newest entry when it is a child
+// edit.  A newer parent edit is undone first, with Ctrl+Z -- stepping over it would put
+// the children back under parents that have since changed.
+bool KlustersDoc::undoChildEdit(KlustersView& activeView){
+    if (!childData || childUndoCount() == 0) return false;
+    const bool ok = stepOneEntry(UndoHistory::Undo, activeView);
+    refreshUndoRedoEnable();
+    return ok;
+}
+bool KlustersDoc::redoChildEdit(KlustersView& activeView){
+    if (!childData || childRedoCount() == 0) return false;
+    const bool ok = stepOneEntry(UndoHistory::Redo, activeView);
+    refreshUndoRedoEnable();
+    return ok;
+}
+bool KlustersDoc::undoChildEditDispatch(){
+    KlustersView* v = app() ? app()->activeView() : nullptr;
+    return v ? undoChildEdit(*v) : false;
+}
+bool KlustersDoc::redoChildEditDispatch(){
+    KlustersView* v = app() ? app()->activeView() : nullptr;
+    return v ? redoChildEdit(*v) : false;
+}

@@ -292,15 +292,20 @@ so one Ctrl+Z reverts both.
 The stack cap is a single global `int nbUndo;` (defined `main.cpp`,
 `extern`-declared in every doc TU), set from `configuration().getNbUndo()`
 (`klusters.cpp`; re-applied on preference change at `klusters.cpp`).
-Both the `Data` snapshot stacks and the three `KlustersDoc` stacks trim to it in
-lockstep.
+It counts **steps** of the undo history (§5.3), not levels: a command that pushes
+several levels is one step. The level stacks — the `Data` snapshots, the colours,
+the edit descriptors, the views' — therefore trim to `Data::undoLevelCap()`: the
+levels the history's steps need (`Data::setUndoLevelsNeeded`, set at each push),
+never fewer than `nbUndo` and never more than `Data::maxUndoLevels()`
+(`undoLevelsPerStep` × `nbUndo`), since each level holds a labelling.
 
 ---
 
 ## 5. Undo/redo stack mechanics (`KlustersDoc`)
 
-On top of the `Data` snapshot stacks the doc keeps **two** parallel stacks, all
-capped at `nbUndo`:
+On top of the `Data` snapshot stacks the doc keeps **two** parallel level stacks,
+capped at `Data::undoLevelCap()` (§4.4), and over them the one undo history
+(§5.3) that decides what Ctrl+Z takes:
 
 - `clusterColorListUndoList` / `…RedoList` — deep copies of `ItemColors` (`klustersdoc.h`).
 - `editUndoList` / `editRedoList` of `ClusterEditUndo` (`klustersdoc.h`).
@@ -336,9 +341,54 @@ through it (`klustersdoc_undo.cpp`).
 6. Repaint, refresh palette/selection, emit undo/redo counts.
 7. `curationLogger->notifyUndo()` flips the reverted action's log status.
 
-`redo()` (`klustersdoc_undo.cpp`) mirrors it. The atom/child layer has its
-**own** `childUndoStack`/`childRedoStack`; `undo()`/`redo()` drive **only**
-`clusteringData`, and scope is switched to undo the other layer.
+`redo()` (`klustersdoc_undo.cpp`) mirrors it. Both are the **parent workers**:
+they drive only `clusteringData`, and nothing calls them but `stepOneEntry` (§5.3).
+
+### 5.3 The undo history — one for both layers (`UndoHistory`)
+
+Ctrl+Z / Ctrl+Y do not call `undo()` / `redo()`: they call
+`KlustersDoc::undoDispatch()` / `redoDispatch()`, which walk `undoHistory`, an
+`UndoHistory` (`undohistory.h`). There is one history for the parent and the child
+layer, and it is the same whichever layer is shown. The layers are not
+independent — a parent edit re-cuts the children — so an edit of one must not be
+undone past a newer edit of the other.
+
+`UndoHistory` holds the entries (newest first, an undo side and a redo side), the
+commands that group them and the depth rule. It holds no cluster data and applies
+nothing; `klustersdoc_undo.cpp` pushes entries and applies them. Its bookkeeping is
+tested without a session (`undohistory_test.cpp`).
+
+| Entry (`UndoHistory::Entry`) | Pushed by | Applying it |
+|---|---|---|
+| parent (`child == false`) | `prepareClusterColorUndo`, i.e. every `prepareUndo` | one level of `undo()` / `redo()`, then the child labelling it carries is restored |
+| child (`child == true`) | `recordChildEdit` (a child edit), `recordChildChange` (Repair Nesting, a compaction that moved only children) | `childData->restoreClusterLabels(childLabels)`; no parent level |
+| annotation | `setClusterAnnotation` (one cluster's information) | `swapAnnotation`; no labelling, no level |
+
+- **`childLabels`** is the child labelling to go back to. A parent entry takes it
+  before the edit's re-cut; a child entry takes it from the level the edit pushed on
+  `childData` (`labelsOfLastUndoLevel`). Applying an entry swaps it with the
+  labelling of that moment, so the entry then serves the opposite direction.
+  `childData`'s own undo stack is not what child undo pops: the re-cut after a
+  parent edit pushes levels on it that no entry stands for.
+- **Steps.** The entries pushed between `beginGesture` and `endGesture` (nested
+  ones included) share a `group` and are undone together. `joinNextUndoLevel()`
+  puts the next entry in the step of the one before it (the renumbering Klusters
+  runs after a merge).
+- **Depth.** `push` drops the oldest steps whole while more than `nbUndo` steps
+  hold a labelling; annotations do not count. `Data::maxUndoLevels()` bounds the
+  entries. Lowering the depth in Preferences keeps the newest `nbUndo` *entries*
+  (`limitEntries`) and ends the redo.
+- **Applying** is `stepOneEntry(direction, view)`: take the newest entry of that
+  side, apply it, put it on the other side. `stepDispatch` repeats it over the
+  entry's group. A parent entry whose level is gone (the depth was lowered) is
+  dropped.
+- **The forced child undo** (Ctrl+Shift+Z / Y, `undoChildEdit`) applies the newest
+  entry only when it is a child entry: a newer parent edit is undone first.
+- **The curation log.** `undo()` flips the parent action's status
+  (`notifyUndo`); a child entry carries its log index (`ChildEdit::logIdx`) and
+  `logChildUndoRedo` flips that entry.
+- **Not in the history:** a realign or nudge (they rewrite `.spk` / `.res`; see
+  §7.4) and a save.
 
 ---
 

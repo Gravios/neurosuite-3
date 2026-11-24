@@ -162,9 +162,8 @@ void KlustersDoc::closeDocument(){
     //indices the historical list-by-list cleanup missed (the deleted-cluster
     //heap lists leaked across every close/reopen).
     editUndoList.clear();
-    undoTimeline.clear(); redoTimeline.clear();
+    undoHistory.clear();
     Data::setUndoLevelsNeeded(0);
-    undoGroupDepth = 0; undoGroupCurrent = 0; undoJoinNext = false;
     editRedoList.clear();
 
 

@@ -22,6 +22,7 @@
 
 //include files for the application
 #include "data.h"
+#include "undohistory.h"
 #include "tracesprovider.h"
 #include <klustersshared/channelcolors.h>
 #include "clustersprovider.h"
@@ -933,12 +934,12 @@ public:
     /** The next undo-level pushed joins the step of the level before it: the
      *  renumbering Klusters runs by itself after a merge is undone WITH the merge.
      *  Reset by the push, or by passing false when nothing was pushed. */
-    void joinNextUndoLevel(bool join = true) { undoJoinNext = join; }
+    void joinNextUndoLevel(bool join = true) { undoHistory.joinNext(join); }
     /** Undo / Redo (Ctrl+Z / Ctrl+Y): one step of the ONE history both layers
-     *  share (see UndoEntry) -- the newest edit whatever its layer and whichever
+     *  share (see UndoHistory) -- the newest edit whatever its layer and whichever
      *  layer is shown, and with it every level of the same hierarchy command. */
-    void undoDispatch();
-    void redoDispatch();
+    void undoDispatch() { stepDispatch(UndoHistory::Undo); }
+    void redoDispatch() { stepDispatch(UndoHistory::Redo); }
     int  parentUndoCount() const { return clusterColorListUndoList.count(); }
     int  parentRedoCount() const { return clusterColorListRedoList.count(); }
     bool undoChildEditDispatch();
@@ -3043,59 +3044,27 @@ private:
     bool        lastReclusterAgainstOnChild = false;
     QString     clcSiblingPath;              // resolved .clc path ("" if none detected)
     QString     clpSiblingPath;              // resolved .clp child->parent map ("" if none)
-    // Atom-layer (childData) edits live on their OWN undo timeline, because the
-    // main undo() is hardwired to clusteringData.  Each entry records the child
-    // clusters that changed, for childData->undo()/redo() (cache invalidation)
-    // and for the deterministic colour re-sync.  rebuildHierarchyFromData() then
-    // keeps the parent maps consistent regardless of which timeline moved.
-    struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted;
-                       int logIdx = -1; };   ///< action_idx of the edit's curation-log entry (-1: none)
+    /// The child clusters a child edit changed (see UndoHistory::ChildEdit).
+    using ChildEdit = UndoHistory::ChildEdit;
     /// The log entry of the child edit being made: set by logChildBefore, taken by
     /// recordChildEdit, so the UNDO / REDO record can name what it reverts.
     int childEditLogIdx = -1;
-    /** ONE history for both layers, newest first.
-     *
-     *  There were two -- the parent stack and a child stack -- and Ctrl+Z took from
-     *  whichever layer was shown.  The layers are not independent: a parent edit
-     *  re-cuts the children, so undoing it must put the children back, and a child
-     *  edit made before it must not be undone until it is.  Each entry now carries
-     *  the child labelling to restore when it is undone (the state before the edit),
-     *  and Undo takes the newest entry whatever its layer.  A parent entry also
-     *  reverts one level of the parent Data history, as before; a child entry
-     *  restores its labelling and nothing else -- childData's own undo history is
-     *  no longer what child undo pops (the re-cut after a parent edit pushes levels
-     *  on it that no entry stands for).
-     *
-     *  `group`: the entries one hierarchy command (a gesture) pushed share it and
-     *  are undone together; 0 = an entry of its own.
-     *
-     *  Depth: nbUndo entries.  The parent Data history holds nbUndo levels, so every
-     *  parent entry here has its level. */
-    struct UndoEntry {
-        bool child = false;
-        int  group = 0;
-        QVector<dataType> childLabels;   ///< empty: no child layer when it was pushed
-        ChildEdit edit;                  ///< child entries: the ids, for the log
-        /// A change of one cluster's information (structure, type, quality, notes...)
-        /// on the layer `child` says: no labelling, no level.  It does not count
-        /// against the depth (see labelSteps), so annotating does not push edits out.
-        bool annotation = false;
-        int  annotatedCluster = 0;
-        UnitAnnotation annotationToRestore;
-    };
-    /// The steps that hold a labelling: what the undo depth counts.
-    static int labelSteps(const QList<UndoEntry>& l);
-    QList<UndoEntry> undoTimeline;
-    QList<UndoEntry> redoTimeline;
-    int  undoGroupDepth   = 0;           ///< open gestures (beginGesture / endGesture)
-    int  undoGroupCurrent = 0;           ///< the group of the entries being pushed, 0 outside a gesture
-    int  undoGroupCounter = 0;
-    bool undoJoinNext     = false;
-    static int stepCount(const QList<UndoEntry>& l);
-    void pushUndoEntry(UndoEntry e);
-    bool undoOneEntry(KlustersView& activeView);
+    /** ONE history for both layers (undohistory.h): Undo takes the newest entry
+     *  whatever its layer and whichever layer is shown.  The history holds the
+     *  entries and counts the steps; applying an entry is stepOneEntry
+     *  (klustersdoc_undo.cpp).  A parent entry reverts one level of the parent Data
+     *  history and restores the child labelling it carries; a child entry restores
+     *  its labelling and nothing else -- childData's own undo history is not what
+     *  child undo pops (the re-cut after a parent edit pushes levels on it that no
+     *  entry stands for). */
+    using UndoEntry = UndoHistory::Entry;
+    UndoHistory undoHistory;
+    void pushUndoEntry(const UndoEntry& e);
+    /// Apply the newest entry of side @p d and put it on the other side.
+    bool stepOneEntry(UndoHistory::Direction d, KlustersView& activeView);
+    /// One step: the newest entry of side @p d and every entry of the same command.
+    void stepDispatch(UndoHistory::Direction d);
     void swapAnnotation(UndoEntry& e);
-    bool redoOneEntry(KlustersView& activeView);
     /// The child layer was replaced wholesale: colours, maps, views.
     void afterChildLabelsRestored(KlustersView& activeView);
     // Record one atom-layer edit: push it on the undo history as a child entry

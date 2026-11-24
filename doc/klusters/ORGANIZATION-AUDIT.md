@@ -217,7 +217,7 @@ and 28 unused functions of four lines or more, among them `KlustersDoc::rejectLa
 - **One directory, 258 files.** Views, document, data, threads, dialogs, preferences, GPU
   kernels and test support sit side by side; the `klusters_` / `klustersdoc_` prefixes are the
   only grouping.
-- **The undo history is in `klustersdoc_hierarchy.cpp`** (16 functions: the timeline, the
+- *(Done, step 4: now `undohistory.h` and `klustersdoc_undo.cpp`.)* **The undo history is in `klustersdoc_hierarchy.cpp`** (16 functions: the timeline, the
   dispatch, the entry workers) while `klustersdoc_undo.cpp` holds the level functions. The child
   undo started there and the single history of 2026-11-24 was built on the spot.
 - **`klusters.cpp` is 10,895 lines** after eleven concerns were moved out; what is left is 206
@@ -256,7 +256,11 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    files (§7).
 3. ~~The command table (§3).~~ Done for the description, the registry and the edit lock;
    the per-state lists of `slotStateChanged` are not yet rows of it (§3).
-4. Move the undo history into one object (§2, §9); update the two internal references.
+4. ~~Move the undo history into one object (§2, §9); update the two internal references.~~
+   Done: `UndoHistory` (`undohistory.h`) holds the entries, the steps and the depth and has
+   a unit test; applying an entry is one `stepOneEntry(direction)` in `klustersdoc_undo.cpp`
+   in place of the undo / redo twins. The level stacks of `Data`, the colours and the views
+   are still separate lists (§2).
 5. Split `realignSpikes` into a plan and its application (§1). The largest single gain in
    legibility, and the way to a realign that can be cancelled and undone.
 6. The matrix-view base (§8).

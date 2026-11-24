@@ -67,6 +67,13 @@ target_include_directories(klusters_test_dirtyflag PRIVATE "${_klu_src}")
 target_link_libraries(klusters_test_dirtyflag PRIVATE Threads::Threads)
 add_test(NAME klusters_test_dirtyflag COMMAND klusters_test_dirtyflag)
 
+# The undo history -- steps, commands, the depth (no session).
+add_executable(klusters_test_undohistory undohistory_test.cpp "${_klu_src}/undohistory.cpp")
+target_compile_features(klusters_test_undohistory PRIVATE cxx_std_20)
+target_include_directories(klusters_test_undohistory PRIVATE "${_klu_src}" "${_shared}")
+target_link_libraries(klusters_test_undohistory PRIVATE Qt6::Core)
+add_test(NAME klusters_test_undohistory COMMAND klusters_test_undohistory)
+
 # Reserved clusters -- what an edit may do to the clusters a fiber-kit chunk
 # run reserved (header-only; types.h from libklustersshared).
 add_executable(klusters_test_reservedclusters reservedclusters_test.cpp)

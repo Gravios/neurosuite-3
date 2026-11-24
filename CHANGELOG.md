@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the undo history is one object](#2026-11-24--klusters-the-undo-history-is-one-object) |
 | 2026-11-24 | [Klusters: the menu commands are described in one table](#2026-11-24--klusters-the-menu-commands-are-described-in-one-table) |
 | 2026-11-24 | [Klusters: a snapshot test of every command, and 24 command names cut short](#2026-11-24--klusters-a-snapshot-test-of-every-command-and-24-command-names-cut-short) |
 | 2026-11-24 | [Klusters: unused code removed](#2026-11-24--klusters-unused-code-removed) |
@@ -264,6 +265,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the undo history is one object
+
+The bookkeeping of Undo and Redo moved out of the document class into a small class of its own with a unit test. No behaviour changes.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** The history Undo and Redo walk was two lists and four counters among the
+  ~390 members of `KlustersDoc`, and its code was in `klustersdoc_hierarchy.cpp`, where the
+  child undo had started. Undoing an entry and redoing it were two functions that differed
+  in four words.
+- **Now.** `UndoHistory` (`undohistory.h`) owns the entries, the commands that group them
+  and the depth rule; it holds no cluster data and can be tested without a session
+  (`undohistory_test.cpp`, 27 checks: steps, nested commands, a joined entry, the depth,
+  annotations, the entry cap, the forced child undo, a lowered depth). `KlustersDoc` keeps
+  one `undoHistory`; pushing and applying entries moved to `klustersdoc_undo.cpp`, and
+  `stepOneEntry(direction)` / `stepDispatch(direction)` replace the undo / redo pairs.
+- **No behaviour changes.** The 156 tests pass, among them the scripted undo self-tests.
+- **Reference.** `src/klusters/docs/DOCUMENT_MODEL.md` §4.4 and §5 said the depth trims
+  three stacks in lockstep and that the child layer has its own undo stack; both were out
+  of date since the single history. §5.3 now describes it.
+- **Noticed, not changed.** Lowering the depth in Preferences keeps the newest N *entries*,
+  while everywhere else the depth counts *steps*; a command of several entries can lose its
+  oldest ones at that moment.
+
+</details>
 
 ---
 

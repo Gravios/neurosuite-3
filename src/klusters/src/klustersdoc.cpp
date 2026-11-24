@@ -974,14 +974,14 @@ void KlustersDoc::beginGesture(const QString& kind, const QMap<QString, QVariant
 {
     // One command, one undo step: every undo level pushed until the matching
     // endGesture (nested commands included) carries this group.
-    if (undoGroupDepth++ == 0) undoGroupCurrent = ++undoGroupCounter;
+    undoHistory.beginGroup();
     if (curationLogger && curationLogger->isOpen())
         curationLogger->beginGesture(kind, plan);
 }
 
 void KlustersDoc::endGesture(const QMap<QString, QVariant>& outcome)
 {
-    if (undoGroupDepth > 0 && --undoGroupDepth == 0) undoGroupCurrent = 0;
+    undoHistory.endGroup();
     if (curationLogger && curationLogger->isOpen())
         curationLogger->endGesture(outcome);
 }
