@@ -24,6 +24,9 @@ Checked on the log file:
     a KiloKlustaKwik_cpu);
   * a session whose .clc is there says hierarchical in SESSION_OPEN (it is written before the
     child layer is loaded, and said false), and gets a SESSION_CONTEXT line with the counts.
+  * the child layer: a CONSIDERED for two children shown and left (layer child, their parent);
+    mergeChildren with the pair record of what it merged; promoteChildren and dropChildrenToBin
+    with the child against the largest sibling that stays; none of those also a CONSIDERED.
 Negative control: the same script with the dwell at an hour logs no CONSIDERED.
 """
 import json
@@ -207,6 +210,60 @@ def main():
         check(bool(ctx) and ctx[-1].get("hierarchical") is True and ctx[-1].get("n_children") == 3 and ctx[-1].get("n_parents") == 3
               and ctx[-1].get("session_id") == op.get("session_id"),
               "... and a SESSION_CONTEXT line with the layer's counts once it is loaded", ctx)
+
+    # ---- the child layer: comparisons, a merge of children, a child taken out of its parent
+    with tempfile.TemporaryDirectory() as d:
+        base, m = S.make_session(d, "ch", n_per_unit=400, method=METHOD)
+        clu = m["clu"]
+        child = clu.copy()
+        two, three = np.flatnonzero(clu == 2), np.flatnonzero(clu == 3)
+        child[two[0::2]] = 20000; child[two[1::2]] = 20001                    # parent 2: two children
+        child[three[0::4]] = 20002; child[three[1::4]] = 20003                # parent 3: four
+        child[three[2::4]] = 20004; child[three[3::4]] = 20005
+        clp = np.zeros(int(child.max()), np.int32)
+        for c in np.unique(child):
+            clp[c - 1] = clu[child == c][0]
+        for kind, ids, hdr in (("clc", child, np.unique(child).size), ("clp", clp, clp.size)):
+            with open(f"{base}.{kind}.{METHOD}.1", "wb") as fh:
+                np.array([hdr], np.int32).tofile(fh)
+                ids.astype(np.int32).tofile(fh)
+        H = lambda **k: {"hierarchy": k}
+        steps = [{"curationLog": {"consideredDwell": 0.5}}, {"select": [2]},
+                 H(showChildren=[20000, 20001]), {"wait": 900}, H(showChildren=[20002]),      # looked at, left
+                 H(showChildren=[20002, 20003]), {"wait": 900}, H(mergeChildren=[20002, 20003]),
+                 H(showChildren=[20004, 20005]), {"wait": 900}, H(promoteChildren=[20005]),   # taken out
+                 H(showChildren=[20000, 20001]), H(dropChildren=[20001]),
+                 H(showChildren=[]), {"select": [2, 3]}, {"wait": 900}, {"select": [2]},      # parents again
+                 {"save": True}]
+        rep = R.run(klusters, f"{base}.clu.{METHOD}.1", steps, d, timeout=900, autoRenumber=False)
+        check(rep.get("rc") == 0 and all(r.get("ok", True) for r in rep.get("results", [])), "the child-layer script ran",
+              (rep.get("stderr") or "")[-1500:])
+        L = [o for o in last(log_lines(d, "ch")) if o.get("event") == "ACTION_DETAIL" and o.get("detail") == "pair"]
+        cons = [o for o in L if o["action"] == "CONSIDERED"]
+        cc = [o for o in cons if o.get("layer") == "child"]
+        check(len(cc) == 1 and {cc[0]["cluster_a"], cc[0]["cluster_b"]} == {20000, 20001} and cc[0].get("parent_a") == 2
+              and cc[0].get("parent_b") == 2 and cc[0].get("same_parent") is True and cc[0].get("dwell_s", 0) >= 0.8
+              and "coactive_overlap" in cc[0] and "template_lag" in cc[0],
+              "CONSIDERED on the child layer: the two children shown and left, with their parent and the pair evidence",
+              [(o.get("layer"), o.get("cluster_a"), o.get("cluster_b")) for o in cons])
+        cp = [o for o in cons if o.get("layer") == "parent"]
+        check(len(cp) == 1 and {cp[0]["cluster_a"], cp[0]["cluster_b"]} <= set(range(2, 10)) and "parent_a" not in cp[0],
+              "... and back on the parents the comparison is a parent one", cp)
+        mg = [o for o in L if o["action"] == "HIERARCHY_EDIT"]
+        check(len(mg) == 1 and {mg[0]["cluster_a"], mg[0]["cluster_b"]} == {20002, 20003} and mg[0].get("layer") == "child"
+              and mg[0].get("parent") == 3 and mg[0].get("pairing") == "all" and mg[0].get("n_merged") == 2
+              and mg[0].get("selection_matches") is True and mg[0].get("dwell_s", 0) >= 0.8 and mg[0].get("cross_refrac_observed") == 0,
+              "mergeChildren: the pair record of the merged children (measured before the merge), its dwell, that it was the selection", mg)
+        sep = [o for o in L if o["action"] == "GESTURE" and o.get("role") == "leaving_vs_largest_staying"]
+        pr = [o for o in sep if o.get("cluster_a") == 20005 or o.get("cluster_b") == 20005]
+        check(len(pr) == 1 and pr[0].get("parent") == 3 and pr[0].get("n_leaving") == 1 and pr[0].get("layer") == "child"
+              and {pr[0]["n_a"], pr[0]["n_b"]} == {100, 200} and pr[0].get("selection_matches") is False,
+              "promoteChildren: the child against the largest sibling that stays (the merged one, 200 spikes)", pr)
+        dr = [o for o in sep if o.get("cluster_a") == 20001 or o.get("cluster_b") == 20001]
+        check(len(dr) == 1 and {dr[0]["cluster_a"], dr[0]["cluster_b"]} == {20000, 20001} and dr[0].get("parent") == 2,
+              "dropChildrenToBin: the dropped child against the sibling it left", dr)
+        check(not [o for o in cc if {o["cluster_a"], o["cluster_b"]} & {20002, 20003, 20004, 20005}],
+              "children that were merged or taken apart are not also logged as CONSIDERED")
 
     print(f"test_curation_log: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

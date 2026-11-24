@@ -3358,11 +3358,19 @@ public:
     double consideredMinDwell() const { return consideredMinDwellS; }
     void   setConsideredMinDwell(double s) { consideredMinDwellS = (s < 0.0) ? 0.0 : s; }
     /** Close the comparison on screen, logging it as CONSIDERED when it was
-     *  2-4 parents shown for kConsideredMinDwellS and not merged, then start
-     *  timing @p shown.  Called on every parent selection change (and with an
-     *  empty list when the document closes). */
-    void noteShownParents(const QList<int>& shown);
+     *  2-4 clusters of one layer shown for consideredMinDwell() and not merged,
+     *  then start timing @p shown.  @p childLayer: @p shown are children (the
+     *  child palette's selection) rather than parents.  Called on every
+     *  selection change (and with an empty list when the document closes). */
+    void noteShownParents(const QList<int>& shown, bool childLayer = false);
 private:
+    /// The layer of consideredSel.
+    bool consideredChildLayer = false;
+    /** Curation log, child layer: one pair record per child of @p leaving against
+     *  the largest sibling that STAYS in its parent -- what the child was taken out
+     *  from.  Recorded on the newest entry (the gesture just begun), before any
+     *  spike moves.  A parent whose children all leave gives none. */
+    void logChildSeparation(const QList<int>& leaving);
     /// The parents shown together since consideredSinceMs (see noteShownParents).
     QList<int> consideredSel;
     qint64     consideredSinceMs = 0;

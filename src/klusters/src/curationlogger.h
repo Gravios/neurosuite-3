@@ -248,10 +248,11 @@ public:
         HIERARCHY_EDIT  = 17, ///< A child-layer edit that is one atom-undo step but no parent primitive
                               ///< (mergeChildren, collapseToSelfChildren, flattenHierarchyToClu,
                               ///< compactAllClusterIds, promoteToHierarchy): snapshots carry layer=child.
-        CONSIDERED      = 18, ///< Two to four parents were shown together for a while and then left
-                              ///< WITHOUT being merged: the negative example a merge rule needs.  No
-                              ///< snapshots; one ACTION_DETAIL per pair (the GROUP pair evidence, plus
-                              ///< dwell_s).  Not undo-paired.
+        CONSIDERED      = 18, ///< Two to four parents -- or children, layer=child -- were shown
+                              ///< together for a while and then left WITHOUT being merged: the
+                              ///< negative example a merge rule needs.  No snapshots; one
+                              ///< ACTION_DETAIL per pair (the GROUP pair evidence, plus dwell_s).
+                              ///< Not undo-paired.
     };
 
     CurationLogger();
@@ -292,6 +293,8 @@ public:
      *  realign reads as a decision of the curator's. */
     void setTrigger(const QString& t) { trigger = t.isEmpty() ? QStringLiteral("manual") : t; }
     QString currentTrigger() const { return trigger; }
+    /// True while a gesture is open: a command running inside another one.
+    bool inGesture() const { return !gestureStack.isEmpty(); }
 
     /** Write one SESSION_CONTEXT line now: facts about the session that are
      *  only known after open() (the child layer is loaded later, a setting

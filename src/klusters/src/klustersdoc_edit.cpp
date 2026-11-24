@@ -109,7 +109,7 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
                 {
                     QList<int> sorted = clustersToGroup; std::sort(sorted.begin(), sorted.end());
                     d.insert(QStringLiteral("recommended"), sorted == recommendedSel);
-                    d.insert(QStringLiteral("selection_matches"), sorted == consideredSel);
+                    d.insert(QStringLiteral("selection_matches"), !consideredChildLayer && sorted == consideredSel);
                 }
                 curationLogger->recordActionDetails(d);
             }

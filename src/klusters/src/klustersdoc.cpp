@@ -487,8 +487,9 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,KlustersV
     //update the TraceView if any
     activeView.updateTraceView(electrodeGroupID,colors,true);
 
-    // Curation log: the comparison that was on screen ends here.
-    noteShownParents(clustersToShow);
+    // Curation log: the comparison that was on screen ends here.  The child palette's
+    // selection arrives through this same call, with the child layer active.
+    noteShownParents(clustersToShow, childScopeActive && childData);
 }
 
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow){
@@ -928,41 +929,90 @@ void KlustersDoc::closeUnappliedRealignLog()
     curationLogger->markCurrentActionNotUndoable();
 }
 
-void KlustersDoc::noteShownParents(const QList<int>& shown)
+void KlustersDoc::noteShownParents(const QList<int>& shown, bool childLayer)
 {
     QList<int> now = shown;
     std::sort(now.begin(), now.end());
-    if (now == consideredSel)
+    if (now == consideredSel && childLayer == consideredChildLayer)
         return;                       // a redraw of the same comparison: the clock keeps running
     const qint64 t = QDateTime::currentMSecsSinceEpoch();
     const double dwell = (t - consideredSinceMs) / 1000.0;
     // The comparison that just ended.  Logged when it was a real one: two to four
-    // parents (not the bins), on screen long enough to have been looked at, and not
-    // merged -- a merge is logged as the GROUP it is.  Skipped while another action's
-    // block is open (the selection moves during an edit) and in the child view.
+    // clusters of one layer (not the bins), on screen long enough to have been
+    // looked at, and not merged or taken apart -- those are logged as the edits
+    // they are.  Skipped while another action's block is open (the selection moves
+    // during an edit).
+    const bool onChild = consideredChildLayer && childData;
     QList<int> was;
-    for (int c : consideredSel)
-        if (c > 1 && clusteringData && clusteringData->clusterHasMembers(c)) was.append(c);
+    for (int c : consideredSel) {
+        if (c <= 1) continue;
+        if (onChild ? childToParent.contains(c) : (clusteringData && clusterHasMembers(c))) was.append(c);
+    }
     if (curationLogger && curationLogger->isOpen() && !logActionOpen && !consideredActed
-            && !childScopeActive && was.size() >= 2 && was.size() <= 4 && was.size() == consideredSel.size()
+            && consideredChildLayer == onChild
+            && was.size() >= 2 && was.size() <= 4 && was.size() == consideredSel.size()
             && dwell >= consideredMinDwellS) {
         curationLogger->beginAction(CurationLogger::ActionType::CONSIDERED, QList<ClusterSnapshot>());
-        const bool recommended = (was == recommendedSel);
+        const bool recommended = !onChild && (was == recommendedSel);
+        const Data& d0 = onChild ? *childData : parentData();
         for (int i = 0; i < was.size(); ++i)
             for (int j = i + 1; j < was.size(); ++j) {
-                QMap<QString, QVariant> d = parentData().pairEvidence(was[i], was[j]);
+                QMap<QString, QVariant> d = d0.pairEvidence(was[i], was[j]);
                 d.insert(QStringLiteral("detail"), QStringLiteral("pair"));
+                d.insert(QStringLiteral("layer"), onChild ? QStringLiteral("child") : QStringLiteral("parent"));
                 d.insert(QStringLiteral("dwell_s"), dwell);
                 d.insert(QStringLiteral("n_shown"), static_cast<int>(was.size()));
                 d.insert(QStringLiteral("recommended"), recommended);
+                if (onChild) {
+                    // Children are compared inside a parent as a rule; across parents the
+                    // question is a different one (should the parents be one).
+                    const int pa = childToParent.value(was[i], -1), pb = childToParent.value(was[j], -1);
+                    d.insert(QStringLiteral("parent_a"), pa);
+                    d.insert(QStringLiteral("parent_b"), pb);
+                    d.insert(QStringLiteral("same_parent"), pa == pb);
+                }
                 curationLogger->recordActionDetails(d);
             }
         curationLogger->markCurrentActionNotUndoable();
     }
     consideredSel = now;
+    consideredChildLayer = childLayer;
     consideredSinceMs = t;
     consideredActed = false;
-    if (now != recommendedSel) recommendedSel.clear();
+    if (childLayer || now != recommendedSel) recommendedSel.clear();
+}
+
+void KlustersDoc::logChildSeparation(const QList<int>& leaving)
+{
+    if (!curationLogger || !curationLogger->isOpen() || !childData)
+        return;
+    const double dwell = (QDateTime::currentMSecsSinceEpoch() - consideredSinceMs) / 1000.0;
+    QList<int> sorted = leaving; std::sort(sorted.begin(), sorted.end());
+    const bool wasShown = consideredChildLayer && sorted == consideredSel;
+    int written = 0;
+    for (int c : leaving) {
+        if (written >= 12) break;                      // a mass move is not a judgement per child
+        const int parentId = childToParent.value(c, -1);
+        if (c <= 1 || parentId < 0) continue;
+        int stay = -1; long stayN = 0;
+        for (int s : parentToChildren.value(parentId)) {
+            if (leaving.contains(s)) continue;
+            const long n = static_cast<long>(childData->nbOfSpikes(s));
+            if (n > stayN) { stayN = n; stay = s; }
+        }
+        if (stay < 0) continue;                        // the whole parent leaves: nothing it left
+        QMap<QString, QVariant> d = childData->pairEvidence(c, stay);
+        d.insert(QStringLiteral("detail"), QStringLiteral("pair"));
+        d.insert(QStringLiteral("layer"), QStringLiteral("child"));
+        d.insert(QStringLiteral("role"), QStringLiteral("leaving_vs_largest_staying"));
+        d.insert(QStringLiteral("parent"), parentId);
+        d.insert(QStringLiteral("n_leaving"), static_cast<int>(leaving.size()));
+        d.insert(QStringLiteral("dwell_s"), dwell);
+        d.insert(QStringLiteral("selection_matches"), wasShown);
+        curationLogger->recordActionDetails(d);
+        ++written;
+    }
+    if (consideredChildLayer) consideredActed = true;  // the children on screen were acted on
 }
 
 void KlustersDoc::beginGesture(const QString& kind, const QMap<QString, QVariant>& plan)

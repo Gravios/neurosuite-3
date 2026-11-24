@@ -1404,8 +1404,12 @@ int KlustersDoc::promoteChildren(const QList<int>& childrenIn, KlustersView& act
 
     setActiveClustering(false);
     const int newId = static_cast<int>(clusteringData->nextFreeClusterId());
+    // Inside another command (Dissolve, Break Up) the promotion is that command's
+    // mechanics, not a judgement on this child.
+    const bool ownDecision = !(curationLogger && curationLogger->isOpen() && curationLogger->inGesture());
     beginGesture(QStringLiteral("promoteChildren"), {{ QStringLiteral("children"), idList(children) },
                                                       { QStringLiteral("new_parent"), newId }});
+    if (ownDecision) logChildSeparation(children);
     int target = -1;
     for (int c : children){
         if (!childToParent.contains(c)) continue;
@@ -1547,9 +1551,11 @@ bool KlustersDoc::dropChildrenToBin(const QList<int>& childrenIn, int binId, Klu
     QVariantMap parentsDetail;
     for (auto it = byParent.constBegin(); it != byParent.constEnd(); ++it)
         parentsDetail.insert(QString::number(it.key()), idList(it.value()));
+    const bool ownDecision = !(curationLogger && curationLogger->isOpen() && curationLogger->inGesture());
     beginGesture(QStringLiteral("dropChildrenToBin"), {{ QStringLiteral("children"), idList(dropped) },
                                                         { QStringLiteral("bin"), binId },
                                                         { QStringLiteral("parents"), parentsDetail }});
+    if (ownDecision) logChildSeparation(dropped);
     int nMoved = 0;
     for (auto it = byParent.constBegin(); it != byParent.constEnd(); ++it) {
         QVector<int> spk;
@@ -2008,6 +2014,38 @@ int KlustersDoc::mergeChildren(const QList<int>& children, KlustersView& activeV
 
     QList<int> grp = children;                         // groupClusters takes a non-const ref
     logChildBefore(CurationLogger::ActionType::HIERARCHY_EDIT, children);
+    // What the merge rests on, measured before it: the pair record a parent GROUP
+    // gets, on the child layer.  All pairs up to six children; above that each
+    // child against the largest (a merge of 55 would be 1,485 pairs).
+    if (curationLogger && curationLogger->isOpen() && logActionOpen) {
+        QList<int> sorted = children; std::sort(sorted.begin(), sorted.end());
+        const bool allPairs = sorted.size() <= 6;
+        int largest = sorted.first(); long largestN = -1;
+        for (int c : sorted) {
+            const long n = static_cast<long>(childData->nbOfSpikes(c));
+            if (n > largestN) { largestN = n; largest = c; }
+        }
+        const double dwell = (QDateTime::currentMSecsSinceEpoch() - consideredSinceMs) / 1000.0;
+        const bool wasShown = consideredChildLayer && sorted == consideredSel;
+        auto record = [&](int a, int b) {
+            QMap<QString, QVariant> d = childData->pairEvidence(a, b);
+            d.insert(QStringLiteral("detail"), QStringLiteral("pair"));
+            d.insert(QStringLiteral("layer"), QStringLiteral("child"));
+            d.insert(QStringLiteral("parent"), parentId);
+            d.insert(QStringLiteral("pairing"), allPairs ? QStringLiteral("all") : QStringLiteral("vs_largest"));
+            d.insert(QStringLiteral("n_merged"), static_cast<int>(sorted.size()));
+            d.insert(QStringLiteral("dwell_s"), dwell);
+            d.insert(QStringLiteral("selection_matches"), wasShown);
+            curationLogger->recordActionDetails(d);
+        };
+        if (allPairs) {
+            for (int i = 0; i < sorted.size(); ++i)
+                for (int j = i + 1; j < sorted.size(); ++j) record(sorted[i], sorted[j]);
+        } else {
+            for (int c : sorted) if (c != largest) record(largest, c);
+        }
+    }
+    consideredActed = true;                            // the children on screen became this merge
     int newId = static_cast<int>(childData->groupClusters(grp));         // mutates childData, self-snapshots
     {
         // A parent whose children were all merged is left with ONE child: it takes the

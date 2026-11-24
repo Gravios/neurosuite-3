@@ -36,6 +36,8 @@
  *        {"hierarchy": {...}}            the child layer (loaded if it is not): one edit, then
  *                                        every child's parent and size.  "mergeParents": [..],
  *                                        "mergeChildren": [..], "promoteChildren": [..],
+ *                                        "dropChildren": [..] (to noise), "showChildren": [..]
+ *                                        (the child palette selecting them; [] = back to parents),
  *                                        "flatten": true, "renumber": true (parents made
  *                                        consecutive), "toEnd": [parents] (the palette's T),
  *                                        "order": [parents] (a sort), "undo": true (the parent
@@ -865,6 +867,14 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (o.contains(QStringLiteral("mergeParents")))    result.insert(QStringLiteral("returned"), doc->mergeParents(ids("mergeParents"), *view));
         if (o.contains(QStringLiteral("mergeChildren")))   result.insert(QStringLiteral("returned"), doc->mergeChildren(ids("mergeChildren"), *view));
         if (o.contains(QStringLiteral("promoteChildren"))) result.insert(QStringLiteral("returned"), doc->promoteChildren(ids("promoteChildren"), *view));
+        if (o.contains(QStringLiteral("dropChildren")))    result.insert(QStringLiteral("returned"), doc->dropChildrenToBin(ids("dropChildren"), 1, *view));
+        if (o.contains(QStringLiteral("showChildren"))) {
+            // What the child palette's selection does (slotChildSelectionChanged): the views
+            // show those children, on the child layer; an empty list returns to the parents.
+            const QList<int> kids = ids("showChildren");
+            doc->setActiveClustering(!kids.isEmpty());
+            doc->shownClustersUpdate(kids.isEmpty() ? clusterPalette->selectedClusters() : kids, *view);
+        }
         if (o.value(QStringLiteral("flatten")).toBool())   result.insert(QStringLiteral("returned"), doc->flattenHierarchyToClu(*view));
         if (o.value(QStringLiteral("renumber")).toBool())  doc->renumberClusters();
         if (o.contains(QStringLiteral("toEnd")))           doc->renumberClustersToEnd(ids("toEnd"));

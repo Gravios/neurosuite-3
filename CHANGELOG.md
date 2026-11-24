@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the curation log covers the child layer](#2026-11-24--klusters-the-curation-log-covers-the-child-layer) |
 | 2026-11-24 | [Klusters: the curation log says what started an action, what it did, and what was looked at and left](#2026-11-24--klusters-the-curation-log-says-what-started-an-action-what-it-did-and-what-was-looked-at-and-left) |
 | 2026-11-23 | [Roadmap brought up to date](#2026-11-23--roadmap-brought-up-to-date) |
 | 2026-11-23 | [Klusters: Recluster Against References](#2026-11-23--klusters-recluster-against-references) |
@@ -242,6 +243,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the curation log covers the child layer
+
+The pair evidence and the `CONSIDERED` record were parent-only; most of a hierarchical curation
+happens among the children of one parent (444 `mergeChildren` in the log of 2026-11-20).
+
+<details>
+<summary>Details</summary>
+
+- **`CONSIDERED` on the child layer**: children selected in the child palette, shown for the
+  dwell and left, with `layer: child`, `parent_a`, `parent_b`, `same_parent`.
+- **`mergeChildren`** gets the pair record of what it merged, measured before the merge: every
+  pair up to six children, each against the largest above that; `dwell_s`, `selection_matches`.
+  It had the ids only.
+- **`promoteChildren`, `dropChildrenToBin`**: each child taken out against the largest sibling
+  that stays (`role: leaving_vs_largest_staying`) -- what the curator separated it from.  Not for
+  the promotions a Dissolve or Break Up runs inside itself, and at most 12 per command.
+- Children merged or taken out are not also logged as `CONSIDERED`.
+- Self-test: `hierarchy` steps `showChildren` and `dropChildren`; `test_curation_log.py` gains 7
+  checks on a session with six children.  The template fields were `null` there (child means
+  are cached when drawn, and the offscreen run does not draw them), so their values on the child
+  layer are not checked.
+
+</details>
 
 ---
 

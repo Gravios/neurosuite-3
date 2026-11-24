@@ -1361,7 +1361,7 @@ actions per kind, undone ones included; gestures as `GESTURE:<name>`).
 | `action` value | User-facing operation | Source clusters | Result clusters | Emits `ACTION_DETAIL`? |
 |---|---|---|---|---|
 | `GROUP` | Merge selected clusters (`G`) | N | 1 | Yes: one `pair` record per source pair |
-| `CONSIDERED` | Two to four parents shown together and then left **without** a merge | — | — | Yes: one `pair` record per pair, no snapshots |
+| `CONSIDERED` | Two to four parents -- or children (`layer: child`) -- shown together and then left **without** a merge | — | — | Yes: one `pair` record per pair, no snapshots |
 | `SPLIT` | Single new cluster from polygon, lasso, or DipSplit | 1 | 1 (new) + 1 (residual src) | DipSplit only |
 | `SPLIT_N` | Multiple new clusters from polygon (one per source) | N | N (new) + N (residual srcs) | No |
 | `RECLUSTER` | KiloKlustaKwik re-run on selected clusters (`Shift+R`) | M | K | Yes: mode, sources, the clusters returned and their sizes |
@@ -1376,7 +1376,7 @@ actions per kind, undone ones included; gestures as `GESTURE:<name>`).
 | `RENUMBER_PARTIAL` | Renumber selected to end (`T`) | renamed | renamed | No |
 | `SORT_ALL` | Any renumbering sort: **Actions → Sort Clusters**, `Shift+S` | — | — | Yes (the id map) |
 | `GESTURE` | A hierarchy command (see Layers, gestures) | — | — | Yes (plan, outcome) |
-| `HIERARCHY_EDIT` | `mergeChildren` (atom layer) | N atoms | 1 atom | Yes |
+| `HIERARCHY_EDIT` | `mergeChildren` (atom layer) | N atoms | 1 atom | Yes: the edit, and one `pair` record per pair of children merged |
 | `UNDO`, `REDO` | Reverts/replays a previous action | — | — | No |
 
 ### Layers, gestures and the hierarchy commands
@@ -1457,8 +1457,8 @@ selection then moves on without a merge, one entry is logged with the same
 `pair` record per pair (`dwell_s`, `n_shown`, `recommended`), no snapshots,
 not undo-paired.  A merge is logged as the `GROUP` it is and not also as a
 `CONSIDERED`; a merge that is undone keeps `status: bad`.  Not logged: a
-selection in the child view, one that includes cluster 0 or 1, and one that
-changes while another action is running.  A pair that was never selected
+selection that includes cluster 0 or 1, and one that changes while another
+action is running.  A pair that was never selected
 together leaves no record, so the absence of a `CONSIDERED` is not a
 rejection.
 
@@ -1466,6 +1466,26 @@ rejection.
 d = df[(df.event == "ACTION_DETAIL") & (df.detail == "pair")]
 merged   = d[(d.action == "GROUP") & (d.status == "good")]
 rejected = d[d.action == "CONSIDERED"]            # looked at, left apart
+```
+
+**The child layer** gets the same records, each with `layer: child` and the
+child ids in `cluster_a` / `cluster_b`:
+
+| Entry | `pair` records |
+|---|---|
+| `CONSIDERED` | children selected in the child palette, shown for the dwell and left: as for parents, plus `parent_a`, `parent_b`, `same_parent` |
+| `HIERARCHY_EDIT` (`mergeChildren`) | the children merged, measured before the merge: every pair up to six children, above that each against the largest (`pairing`: `all` / `vs_largest`); `parent`, `n_merged`, `dwell_s`, `selection_matches` |
+| `GESTURE` `promoteChildren`, `dropChildrenToBin` | each child taken out against the largest sibling that **stays** in its parent (`role: leaving_vs_largest_staying`, `parent`, `n_leaving`): what it was separated from. At most 12 per command; none when the whole parent leaves, and none for the promotions a Dissolve or Break Up runs inside itself |
+
+Children merged or taken out are not also logged as `CONSIDERED`.
+`template_cos` and the fields derived from the mean waveforms are `null`
+for a child whose mean was not cached (it had not been drawn).
+
+```python
+kids = d[d.layer == "child"]
+merged_kids  = kids[kids.action == "HIERARCHY_EDIT"]
+split_off    = kids[kids.role == "leaving_vs_largest_staying"]
+left_as_is   = kids[kids.action == "CONSIDERED"]
 ```
 
 **REALIGN** logs `{"edit": "realign"}` with `outcome` (`applied`, or
