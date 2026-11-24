@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: a move of spikes no longer wipes the cluster information](#2026-11-24--klusters-a-move-of-spikes-no-longer-wipes-the-cluster-information) |
 | 2026-11-24 | [Klusters: the children follow a palette merge of their parents](#2026-11-24--klusters-the-children-follow-a-palette-merge-of-their-parents) |
 | 2026-11-24 | [Klusters: realign stays not undoable, and the manual says so](#2026-11-24--klusters-realign-stays-not-undoable-and-the-manual-says-so) |
 | 2026-11-24 | [Klusters: a change of cluster information is an undo step](#2026-11-24--klusters-a-change-of-cluster-information-is-an-undo-step) |
@@ -252,6 +253,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: a move of spikes no longer wipes the cluster information
+
+Promote Children or Drop to Noise erased the information of every cluster.
+
+<details>
+<summary>Details</summary>
+
+- Found by the undo run on a real session: after Drop to Noise on one child, the quality
+  entered for two parents was gone.
+- `Data::moveSpikeSubset` built the new cluster table from position and count alone, so **one
+  move wiped the structure, type, quality and notes of every cluster of the layer**, the
+  untouched ones included.  It is behind Promote Children, Drop to Noise, Dissolve, Break Up,
+  Merge Orphans and a child dragged to another parent.  The information now rides along.
+- `Data::restoreClusterLabels` (the undo of the child layer) did the same to the children.
+- Not affected: merge, split, core cut, renumber, compact (checked).  A destination cluster
+  created by the move starts empty, as before.
+- **Sessions curated before this**: information entered before one of these commands and saved
+  after it is not in the `.cli`.
+- `test_annotation_survives_moves.py` (5 checks).
+
+</details>
 
 ---
 

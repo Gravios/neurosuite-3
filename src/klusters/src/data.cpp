@@ -4189,6 +4189,10 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     SortableTable* newSpk  = new SortableTable();
     ClusterInfoMap* newInfo = new ClusterInfoMap();
     newSpk->setSize(nbSpikes);
+    // Every entry below carries the cluster's information (structure, type, quality,
+    // notes) over.  They were built from position and count alone, so ONE move wiped
+    // the information of every cluster of the layer -- the source, the destination and
+    // all the untouched ones.
 
     dataType pos = 1;  // 1-based insertion cursor
 
@@ -4209,7 +4213,7 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
                 }
             }
             if (kept > 0) {
-                newInfo->insert(cid, ClusterInfo(clStart, kept));
+                newInfo->insert(cid, ClusterInfo(clStart, kept, it.value().annotation()));
                 fromClusters.append(fromCluster);
             } else {
                 emptiedClusters.append(fromCluster);
@@ -4240,7 +4244,8 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
             for (dataType j = 0; j < total; ++j)
                 (*newSpk)(1, clStart + j) = tmp[static_cast<size_t>(j)];
 
-            newInfo->insert(cid, ClusterInfo(clStart, total));
+            // (a destination created by this move has none: iterationMap's placeholder)
+            newInfo->insert(cid, ClusterInfo(clStart, total, it.value().annotation()));
 
         } else {
             // Copy cluster unchanged
@@ -4251,7 +4256,7 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
                 ++pos;
             }
             if (nSpk > 0)
-                newInfo->insert(cid, ClusterInfo(clStart, nSpk));
+                newInfo->insert(cid, ClusterInfo(clStart, nSpk, it.value().annotation()));
         }
     }
 
@@ -4342,7 +4347,12 @@ void Data::restoreClusterLabels(const QVector<dataType>& labels)
             (*newSpk)(2, pos) = cid;
             ++pos;
         }
-        newInfo->insert(cid, ClusterInfo(clStart, static_cast<dataType>(rows.size())));
+        // The information of a cluster that exists on both sides is carried over, as
+        // setClusterLabels does: this is the undo of the child layer, and it wiped it.
+        const auto old = clusterInfoMap->constFind(cid);
+        newInfo->insert(cid, old != clusterInfoMap->constEnd()
+                                 ? ClusterInfo(clStart, static_cast<dataType>(rows.size()), old.value().annotation())
+                                 : ClusterInfo(clStart, static_cast<dataType>(rows.size())));
     }
 
     // Clusters that existed before OR exist now may have changed membership.
