@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the rest of the Preferences pages are filled from the table](#2026-11-24--klusters-the-rest-of-the-preferences-pages-are-filled-from-the-table) |
 | 2026-11-24 | [Klusters: Preferences pages are filled from the preference table](#2026-11-24--klusters-preferences-pages-are-filled-from-the-preference-table) |
 | 2026-11-24 | [Klusters: a settings file is read within each preference's limits](#2026-11-24--klusters-a-settings-file-is-read-within-each-preferences-limits) |
 | 2026-11-24 | [Klusters: the preferences are described in one table](#2026-11-24--klusters-the-preferences-are-described-in-one-table) |
@@ -277,6 +278,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the rest of the Preferences pages are filled from the table
+
+The binder handles numbers typed into fields, colours, radio buttons and lists of values; 74 settings now need only their control and one row. No behaviour changes.
+
+<details>
+<summary>Details</summary>
+
+- The binder of the Preferences pages learns four more kinds of control: a number typed
+  into a line edit (the t-SNE settings), a colour, radio buttons (the realign mode), and a
+  combo box whose entries stand for values (super-sampling off / ×2 / ×4). 26 more settings
+  are bound, the whole Cluster view page among them: **74 settings** now need a control and
+  one row.
+- `prefdialog.cpp` is 482 lines (771 before the two conversions); the Cluster view page
+  loses 134 lines of accessors, in which each number field repeated its default as the
+  value to use when the text could not be read.
+- **No behaviour changes**: the settings snapshot is the same in its seven cases, and the
+  test now also sends the last entry of a combo box of values, the last radio button, a
+  colour and typed numbers through the dialog and back.
+- **By hand, on purpose:** the recluster engine, its chunking and the fiber-kit command
+  (their controls do more when set, or are built in code), and the three settings structs
+  (the core cut, the hover spike, the quality dot), whose pages set them as a whole.
+
+</details>
 
 ---
 

@@ -11,18 +11,12 @@ public:
     explicit PrefDisplay(QWidget* parent = nullptr);
     ~PrefDisplay() override = default;
 
-    void   setBackgroundColor(const QColor& color);
-    QColor getBackgroundColor() const;
 
 
 
 
-    void setUseWhiteColorDuringPrinting(bool b);
-    bool useWhiteColorDuringPrinting() const;
 
 
-    void setTemplatesMode(bool checked);
-    bool getTemplatesMode() const;
 
 private:
     // Grey the Template Library auto-show when Templates mode is off (the

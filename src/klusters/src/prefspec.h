@@ -15,6 +15,7 @@
 
 #include <QString>
 #include <QVariant>
+#include <QVariantList>
 
 #include <functional>
 
@@ -31,8 +32,15 @@ struct PrefSpec {
     /// resets every row that names one; empty: the page does it by hand, or no page shows it.
     QString  widget;
 
-    /// The row, shown by the control named @p objectName.
+    /// For a combo box whose entries stand for these values, in order (0, 2, 4 for "off, x2, x4").
+    QVariantList choices;
+
+    /// The row, shown by the control named @p objectName.  Radio buttons: their names in
+    /// the order of the values 0, 1, 2…, separated by '|'.
     PrefSpec on(const char* objectName) const { PrefSpec s = *this; s.widget = QLatin1String(objectName); return s; }
+    /// The row, shown by a combo box whose entries stand for @p values.
+    PrefSpec on(const char* objectName, const QVariantList& values) const
+    { PrefSpec s = on(objectName); s.choices = values; return s; }
 };
 
 #endif // PREFSPEC_H

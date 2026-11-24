@@ -111,6 +111,21 @@ def main():
             w, h = want[case].get(g, {}), got.get(case, {}).get(g, {})
             diffs += [f"{case} [{g}] {k}: {w.get(k)!r} -> {h.get(k)!r}" for k in sorted(set(w) | set(h)) if w.get(k) != h.get(k)]
     n = sum(len(kv) for kv in want["default"].values())
+    # Values the cases above do not reach: the last entry of a combo box of values, the last
+    # radio button, a colour, a number typed with many digits.  Preferences opened and OK
+    # pressed must give them back.
+    special = ("[%General]\nsupersampleMode=4\nrealignMode=3\nbackgroundColor=#204060\ntsneTheta=0.25\n"
+               "tsneSpikeCap=45000\nprojectionScopeMode=1\nreorderMethod=2\nwaveformSortMean=true\n"
+               "nbUndoRaisedFromOldDefault=true\nrealignThresholdLoweredFromOldDefault=true\nsettingsRevision=1\n")
+    plain, viaDialog = through(klusters, special), through(klusters, special, dialog=True)
+    for k in ("supersampleMode", "realignMode", "backgroundColor", "tsneTheta", "tsneSpikeCap", "projectionScopeMode",
+              "reorderMethod", "waveformSortMean"):
+        a, b = plain["%General"].get(k), viaDialog["%General"].get(k)
+        if a != b:
+            diffs.append(f"through the dialog {k}: {a!r} -> {b!r}")
+    for k, v in (("supersampleMode", "4"), ("realignMode", "3"), ("tsneSpikeCap", "45000"), ("reorderMethod", "2")):
+        if plain["%General"].get(k) != v:
+            diffs.append(f"read {k}={v}: {plain['%General'].get(k)!r}")
     diffs += [f"the preference table names a control no page has: {u}" for u in sorted(set(UNBOUND))]
     print(("  ok:   " if not diffs else "  FAIL: ") + f"the {n} keys of the settings file are the snapshot's in the {len(want)} cases")
     for x in diffs[:40]:

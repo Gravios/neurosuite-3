@@ -151,177 +151,43 @@ PrefClusterView::PrefClusterView(QWidget *parent) : PrefClusterViewLayout(parent
 PrefClusterView::~PrefClusterView(){
 }
 
-void PrefClusterView::setTimeInterval(int time){
-    intervalSpinBox->setValue(time);
-}
 
-int PrefClusterView::getTimeInterval() const{
-    return intervalSpinBox->value();
-}
 
-void PrefClusterView::setTsneSpikeCap(int cap){
-    tsneCapLineEdit->setText(QString::number(cap));
-}
 
-int PrefClusterView::getTsneSpikeCap() const{
-    bool ok = false;
-    const int v = tsneCapLineEdit->text().toInt(&ok);
-    return ok ? v : 32000;   // Configuration clamps the floor on apply
-}
 
-void PrefClusterView::setTsneStartPerplexity(double v){
-    tsneStartPerpLineEdit->setText(QString::number(v));
-}
 
-double PrefClusterView::getTsneStartPerplexity() const{
-    bool ok = false;
-    const double v = tsneStartPerpLineEdit->text().toDouble(&ok);
-    return ok ? v : 30.0;
-}
 
-void PrefClusterView::setTsneIterations(int v){
-    tsneItersLineEdit->setText(QString::number(v));
-}
 
-int PrefClusterView::getTsneIterations() const{
-    bool ok = false;
-    const int v = tsneItersLineEdit->text().toInt(&ok);
-    return ok ? v : 500;
-}
 
-void PrefClusterView::setTsneTheta(double v){
-    tsneThetaLineEdit->setText(QString::number(v));
-}
 
-double PrefClusterView::getTsneTheta() const{
-    bool ok = false;
-    const double v = tsneThetaLineEdit->text().toDouble(&ok);
-    return ok ? v : 0.5;
-}
 
-void PrefClusterView::setTsneMaxDimensions(int v){
-    tsneDimsLineEdit->setText(QString::number(v));
-}
 
-int PrefClusterView::getTsneMaxDimensions() const{
-    bool ok = false;
-    const int v = tsneDimsLineEdit->text().toInt(&ok);
-    return ok ? v : 0;
-}
 
-void PrefClusterView::setTsneLearningRate(double v){
-    tsneEtaLineEdit->setText(QString::number(v));
-}
 
-double PrefClusterView::getTsneLearningRate() const{
-    bool ok = false;
-    const double v = tsneEtaLineEdit->text().toDouble(&ok);
-    return ok ? v : 200.0;
-}
 
-void PrefClusterView::setTsneExaggeration(double v){
-    tsneExagLineEdit->setText(QString::number(v));
-}
 
-double PrefClusterView::getTsneExaggeration() const{
-    bool ok = false;
-    const double v = tsneExagLineEdit->text().toDouble(&ok);
-    return ok ? v : 12.0;
-}
 
-void PrefClusterView::setTsneExaggerationIterations(int v){
-    tsneExagItersLineEdit->setText(QString::number(v));
-}
 
-int PrefClusterView::getTsneExaggerationIterations() const{
-    bool ok = false;
-    const int v = tsneExagItersLineEdit->text().toInt(&ok);
-    return ok ? v : 250;
-}
 
-void PrefClusterView::setTsneSubsampleOverCap(bool b){
-    tsneSubsampleCheckBox->setChecked(b);
-}
 
-bool PrefClusterView::getTsneSubsampleOverCap() const{
-    return tsneSubsampleCheckBox->isChecked();
-}
 
-void PrefClusterView::setTsneRandomSeed(bool b){
-    tsneRandomSeedCheckBox->setChecked(b);
-}
 
-bool PrefClusterView::getTsneRandomSeed() const{
-    return tsneRandomSeedCheckBox->isChecked();
-}
 
-void PrefClusterView::setTsnePerplexityStep(int step){
-    tsneStepLineEdit->setText(QString::number(step));
-}
 
-int PrefClusterView::getTsnePerplexityStep() const{
-    bool ok = false;
-    const int v = tsneStepLineEdit->text().toInt(&ok);
-    return ok ? v : 5;       // Configuration clamps the floor on apply
-}
 
-void PrefClusterView::setProjectionScopeMode(int m){
-    projModeCombo->setCurrentIndex((m == 1) ? 1 : 0);
-}
 
-int PrefClusterView::getProjectionScopeMode() const{
-    return (projModeCombo->currentIndex() == 1) ? 1 : 0;
-}
 
-void PrefClusterView::setProjectionScopeMinutes(double v){
-    projScopeMinutesLineEdit->setText(QString::number(v));
-}
 
-double PrefClusterView::getProjectionScopeMinutes() const{
-    bool ok = false;
-    const double v = projScopeMinutesLineEdit->text().toDouble(&ok);
-    return ok ? v : 12.0;    // Configuration clamps the range on apply
-}
 
-void PrefClusterView::setProjectionOutOfScopeHidden(bool b){
-    projHideOutOfScopeCheckBox->setChecked(b);
-}
 
-bool PrefClusterView::getProjectionOutOfScopeHidden() const{
-    return projHideOutOfScopeCheckBox->isChecked();
-}
 
-void PrefClusterView::setCorrectCollisionRows(bool b){
-    correctCollisionRowsCheckBox->setChecked(b);
-}
 
-bool PrefClusterView::getCorrectCollisionRows() const{
-    return correctCollisionRowsCheckBox->isChecked();
-}
 
-void PrefClusterView::setShowEapCollisions(bool b){
-    showCollisionsCheckBox->setChecked(b);
-}
 
-bool PrefClusterView::getShowEapCollisions() const{
-    return showCollisionsCheckBox->isChecked();
-}
 
-void PrefClusterView::setShowEapClassMembers(bool b){
-    showClassMembersCheckBox->setChecked(b);
-}
 
-bool PrefClusterView::getShowEapClassMembers() const{
-    return showClassMembersCheckBox->isChecked();
-}
 
-void PrefClusterView::setDensitySigmaPx(double v){
-    densitySigmaSpinBox->setValue(v);
-}
 
-double PrefClusterView::getDensitySigmaPx() const{
-    return densitySigmaSpinBox->value();
-}
 
 void PrefClusterView::setHoverSpike(const Configuration::HoverSpike& h)
 {

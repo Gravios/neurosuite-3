@@ -14,9 +14,13 @@
  *   QSpinBox / QDoubleSpinBox           a whole / a real number
  *   QComboBox                           the index of the entry (a number), or for a
  *                                       flag its first entry = off, second = on
- *   QLineEdit                           a text
- * Anything else stays the page's own (a colour, a set of radio buttons, a
- * combo box of named values, a number typed into a line edit).
+ *                                       with PrefSpec::choices, the value its entry stands for
+ *   QLineEdit                           a text; or a number typed in (what cannot be
+ *                                       read as one is the default)
+ *   QColorButton                        a colour
+ *   radio buttons ("a|b|c")             the index of the one checked
+ * Anything else stays the page's own: a setting whose control does more when it
+ * is set (the recluster engine and its chunking), or one built in code without a name.
  *
  * Copyright (C) 2026 neurosuite-3 contributors
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -50,7 +54,7 @@ class PrefBinder : public QObject {
     void changed();
 
   private:
-    struct Binding { PrefSpec spec; QWidget* widget; };
+    struct Binding { PrefSpec spec; QList<QWidget*> widgets; };   // several: radio buttons
     QList<Binding> bindings;
     QStringList    missing;
 };

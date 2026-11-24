@@ -5,16 +5,10 @@ PrefSession::PrefSession(QWidget* parent)
 {
     connect(crashRecoveryCheckBox, &QCheckBox::stateChanged,
             this, &PrefSession::updateCrashRecoveryTimeInterval);
+    // The interval follows the box from the start: a value loaded equal to the .ui's sends no signal.
+    updateCrashRecoveryTimeInterval(crashRecoveryCheckBox->checkState());
 }
 
-void PrefSession::setCrashRecovery(bool use)
-{
-    crashRecoveryCheckBox->setChecked(use);
-    updateCrashRecoveryTimeInterval(use ? Qt::Checked : Qt::Unchecked);
-}
-void PrefSession::setCrashRecoveryIndex(int idx)  { crashRecoveryComboBox->setCurrentIndex(idx); }
-bool PrefSession::isCrashRecovery() const         { return crashRecoveryCheckBox->isChecked(); }
-int  PrefSession::crashRecoveryIntervalIndex() const { return crashRecoveryComboBox->currentIndex(); }
 
 void PrefSession::updateCrashRecoveryTimeInterval(int state)
 {

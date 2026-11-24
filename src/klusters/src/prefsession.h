@@ -10,11 +10,7 @@ public:
     explicit PrefSession(QWidget* parent = nullptr);
     ~PrefSession() override = default;
 
-    void setCrashRecovery(bool use);
-    void setCrashRecoveryIndex(int idx);
 
-    bool isCrashRecovery() const;
-    int  crashRecoveryIntervalIndex() const;
 
     // Saving and the curation log.
 

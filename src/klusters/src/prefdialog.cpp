@@ -208,24 +208,14 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
 
     // ── Wire enableApply on every interactive widget ───────────────
     // Session
-    connect(prefSession->crashRecoveryCheckBox,  &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefSession->crashRecoveryComboBox,  &QComboBox::activated,     this, &PrefDialog::enableApply);
 
     // Reclustering
     connect(prefReclustering->reclusteringArgsLineEdit,        &QLineEdit::textChanged, this, &PrefDialog::enableApply);
 
     // Refinement (realign + dipsplit + knn)
-    connect(prefRealignment->realignModeOffRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRealignment->supersampleModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignModeCentroidRadio,   &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefSplitting, &PrefSplitting::coreCutChanged, this, &PrefDialog::enableApply);
 
     // Display
-    connect(prefDisplay->backgroundColorButton,        &QColorButton::colorChanged,    this, &PrefDialog::enableApply);
-    connect(prefDisplay->useWhiteColorPrinting,        &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
-    connect(prefDisplay->templatesModeCheckBox,        &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
 
     // Auto-Merge (patch 0068)
     connect(prefMerging->algoMeanRadio,             &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
@@ -242,28 +232,9 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     connect(prefMerging->errorProbThresholdSpinBox, &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
 
     // Cluster + Waveform views (unchanged)
-    connect(prefclusterView->intervalSpinBox,  &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefclusterView, &PrefClusterView::hoverSpikeChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneCapLineEdit,  &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneStepLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneStartPerpLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneItersLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneThetaLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneDimsLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneEtaLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneExagLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneExagItersLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneSubsampleCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
-    connect(prefclusterView->tsneRandomSeedCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
     // Template projection scope and the density heatmap: these settings were added to
     // the page without a change signal here, so editing only them left Apply disabled.
-    connect(prefclusterView->projModeCombo,  &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->projScopeMinutesLineEdit, &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefclusterView->projHideOutOfScopeCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
-    connect(prefclusterView->correctCollisionRowsCheckBox, &QCheckBox::toggled, this, &PrefDialog::enableApply);
-    connect(prefclusterView->showCollisionsCheckBox,     &QCheckBox::toggled, this, &PrefDialog::enableApply);
-    connect(prefclusterView->showClassMembersCheckBox,   &QCheckBox::toggled, this, &PrefDialog::enableApply);
-    connect(prefclusterView->densitySigmaSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView->gainSpinBox,     &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::positionsChanged,      this, &PrefDialog::enableApply);
     connect(prefWaveformView, &PrefWaveformView::waveformQualityChanged, this, &PrefDialog::enableApply);
@@ -314,8 +285,6 @@ void PrefDialog::updateDialog()
     prefRadialMenu->setLayout(radiallayout::fromSettings(configuration().getRadialMenuLayout()));
 
     // Session
-    prefSession->setCrashRecovery(configuration().isCrashRecovery());
-    prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndex());
 
     // Reclustering
     prefReclustering->setReclusterEngine(configuration().getReclusterEngine());
@@ -325,14 +294,9 @@ void PrefDialog::updateDialog()
     prefReclustering->setReclusterChunkMinutes(configuration().getReclusterChunkMinutes());
 
     // Refinement
-    prefRealignment->setRealignMode(configuration().getRealignMode());
-    prefRealignment->setSupersampleMode(configuration().getSupersampleMode());
     prefSplitting->setCoreCut(configuration().getCoreCut());
 
     // Display
-    prefDisplay->setBackgroundColor(configuration().getBackgroundColor());
-    prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
-    prefDisplay->setTemplatesMode(configuration().getTemplatesMode());
 
     // Auto-Merge (patch 0068)
     prefMerging->setAlgorithm(configuration().getAutoMergeAlgorithm());
@@ -347,26 +311,7 @@ void PrefDialog::updateDialog()
     prefMerging->setPreviewBeforeApply(configuration().getAutoMergePreviewBeforeApply());
 
     // Cluster + Waveform views
-    prefclusterView->setTimeInterval(configuration().getTimeInterval());
-    prefclusterView->setTsneSpikeCap(configuration().getTsneSpikeCap());
-    prefclusterView->setTsnePerplexityStep(configuration().getTsnePerplexityStep());
-    prefclusterView->setTsneStartPerplexity(configuration().getTsneStartPerplexity());
-    prefclusterView->setTsneIterations(configuration().getTsneIterations());
-    prefclusterView->setTsneTheta(configuration().getTsneTheta());
-    prefclusterView->setTsneMaxDimensions(configuration().getTsneMaxDimensions());
-    prefclusterView->setTsneLearningRate(configuration().getTsneLearningRate());
-    prefclusterView->setTsneExaggeration(configuration().getTsneExaggeration());
-    prefclusterView->setTsneExaggerationIterations(configuration().getTsneExaggerationIterations());
-    prefclusterView->setTsneSubsampleOverCap(configuration().getTsneSubsampleOverCap());
     prefclusterView->setHoverSpike(configuration().getHoverSpike());
-    prefclusterView->setTsneRandomSeed(configuration().getTsneRandomSeed());
-    prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeMode());
-    prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutes());
-    prefclusterView->setProjectionOutOfScopeHidden(configuration().getProjectionOutOfScopeHidden());
-    prefclusterView->setCorrectCollisionRows(configuration().getCorrectCollisionRows());
-    prefclusterView->setShowEapCollisions(configuration().getShowEapCollisions());
-    prefclusterView->setShowEapClassMembers(configuration().getShowEapClassMembers());
-    prefclusterView->setDensitySigmaPx(configuration().getDensitySigmaPx());
     prefWaveformView->setGain(configuration().getGain());
     prefWaveformView->setWaveformQuality(configuration().getWaveformQuality());
 
@@ -391,8 +336,6 @@ void PrefDialog::updateConfiguration()
     prefBinder->apply(configuration());
 
     // Session
-    configuration().setCrashRecovery(prefSession->isCrashRecovery());
-    configuration().setCrashRecoveryIndex(prefSession->crashRecoveryIntervalIndex());
 
     // Reclustering
     configuration().setReclusterEngine(prefReclustering->getReclusterEngine());
@@ -402,14 +345,9 @@ void PrefDialog::updateConfiguration()
     configuration().setReclusterChunkMinutes(prefReclustering->getReclusterChunkMinutes());
 
     // Refinement
-    configuration().setRealignMode(prefRealignment->getRealignMode());
-    configuration().setSupersampleMode(prefRealignment->getSupersampleMode());
     configuration().setCoreCut(prefSplitting->getCoreCut());
 
     // Display
-    configuration().setBackgroundColor(prefDisplay->getBackgroundColor());
-    configuration().setUseWhiteColorDuringPrinting(prefDisplay->useWhiteColorDuringPrinting());
-    configuration().setTemplatesMode(prefDisplay->getTemplatesMode());
 
     // Auto-Merge (patch 0068)
     configuration().setAutoMergeAlgorithm(prefMerging->getAlgorithm());
@@ -424,26 +362,7 @@ void PrefDialog::updateConfiguration()
     configuration().setAutoMergePreviewBeforeApply(prefMerging->getPreviewBeforeApply());
 
     // Cluster + Waveform views
-    configuration().setTimeInterval(prefclusterView->getTimeInterval());
-    configuration().setTsneSpikeCap(prefclusterView->getTsneSpikeCap());
-    configuration().setTsnePerplexityStep(prefclusterView->getTsnePerplexityStep());
-    configuration().setTsneStartPerplexity(prefclusterView->getTsneStartPerplexity());
-    configuration().setTsneIterations(prefclusterView->getTsneIterations());
-    configuration().setTsneTheta(prefclusterView->getTsneTheta());
-    configuration().setTsneMaxDimensions(prefclusterView->getTsneMaxDimensions());
-    configuration().setTsneLearningRate(prefclusterView->getTsneLearningRate());
-    configuration().setTsneExaggeration(prefclusterView->getTsneExaggeration());
-    configuration().setTsneExaggerationIterations(prefclusterView->getTsneExaggerationIterations());
-    configuration().setTsneSubsampleOverCap(prefclusterView->getTsneSubsampleOverCap());
     configuration().setHoverSpike(prefclusterView->getHoverSpike());
-    configuration().setTsneRandomSeed(prefclusterView->getTsneRandomSeed());
-    configuration().setProjectionScopeMode(prefclusterView->getProjectionScopeMode());
-    configuration().setProjectionScopeMinutes(prefclusterView->getProjectionScopeMinutes());
-    configuration().setProjectionOutOfScopeHidden(prefclusterView->getProjectionOutOfScopeHidden());
-    configuration().setCorrectCollisionRows(prefclusterView->getCorrectCollisionRows());
-    configuration().setShowEapCollisions(prefclusterView->getShowEapCollisions());
-    configuration().setShowEapClassMembers(prefclusterView->getShowEapClassMembers());
-    configuration().setDensitySigmaPx(prefclusterView->getDensitySigmaPx());
     configuration().setGain(prefWaveformView->getGain());
     configuration().setWaveformQuality(prefWaveformView->getWaveformQuality());
     configuration().setNbChannels(prefWaveformView->getNbChannels());
@@ -487,8 +406,6 @@ void PrefDialog::restoreDefaults()
 {
     prefBinder->restoreDefaults();
 
-    prefSession->setCrashRecovery(configuration().isCrashRecoveryDefault());
-    prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndexDefault());
 
     prefReclustering->setReclusterEngine(QStringLiteral("klustakwik"));
     prefReclustering->setFiberKitReclusterCommand(configuration().getFiberKitReclusterCommandDefault());
@@ -496,13 +413,8 @@ void PrefDialog::restoreDefaults()
     prefReclustering->setReclusterChunking(configuration().getReclusterChunkingDefault());
     prefReclustering->setReclusterChunkMinutes(configuration().getReclusterChunkMinutesDefault());
 
-    prefRealignment->setRealignMode(configuration().getRealignModeDefault());
-    prefRealignment->setSupersampleMode(configuration().getSupersampleModeDefault());
     prefSplitting->setCoreCut(configuration().getCoreCutDefault());
 
-    prefDisplay->setBackgroundColor(configuration().getBackgroundColorDefault());
-    prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrintingDefault());
-    prefDisplay->setTemplatesMode(configuration().getTemplatesModeDefault());
 
     // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
     prefMerging->setAlgorithm(configuration().getAutoMergeAlgorithmDefault());
@@ -516,26 +428,7 @@ void PrefDialog::restoreDefaults()
     prefMerging->setScope(configuration().getAutoMergeScopeDefault());
     prefMerging->setPreviewBeforeApply(configuration().getAutoMergePreviewBeforeApplyDefault());
 
-    prefclusterView->setTimeInterval(configuration().getTimeIntervalDefault());
-    prefclusterView->setTsneSpikeCap(configuration().getTsneSpikeCapDefault());
-    prefclusterView->setTsnePerplexityStep(configuration().getTsnePerplexityStepDefault());
-    prefclusterView->setTsneStartPerplexity(configuration().getTsneStartPerplexityDefault());
-    prefclusterView->setTsneIterations(configuration().getTsneIterationsDefault());
-    prefclusterView->setTsneTheta(configuration().getTsneThetaDefault());
-    prefclusterView->setTsneMaxDimensions(configuration().getTsneMaxDimensionsDefault());
-    prefclusterView->setTsneLearningRate(configuration().getTsneLearningRateDefault());
-    prefclusterView->setTsneExaggeration(configuration().getTsneExaggerationDefault());
-    prefclusterView->setTsneExaggerationIterations(configuration().getTsneExaggerationIterationsDefault());
-    prefclusterView->setTsneSubsampleOverCap(configuration().getTsneSubsampleOverCapDefault());
     prefclusterView->setHoverSpike(configuration().getHoverSpikeDefault());
-    prefclusterView->setTsneRandomSeed(configuration().getTsneRandomSeedDefault());
-    prefclusterView->setProjectionScopeMode(configuration().getProjectionScopeModeDefault());
-    prefclusterView->setProjectionScopeMinutes(configuration().getProjectionScopeMinutesDefault());
-    prefclusterView->setProjectionOutOfScopeHidden(configuration().getProjectionOutOfScopeHiddenDefault());
-    prefclusterView->setCorrectCollisionRows(configuration().getCorrectCollisionRowsDefault());
-    prefclusterView->setShowEapCollisions(configuration().getShowEapCollisionsDefault());
-    prefclusterView->setShowEapClassMembers(configuration().getShowEapClassMembersDefault());
-    prefclusterView->setDensitySigmaPx(configuration().getDensitySigmaPxDefault());
     prefWaveformView->setGain(configuration().getGainDefault());
     prefWaveformView->setWaveformQuality(configuration().getWaveformQualityDefault());
     prefWaveformView->resetChannelList(configuration().getNbChannels());
