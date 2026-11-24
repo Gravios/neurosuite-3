@@ -231,8 +231,8 @@ ndm_refeaturize [session.yaml] [electrodeGroup] [--method M] [--methodOrder N]
 
 Projects the spikes onto the eigenvectors already stored in
 `.pca.<method>.N` and rewrites `.fet.<method>.N`, without refitting PCA. Use it
-when spikes have moved but the basis is still valid, typically after
-[`ndm_alignspikes_pca`](alignment.md#ndm_alignspikes_pca--per-cluster-realignment-after-clustering).
+when spikes have moved but the basis is still valid, typically after a
+realign that rewrote the `.spk` but not the `.fet`.
 The feature columns stay in the same space as before, so an existing clustering
 remains meaningful.
 
@@ -368,7 +368,7 @@ token such as `stderiv_C5` must call `ndm_pca` instead. Outputs are
 
 ## See also
 
-- [Spike alignment](alignment.md) — `ndm_alignspikes` (before PCA), `ndm_alignspikes_pca` (after clustering)
+- [Spike alignment](alignment.md) — `ndm_alignspikes` (before PCA)
 - [Spike detection](spike-detection.md) — produces the `.spk` / `.res`
 - [`ndm_klustakwik`](ndm_klustakwik.md) — clusters the `.fet`
 - [`.fet`](../formats/fet.md), [`.pca`](../formats/pca.md), [`.spk`](../formats/spk.md) formats; [file naming](../formats/naming.md)

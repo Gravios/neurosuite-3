@@ -192,7 +192,7 @@ bool        resolvedIsStderiv(const Resolved&);
 bool        sdiffDropsLastChannel(int order);         // 1, 3, 4, 5
 ```
 
-**Consumers.** kiloklustakwik (`KlustaKwik.cpp`); klusters (`klusters*.cpp`, `klustersdoc*.cpp/.h`, `clustersprovider.cpp`, `clusterview.cpp`, `templateview.cpp`, `templateclassstore.cpp`, `templatelineagestore.cpp`); plugins `process_alignspikes`, `process_alignspikes_pca`, `process_decomposecollisions`, `process_initeap`; `neurofileio.cpp` (delegates `methodPath`/`stagePath`/`methodFromPath`); `template_generate.hpp`.
+**Consumers.** kiloklustakwik (`KlustaKwik.cpp`); klusters (`klusters*.cpp`, `klustersdoc*.cpp/.h`, `clustersprovider.cpp`, `clusterview.cpp`, `templateview.cpp`, `templateclassstore.cpp`, `templatelineagestore.cpp`); plugins `process_alignspikes`, `process_decomposecollisions`, `process_initeap`; `neurofileio.cpp` (delegates `methodPath`/`stagePath`/`methodFromPath`); `template_generate.hpp`.
 
 **Twins — must stay in step:**
 
@@ -348,7 +348,7 @@ double pcaProjectionEnergy(const int16_t* wfChannelMajor, int nChan, int nSamp, 
 
 **Projection.** `score[ch][k] = Σ_u ev[k*data2use+u] · (x[recShift + sampleShift + u] − (centered ? μ[u] : 0))` over a **channel-major** int16 waveform. `out` is resized to `min(pca.nCh, nChan) × nComp` (channel-major, `out[ch*nComp + k]`); the return value is the number of channels projected (0 for an unusable basis or bad geometry). Samples that a shift moves outside `[0, nSamp)` are skipped, so scores at different shifts are comparable only if the caller keeps the usable window the same. `sampleShift = +s` gives the scores of a waveform whose peak is `s` samples earlier. `pcaProjectionEnergy = Σ score²` and is defined through `pcaProjectScores`. **The projection does not apply the basis' transform**: a caller with a stderiv basis must transform the waveform first (`stderiv_transform.hpp`, order from `spatialOrder(pca.method)`).
 
-**Consumers.** `process_pca` (`writePca`, `Method`, `spatialOrder`, `methodValid`), `process_refeaturize`, `process_refeaturize_stderiv`, `process_shadowcluster`, `process_alignspikes_pca` (`loadPca`, `pcaProjectionEnergy`), kiloklustakwik (`KK_refeaturize.cpp`, `KK_timeshift.cpp`), klusters (`klustersdoc.h`, `klustersdoc_realign.cpp`, `klustersdoc_featurespace.cpp`, `pca_row_projection.h`).
+**Consumers.** `process_pca` (`writePca`, `Method`, `spatialOrder`, `methodValid`), `process_refeaturize`, `process_refeaturize_stderiv`, `process_shadowcluster`, kiloklustakwik (`KK_refeaturize.cpp`, `KK_timeshift.cpp`), klusters (`klustersdoc.h`, `klustersdoc_realign.cpp`, `klustersdoc_featurespace.cpp`, `pca_row_projection.h`).
 **Twins.** fiber-kit `fiber_pca.py` (`Method` IntEnum and `method_tag`, pinned by [`pca_method_vectors.tsv`](#43-cross-language-conformance-vectors)); `src/klusters/src/pca_refine_cuda.cu` (device mirror of the projection energy).
 **Adding a value.** Append, never renumber: the value is stored in every basis. The files to touch are listed in [RECIPES.md §2.2](../../../doc/dev/RECIPES.md#22-add-a-pcae-method).
 
@@ -470,7 +470,7 @@ void    applyStderivTransform(SdiffOrder order, const int16_t* in, int nChan, in
 
 **Transform.** Per time sample: spatial derivative → `clampToInt16`; then per channel `out[t] = clampToInt16(sd[t] − sd[t−1])` with `sd[−1] = prevSeed[c]` (0 when `prevSeed` is null). A window cut from a recording should pass `stderivSeed` of the sample before it, which is what the extractor writes. Layout is channel-major in and out; `out` may alias `in`. `partner` and the set tables are within-group channel indices and are not bounds-checked.
 
-**Consumers.** `spike_extract.hpp`; `process_extractspikes_stderiv`, `process_reextractspikes_stderiv`, `process_extractspikes_sdiff`, `process_pca_stderiv`, `process_alignspikes`, `process_alignspikes_pca`; klusters `klustersdoc_internal.h`, `klustersdoc_realign.cpp`, `klustersdoc.h`; kiloklustakwik `KK_timeshift.cpp`. **Mirror:** fiber-kit `fiber_stderiv.apply_stderiv_transform`. No hand copies remain; do not add one.
+**Consumers.** `spike_extract.hpp`; `process_extractspikes_stderiv`, `process_reextractspikes_stderiv`, `process_extractspikes_sdiff`, `process_pca_stderiv`, `process_alignspikes`; klusters `klustersdoc_internal.h`, `klustersdoc_realign.cpp`, `klustersdoc.h`; kiloklustakwik `KK_timeshift.cpp`. **Mirror:** fiber-kit `fiber_stderiv.apply_stderiv_transform`. No hand copies remain; do not add one.
 
 ### 3.11 `template_generate.hpp` — template library generation and lineage rendering
 
@@ -752,7 +752,7 @@ Header-only. `fseek64(FILE*, int64_t, whence)` and `ftell64(FILE*)` use `fseeko`
 
 Header-only. `replaceFile(from, to, error)` moves a file over an existing one (`std::filesystem::rename`; `std::rename` fails on Windows when the destination exists), `syncFile(FILE*)` flushes and `fsync`s (`_commit` on Windows) before a replace, and `processId()` returns the process id for unique temporary names.
 
-**Consumers.** The write-then-rename saves in klusters (`klustersdoc_realign.cpp`, `klustersdoc_featurespace.cpp`, `klustersdoc_timesort.cpp`, `convert_to_binary.cpp`) and in `process_shadowcluster`, `process_spikegrouper`, `process_alignspikes`, `process_alignspikes_pca`, `process_drifttracker`, `process_denoiseuniform`, `process_removeartefacts`. **Test.** `core_test_fileops`.
+**Consumers.** The write-then-rename saves in klusters (`klustersdoc_realign.cpp`, `klustersdoc_featurespace.cpp`, `klustersdoc_timesort.cpp`, `convert_to_binary.cpp`) and in `process_shadowcluster`, `process_spikegrouper`, `process_alignspikes`, `process_drifttracker`, `process_denoiseuniform`, `process_removeartefacts`. **Test.** `core_test_fileops`.
 
 ### 3.24 `mappedfile.hpp` / `mappedfile.cpp` — read-only whole-file mapping
 

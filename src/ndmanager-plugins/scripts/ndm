@@ -70,7 +70,6 @@ reextractspikes	Masked second-pass detection, shadow clustering
 subcluster_unmatched	Re-cluster the unmatched bin
 stripdat	Subtract sorted units -> -spkclean.dat
 redetectspikes	Detect again on the stripped recording
-alignspikes_pca	Per-cluster realignment
 decomposecollisions	Decompose collisions -> .col, .eap, .tcl
 localise	Per-spike source positions -> .loc
 # Drift

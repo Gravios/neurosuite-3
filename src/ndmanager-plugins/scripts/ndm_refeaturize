@@ -21,7 +21,7 @@
 #  Re-projects spike waveforms onto the eigenvectors already saved in
 #  .pca.<method>.N (by ndm_pca) and writes .fet.<method>.N, WITHOUT refitting the
 #  PCA.  Use it as a fast alternative to a full ndm_pca re-run when the spikes have
-#  shifted but the basis is still valid — e.g. after ndm_alignspikes_pca — so the
+#  shifted but the basis is still valid — e.g. after a realign — so the
 #  features stay consistent with the updated .spk.<method>.N.
 #
 #  The `method` selects the transform, exactly as in ndm_pca:

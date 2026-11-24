@@ -82,7 +82,7 @@ In bash, Tab completes:
 | `ndm pca rat01 ` | the group numbers of `rat01.yaml` |
 
 The steps that take a group are those whose usage line names one:
-`alignspikes_pca`, `applydrift` (a source group, then any number of
+`applydrift` (a source group, then any number of
 targets), `autoklusta`, `denoiseuniform`, `estimategeometry`, `klustakwik`,
 `localise`, `pca`, `pca_multichannel`, `refeaturize`, `spikecleaner` and
 `subcluster_unmatched`. The group numbers come from the session named on the

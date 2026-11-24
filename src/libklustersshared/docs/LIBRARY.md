@@ -505,7 +505,7 @@ PrefDialog::PrefDialog(QWidget* parent, …) : QPageDialog(parent) {
 Header-only, Qt-free, not installed and not part of the `.so`. Consumers put
 `src/libklustersshared/src/klustersshared` on their include path:
 `process_extractspikes_stderiv`, `process_reextractspikes_stderiv`,
-`process_alignspikes`, `process_alignspikes_pca` (ndmanager-plugins) and
+`process_alignspikes` (ndmanager-plugins) and
 Klusters (`klustersdoc_internal.h`, `klustersdoc_realign.cpp`).
 
 It parses a spike group's `sdiffPairs` value (session YAML
@@ -731,7 +731,7 @@ corrected; the text describes the problem as it was.
     "klustakwik, kiloklustakwik, klusters" (there is no klustakwik);
     `process_alignspikes_pca.cpp:84` suggests calling `XcorrDispatch::compute`
     and "rebuild against libklustersshared", but the dispatcher is not in the
-    library.
+    library. (`process_alignspikes_pca` was removed on 2026-11-24.)
 15. Back ends differ in precision: SYCL accumulates in `float`, OMP/CUDA/HIP in
     `double` (CUDA/HIP store the spike norm as `float`). Scores can differ in
     the last digits between back ends.

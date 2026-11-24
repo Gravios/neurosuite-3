@@ -2710,8 +2710,8 @@ programs:
 
       Reads .spk.<method>.N and the eigenvectors in .pca.<method>.N (written by
       ndm_pca) and overwrites .fet.<method>.N.  A fast alternative to re-running
-      ndm_pca when the spikes moved but the basis still holds, e.g. after
-      ndm_alignspikes_pca.  dropLastChannel comes from ndm_pca unless set here.
+      ndm_pca when the spikes moved but the basis still holds, e.g. after a
+      realign.  dropLastChannel comes from ndm_pca unless set here.
 
       OPTIONAL PARAMETERS
 
@@ -3248,69 +3248,6 @@ programs:
       (default) = off; true or auto = <session>.cur.<method>.<group>[.<stage>];
       otherwise a directory or a file path, which may contain {g} for the
       group number.
-
-  - name: ndm_alignspikes_pca
-    parameters:
-      - name: maxShift
-        value: 3
-        status: Optional
-      - name: maxShiftGlobal
-        value: 4
-        status: Optional
-      - name: iterations
-        value: 2
-        status: Optional
-      - name: minScore
-        value: 0.70
-        status: Optional
-      - name: minSpikes
-        value: 5
-        status: Optional
-      - name: skipPca
-        value: 'false'
-        status: Optional
-      - name: method
-        value: standard
-        status: Optional
-    help: |-
-      Two-stage per-cluster spike realignment, after clustering.
-
-      Stage 1 aligns each spike to its cluster mean by normalised
-      cross-correlation over ±maxShift and re-extracts shifted spikes from the
-      .fil.  Stage 2 shifts the whole cluster by the single lag in
-      ±maxShiftGlobal that maximises the cluster mean's energy in the PCA basis
-      (.pca.N), so mixture clusters are not dispersed.  Needs .clu.N; re-run
-      ndm_pca or ndm_refeaturize afterwards.
-
-      OPTIONAL PARAMETERS
-
-      # maxShift
-
-      Stage-1 per-spike shift bound, samples (default 3).
-
-      # maxShiftGlobal
-
-      Stage-2 cluster shift bound, samples (default 4).
-
-      # iterations
-
-      Stage-1 passes per cluster (default 2).
-
-      # minScore
-
-      Cross-correlation score needed to shift a spike in stage 1 (default 0.70).
-
-      # minSpikes
-
-      Clusters with fewer spikes are skipped (default 5).
-
-      # skipPca
-
-      true to run stage 1 only (default false).
-
-      # method
-
-      standard (default), sdiff or stderiv — the engine whose files are read.
 
   - name: ndm_estimatedrift
     parameters:

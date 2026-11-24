@@ -1,12 +1,15 @@
 # Spike alignment
 
-Two commands that move spike windows so each waveform sits on its true peak.
-`ndm_alignspikes` works per spike, before PCA. `ndm_alignspikes_pca` works per
-cluster, after clustering. Both re-extract shifted windows from the raw
-recording instead of rolling the stored snippet, and both rewrite the spike
-times and waveforms in place.
+`ndm_alignspikes` moves each spike window so the waveform sits on its true peak.
+It works per spike, before PCA, re-extracts the shifted windows from the raw
+recording instead of rolling the stored snippet, and rewrites the spike times and
+waveforms in place.
 
-**Contents:** [`ndm_alignspikes` — per-spike peak alignment before PCA](#ndm_alignspikes--per-spike-peak-alignment-before-pca) · [`ndm_alignspikes_pca` — per-cluster realignment after clustering](#ndm_alignspikes_pca--per-cluster-realignment-after-clustering) · [Shared spike times](#shared-spike-times)
+Realignment within a cluster, after sorting, is not a pipeline step: use
+Klusters (Realign Spikes) or fiber-kit (`fiber-realign`). The step that did it
+here, `ndm_alignspikes_pca`, was removed on 2026-11-24.
+
+**Contents:** [`ndm_alignspikes` — per-spike peak alignment before PCA](#ndm_alignspikes--per-spike-peak-alignment-before-pca) · [Shared spike times](#shared-spike-times)
 
 ---
 
@@ -149,159 +152,15 @@ when `process_alignspikes` fails on a group.
 
 ---
 
-## `ndm_alignspikes_pca` — per-cluster realignment after clustering
-
-### Synopsis
-
-```bash
-ndm_alignspikes_pca [session.yaml] [electrodeGroup] [--method M] [-- process_alignspikes_pca flags]
-```
-
-**Input:** `session.fil` (or `session.dat` when there is no `.fil`), `session.clu.<method>.N`, `session.res.<method>.N` (shared spike times, any method tag), `session.spk.<method>.N`, `session.pca.<method>.N` (for stage 2)
-
-**Output:** `session.spk.<method>.N`, `session.res.<method>.N`, `session.clu.<method>.N` rewritten in place; `session.res.<method>.N.preAlignPca` (times before this run); `session.alignspikes_pca.log.N` (per-cluster CSV); stale `session.fet.<method>.N` renamed to `.fet.<method>.N.preAlignPca`
-
-### Description
-
-Runs on an existing clustering and realigns each cluster in two stages:
-
-1. **Per spike.** Each spike is aligned to its cluster's mean waveform by
-   normalised cross-correlation over lags `±maxShift`. Spikes with a non-zero
-   best lag and a score ≥ `minScore` are re-extracted from the raw file at the
-   corrected time. The mean is recomputed and the pass repeated, up to
-   `iterations` times or until nothing moves.
-2. **Per cluster.** The cluster mean is evaluated at every rigid shift
-   `s ∈ [−maxShiftGlobal, +maxShiftGlobal]` (each spike re-extracted and
-   averaged), and its energy in the group's PCA basis is computed:
-
-   ```
-   E(s) = Σ_ch Σ_k ⟨φ_ch,k, μ(s) − μ̄_ch⟩²
-   ```
-
-   The shift that maximises `E` is applied to every spike in the cluster.
-   Because all members move by the same amount, a cluster that is a mixture of
-   several units keeps its internal spread. A per-spike PCA refinement would
-   pull those units onto one position.
-
-Re-extraction follows the same rules as `ndm_alignspikes`: the extractor's
-arithmetic, the `.spk`'s own seed convention, and no window that starts before
-sample 1 or runs past the end of the raw file (such a spike keeps its previous
-position).
-
-Clusters 0 and 1 (noise and artefact) are not touched, and clusters with fewer
-than 5 spikes are skipped. Stage 2 is skipped for a group whose
-`.pca.<method>.N` is missing or cannot be read (a warning is printed), and for
-every group when `skipPca` is true.
-
-After the shifts the spike times are re-sorted, and `.res`, `.clu` and `.spk`
-are rewritten in that order. The `.fet` no longer matches the waveforms: the
-script renames it to `.fet.<method>.N.preAlignPca`. The `.pca` basis is left in
-place. Regenerate features with
-[`ndm_refeaturize`](pca.md#ndm_refeaturize--re-project-onto-the-saved-basis-fet)
-(keeps the basis) or [`ndm_pca`](pca.md#ndm_pca--per-channel-pca-spk--fet-pca)
-(refits it). One or two further passes of `ndm_pca` + `ndm_alignspikes_pca`
-can refine the result.
-
-```
-ndm_pca → ndm_klustakwik → ndm_alignspikes_pca → ndm_refeaturize (or ndm_pca)
-```
-
-The backup `session.res.<method>.N.preAlignPca` is overwritten on every run.
-After a second pass it holds the times from the first pass, not the original
-detection times.
-
-Without an `electrodeGroup` argument, all groups are processed one after
-another (each binary uses OpenMP internally). With one, only that group runs.
-A group whose `.clu`, `.res` or `.spk` is missing is skipped. The `.clu` is
-looked up strictly as `.clu.<method>.N`; the `.res` is found across all method
-tags, as for `ndm_alignspikes` (detection may have run under a different
-token); the `.spk` falls back to the `standard` and untagged names. The `.res`
-and `.clu` are written to a temporary file and renamed into place, so a failed
-write leaves the previous files intact. Group geometry (`channels`, `nSamples`,
-`peakSampleIndex`) and `nChannels` come from the session YAML.
-
-**Methods.** Same as for `ndm_alignspikes`: an invalid token is an error;
-`stderiv_C4` / `stderiv_C5` / `stderiv_C6` pass the group's `sdiffPairs` to
-`process_alignspikes_pca` as `-P` (a group without one is skipped with a
-warning, a token whose order disagrees with the pattern is refused); a bare
-`stderiv` passes the pattern when the group defines one; `stderiv_S3` never
-does. `stderiv_S1` and `stderiv_S2` are refused (first difference and Laplacian
-are not implemented here).
-
-**Extra flags.** Anything after the positional arguments (or after `--`) is
-passed to `process_alignspikes_pca`:
-
-| Flag | Effect |
-|---|---|
-| `--dry-run` | Compute the shifts and write the log without modifying `.spk` / `.res` / `.clu`. The script still renames the `.fet`. |
-| `--log PATH` | Write the CSV log to PATH instead of `session.alignspikes_pca.log.N`. With all groups, every group writes to the same file, so use it with a single group. |
-| `-v`, `--verbose` | Print a line for every cluster. |
-| `--skip-pca` | Same as `skipPca: true`. |
-
-**Log.** One CSV row per processed cluster, with the columns
-`cluster, nSpikes, n_stage1_shifted, median_score, stage2_global_shift,
-stage2_pca_gain_pct, n_total_shifted, frac_total_shifted`.
-
-### Parameters
-
-```yaml
-- name: ndm_alignspikes_pca
-  parameters:
-    - name: maxShift
-      value: 3
-      status: Optional
-    - name: maxShiftGlobal
-      value: 4
-      status: Optional
-    - name: iterations
-      value: 2
-      status: Optional
-    - name: minScore
-      value: 0.70
-      status: Optional
-    - name: minSpikes
-      value: 5
-      status: Optional
-    - name: skipPca
-      value: 'false'
-      status: Optional
-    - name: method
-      value: standard
-      status: Optional
-```
-
-| Name | Default | Meaning |
-|---|---|---|
-| `maxShift` | 3 | Stage-1 per-spike shift bound, samples. |
-| `maxShiftGlobal` | 4 | Stage-2 rigid cluster shift bound, samples. |
-| `iterations` | 2 | Maximum stage-1 passes per cluster. |
-| `minScore` | 0.70 | Normalised cross-correlation score a spike needs before stage 1 shifts it. |
-| `minSpikes` | 5 | Intended minimum cluster size. **Currently not used:** the script reads it but does not pass it on, and the binary always skips clusters with fewer than 5 spikes. |
-| `skipPca` | `false` | `true` / `yes` / `1` runs stage 1 only. |
-| `method` | `standard` | Method token of the files to read and rewrite. `--method` on the command line overrides it. |
-
-All parameters follow the usual [parameters](../parameters.md) lookup.
-
-### Exit status
-
-0 when done; 11 when the session file is missing or neither `session.fil` nor
-`session.dat` exists; 1 for an invalid method token, an out-of-range
-`electrodeGroup` or missing
-`nChannels` / group geometry. When `process_alignspikes_pca` fails, its status
-is returned (2 for its own errors). Groups skipped for missing inputs do not
-change the status.
-
----
-
 ## Shared spike times
 
 `.res` is method-independent: one file per group serves every method (see
-[naming](../formats/naming.md#artifact-classes)). Both commands rewrite it, so the
+[naming](../formats/naming.md#artifact-classes)). `ndm_alignspikes` rewrites it, so the
 corrected times are used by every later extraction. Because the spikes are also
 re-sorted by time, any **other** method's `.spk`, `.fet` or `.clu` already
 written for the same group no longer lines up row-for-row with the new `.res`.
 Re-extract those methods from the aligned `.res` instead of reusing their old
-files. When any spike moved, both aligners print a warning naming the other
+files. When any spike moved, it prints a warning naming the other
 `.spk` files of the group that exist (`.spk.<other method>.N` and the untagged
 `.spk.N`).
 

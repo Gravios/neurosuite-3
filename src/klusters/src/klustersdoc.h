@@ -2983,8 +2983,7 @@ private:
      *  self-invalidates if the basis file is regenerated. */
     // PcaBasis now lives in libneurosuite-core (header-only); the field layout
     // is identical, the cached member and the inline validating loader populate
-    // it unchanged, and realign shares pcaProjectionEnergy with the
-    // process_alignspikes_pca plugin and the CUDA kernel.
+    // it unchanged, and realign shares pcaProjectionEnergy with the CUDA kernel.
     using PcaBasis = neurosuite::core::PcaBasis;
     PcaBasis realignPcaCache;
     QString  realignPcaCachePath;

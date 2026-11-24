@@ -74,7 +74,7 @@ with a `.fetD.N` output still writes `.pcaD.N`.
 - **Read** by Klusters (realign and re-featurise: the basis whose method matches
   the opened `.clu`), KiloKlustaKwik (time-shift and re-featurisation, strict
   `.pca.<method>.N`), `process_refeaturize` / `process_refeaturize_stderiv`,
-  `process_alignspikes_pca`, `process_shadowcluster`, and fiber-kit.
+  `process_shadowcluster`, and fiber-kit.
 
 Realigning waveforms makes the `.pca` and `.fet` stale
 ([derivation and staleness](naming.md#derivation-and-staleness)).

@@ -29,7 +29,7 @@ the session's `SESSION.yaml`; the command pages have the details and
  Klusters — manual curation   ([ndm_autoklusta] learns and replays it)
         │  6  ndm_reextractspikes → ndm_subcluster_unmatched
         │     ndm_stripdat → ndm_redetectspikes
-        │     ndm_decomposecollisions · ndm_localise · ndm_alignspikes_pca → ndm_refeaturize
+        │     ndm_decomposecollisions · ndm_localise
         │  7  ndm_estimatedrift → ndm_driftcorrect / ndm_applydrift / ndm_drifttracker
         ▼
  re-sort (5) with the corrections, curate again
@@ -110,7 +110,7 @@ alignment before PCA: [`ndm_alignspikes`](commands/alignment.md).
 | subtract sorted units and detect again | [`ndm_stripdat`](commands/ndm_stripdat.md) → `SESSION-spkclean.dat` → [`ndm_redetectspikes`](commands/ndm_redetectspikes.md) → re-run 5 |
 | separate overlapping spikes | [`ndm_decomposecollisions`](commands/ndm_decomposecollisions.md) → `.col`, `.eap`, `.tcl` ([`process_initeap`](commands/process_initeap.md) seeds the template classes) |
 | spike positions on the shank | [`ndm_localise`](commands/ndm_localise.md) → `.loc` |
-| realign spikes within clusters | [`ndm_alignspikes_pca`](commands/alignment.md) → [`ndm_refeaturize`](commands/pca.md) |
+| realign spikes within clusters | Klusters ▸ Realign Spikes, or fiber-kit `fiber-realign`; then [`ndm_refeaturize`](commands/pca.md) if the features were not rewritten |
 | empirical KiloKlustaKwik priors | [`kk_build_prior.py`](commands/kk_build_prior.md), [`kk_resolve_prior.py`](commands/kk_resolve_prior.md) |
 
 ## 7. Drift

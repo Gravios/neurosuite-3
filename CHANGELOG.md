@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [ndmanager-plugins: ndm_alignspikes_pca removed](#2026-11-24--ndmanager-plugins-ndmalignspikespca-removed) |
 | 2026-11-24 | [Klusters: the realign threshold defaults to 0.10](#2026-11-24--klusters-the-realign-threshold-defaults-to-010) |
 | 2026-11-24 | [Klusters: the edit lock in the concurrency reference](#2026-11-24--klusters-the-edit-lock-in-the-concurrency-reference) |
 | 2026-11-24 | [Klusters: the undo history is one object](#2026-11-24--klusters-the-undo-history-is-one-object) |
@@ -267,6 +268,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — ndmanager-plugins: ndm_alignspikes_pca removed
+
+The pipeline step that realigned spikes within a cluster after sorting is removed; Klusters and fiber-kit do this. A session plan that still lists the step must drop it.
+
+<details>
+<summary>Details</summary>
+
+- **Removed.** The pipeline step `ndm_alignspikes_pca` and its program
+  `process_alignspikes_pca` (1,294 lines): the realignment of spikes within a cluster after
+  sorting. Klusters (Realign Spikes, with its PCA refine and RMS recentre) and fiber-kit
+  (`fiber-realign`; `fiber_pca.py` has the per-cluster PCA-energy shift) do the same, and the
+  program carried a cross-correlation of its own beside the shared kernels.
+- **Nothing called it**: no other script, no program, no test, not fiber-kit. Gone with it:
+  its row in the `ndm` dispatcher and in the Pipeline designer, its block in
+  `templates/template.yaml` (7 parameters), its section of the alignment page of the command
+  reference, and the mentions in eleven other documents and comments.
+- **A session YAML that still lists the step** will stop at it: `ndm` no longer knows the
+  name. Remove the step from the plan.
+- Tests: 157 pass; the ndmanager-plugins tests that keep scripts, template, designer and
+  documents in step agree.
+
+</details>
 
 ---
 

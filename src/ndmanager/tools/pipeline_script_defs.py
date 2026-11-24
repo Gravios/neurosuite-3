@@ -108,8 +108,6 @@ META = [
      "detection", "spikes", [], True),
     # ── Alignment ──
     ("ndm_alignspikes", "Align Spikes ★", "Peak-align snippets before PCA", "alignment", "spikes", [], False),
-    ("ndm_alignspikes_pca", "Align Spikes (PCA)", "Per-cluster realignment after clustering",
-     "alignment", "spikes", [], False),
     # ── Features ──
     ("ndm_pca", "PCA", ".spk → .fet", "features", "spikes", [], False),
     ("ndm_refeaturize", "Re-featurize", ".spk + .pca → .fet (no PCA refit)", "features", "spikes", [], False),

@@ -94,7 +94,6 @@ Every step can also be run through [`ndm`](ndm.md): `ndm detectspikes` is
 | [`ndm_subcluster_unmatched`](ndm_subcluster_unmatched.md) | Re-cluster the unmatched bin |
 | [`ndm_stripdat`](ndm_stripdat.md) | Subtract sorted units → `-spkclean.dat` |
 | [`ndm_redetectspikes`](ndm_redetectspikes.md) | Detect again on the stripped recording |
-| [`ndm_alignspikes_pca`](alignment.md) | Per-cluster realignment |
 | [`ndm_decomposecollisions`](ndm_decomposecollisions.md) | Decompose collisions → `.col`, `.eap`, `.tcl` |
 | [`process_initeap`](process_initeap.md) | Seed the template-class layer (`.eap`, `.tcl`) |
 | [`ndm_localise`](ndm_localise.md) | Per-spike source positions → `.loc` |

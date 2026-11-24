@@ -651,7 +651,7 @@ written as the expressions it computes (`0-1` as `c0-c1`, `0-1+2` as
 6.  The grammar is `neurosuite/core/channel_expr.hpp`; its cross-language test
 vectors are `src/libneurosuite-core/test/sdiff_expr_vectors.tsv`.
 
-`ndm_alignspikes` and `ndm_alignspikes_pca` re-extract from `.fil`, so they
+`ndm_alignspikes` re-extracts from `.fil`, so it
 must apply the *same* spatial operator the `.spk` was built with; for a `_C`
 method they pass the group's pattern through `-P`, and skip a group that has no
 pattern (with a warning) rather than aligning it with all-pairs.  A bare

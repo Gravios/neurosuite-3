@@ -17,7 +17,7 @@
 //
 // Header-only (inline) so every engine that applies the patterns —
 // process_extractspikes_stderiv, process_reextractspikes_stderiv,
-// process_alignspikes, process_alignspikes_pca — and Klusters share a single
+// process_alignspikes — and Klusters share a single
 // implementation.  On malformed input it prints to stderr and exits, or with an
 // `ok` pointer reports failure instead (Klusters).
 //

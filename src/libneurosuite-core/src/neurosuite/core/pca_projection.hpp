@@ -1,6 +1,6 @@
 // pca_projection.hpp — PCA basis load + projection energy, the primitive shared
-// by every spike-realignment path (klusters realignSpikes, the
-// process_alignspikes_pca plugin, and — as a device mirror — pca_refine_cuda).
+// by every spike-realignment path (klusters realignSpikes and — as a device
+// mirror — pca_refine_cuda).
 //
 // Header-only and DEPENDENCY-FREE (std only; no Qt, no libneurosuite-core
 // linkage), like custody.hpp, so the Qt apps and the standalone ndmanager-plugins
@@ -243,9 +243,8 @@ inline int pcaProjectScores(const int16_t* wfChannelMajor,
 // PCA-projection energy: E = Sum_ch Sum_k score[ch][k]^2.
 //
 // Defined in terms of pcaProjectScores so the projection arithmetic exists once.
-// It used to be written out here separately; this file is shared by
-// process_alignspikes_pca and klusters' realign, and two spellings of one
-// computation is how things drift apart.
+// It used to be written out here separately; two spellings of one computation
+// is how things drift apart.
 inline double pcaProjectionEnergy(const int16_t* wfChannelMajor,
                                   int nChan, int nSamp,
                                   const PcaBasis& pca,
