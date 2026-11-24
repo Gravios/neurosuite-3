@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: Preferences from the keyboard](#2026-11-24--klusters-preferences-from-the-keyboard) |
 | 2026-11-24 | [Klusters: the menus are arranged by what a command does](#2026-11-24--klusters-the-menus-are-arranged-by-what-a-command-does) |
 | 2026-11-24 | [Klusters: the editing keys refuse while a job runs](#2026-11-24--klusters-the-editing-keys-refuse-while-a-job-runs) |
 | 2026-11-24 | [Klusters: two commands shared the id hierarchy.dissolveParent](#2026-11-24--klusters-two-commands-shared-the-id-hierarchydissolveparent) |
@@ -271,6 +272,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: Preferences from the keyboard
+
+The Preferences dialog has two keyboard levels: the page list, and the settings of a page. Enter goes in, Tab goes round the settings of the page, Space toggles, Esc goes back; Enter no longer closes the dialog.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** Tab went through the page list, every setting of the page and the dialog's
+  buttons in one round, and Enter anywhere pressed OK and closed the dialog.
+- **Now**, two levels (`PageKeyNavigator`, libklustersshared):
+  - the dialog opens on the **page list**. Enter goes into the page shown (on a group: opens
+    it on its first page). Tab goes round the list and the dialog's buttons. Esc closes.
+  - in a **page**, Tab / Shift+Tab go round its settings and stay in the page, which scrolls
+    to the setting. Space toggles a check box. Enter toggles a check box, presses a button,
+    opens a list of choices or commits a number, and never presses OK. Esc goes back to the
+    list. Ctrl+Enter is OK from anywhere, as it was.
+  - a line under the pages names the keys.
+- A key editor of the Input page keeps Enter and Esc (keys it can record); Tab leaves it.
+- Klusters' Preferences only. NeuroScope's uses the same dialog class and could take it
+  with one line; not done.
+- Test: `test_pref_keyboard.py` (harness step `prefKeys`). Not tried by hand: the scripted
+  keys reach the focused widget as real ones do, but the look of the focus mark and of the
+  hint line were not seen.
+
+</details>
 
 ---
 

@@ -38,6 +38,7 @@
 #include "channellist.h"
 #include "config-klusters.h"
 #include <qhelpviewer.h>
+#include <pagekeynavigator.h>
 #include <QScrollArea>
 
 #include <klustersshared/theme.h>
@@ -333,6 +334,9 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     connect(this, &QExtendDialog::helpClicked,    this, &PrefDialog::slotHelp);
 
     applyEnable = false;
+
+    // The dialog from the keyboard: Enter into a page, Tab round its settings, Esc back.
+    new PageKeyNavigator(this);
 }
 
 void PrefDialog::slotHelp()

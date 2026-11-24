@@ -95,6 +95,8 @@
 #include "configuration.h"
 #include "prefdialog.h"
 #include "actionid.h"
+#include <pagekeynavigator.h>
+#include <QAbstractItemView>
 #include "input/bindingregistry.h"
 #include "input/inputdispatcher.h"
 #include "input/chord.h"
@@ -1006,6 +1008,64 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (children) result.insert(QStringLiteral("createdParent"), parents);
         result.insert(QStringLiteral("created"), made);
         result.insert(QStringLiteral("summary"), summary);
+        return true;
+    }
+    if (step.contains(QStringLiteral("prefKeys"))) {
+        // {"prefKeys": ["Down", "Return", "Tab", "Space", "Escape", ...]}: Preferences opened and
+        // worked from the keyboard.  After each key: the page shown, where the focus is ("list",
+        // "page", "buttons"), the setting focused and, for a check box, whether it is checked.
+        if (mPluginRegistry.plugins().isEmpty()) mPluginRegistry.reload();
+        PrefDialog dialog(this, (mainDock && doc) ? doc->nbOfchannels() : 0, &mPluginRegistry);
+        dialog.setRadialCatalog(actionCatalog());
+        dialog.updateDialog();
+        dialog.show();
+        QApplication::processEvents();
+        PageKeyNavigator* nav = dialog.findChild<PageKeyNavigator*>();
+        QJsonArray trace;
+        auto state = [&](const QString& key) {
+            QJsonObject o;
+            QWidget* f = dialog.focusWidget();
+            o.insert(QStringLiteral("key"), key);
+            o.insert(QStringLiteral("page"), dialog.currentPage() ? dialog.currentPage()->name() : QString());
+            o.insert(QStringLiteral("level"), !f ? QStringLiteral("none")
+                     : (nav && nav->inPage(f)) ? QStringLiteral("page")
+                     : (nav && nav->pageList() && (f == nav->pageList() || nav->pageList()->isAncestorOf(f))) ? QStringLiteral("list")
+                     : QStringLiteral("buttons"));
+            o.insert(QStringLiteral("focus"), f ? QString::fromLatin1(f->metaObject()->className()) + QLatin1Char(':') + f->objectName() : QString());
+            if (const QAbstractButton* b = qobject_cast<const QAbstractButton*>(f)) {
+                o.insert(QStringLiteral("text"), b->text());
+                if (b->isCheckable()) o.insert(QStringLiteral("checked"), b->isChecked());
+            }
+            o.insert(QStringLiteral("stops"), nav ? static_cast<int>(nav->pageStops().size()) : -1);
+            o.insert(QStringLiteral("open"), dialog.isVisible());
+            trace.append(o);
+        };
+        state(QStringLiteral("(opened)"));
+        for (const QJsonValue& v : step.value(QStringLiteral("prefKeys")).toArray()) {
+            const QString name = v.toString();
+            Qt::KeyboardModifiers mods = Qt::NoModifier;
+            int key = 0;
+            if (name == QLatin1String("Backtab")) { key = Qt::Key_Backtab; mods = Qt::ShiftModifier; }
+            else key = QKeySequence(name)[0].key();
+            QWidget* f = dialog.focusWidget();
+            if (f && key) {
+                const QString text = name == QLatin1String("Space") ? QStringLiteral(" ") : QString();
+                QKeyEvent press(QEvent::KeyPress, key, mods, text);
+                QApplication::sendEvent(f, &press);
+                if (QWidget* f2 = dialog.focusWidget()) {
+                    QKeyEvent release(QEvent::KeyRelease, key, mods, text);
+                    QApplication::sendEvent(f2, &release);
+                }
+            }
+            {   // a dialog button is pressed by an animated click: let it land
+                QEventLoop loop;
+                QTimer::singleShot(160, &loop, &QEventLoop::quit);
+                loop.exec();
+            }
+            state(name);
+        }
+        result.insert(QStringLiteral("navigator"), nav != nullptr);
+        result.insert(QStringLiteral("trace"), trace);
         return true;
     }
     if (step.contains(QStringLiteral("prefPage"))) {

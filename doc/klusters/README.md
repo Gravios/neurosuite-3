@@ -1977,6 +1977,23 @@ described by its tooltip.
 | | Cluster order | Reorder by similarity, median or mean waveforms for the waveform sorts, renumbering after cluster edits |
 | | Reclustering | KiloKlustaKwik executable and arguments, feature selection, the Recluster output tab |
 
+The dialog can be worked from the keyboard, in two levels:
+
+| Where | Key | What it does |
+|---|---|---|
+| the page list | `Up` / `Down` | another page |
+| | `Enter` | into the page shown; on a group, opens it on its first page |
+| | `Tab` | the list, then the dialog's buttons, then the list again |
+| | `Esc` | closes the dialog (Cancel) |
+| a page | `Tab` / `Shift+Tab` | the next / previous setting, round and round within the page |
+| | `Space` | toggles a check box |
+| | `Enter` | toggles a check box, presses a button, opens a list of choices, commits a number — it does not press OK |
+| | `Esc` | back to the page list |
+| anywhere | `Ctrl+Enter` | OK |
+
+A key editor on the Input page records `Enter` and `Esc` as keys; leave it with
+`Tab` first.
+
 ## Parameters toolbar reference
 
 The **Parameters** toolbar (View → Toolbars and Panels → Show Parameters) shows context-sensitive controls depending on the active view:

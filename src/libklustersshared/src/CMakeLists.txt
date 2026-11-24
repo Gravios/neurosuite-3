@@ -16,6 +16,7 @@ set(_srcs
     gui/qrecentfileaction.cpp
     gui/qcolorbutton.cpp
     gui/page/qpagedialog.cpp
+    gui/page/pagekeynavigator.cpp
     gui/page/qpagemodel.cpp
     gui/page/qpageview.cpp
     gui/page/qpageview_p.cpp
@@ -59,6 +60,7 @@ set(_hdrs
     gui/qrecentfileaction.h
     gui/qcolorbutton.h
     gui/page/qpagedialog.h
+    gui/page/pagekeynavigator.h
     gui/page/qextenddialog.h
     gui/page/qpagewidget.h
     gui/page/qpagemodel.h
