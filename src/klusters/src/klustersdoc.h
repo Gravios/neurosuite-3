@@ -993,6 +993,12 @@ public:
      *  longer do this implicitly; the user reassigns/consolidates parents and then
      *  refiberizes.  Independent of the parent and atom undo stacks. */
     void repairNesting();
+    /** After parents were merged: the folded parents' self children renamed, the
+     *  child colours and the child<->parent maps re-derived.  mergeParents ends with
+     *  it; the palette's Group (groupClusters) did not, and with the automatic
+     *  renumbering off the children stayed filed under parents that no longer
+     *  existed until the next hierarchy operation. */
+    void refreshChildrenAfterParentMerge();
     /** Hierarchy > Repair Nesting: repairNesting() as one step of the undo history.
      *  @return whether the child labelling changed. */
     bool repairNestingAsStep();

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the children follow a palette merge of their parents](#2026-11-24--klusters-the-children-follow-a-palette-merge-of-their-parents) |
 | 2026-11-24 | [Klusters: realign stays not undoable, and the manual says so](#2026-11-24--klusters-realign-stays-not-undoable-and-the-manual-says-so) |
 | 2026-11-24 | [Klusters: a change of cluster information is an undo step](#2026-11-24--klusters-a-change-of-cluster-information-is-an-undo-step) |
 | 2026-11-24 | [Klusters: the undo depth counts steps, not levels](#2026-11-24--klusters-the-undo-depth-counts-steps-not-levels) |
@@ -251,6 +252,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the children follow a palette merge of their parents
+
+After the palette's Group the children stayed filed under the merged-away parents.
+
+<details>
+<summary>Details</summary>
+
+- Found by the undo run on a real session (jg05-20120312 group 8, the curated triple): with
+  **automatic renumbering off**, the report taken after a palette merge of parents 72 and 74
+  still filed their 19 children under 72 and 74, and their self children kept the old names.
+- Hierarchy ▸ Merge Parents re-derives the child maps and renames the folded parents' self
+  children; the palette's Group calls `groupClusters` directly and did neither.  The next
+  hierarchy operation, or the automatic renumbering, put it right, so with the renumbering on
+  (the default) nothing showed.
+- Both now end with `KlustersDoc::refreshChildrenAfterParentMerge`.
+- `test_palette_merge_children.py` (4 checks).  Not checked: what a Save in the stale state
+  wrote before this.
+
+</details>
 
 ---
 

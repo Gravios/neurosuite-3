@@ -6542,6 +6542,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
         if (clusterPalette) clusterPalette->setFocusToList();
         return;
     }
+    doc->refreshChildrenAfterParentMerge();       // the children follow their parents (no-op when flat)
     // Group is a keyboard-driven palette operation (G key from the palette
     // context); keep focus on the palette so the user can keep
     // arrow-navigating without having to Tab back.

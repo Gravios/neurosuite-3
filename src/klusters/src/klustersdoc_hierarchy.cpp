@@ -1370,11 +1370,16 @@ int KlustersDoc::mergeParents(const QList<int>& parentsIn, KlustersView& activeV
 
     noteModifiedParent(kept);                              // merged parent needs realign
     setPendingParentSelection({kept});                    // land on the merged parent
+    refreshChildrenAfterParentMerge();
+    return kept;
+}
+
+void KlustersDoc::refreshChildrenAfterParentMerge(){
+    if (!childData) return;
     normaliseChildIds();                                  // the folded parents' self children are no longer anyone's
     syncChildColors();
     rebuildHierarchyFromData();
     emit hierarchyChanged();
-    return kept;
 }
 
 // ---------------------------------------------------------------------------
