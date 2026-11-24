@@ -232,6 +232,21 @@ of samples and there is no bias towards large lags. On ties the lowest index
 recentres a whole cluster after per-spike alignment, and a template-free
 per-spike centroid de-jitter.
 
+`realign_pass` is the loop around the kernel, for one cluster whose waveforms
+are in memory: the mean template (the integer mean, truncated), rolled so that
+its peak is on the alignment sample; the spikes scored against it, on the
+largest channels only and under a correlation window if asked for; the moved
+spikes rolled and their lag added up; again from the new mean, until a pass
+moves nothing or the pass count is reached. `realign_pass::clusterShifts`
+returns the summed shift of each spike, the score of the last pass that moved
+it and the number of spikes each pass moved, and leaves the buffer as aligned.
+It reads no file and knows no cluster model: Klusters' `realignSpikes` calls it
+and then re-extracts the spikes at their new times. It was a part of that
+function until 2026-11-24; `klustersshared_realign_pass_test` holds a copy of
+the old loop and requires the same result from both. kiloklustakwik's own port
+(`klusters_realign.cpp`) does not call it and differs in two details (it rounds
+the mean, and it zero-fills where this rolls the template circularly).
+
 ### 4.2 Files
 
 | File | Compiled when | Content |
@@ -243,6 +258,7 @@ per-spike centroid de-jitter.
 | `realign_xcorr_hip.hip` | `USE_HIP` | HIP port of the CUDA back end |
 | `realign_xcorr_sycl.cpp` | `USE_SYCL` | SYCL back end, two kernels (scores, then per-spike reduction) |
 | `realign_center.h/.cpp` | always | `circularRecenterShift`, `perSpikeCentroidShifts` |
+| `realign_pass.h/.cpp` | always (Klusters only so far) | `clusterShifts` (the pass loop), `kernelWeights` (the correlation window), `rollSpike` |
 
 None of these are in the `neurosuite-qt` target; see the comment at the top of
 `src/libklustersshared/src/CMakeLists.txt`. Each consumer adds the sources and
@@ -610,6 +626,7 @@ Registered in `src/libklustersshared/CMakeLists.txt` under `if(NS_BUILD_TESTS)`:
 | `klustersshared_unitsidecar_test` | `test/unitsidecar_test.cpp` | the per-clustering cluster-information file (`unitsidecar.h`) | none |
 | `klustersshared_xcorr_dispatch_test` | `test/xcorr_dispatch_test.cpp` + dispatcher and OpenMP kernel | `XcorrDispatch` under concurrent calls with a fake CUDA back end: one probe, atomic demotion, wide shifts on OpenMP | none (no GPU needed) |
 | `klustersshared_realign_kernels_test` | `test/realign_kernels_test.cpp` + OpenMP kernel and `realign_center.cpp` | zero-energy spikes and templates, lag ties, `perSpikeCentroidShifts` | none |
+| `klustersshared_realign_pass_test` | `test/realign_pass_test.cpp` + `realign_pass.cpp`, dispatcher and OpenMP kernel | `clusterShifts` gives the shifts, scores, rolled samples and pass counts of the loop it replaced (a frozen copy in the test), over 1,080 combinations of cluster, threshold, pass count, channel mask and window; it reduces the jitter of synthetic clusters; `rollSpike`, `kernelWeights`, no spikes, zero passes | none (the clusters are generated) |
 
 Each is a standalone program with its own `main()` and a
 small check helper that reports failures and returns non-zero if any check

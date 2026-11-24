@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: the pass loop is a library function](#2026-11-24--realign-the-pass-loop-is-a-library-function) |
 | 2026-11-24 | [Klusters developer docs: commands and preferences](#2026-11-24--klusters-developer-docs-commands-and-preferences) |
 | 2026-11-24 | [Klusters: the rest of the Preferences pages are filled from the table](#2026-11-24--klusters-the-rest-of-the-preferences-pages-are-filled-from-the-table) |
 | 2026-11-24 | [Klusters: Preferences pages are filled from the preference table](#2026-11-24--klusters-preferences-pages-are-filled-from-the-preference-table) |
@@ -279,6 +280,49 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: the pass loop is a library function
+
+The part of the realign that computes the shifts of a cluster's spikes moved out of `KlustersDoc::realignSpikes` into `libklustersshared` as `realign_pass::clusterShifts`, with a test that requires the old loop's results. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What moved.** The loop inside `KlustersDoc::realignSpikes` that turns a cluster's waveforms
+into one shift per spike is now `realign_pass::clusterShifts`
+(`src/libklustersshared/src/xcorr/realign_pass.h`): the mean template, its roll onto the
+alignment sample, the top-channel mask, the correlation window, the per-spike lag from the xcorr
+kernel, the roll of the moved spikes, and the next pass. It takes a buffer and returns the
+shifts, the scores and the number of spikes each pass moved; it reads no file and has no Qt.
+`realign_pass::kernelWeights` (the correlation window) and `realign_pass::rollSpike` moved with
+it. `realignSpikes` calls it and is about 130 lines shorter; everything around the passes is where it
+was.
+
+**Checked.**
+
+- `klustersshared_realign_pass_test` holds a copy of the old loop as it stood and requires the
+  same shifts, scores, rolled samples and pass counts from the new function, on ten generated
+  clusters under 108 settings each (threshold 0, 0.10, 0.70; 1, 2, 4 passes; all, 2, 4
+  channels; no window, gauss, hann, template). Four deliberate changes to the new function
+  (rounding the mean, the template rolled the other way, the score summed, the early stop
+  removed) each fail it.
+- The application built before and after gives the same bytes in every `.res`, `.spk`, `.fet`
+  and `.clu` file and the same pass lines in the log for realigns of two clusters of the
+  synthetic session under seven settings: the whole window, the gauss, hann and template
+  windows, and the PCA, RMS and centroid modes. The harness cannot set the pass count, the
+  largest shift or the channel count, and the thresholds tried (0, 0.70) changed nothing on
+  that session, so those are compared by the unit test only.
+- The seven realign self-tests and the whole suite pass.
+
+**Not done.** `realignSpikes` is still one function for the rest: reading the waveforms, the
+refinement and centering passes, writing the rows, the child layer, the journal. The sorter's
+own port (`kiloklustakwik/src/klusters_realign.cpp`) does not call the shared function; it
+differs in two details and goes with the pruning of that program. Not run on a recording: the
+comparison is on generated data.
+
+</details>
 
 ---
 

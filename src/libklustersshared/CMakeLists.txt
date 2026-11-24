@@ -193,6 +193,17 @@ if(NS_BUILD_TESTS)
     target_include_directories(klustersshared_realign_kernels_test
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/xcorr")
     add_test(NAME klustersshared_realign_kernels_test COMMAND klustersshared_realign_kernels_test)
+
+    # The realign's pass loop (no Qt) against a frozen copy of the code it was lifted
+    # from (KlustersDoc::realignSpikes, 554a058): same shifts, scores and rolled samples.
+    add_executable(klustersshared_realign_pass_test
+        test/realign_pass_test.cpp
+        src/xcorr/realign_pass.cpp
+        src/xcorr/realign_xcorr_omp.cpp
+        src/xcorr/realign_xcorr_dispatch.cpp)
+    target_include_directories(klustersshared_realign_pass_test
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/xcorr")
+    add_test(NAME klustersshared_realign_pass_test COMMAND klustersshared_realign_pass_test)
 endif()
 
 # ---------------------------------------------------------------------------

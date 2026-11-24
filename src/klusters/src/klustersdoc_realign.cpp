@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <system_error>
 #include "filecommit.h"
+#include "realign_pass.h"
 #include <stdint.h>
 #ifdef _OPENMP
 #include <omp.h>            // CPU-fallback realign parallelisation
@@ -324,7 +325,7 @@ static bool swapSpkEntries(const QString& spkPath, long idxA0, long idxB0,
 // template = the template's own channel-summed energy profile, smoothed, floored
 // at 2 % -- self-calibrating (the stderiv and super-sampled spaces included),
 // no width to choose.  See xcorr_omp_compute_weighted.
-enum class RealignKernel { None, Gauss, Hann, Template };
+using RealignKernel = realign_pass::Kernel;   // the weights: realign_pass::kernelWeights
 
 static void parseRealignArgs(const QString& args,
                              int& maxShift, float& minScore, int& nIter,
@@ -376,56 +377,6 @@ static void parseRealignArgs(const QString& args,
             if (ok2 && v >= 1) kernelWidth = v;
         }
     }
-}
-
-// The per-sample weights of the correlation window for this pass, in the
-// template's frame (its peak at peakSamp0): gauss = exp(-((s-p)/(w/2))^2 / 2)
-// (half-width w ~ 2 sigma), hann = the raised cosine over [p-w, p+w], zero
-// outside; template = the channel-summed template energy, 3-sample box
-// smoothed, scaled to max 1 and floored at 0.02 so the whole window keeps a
-// little say (the energy of a derivative space has several lobes: they all
-// count, in proportion).  Empty for RealignKernel::None.
-static std::vector<float> realignKernelWeights(RealignKernel kernel, int kernelWidth,
-                                               int peakSamp0, int nSamp, int nChan,
-                                               const int16_t* tmpl)
-{
-    std::vector<float> w;
-    if (kernel == RealignKernel::None || nSamp <= 0) return w;
-    w.assign(static_cast<size_t>(nSamp), 0.0f);
-    if (kernel == RealignKernel::Template) {
-        std::vector<double> e(static_cast<size_t>(nSamp), 0.0);
-        for (int ch = 0; ch < nChan; ++ch)
-            for (int s = 0; s < nSamp; ++s) {
-                const double v = static_cast<double>(tmpl[ch * nSamp + s]);
-                e[static_cast<size_t>(s)] += v * v;
-            }
-        double mx = 0.0;
-        for (int s = 0; s < nSamp; ++s) {
-            double acc = 0.0; int n = 0;
-            for (int k = -1; k <= 1; ++k) {
-                const int t = s + k;
-                if (t >= 0 && t < nSamp) { acc += e[static_cast<size_t>(t)]; ++n; }
-            }
-            w[static_cast<size_t>(s)] = static_cast<float>(acc / std::max(n, 1));
-            mx = std::max(mx, static_cast<double>(w[static_cast<size_t>(s)]));
-        }
-        if (!(mx > 0.0)) { w.clear(); return w; }           // a zero template: no window
-        for (int s = 0; s < nSamp; ++s)
-            w[static_cast<size_t>(s)] = std::max(0.02f, static_cast<float>(w[static_cast<size_t>(s)] / mx));
-        return w;
-    }
-    const double hw = std::max(1, kernelWidth);
-    for (int s = 0; s < nSamp; ++s) {
-        const double d = static_cast<double>(s - peakSamp0);
-        if (kernel == RealignKernel::Gauss) {
-            const double sig = hw / 2.0;
-            w[static_cast<size_t>(s)] = static_cast<float>(std::exp(-0.5 * (d / sig) * (d / sig)));
-        } else {                                              // Hann
-            w[static_cast<size_t>(s)] = (std::abs(d) <= hw)
-                ? static_cast<float>(0.5 * (1.0 + std::cos(M_PI * d / hw))) : 0.0f;
-        }
-    }
-    return w;
 }
 
 // The mean waveform of the in-memory buffer (channel-major, spkElems wide): what
@@ -501,7 +452,7 @@ static void realignRmsRecenter(std::vector<int16_t>& wavBuf,
     std::vector<float> kw;
     if (kernel != RealignKernel::None) {
         const std::vector<int16_t> mean = realignMeanWaveform(wavBuf, N, spkElems);
-        kw = realignKernelWeights(kernel, kernelWidth, peakSamp0, nSamp, nChan, mean.data());
+        kw = realign_pass::kernelWeights(kernel, kernelWidth, peakSamp0, nSamp, nChan, mean.data());
     }
     const realign_center::RecenterResult rc = kw.empty() ? whole
         : realign_center::circularRecenterShiftWindowed(
@@ -1282,168 +1233,35 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             const int s = csh[static_cast<size_t>(i)];
             cumShift[static_cast<size_t>(i)] = s;                // newTs = clusterTs + cumShift downstream
             if (s == 0) continue;
-            int16_t* w = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            std::vector<int16_t> tmp(static_cast<size_t>(spkElems));
-            for (int t = 0; t < nSamp; ++t) {
-                const int src = (t + s + nSamp) % nSamp;         // same roll convention as the xcorr loop
-                for (int ch = 0; ch < nChan; ++ch)
-                    tmp[static_cast<size_t>(ch * nSamp + t)] =
-                        w[static_cast<size_t>(ch * nSamp + src)];
-            }
-            std::copy(tmp.begin(), tmp.end(), w);
+            realign_pass::rollSpike(wavBuf.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems),
+                nChan, nSamp, s);                                // the xcorr passes' roll
         }
         nIter = 0;   // centroid alignment complete; skip the xcorr iteration loop
         log << "  centroid: per-spike reference-free centroid de-jitter (no template)\n";
     }
 
-    for (int iter = 0; iter < nIter; ++iter) {
-        // Build mean template from current wavBuf
-        std::vector<int64_t> acc(spkElems, 0);
-        for (int64_t i = 0; i < N; ++i) {
-            const int16_t* w = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            for (size_t e = 0; e < spkElems; ++e)
-                acc[e] += static_cast<int64_t>(w[e]);
-        }
-        std::vector<int16_t> tmpl(spkElems);
-        for (size_t e = 0; e < spkElems; ++e)
-            tmpl[e] = static_cast<int16_t>(acc[e] / N);
-
-        // Pre-align template: shift so its peak lands at peakSamp0.
-        // Without this the xcorr moves every spike away from the true peak.
-        //
-        // Top-K channel selection: when nTopChan > 0 and < nChan, select the
-        // nTopChan channels with the largest absolute amplitude in the
-        // template.  Energy for peak detection is computed only on those.
-        // The same mask is then applied to the template and all waveform
-        // buffers (non-top channels zeroed) so the xcorr ignores them too.
-        // This excludes collision / residual activity on non-primary
-        // channels from influencing alignment.
-        std::vector<uint8_t> chanUse(static_cast<size_t>(nChan), 1);
-        if (nTopChan > 0 && nTopChan < nChan) {
-            std::vector<std::pair<int64_t,int>> chanAmp(static_cast<size_t>(nChan));
-            for (int ch = 0; ch < nChan; ++ch) {
-                int64_t pk = 0;
-                for (int t = 0; t < nSamp; ++t) {
-                    const int64_t v = std::abs(static_cast<int64_t>(
-                        tmpl[static_cast<size_t>(ch * nSamp + t)]));
-                    if (v > pk) pk = v;
-                }
-                chanAmp[static_cast<size_t>(ch)] = {pk, ch};
-            }
-            std::partial_sort(chanAmp.begin(),
-                              chanAmp.begin() + nTopChan,
-                              chanAmp.end(),
-                              [](const auto& a, const auto& b){
-                                  return a.first > b.first;
-                              });
-            std::fill(chanUse.begin(), chanUse.end(), 0);
-            for (int k = 0; k < nTopChan; ++k)
-                chanUse[static_cast<size_t>(chanAmp[static_cast<size_t>(k)].second)] = 1;
-        }
-
-        {
-            int    tmplPeak = 0;
-            double bestAmp  = -1.0;
-            for (int t = 0; t < nSamp; ++t) {
-                double amp = 0.0;
-                for (int ch = 0; ch < nChan; ++ch)
-                    if (chanUse[static_cast<size_t>(ch)])
-                        amp += std::abs(static_cast<double>(
-                                   tmpl[static_cast<size_t>(ch * nSamp + t)]));
-                if (amp > bestAmp) { bestAmp = amp; tmplPeak = t; }
-            }
-            const int tShift = peakSamp0 - tmplPeak;
-            if (tShift != 0) {
-                // To move the peak from tmplPeak to peakSamp0: src = (t - tShift + N) % N
-                std::vector<int16_t> shifted(spkElems);
-                for (int ch = 0; ch < nChan; ++ch)
-                    for (int t = 0; t < nSamp; ++t) {
-                        const int src = (t - tShift + nSamp) % nSamp;
-                        shifted[static_cast<size_t>(ch * nSamp + t)] =
-                            tmpl[static_cast<size_t>(ch * nSamp + src)];
-                    }
-                tmpl = std::move(shifted);
-            }
-        }
-
-        // Apply top-K mask to a SCRATCH copy for the xcorr call only.
-        // Mutating wavBuf would destroy data needed for the next iteration's
-        // template build, the final xcorr pass, and the post-realign mean.
-        // Same reasoning for tmpl — keep the original, mask a copy.
-        //
-        // Layout is channel-major [ch * nSamp + s]; zeroing ranges of
-        // contiguous samples for masked-out channels gives the xcorr
-        // dispatcher zeros on both sides of the correlation for those
-        // channels, so they contribute nothing at any lag.
-        const int16_t* xcorrWav = wavBuf.data();
-        const int16_t* xcorrTmpl = tmpl.data();
-        std::vector<int16_t> wavMasked;
-        std::vector<int16_t> tmplMasked;
-        if (nTopChan > 0 && nTopChan < nChan) {
-            tmplMasked = tmpl;   // copy
-            wavMasked  = wavBuf; // copy (N × spkElems int16 — cheap vs. xcorr)
-            for (int ch = 0; ch < nChan; ++ch) {
-                if (chanUse[static_cast<size_t>(ch)]) continue;
-                std::fill(tmplMasked.begin() + ch * nSamp,
-                          tmplMasked.begin() + (ch + 1) * nSamp,
-                          int16_t(0));
-                for (int64_t i = 0; i < N; ++i) {
-                    int16_t* row = wavMasked.data()
-                                 + static_cast<ptrdiff_t>(i)
-                                 * static_cast<ptrdiff_t>(spkElems);
-                    std::fill(row + ch * nSamp,
-                              row + (ch + 1) * nSamp,
-                              int16_t(0));
-                }
-            }
-            xcorrWav  = wavMasked.data();
-            xcorrTmpl = tmplMasked.data();
-        }
-
-        std::vector<int>   sh(static_cast<size_t>(N), 0);
-        std::vector<float> sc(static_cast<size_t>(N), 0.0f);
-        // The correlation window for this pass, on the template as rolled (its
-        // peak at peakSamp0) and masked (the template kernel sees the top-K
-        // channels only, like the correlation).
-        const std::vector<float> kw = realignKernelWeights(kernel, kernelWidth, peakSamp0,
-                                                           nSamp, nChan, xcorrTmpl);
-        int rc = XcorrDispatch::computeWeighted(
-            xcorrWav, xcorrTmpl, kw.empty() ? nullptr : kw.data(),
-            static_cast<int>(N), nChan, nSamp,
-            maxShift, minScore, sh.data(), sc.data());
-        if (rc != 0) {
-            log << "ERROR: XcorrDispatch rc=" << rc << "\n";
+    // The xcorr passes themselves are the library's (realign_pass.h): template, pre-roll,
+    // top-K mask, correlation window, per-spike lag, roll -- on wavBuf, in place.
+    if (nIter > 0) {
+        realign_pass::Options passOptions;
+        passOptions.peakSample  = peakSamp0;
+        passOptions.maxShift    = maxShift;
+        passOptions.minScore    = minScore;
+        passOptions.iterations  = nIter;
+        passOptions.topChannels = nTopChan;
+        passOptions.kernel      = kernel;
+        passOptions.kernelWidth = kernelWidth;
+        realign_pass::Result pass;
+        const bool passOk = realign_pass::clusterShifts(wavBuf.data(), N, nChan, nSamp, passOptions, pass);
+        for (size_t k = 0; k < pass.moved.size(); ++k)
+            log << "  iter " << (k + 1) << ": " << pass.moved[k] << " shifted\n";
+        if (!passOk) {
+            log << "ERROR: XcorrDispatch rc=" << pass.error << "\n";
             return false;
         }
-
-        int changed = 0;
-        for (int64_t i = 0; i < N; ++i) {
-            const int s = sh[static_cast<size_t>(i)];
-            if (s == 0) continue;
-            int16_t* w = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            // Circular shift: newSpike[t] = oldSpike[(t + shift) % N].
-            // Derivation: score(lag) = Σ tmpl[s]·spike[(s+lag)%N] peaks at
-            // lag = bestLag when spike[(s+bestLag)%N] ≈ tmpl[s], meaning the
-            // spike peak is late by bestLag.  Rolling forward by bestLag
-            // brings the peak back to the template position.  The timestamp
-            // must move in the opposite direction (see newTs below).
-            std::vector<int16_t> tmp(spkElems);
-            for (int t = 0; t < nSamp; ++t) {
-                const int src = (t + s + nSamp) % nSamp;
-                for (int ch = 0; ch < nChan; ++ch)
-                    tmp[static_cast<size_t>(ch * nSamp + t)] =
-                        w[static_cast<size_t>(ch * nSamp + src)];
-            }
-            std::copy(tmp.begin(), tmp.end(), w);
-            cumShift[static_cast<size_t>(i)] += s;
-            bestScore[static_cast<size_t>(i)] = sc[static_cast<size_t>(i)];
-            ++changed;
-        }
-        log << "  iter " << (iter+1) << ": " << changed << " shifted\n";
-        if (changed == 0) break;
+        cumShift  = std::move(pass.shift);
+        bestScore = std::move(pass.score);
     }
 
     for (int64_t i = 0; i < N; ++i)
@@ -1557,7 +1375,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         // what votes, it does not make the refine a collision guard.
         if (kernel != RealignKernel::None) {
             const std::vector<int16_t> mean = realignMeanWaveform(wavBuf, N, spkElems);
-            const std::vector<float> kw = realignKernelWeights(kernel, kernelWidth, peakSamp0,
+            const std::vector<float> kw = realign_pass::kernelWeights(kernel, kernelWidth, peakSamp0,
                                                                nSamp, nChan, mean.data());
             if (!kw.empty()) {
                 for (int ch = 0; ch < pcaRef.nCh; ++ch) {
@@ -2080,7 +1898,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
 
         // Use maxShift=0 so no shifting occurs — we just want the scores, under
         // the same window the passes aligned with.
-        const std::vector<float> kwFinal = realignKernelWeights(kernel, kernelWidth, peakSamp0,
+        const std::vector<float> kwFinal = realign_pass::kernelWeights(kernel, kernelWidth, peakSamp0,
                                                                 nSamp, nChan, scoreTmpl);
         XcorrDispatch::computeWeighted(
             scoreWav, scoreTmpl, kwFinal.empty() ? nullptr : kwFinal.data(),
