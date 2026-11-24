@@ -88,6 +88,7 @@ both apps); `klusters.cpp` is the Klusters-only wiring.
 | `input/wheelchordedit.h/.cpp` | `WheelChordEdit` — the page's editor for a wheel chord (direction + modifiers), which makes the Ctrl+wheel zoom commands rebindable. |
 | `input/inputprefsstore.h` | `InputPrefsStore` — the interface each app's `Configuration` implements so the shared page persists through it. |
 | `klusters.cpp` | `registerInputBindings()` (all of Klusters' scopes + commands), the `eventFilter` dispatch paths, `tryViewKeyCommand()`. |
+| `klusters_commands.cpp` | `commandTable()`: one row per menu command (id, category, text, key, slot, whether it edits). `registerInputBindings()` mirrors every row that has a category. |
 
 The `input/` core pulls **no QtWidgets** headers (only `QWidget`/`QEvent`
 forward-declared pointers), so it is unit-tested standalone by

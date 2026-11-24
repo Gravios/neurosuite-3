@@ -3,7 +3,7 @@
 
 Every command of the menu bar, in menu order -- its id, menu, text, keys, tips, whether it is
 checkable, checked, enabled, and whether the edit lock holds it while a job runs -- and the
-binding registry's commands in their order, in two states: a flat session just opened, and a
+binding registry's commands by id (their order is not shown anywhere), in two states: a flat session just opened, and a
 hierarchical session in the child view.
 
 A change of a menu, a key, a tip or a command id is a change of that file: run this with
@@ -83,11 +83,12 @@ def differences(got, want):
                     continue                    # the standard keys (Open, Quit, Undo) are the platform's
                 if c["id"] in wd and wd[c["id"]].get(k) != v:
                     diffs.append(f"{state}: {c['id']}: {k}: {wd[c['id']].get(k)!r} -> {v!r}")
-        if g.get("registry") != w["registry"]:
+        if sorted(g.get("registry", []), key=lambda c: c["id"]) != sorted(w["registry"], key=lambda c: c["id"]):
             gi, wi = [c["id"] for c in g.get("registry", [])], [c["id"] for c in w["registry"]]
-            if gi != wi:
-                diffs.append(f"{state}: registry ids or order: gone {sorted(set(wi) - set(gi))}, new {sorted(set(gi) - set(wi))}"
-                             + ("" if set(gi) != set(wi) else ", order changed"))
+            # By id, not by order: Preferences > Input sorts the commands by category and
+            # label, so the order they were registered in is nothing a curator can see.
+            if sorted(gi) != sorted(wi):
+                diffs.append(f"{state}: registry ids: gone {sorted(set(wi) - set(gi))}, new {sorted(set(gi) - set(wi))}")
             wr = {c["id"]: c for c in w["registry"]}
             if not LINUX:
                 for c in list(wr.values()) + g.get("registry", []):

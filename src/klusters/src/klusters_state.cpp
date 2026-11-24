@@ -742,31 +742,12 @@ bool KlustersApp::realignLaneBusy(const QString& what)
 
 void KlustersApp::collectEditLockActions()
 {
-    // Everything that changes the clustering, its files or the cluster ids, or
-    // starts a job that does.  By command id where there is one; the tools and
-    // the two file commands without an id by member.
-    auto locks = [](const QString& id) {
-        static const QStringList free{
-            QStringLiteral("action.nextChunk"), QStringLiteral("action.prevChunk"),
-            QStringLiteral("action.updateDisplay"), QStringLiteral("action.updateErrorMatrix"),
-            QStringLiteral("action.setObliqueBasis") };
-        if (id.startsWith(QLatin1String("recluster.engine."))) return false;      // a choice, not a run
-        if (free.contains(id)) return false;
-        return id.startsWith(QLatin1String("action.")) || id.startsWith(QLatin1String("hierarchy."))
-            || id.startsWith(QLatin1String("recluster.")) || id.startsWith(QLatin1String("sort."))
-            || id.startsWith(QLatin1String("space."))
-            || id == QLatin1String("edit.undo") || id == QLatin1String("edit.redo")
-            || id == QLatin1String("file.save") || id == QLatin1String("file.saveAs")
-            || id == QLatin1String("file.renumberAndSave") || id == QLatin1String("file.import");
-    };
+    // Every command the table marks editing() (klusters_commands.cpp): what changes the
+    // clustering, its files or the cluster ids, or starts a job that does.
     QSet<QAction*> set;
-    const QHash<QString, QAction*> byId = actionsById();
-    for (auto it = byId.constBegin(); it != byId.constEnd(); ++it)
-        if (it.value() && locks(it.key())) set.insert(it.value());
-    for (QAction* a : { mNewCluster, mSplitClusters, mDeleteArtifactSpikes, mDeleteNoisySpikes,
-                        mMultiLasso, mApplyMultiLasso, mSortSpikesByTime, mSyncFeatureSpaces })
-        // (not the nudge keys: a held key queues its repeats while a nudge runs)
-        if (a) set.insert(a);
+    for (auto it = commandSpecs.constBegin(); it != commandSpecs.constEnd(); ++it)
+        if (it.value().edits)
+            if (QAction* a = commandActions.value(it.key())) set.insert(a);
     for (QAction* a : set) {
         if (editLockDesired.contains(a)) continue;           // already tracked
         editLockActions.append(a);

@@ -109,6 +109,17 @@ more tables. A member is mentioned a median of 9 times in 3 files; `mReCluster` 
 which the menus, the registry and the busy lock are built. `createMenus`,
 `registerInputBindings` and the per-state lists reduce to loops over it.
 
+**Done in part (2026-11-24).** `KlustersApp::commandTable()` (`klusters_commands.cpp`) has one
+row for each of 132 menu commands: id, category, text, key, tips, check state, slot, and
+whether it edits. The registry and the edit lock's set are loops over it; `createMenus` places
+each with `addCommand(menu, id)`. `createMenus` went from 1,368 lines to 688 and
+`registerInputBindings` from 716 to 593; the total did not shrink — the 660 lines are the
+table. Still outside it: the layout of the menus (which menu, the separators, the submenus),
+the per-state lists of `slotStateChanged`, the icon table, the `QAction` members and their
+three naming patterns, 4 menu entries built by hand, and the
+commands of the registry that are not actions. `test_command_table.py` pins what a curator
+sees of all of it.
+
 ## 4. The self-test harness is part of the application class
 
 `klusters_selftest.cpp` is 1,271 lines of `KlustersApp` member functions, compiled into the
@@ -243,8 +254,8 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    three minutes.
 2. ~~Delete the three unbuilt files; triage the unused functions.~~ Done, but for the two XML
    files (§7).
-3. The command table (§3). The three functions it replaces are 2,622 lines, and it removes
-   the class of fault the lock audit found.
+3. ~~The command table (§3).~~ Done for the description, the registry and the edit lock;
+   the per-state lists of `slotStateChanged` are not yet rows of it (§3).
 4. Move the undo history into one object (§2, §9); update the two internal references.
 5. Split `realignSpikes` into a plan and its application (§1). The largest single gain in
    legibility, and the way to a realign that can be cancelled and undone.

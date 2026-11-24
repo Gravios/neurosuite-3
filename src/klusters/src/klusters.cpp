@@ -369,11 +369,17 @@ void KlustersApp::initView()
 
 void KlustersApp::createMenus()
 {
+    // What each command IS -- text, key, tips, slot, whether it edits -- is in the command
+    // table (klusters_commands.cpp).  This function is where it goes: the menus, their
+    // order, separators and sub-menus, and the few commands wired by hand.
+    for (const CommandSpec& spec : commandTable()) {
+        commandOrder.append(spec.id);
+        commandSpecs.insert(spec.id, spec);
+    }
+
     //File Menu
     QMenu *fileMenu = menuBar()->addMenu(tr("&File"));
-    mOpenAction = fileMenu->addAction(tr("&Open…"));
-    mOpenAction->setShortcut(QKeySequence::Open);
-    connect(mOpenAction, &QAction::triggered, this, &KlustersApp::slotFileOpen);
+    mOpenAction = addCommand(fileMenu, "file.open");
 
     QSettings settings;
     mFileOpenRecent = new QRecentFileAction(this);
@@ -382,278 +388,106 @@ void KlustersApp::createMenus()
     connect(mFileOpenRecent, &QRecentFileAction::recentFileSelected, this, &KlustersApp::slotFileOpenRecent);
     connect(mFileOpenRecent, &QRecentFileAction::recentFileListChanged, this, &KlustersApp::slotSaveRecentFiles);
 
-
-    mImportFile = fileMenu->addAction(tr("&Import File"));
-    mImportFile->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_I));
-    connect(mImportFile,&QAction::triggered, this,&KlustersApp::slotFileImport);
+    mImportFile = addCommand(fileMenu, "file.import");
 
     fileMenu->addSeparator();
 
-    mSaveAction = fileMenu->addAction(tr("Save…"));
-    mSaveAction->setShortcut(QKeySequence::Save);
-    connect(mSaveAction, &QAction::triggered, this, &KlustersApp::slotFileSave);
+    mSaveAction = addCommand(fileMenu, "file.save");
 
-    mSaveAsAction = fileMenu->addAction(tr("&Save As…"));
-    connect(mSaveAsAction, &QAction::triggered, this, &KlustersApp::slotFileSaveAs);
+    mSaveAsAction = addCommand(fileMenu, "file.saveAs");
 
-    mRenumberAndSave = fileMenu->addAction(tr("Re&number and Save"));
-    mRenumberAndSave->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
-    connect(mRenumberAndSave,&QAction::triggered, this,&KlustersApp::slotFileRenumberAndSave);
+    mRenumberAndSave = addCommand(fileMenu, "file.renumberAndSave");
 
     fileMenu->addSeparator();
 
-    mPrintAction = fileMenu->addAction(tr("Print"));
-    mPrintAction->setShortcut(QKeySequence::Print);
-    connect(mPrintAction, &QAction::triggered, this, &KlustersApp::slotFilePrint);
+    mPrintAction = addCommand(fileMenu, "file.print");
 
     fileMenu->addSeparator();
 
-    mCloseAction = fileMenu->addAction(tr("Close"));
-    connect(mCloseAction, &QAction::triggered, this, &KlustersApp::slotFileClose);
+    mCloseAction = addCommand(fileMenu, "file.close");
 
     fileMenu->addSeparator();
 
-    mQuitAction = fileMenu->addAction(tr("Quit"));
-    mQuitAction->setShortcut(QKeySequence::Quit);
-    connect(mQuitAction, &QAction::triggered, this, &KlustersApp::slotFileQuit);
+    mQuitAction = addCommand(fileMenu, "file.quit");
 
     //Edit Menu
     QMenu *editMenu = menuBar()->addMenu(tr("&Edit"));
 
-    mUndo = editMenu->addAction(tr("Undo"));
-    mUndo->setShortcut(QKeySequence::Undo);
-    connect(mUndo, &QAction::triggered, this, &KlustersApp::slotUndo);
+    mUndo = addCommand(editMenu, "edit.undo");
 
-    mRedo = editMenu->addAction(tr("Redo"));
-    mRedo->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Y));   // explicit Ctrl+Y so the
-                                                              // Linux default Ctrl+Shift+Z
-                                                              // is free for the atom layer
-    connect(mRedo, &QAction::triggered, this, &KlustersApp::slotRedo);
+    mRedo = addCommand(editMenu, "edit.redo");
 
-    // The one command that works WHILE a job runs (the edit lock leaves it alone).
-    mCancelJob = editMenu->addAction(tr("&Cancel Running Job"));
-    mCancelJob->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Period));
-    mCancelJob->setStatusTip(tr("Stop the running recluster, drift or plugin job (its result is discarded), "
-                                "or a realignment of several clusters after the cluster in progress"));
-    mCancelJob->setEnabled(false);
-    connect(mCancelJob, &QAction::triggered, this, &KlustersApp::cancelRunningJob);
+    mCancelJob = addCommand(editMenu, "edit.cancelJob");
 
     editMenu->addSeparator();
 
-    mSelectAllAction = editMenu->addAction(tr("Select &All"));
-    mSelectAllAction->setShortcut(QKeySequence::SelectAll);
-    connect(mSelectAllAction, &QAction::triggered, this, &KlustersApp::slotSelectAll);
+    mSelectAllAction = addCommand(editMenu, "edit.selectAll");
 
     editMenu->addSeparator();
 
-    mSelectAllExceptAction = editMenu->addAction(tr("Select All Except 0 and 1"));
-    mSelectAllExceptAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A));
-    connect(mSelectAllExceptAction, &QAction::triggered, this, &KlustersApp::slotSelectAllWO01);
+    mSelectAllExceptAction = addCommand(editMenu, "edit.selectAllExcept");
 
     //View menu: what the left column lists and shows.  Each entry starts checked
     //and holds until Klusters closes.
     QMenu *viewMenu = menuBar()->addMenu(tr("&View"));
     viewMenu->setToolTipsVisible(true);
-    mShowReservedClusters = viewMenu->addAction(tr("Show &Reserved Chunk Clusters"));
-    mShowReservedClusters->setCheckable(true);
-    mShowReservedClusters->setChecked(true);
-    mShowReservedClusters->setToolTip(tr("List the reserved chunk clusters (R0 … R99: the chunks a fiber-kit\n"
-                                         "chunk run left unsorted) in the cluster palette.  Unchecked, they\n"
-                                         "leave the palette and the displays, and Select All skips them."));
-    connect(mShowReservedClusters, &QAction::toggled, this, &KlustersApp::slotShowReservedClusters);
+    mShowReservedClusters = addCommand(viewMenu, "view.showReservedClusters");
     viewMenu->addSeparator();
-    mShowChildPalette = viewMenu->addAction(tr("Show &Child Cluster Palette"));
-    mShowChildPalette->setCheckable(true);
-    mShowChildPalette->setChecked(true);
-    mShowChildPalette->setEnabled(false);          // a hierarchical session enables it
-    mShowChildPalette->setToolTip(tr("Show the palette of the selected parent's child clusters (.clc).\n"
-                                     "Hidden, the selection, the displays and the matrices work on\n"
-                                     "the parent clusters."));
-    connect(mShowChildPalette, &QAction::toggled, this, &KlustersApp::slotShowChildPalette);
-    mFollowSelectionInMatrices = viewMenu->addAction(tr("&Follow Selection in Matrices"));
-    mFollowSelectionInMatrices->setCheckable(true);
-    mFollowSelectionInMatrices->setChecked(configuration().getMatrixFollowSelection());
-    mFollowSelectionInMatrices->setToolTip(tr("Centre the curation matrices on the cluster selected in the parent or\n"
-                                              "the child cluster palette: the view pans so its diagonal cell is in the\n"
-                                              "middle (the zoom is kept).  A matrix panned completely off screen is\n"
-                                              "brought back to its upper-left corner either way."));
-    connect(mFollowSelectionInMatrices, &QAction::toggled, this, &KlustersApp::slotFollowSelectionInMatrices);
-    mShowTemplatePalette = viewMenu->addAction(tr("Show &Template Palette"));
-    mShowTemplatePalette->setCheckable(true);
-    mShowTemplatePalette->setChecked(true);
-    mShowTemplatePalette->setEnabled(configuration().getTemplatesMode());   // Templates mode on
-    mShowTemplatePalette->setToolTip(tr("Show the template-class palette (Templates mode)."));
-    connect(mShowTemplatePalette, &QAction::toggled, this, &KlustersApp::slotShowTemplatePalette);
-
+    mShowChildPalette = addCommand(viewMenu, "view.showChildPalette");
+    mFollowSelectionInMatrices = addCommand(viewMenu, "view.followSelectionInMatrices");
+    mShowTemplatePalette = addCommand(viewMenu, "view.showTemplatePalette");
 
     //Actions menu
     QMenu *actionMenu = menuBar()->addMenu(tr("&Actions"));
-    mDeleteArtifact = actionMenu->addAction(tr("Delete &Artifact Cluster(s)"));
-    mDeleteArtifact->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Delete));
+    mDeleteArtifact = addCommand(actionMenu, "action.deleteArtifact");
     connect(mDeleteArtifact, &QAction::triggered, this, [this]{ slotDeleteSelected(0); });
 
-    mDeleteNoisy = actionMenu->addAction(tr("Delete &Noisy Cluster(s)"));
-    mDeleteNoisy->setShortcut(Qt::Key_Delete);
+    mDeleteNoisy = addCommand(actionMenu, "action.deleteNoisy");
     connect(mDeleteNoisy, &QAction::triggered, this, [this]{ slotDeleteSelected(1); });
 
-    mGroupeClusters = actionMenu->addAction(tr("&Group Clusters"));
-    mGroupeClusters->setShortcut(Qt::Key_G);
+    mGroupeClusters = addCommand(actionMenu, "action.groupClusters");
     connect(mGroupeClusters, &QAction::triggered, clusterPalette, static_cast<void(ClusterPalette::*)()>(&ClusterPalette::groupClusters));
 
     //Time-chunk curation: step through the session one chunk at a time, with
     //only the chunk's clusters active (masking) so merge decisions are local.
     actionMenu->addSeparator();
-    mChunkMode = actionMenu->addAction(tr("Time-&Chunk Mode"));
-    mChunkMode->setCheckable(true);
-    connect(mChunkMode, &QAction::toggled, this, &KlustersApp::slotChunkModeToggled);
+    mChunkMode = addCommand(actionMenu, "action.chunkMode");
 
-    mPrevChunk = actionMenu->addAction(tr("Previous Chunk"));
-    mPrevChunk->setShortcut(Qt::Key_PageUp);
-    connect(mPrevChunk, &QAction::triggered, this, &KlustersApp::slotPrevChunk);
+    mPrevChunk = addCommand(actionMenu, "action.prevChunk");
 
-    mNextChunk = actionMenu->addAction(tr("Next Chunk"));
-    mNextChunk->setShortcut(Qt::Key_PageDown);
-    connect(mNextChunk, &QAction::triggered, this, &KlustersApp::slotNextChunk);
+    mNextChunk = addCommand(actionMenu, "action.nextChunk");
 
-    mPrevChunk->setEnabled(false);
-    mNextChunk->setEnabled(false);
+    mAutoMerge = addCommand(actionMenu, "action.autoMerge");
 
-    // Patch 0069 — Auto-Merge action.
-    // Uses the same template-cross-correlation mechanism as KKE; settings
-    // come from the Auto-Merge preferences tab (patch 0068).  Shortcut Shift+G
-    // by analogy with G for Group.
-    mAutoMerge = actionMenu->addAction(tr("&Auto-Merge Similar Clusters…"));
-    mAutoMerge->setShortcut(Qt::SHIFT | Qt::Key_G);
-    connect(mAutoMerge, &QAction::triggered, this, &KlustersApp::slotAutoMerge);
+    mPurgeSmallClusters = addCommand(actionMenu, "action.purgeSmallClusters");
 
-    // Purge: move every cluster smaller than a user-entered spike count into the
-    // noise cluster (1).  Bulk analogue of "Delete Noisy Cluster(s)"; asks for N
-    // then a Yes/No confirmation (default Yes) before moving.
-    mPurgeSmallClusters = actionMenu->addAction(tr("&Purge Small Clusters…"));
-    connect(mPurgeSmallClusters, &QAction::triggered, this, &KlustersApp::slotPurgeSmallClusters);
+    mStripOutliers = addCommand(actionMenu, "action.stripOutliers");
 
-    // Bulk artefact removal: move every spike more than 5 sigma from its cluster's
-    // per-dimension feature mean (in any one dimension) into the artefact cluster.
-    // Non-mutating scan first, then a Yes/No confirmation showing the exact spike
-    // count (default No, since it is destructive); undoable.
-    mStripOutliers = actionMenu->addAction(tr("Strip Feature &Outliers (5\u03c3)\u2026"));
-    connect(mStripOutliers, &QAction::triggered, this, &KlustersApp::slotStripFeatureOutliers);
+    mStripWaveformOutliers = addCommand(actionMenu, "action.stripWaveformOutliers");
 
-    // Waveform counterpart of the feature strip, and the interactive twin of
-    // fiber-kit's consolidate mode=shed: strip each SELECTED cluster's own
-    // worst-fitting spikes (residual to its median waveform, robust MAD tail)
-    // into ONE new cluster (not the artefact bin -- the strip is a hypothesis to
-    // review, so the shed spikes stay inspectable rather than being discarded).
-    // Selection-scoped (not bulk) because it is shortcut-driven -- Shift+X acts
-    // on the cluster under inspection.  Same non-mutating scan -> confirm ->
-    // undoable split as the feature strip's scan -> confirm -> move.
-    mStripWaveformOutliers = actionMenu->addAction(tr("Strip &Waveform Outliers\u2026"));
-    mStripWaveformOutliers->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_X));
-    mStripWaveformOutliers->setToolTip(
-        tr("Split each selected cluster's waveform outliers (residual to its own "
-           "median waveform) off into a new cluster.  Undoable."));
-    connect(mStripWaveformOutliers, &QAction::triggered,
-            this, &KlustersApp::slotStripWaveformOutliers);
+    mStripResidualOutliers = addCommand(actionMenu, "action.stripResidualOutliers");
 
-    // The same strip with the per-spike GAIN divided out and the residual power
-    // split by how much of the template each channel carries: an on-channel
-    // term (wrong shape at the cell's own site) and an off-channel one (signal
-    // where this cell has none), each cut at its own robust tail and unioned.
-    // A sibling of Shift+X rather than a replacement -- that gesture is
-    // calibrated to fiber-kit's shed knee, so the two stay comparable on the
-    // same cluster.  Dialog-driven (five knobs, unit-dependent) and
-    // deliberately unbound: bind it in the input registry if it earns a chord.
-    mStripResidualOutliers = actionMenu->addAction(tr("Strip &Residual Outliers\u2026"));
-    mStripResidualOutliers->setToolTip(
-        tr("Split each selected cluster's gain-free residual outliers -- "
-           "on-channel (shape) and off-channel (position) terms, separately "
-           "thresholded -- off into new clusters.  Undoable."));
-    connect(mStripResidualOutliers, &QAction::triggered,
-            this, &KlustersApp::slotStripResidualOutliers);
+    mSplitBurstFollowers = addCommand(actionMenu, "action.splitBurstFollowers");
 
-    // Two similarly shaped cells: the later, smaller spikes of one cell's bursts
-    // are easily clustered with the other.  The waveform cannot tell (that is the
-    // premise); the timing can.  Unbound: bind it in the input registry.
-    mSplitBurstFollowers = actionMenu->addAction(tr("Split &Burst Followers"));
-    mSplitBurstFollowers->setToolTip(
-        tr("With two similarly shaped clusters selected: every burst is given to the "
-           "cluster of its first spike, and the later spikes of the burst that are in "
-           "the other cluster are split off into a new cluster -- one per reference "
-           "cell, only when the count stands above chance (unrelated firing, and "
-           "cells firing together in no order).  With three selected: two references "
-           "and a cluster that holds spikes of both; its spikes behind each "
-           "reference's burst leaders are split off, one new cluster per reference.  "
-           "With children selected it works on the child layer: the new clusters are "
-           "new children beside the ones the spikes come from.  Undoable."));
-    connect(mSplitBurstFollowers, &QAction::triggered,
-            this, &KlustersApp::slotSplitBurstFollowers);
+    mSplitOffSpurious = addCommand(actionMenu, "action.splitOffSpurious");
 
-    // One cluster: the spikes in the order that changes the cumulative mean
-    // waveform least, cut where a channel's cumulative kurtosis starts to rise.
-    // Its knobs are in Preferences > Splitting.
-    mSplitOffSpurious = actionMenu->addAction(tr("Split Off Sp&urious Spikes"));
-    mSplitOffSpurious->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Space));
-    mSplitOffSpurious->setToolTip(
-        tr("For each selected cluster: its spikes, centred on the first half crossing "
-           "of their falling flank and seen through a tapered window around it on every "
-           "channel, are put in the order in which each next one changes the cumulative "
-           "mean waveform least.  The order is cut where a channel's cumulative kurtosis "
-           "starts to rise, and the spikes past the cut are split off into a new cluster; "
-           "the core stays.  It assumes one unit is more than half the cluster, and it "
-           "errs on the side of splitting.  Reads the waveforms of the space shown.  With "
-           "children selected the new cluster is a new child beside the one the spikes "
-           "come from.  Undoable."));
-    connect(mSplitOffSpurious, &QAction::triggered,
-            this, &KlustersApp::slotSplitOffSpurious);
+    mSetObliqueBasis = addCommand(actionMenu, "action.setObliqueBasis");
 
-    // Pin the oblique (template-axis) projection's basis.  The oblique view
-    // (Shift+O) normally uses the SELECTED clusters as its axes; this fixes a
-    // chosen pair (or more) as the axes so a DIFFERENT cluster can be examined
-    // against them -- select the third and press Shift+O.  Set via a dialog, as
-    // it is a configuration rather than a per-view gesture.
-    mSetObliqueBasis = actionMenu->addAction(tr("Set Oblique &Basis…"));
-    mSetObliqueBasis->setToolTip(
-        tr("Pin cluster(s) as the fixed axes of the oblique (template-axis) view, "
-           "so a different cluster can be projected onto them with Shift+O."));
-    connect(mSetObliqueBasis, &QAction::triggered,
-            this, &KlustersApp::slotSetObliqueBasis);
+    mMarkAsTemplate = addCommand(actionMenu, "action.markAsTemplate");
 
-    // Mark/unmark the selected cluster(s) as template units.  Marked units are the
-    // template library for this clustering; a save persists the set and (re)writes
-    // their .wtf via the fiber-template plugin.  A gesture on the selection, like
-    // the move-to-noise/artefact actions, rather than a configuration dialog.
-    mMarkAsTemplate = actionMenu->addAction(tr("Mark/Unmark as &Template"));
-    mMarkAsTemplate->setToolTip(
-        tr("Toggle the selected cluster(s) as template units.  On save their linked "
-           "template waveforms (.wtf) are written in every available method."));
-    connect(mMarkAsTemplate, &QAction::triggered,
-            this, &KlustersApp::slotToggleTemplate);
+    mGenerateTemplate = addCommand(actionMenu, "action.generateTemplate");
 
-    // Run fiber-template on demand for the selected cluster(s) only — the
-    // per-cluster "refine this unit now" step of the curation workflow, distinct
-    // from the on-save run over the whole marked set.
-    mGenerateTemplate = actionMenu->addAction(tr("&Generate Template for Selected Cluster(s)"));
-    mGenerateTemplate->setToolTip(
-        tr("Run fiber-template now for the selected cluster(s) only, writing their "
-           "linked template waveforms (.wti/.wtf).  Save first — the tool reads the "
-           "clustering files on disk."));
-    connect(mGenerateTemplate, &QAction::triggered,
-            this, &KlustersApp::slotGenerateTemplateForSelection);
-
-    mUpdateDisplay = actionMenu->addAction(tr("&Update Display"));
+    mUpdateDisplay = addCommand(actionMenu, "action.updateDisplay");
     connect(mUpdateDisplay,&QAction::triggered, clusterPalette,&ClusterPalette::updateClusters);
 
     actionMenu->addSeparator();
 
-    mRenumberClusters = actionMenu->addAction(tr("&Renumber Clusters"));
-    mRenumberClusters->setShortcut(Qt::Key_R);
+    mRenumberClusters = addCommand(actionMenu, "action.renumberClusters");
     connect(mRenumberClusters,&QAction::triggered, doc,&KlustersDoc::renumberClusters);
 
     actionMenu->addSeparator();
 
-    mUpdateErrorMatrix = actionMenu->addAction(tr("&Update Error Matrix"));
-    mUpdateErrorMatrix->setShortcut(Qt::Key_U);
-    connect(mUpdateErrorMatrix,&QAction::triggered, this,&KlustersApp::slotUpdateErrorMatrix);
+    mUpdateErrorMatrix = addCommand(actionMenu, "action.updateErrorMatrix");
 
     // Open a mean-waveform residual matrix on the active display.  Diagnostic
     // display (asymmetric: cell(row A,col B) = variance of A's spikes about
@@ -664,189 +498,42 @@ void KlustersApp::createMenus()
     mClusterSortMenu = actionMenu->addMenu(tr("Sort Clusters"));
     QMenu* sortMenu = mClusterSortMenu;
 
-    mReorderClustersBySimilarity = sortMenu->addAction(tr("Re&order Clusters by Similarity"));
-    mReorderClustersBySimilarity->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_S));
-    mReorderClustersBySimilarity->setToolTip(
-        tr("Renumber clusters so that similar clusters get adjacent IDs, using\n"
-           "single-linkage agglomerative clustering on the active similarity matrix.\n"
-           "When both error and template matrices exist, uses whichever was most\n"
-           "recently created or clicked.  Clusters 0 (artefact) and 1 (noise) are\n"
-           "preserved at the start.  Undoable with Ctrl+Z."));
-    // Disabled until at least one of the matrices is open.  Re-enabled
-    // via slotStateChanged("errorMatrixViewState") and the equivalent
-    // template-matrix wiring at the dock-creation site.
-    mReorderClustersBySimilarity->setEnabled(false);
-    connect(mReorderClustersBySimilarity,&QAction::triggered,
-            this,&KlustersApp::slotReorderClustersBySimilarity);
+    mReorderClustersBySimilarity = addCommand(sortMenu, "sort.bySimilarity");
 
-    // Sort by spike count: renumber clusters so IDs run by descending spike
-    // count (largest cluster becomes 2).  Needs no matrix, just the cluster
-    // sizes, so it follows the document/cluster-op enabled state (mirrors
-    // mAutoMerge) rather than the matrix-availability gate above.  Undoable.
-    mSortClustersBySpikeCount = sortMenu->addAction(tr("Sort Clusters by Spike &Count"));
-    mSortClustersBySpikeCount->setToolTip(
-        tr("Renumber clusters so their IDs run from largest to smallest by spike\n"
-           "count (the biggest cluster becomes 2).  Clusters 0 (artefact) and 1\n"
-           "(noise) are preserved at the start.  Undoable with Ctrl+Z."));
-    connect(mSortClustersBySpikeCount,&QAction::triggered,
-            this,&KlustersApp::slotSortClustersBySpikeCount);
+    mSortClustersBySpikeCount = addCommand(sortMenu, "sort.bySpikeCount");
 
-    // Sort by starting-edge time: renumber clusters so IDs run by ascending time
-    // of each cluster's earliest spike (the cluster that fires first becomes 2).
-    // Needs no matrix, just spike timestamps, so it follows the same
-    // document/cluster-op enabled state as the spike-count sort.  Undoable.
-    mSortClustersByTime = sortMenu->addAction(tr("Sort Clusters by &Time"));
-    mSortClustersByTime->setToolTip(
-        tr("Renumber clusters so their IDs run by ascending starting time — the\n"
-           "cluster whose earliest spike comes first becomes 2.  Clusters 0\n"
-           "(artefact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z."));
-    connect(mSortClustersByTime,&QAction::triggered,
-            this,&KlustersApp::slotSortClustersByTime);
+    mSortClustersByTime = addCommand(sortMenu, "sort.byTime");
 
-    // Sort by contamination: renumber clusters by descending refractory ISI-
-    // violation fraction (2 ms window), so the most-contaminated cluster becomes
-    // 2 and lands at the top of the palette for review.  Needs no matrix, just
-    // spike timestamps, so it follows the same enabled state.  Undoable.
-    mSortClustersByContamination = sortMenu->addAction(tr("Sort Clusters by C&ontamination"));
-    mSortClustersByContamination->setToolTip(
-        tr("Renumber clusters by descending refractory contamination — the\n"
-           "fraction of inter-spike intervals shorter than 2 ms.  The most\n"
-           "contaminated cluster becomes 2 (top of the palette).  Clusters 0\n"
-           "(artefact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z."));
-    connect(mSortClustersByContamination,&QAction::triggered,
-            this,&KlustersApp::slotSortClustersByContamination);
+    mSortClustersByContamination = addCommand(sortMenu, "sort.byContamination");
 
-    // Sort by SNR: renumber clusters by descending mean-waveform SNR, so the
-    // cleanest-waveform cluster becomes 2.  Reads the cached mean waveforms, so
-    // it is only meaningful once waveforms are computed; it otherwise follows the
-    // same enabled state as the other sorts.  Undoable.
-    mSortClustersBySnr = sortMenu->addAction(tr("Sort Clusters by &SNR"));
-    mSortClustersBySnr->setToolTip(
-        tr("Renumber clusters by descending mean-waveform SNR (peak-to-trough on\n"
-           "the best channel over baseline noise).  Best-SNR cluster becomes 2.\n"
-           "Requires computed mean waveforms — clusters without one sort last.\n"
-           "Clusters 0 (artefact) and 1 (noise) are preserved.  Undoable with Ctrl+Z."));
-    connect(mSortClustersBySnr,&QAction::triggered,
-            this,&KlustersApp::slotSortClustersBySnr);
+    mSortClustersBySnr = addCommand(sortMenu, "sort.bySnr");
 
-    // Sort by amplitude: renumber clusters by descending peak-to-trough of the
-    // mean waveform, measured on whichever channel carries it largest, so the
-    // biggest unit becomes 2.  Reads the same waveform cache as the SNR sort.
-    mSortClustersByAmplitude = sortMenu->addAction(tr("Sort Clusters by Largest &Amplitude"));
-    mSortClustersByAmplitude->setToolTip(
-        tr("Renumber clusters by descending peak-to-trough amplitude of the mean\n"
-           "waveform, taken on the channel where it is largest.  The biggest unit\n"
-           "becomes 2.  Requires computed mean waveforms — clusters without one\n"
-           "sort last.  Clusters 0 (artefact) and 1 (noise) are preserved.\n"
-           "Undoable with Ctrl+Z."));
-    connect(mSortClustersByAmplitude,&QAction::triggered,
-            this,&KlustersApp::slotSortClustersByAmplitude);
+    mSortClustersByAmplitude = addCommand(sortMenu, "sort.byAmplitude");
 
-    // Tiered version: block the clusters by which channel carries their largest
-    // amplitude (channel order, so the blocks run down the probe), and order each
-    // block by descending amplitude.  Groups units by site while keeping the
-    // biggest first within a site.
-    mSortClustersByAmplitudeByChannel =
-        sortMenu->addAction(tr("Sort Clusters by Largest Amplitude by C&hannel"));
-    mSortClustersByAmplitudeByChannel->setToolTip(
-        tr("Renumber clusters in blocks: one block per channel, in channel order,\n"
-           "each holding the clusters whose largest peak-to-trough amplitude falls\n"
-           "on that channel, ordered biggest first.  Requires computed mean\n"
-           "waveforms — clusters without one sort last.  Clusters 0 (artefact) and\n"
-           "1 (noise) are preserved.  Undoable with Ctrl+Z."));
-    connect(mSortClustersByAmplitudeByChannel,&QAction::triggered,
-            this,&KlustersApp::slotSortClustersByAmplitudeByChannel);
+    mSortClustersByAmplitudeByChannel = addCommand(sortMenu, "sort.sortClustersByAmplitudeByChannel");
 
-    // Sort by error-matrix p-value: renumber clusters by descending merge
-    // affinity read from the active error matrix, so each cluster's strongest
-    // merge candidate ends up adjacent and the top pairs land at low ids.
-    // Reads a matrix view, so it reports if none is computed; it otherwise
-    // follows the same enabled state as the other sorts.  Undoable.
-    mSortClustersByErrorPval = sortMenu->addAction(tr("Sort Clusters by Error &p-value"));
-    mSortClustersByErrorPval->setToolTip(
-        tr("Renumber clusters by descending error-matrix merge affinity — each\n"
-           "cluster's highest same-neuron probability against any other cluster.\n"
-           "The strongest merge candidate becomes 2.  Requires a computed,\n"
-           "up-to-date error matrix in the active display.  Undoable with Ctrl+Z."));
-    connect(mSortClustersByErrorPval,&QAction::triggered,
-            this,&KlustersApp::slotSortClustersByErrorPval);
+    mSortClustersByErrorPval = addCommand(sortMenu, "sort.byErrorPval");
 
-    // Sort by residual, gated by spike count.  Partitions clusters into a
-    // high-count block (>= a prompted threshold) and a low-count block, places
-    // the high block first (upper-left of the matrix / low ids) and the low
-    // block last (lower-right), and seriates each block by residual-matrix
-    // similarity.  Needs a computed residual matrix, so it follows the matrix-
-    // availability gate (enabled when a ResidualMatrixView is created).  Undoable.
-    mSortByResidualGated = sortMenu->addAction(tr("Sort by Residual (&Gated by Count)"));
-    mSortByResidualGated->setToolTip(
-        tr("Renumber clusters using the residual matrix, gated by spike count.\n"
-           "Clusters with >= the prompted threshold go to the upper-left (low\n"
-           "ids), the rest to the lower-right; each block is seriated by\n"
-           "residual similarity.  Requires a computed residual matrix.\n"
-           "Clusters 0/1 are preserved at the start.  Undoable with Ctrl+Z."));
-    mSortByResidualGated->setEnabled(false);
-    connect(mSortByResidualGated,&QAction::triggered,
-            this,&KlustersApp::slotSortByResidualGated);
+    mSortByResidualGated = addCommand(sortMenu, "sort.byResidualGated");
 
-    // Nearest-neighbour median-waveform sort: renumber clusters along a greedy
-    // nearest-neighbour chain over their per-sample median waveforms, so that
-    // waveform-similar clusters get adjacent IDs.  Reads the .spk file directly,
-    // needs no matrix, so (like Sort by Spike Count) it is enabled by default and
-    // follows the document/cluster-op state rather than the matrix gate.  Undoable.
-    mSortByWaveformNN = sortMenu->addAction(tr("Sort by &Nearest-Neighbour Waveform"));
-    mSortByWaveformNN->setToolTip(
-        tr("Renumber clusters along a nearest-neighbour chain over their per-sample\n"
-           "MEDIAN waveforms (Euclidean distance): each cluster is placed next to\n"
-           "its most waveform-similar unused neighbour.  Reads the .spk file; needs\n"
-           "no matrix.  Preferences > Curation > Cluster order can use the mean\n"
-           "waveforms instead.  Clusters 0/1 preserved at the start.  Undoable with Ctrl+Z."));
-    connect(mSortByWaveformNN,&QAction::triggered,
-            this,&KlustersApp::slotSortByWaveformNN);
+    mSortByWaveformNN = addCommand(sortMenu, "sort.byWaveformNN");
 
-    // Spectral (global) counterpart of the nearest-neighbour waveform sort: same
-    // median-waveform distances, but ordered by the Fiedler vector of the
-    // similarity Laplacian, so the layout respects global waveform structure and
-    // not just local nearest neighbours.  Also matrix-free; enabled by default.
-    mSortByWaveformSpectral = sortMenu->addAction(tr("Sort by Waveform (&Global / Spectral)"));
-    mSortByWaveformSpectral->setToolTip(
-        tr("Renumber clusters by spectral (Fiedler) seriation of their per-sample\n"
-           "MEDIAN waveforms: orders clusters so the whole layout respects the\n"
-           "GLOBAL waveform structure, not just each cluster's nearest neighbour.\n"
-           "Reads the .spk file; needs no matrix.  Preferences > Curation > Cluster\n"
-           "order can use the mean waveforms instead.  Clusters 0/1 preserved at\n"
-           "the start.  Undoable with Ctrl+Z."));
-    connect(mSortByWaveformSpectral,&QAction::triggered,
-            this,&KlustersApp::slotSortByWaveformSpectral);
+    mSortByWaveformSpectral = addCommand(sortMenu, "sort.byWaveformSpectral");
 
     actionMenu->addSeparator();
 
     // Recluster + split methods grouped into their own Actions submenu.
     QMenu* reclusterMenu = actionMenu->addMenu(tr("&Recluster"));
 
-    mReCluster = reclusterMenu->addAction(tr("Re&cluster"));
-    mReCluster->setShortcut(QKeySequence(Qt::SHIFT  | Qt::Key_R));
-    connect(mReCluster,&QAction::triggered, this,&KlustersApp::slotRecluster);
+    mReCluster = addCommand(reclusterMenu, "recluster.recluster");
 
-    mReclusterMedian = reclusterMenu->addAction(tr("Recluster (&median-waveform residual)"));
-    mReclusterMedian->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_M));
-    mReclusterMedian->setToolTip(tr("Recluster the selected cluster(s) on the residuals of their pooled median waveform"));
-    connect(mReclusterMedian,&QAction::triggered, this,&KlustersApp::slotReclusterMedianResidual);
+    mReclusterMedian = addCommand(reclusterMenu, "recluster.median");
 
-    mReclusterChannelVar = reclusterMenu->addAction(tr("Recluster (&channel-variance features)"));
-    mReclusterChannelVar->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_C));
-    mReclusterChannelVar->setToolTip(tr("Recluster using the highest-variance channels' features"));
-    connect(mReclusterChannelVar,&QAction::triggered, this,&KlustersApp::slotReclusterChannelVariance);
+    mReclusterChannelVar = addCommand(reclusterMenu, "recluster.channelVar");
 
-    mReclusterAgainst = reclusterMenu->addAction(tr("Recluster &Against References…"));
-    mReclusterAgainst->setToolTip(tr("One selected cluster is a mixture of the others: sort them pooled, and replace "
-                                     "only the mixed cluster by its pieces (the references are left as they are)"));
-    connect(mReclusterAgainst,&QAction::triggered, this,&KlustersApp::slotReclusterAgainstReferences);
+    mReclusterAgainst = addCommand(reclusterMenu, "recluster.against");
 
-    mReclusterFiberKit = reclusterMenu->addAction(tr("Recluster with &fiber-kit (plan on the selection)"));
-    mReclusterFiberKit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_Q));
-    mReclusterFiberKit->setToolTip(tr("Run the fiber-kit plan of this folder's fiber-kit.yaml on the selected "
-                                      "clusters' spikes (a sub-session) and replace them with its clusters"));
-    connect(mReclusterFiberKit,&QAction::triggered, this,&KlustersApp::slotReclusterFiberKit);
+    mReclusterFiberKit = addCommand(reclusterMenu, "recluster.fiberkit");
 
     // The ENGINE Recluster (Shift+R) runs: checkable, exclusive.  KlustaKwik and fiber-kit are
     // built in; populateReclusterEngineMenu adds one entry per installed `recluster` descriptor.
@@ -854,28 +541,14 @@ void KlustersApp::createMenus()
     mReclusterEngineMenu->setToolTipsVisible(true);
     mReclusterEngineGroup = new QActionGroup(this);
     mReclusterEngineGroup->setExclusive(true);
-    mEngineKlustaKwik = mReclusterEngineMenu->addAction(tr("KlustaKwik"));
-    mEngineKlustaKwik->setCheckable(true);
+    mEngineKlustaKwik = addCommand(mReclusterEngineMenu, "recluster.engine.klustakwik");
     mEngineKlustaKwik->setData(QStringLiteral("klustakwik"));
-    mEngineKlustaKwik->setToolTip(tr("Recluster runs KiloKlustaKwik on the selection's features (Preferences > Reclustering)"));
     mReclusterEngineGroup->addAction(mEngineKlustaKwik);
-    mEngineFiberKit = mReclusterEngineMenu->addAction(tr("fiber-kit"));
-    mEngineFiberKit->setCheckable(true);
+    mEngineFiberKit = addCommand(mReclusterEngineMenu, "recluster.engine.fiberkit");
     mEngineFiberKit->setData(QStringLiteral("fiber-kit"));
-    mEngineFiberKit->setToolTip(tr("Recluster runs the fiber-kit plan on the selection's sub-session "
-                                   "(the fiber-kit-recluster plugin's defaults, else the preferences' command)"));
     mReclusterEngineGroup->addAction(mEngineFiberKit);
-    // The REFINE mode: fiber-kit's manifold plugin.  A refine engine (descriptor <integration>refine)
-    // runs on the atoms of the selected unit(s) and installs its children under the SAME parents --
-    // nothing moves between units and no id changes -- where a recluster engine replaces the selection
-    // with new clusters.  Built in so the wheel's Plugin ring carries it; enabled when the descriptor is
-    // installed (fk install klusters-plugin).
-    mEngineManifold = mReclusterEngineMenu->addAction(tr("Refine: fiber-kit manifold"));
-    mEngineManifold->setCheckable(true);
+    mEngineManifold = addCommand(mReclusterEngineMenu, "recluster.engine.manifold");
     mEngineManifold->setData(QStringLiteral("plugin:fiber-kit-manifold"));
-    mEngineManifold->setToolTip(tr("Recluster REFINES the selected unit(s): fiber-manifold fits the field manifold of their "
-                                   "off-spike channels in sliding windows and installs the result as their children "
-                                   "(the parents keep their ids; the manifold becomes a feature space under Space)"));
     mReclusterEngineGroup->addAction(mEngineManifold);
     connect(mReclusterEngineGroup, &QActionGroup::triggered, this, [this](QAction* a) {
         setActiveReclusterEngine(a->data().toString());
@@ -885,85 +558,24 @@ void KlustersApp::createMenus()
 
     reclusterMenu->addSeparator();
 
-    mSplitByKnn = reclusterMenu->addAction(tr("Split by &KNN voting…"));
-    mSplitByKnn->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_K));
-    mSplitByKnn->setToolTip(
-        tr("Partition the selected cluster into new sub-clusters using "
-           "a K-nearest-neighbour vote against existing well-isolated "
-           "clusters as references."));
-    mSplitByKnn->setEnabled(false);
-    connect(mSplitByKnn, &QAction::triggered,
-            this, &KlustersApp::slotSplitClusterByKnn);
+    mSplitByKnn = addCommand(reclusterMenu, "recluster.splitByKnn");
 
-    mStripByTemplate = reclusterMenu->addAction(tr("Strip by &Template…"));
-    // Shift+J: J was unclaimed everywhere -- actions, the application key
-    // filter, and the views' own handlers -- so nothing is shadowed either
-    // way (Shift+T and Shift+S, the mnemonic choices, are taken by
-    // partition-by-time and the similarity sort).  auditKeyBindings()
-    // re-checks this at startup.
-    mStripByTemplate->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_J));
-    mStripByTemplate->setToolTip(
-        tr("Designate one selected cluster as a waveform template and pull "
-           "matching spikes out of the other selected clusters — normalized "
-           "kernel-weighted median-waveform residual, restricted to the "
-           "current channel selection.  Works in both scopes."));
-    mStripByTemplate->setEnabled(false);
-    connect(mStripByTemplate, &QAction::triggered,
-            this, &KlustersApp::slotStripByTemplate);
+    mStripByTemplate = addCommand(reclusterMenu, "recluster.stripByTemplate");
 
-    
-    // Watershed lives on the Actions menu proper, not in the Recluster submenu.
-    // Its construction used to sit in the middle of the Tools menu block -- it was
-    // added to reclusterMenu 121 lines after that submenu was built and after the
-    // Tools menu had been created, so anyone adding a Tools item beside it would
-    // have landed in the Recluster submenu instead.
-    mWatershed = actionMenu->addAction(tr("&Watershed Split"));
-    mWatershed->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_W));
-    mWatershed->setStatusTip(tr(
-        "Split the selection into one new cluster per density basin in the "
-        "active scatter view — selected atoms (one parent) in children view, "
-        "selected parents otherwise."));
-    connect(mWatershed, &QAction::triggered, this, &KlustersApp::slotWatershedSplit);
+    mWatershed = addCommand(actionMenu, "action.watershed");
 
     actionMenu->addSeparator();
 
-    mRealignSpikes = actionMenu->addAction(tr("R&ealign Spikes…"));
-    mRealignSpikes->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_L));
-    mRealignSpikes->setToolTip(tr("Re-align spikes in the selected cluster to their true peak, "
-                                   "update .res/.spk/.fet files, and swap ordering if needed."));
-    connect(mRealignSpikes, &QAction::triggered, this, &KlustersApp::slotRealignSpikes);
+    mRealignSpikes = addCommand(actionMenu, "action.realignSpikes");
 
-    mPartitionByTime = actionMenu->addAction(tr("Partition Cluster by &Time…"));
-    mPartitionByTime->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_T));
-    mPartitionByTime->setToolTip(tr(
-        "Cut the selected cluster into consecutive blocks of recording time.\n"
-        "Blocks start at the origin of the session, so the boundaries are the "
-        "same for every cluster and the pieces line up in time.\n"
-        "Works on a parent or, in child view, on an atom."));
-    connect(mPartitionByTime, &QAction::triggered, this, &KlustersApp::slotPartitionClusterByTime);
+    mPartitionByTime = addCommand(actionMenu, "action.partitionByTime");
 
-    mPcaAlignAllClusters = actionMenu->addAction(tr("&Align All Clusters"));
-    mPcaAlignAllClusters->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_P));
-    mPcaAlignAllClusters->setToolTip(tr(
-        "Run Realign Spikes on every cluster (skipping noise=0 and "
-        "artifact=1) with its settings: the Refinement preferences and the "
-        "Top-Channels spin box.  Each cluster's result is auto-accepted as a "
-        "pending change; the batch can be stopped with Edit > Cancel Running Job (Ctrl+.)."));
-    connect(mPcaAlignAllClusters, &QAction::triggered,
-            this, &KlustersApp::slotPcaAlignAllClusters);
+    mPcaAlignAllClusters = addCommand(actionMenu, "action.pcaAlignAllClusters");
 
-    mSyncFeatureSpaces = actionMenu->addAction(tr("S&ync Feature Spaces"));
-    mSyncFeatureSpaces->setToolTip(tr(
-        "Bring every other feature space (method) of this group up to the current "
-        "spike times: re-extract its waveforms from the .fil and re-project its "
-        "features through its own PCA basis.  Use after realigning or nudging in "
-        "the .clu's own space.  The results are working copies, written by Save."));
-    connect(mSyncFeatureSpaces, &QAction::triggered,
-            this, &KlustersApp::slotSyncFeatureSpaces);
+    mSyncFeatureSpaces = addCommand(actionMenu, "action.syncFeatureSpaces");
 
-    // Super-sampled waveform spaces (Preferences > Realignment > Super-sampling gates them).
-    mSupersampleX2 = actionMenu->addAction(tr("Super-sample ×2…"));
-    mSupersampleX4 = actionMenu->addAction(tr("Super-sample ×4…"));
+    mSupersampleX2 = addCommand(actionMenu, "space.supersample2");
+    mSupersampleX4 = addCommand(actionMenu, "space.supersample4");
     for (QAction* a : {mSupersampleX2, mSupersampleX4})
         a->setToolTip(tr("Build a waveform space with %1 spline-interpolated ticks per acquisition sample over the "
                          "shown space (its own .spk, PCA basis and features), listed under Space.  Realign and nudge in "
@@ -972,69 +584,22 @@ void KlustersApp::createMenus()
                          "Super-sampling enables it.").arg(a == mSupersampleX2 ? 2 : 4));
     connect(mSupersampleX2, &QAction::triggered, this, [this]() { slotSupersample(2); });
     connect(mSupersampleX4, &QAction::triggered, this, [this]() { slotSupersample(4); });
-    registerActionCommand(QStringLiteral("space.supersample2"), QStringLiteral("Space"), mSupersampleX2);
-    registerActionCommand(QStringLiteral("space.supersample4"), QStringLiteral("Space"), mSupersampleX4);
-    mExportBaseRate = actionMenu->addAction(tr("Export at the Recording's Sampling…"));
-    mExportBaseRate->setEnabled(false);
-    mExportBaseRate->setToolTip(tr("From a super-sampled (_U) session: copy the saved .clu (and its .clc/.clp/.cli)\n"
-                                   "under the base-rate token, beside the base-rate .res/.spk/.fet -- the shared\n"
-                                   ".res and the synced base space -- without leaving this session."));
-    connect(mExportBaseRate, &QAction::triggered, this, &KlustersApp::slotExportBaseRate);
-    registerActionCommand(QStringLiteral("space.exportBaseRate"), QStringLiteral("Space"), mExportBaseRate);
+    mExportBaseRate = addCommand(actionMenu, "space.exportBaseRate");
 
-    // Step through the Space box without the mouse.  Ctrl+Tab, because plain
-    // Tab / Shift+Tab move keyboard focus around the window.
-    mNextFeatureSpace = actionMenu->addAction(tr("Ne&xt Feature Space"));
-    mNextFeatureSpace->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Tab));
-    mNextFeatureSpace->setToolTip(tr("Show the next feature space in the Space box "
-                                     "(spaces that cannot be loaded are skipped)."));
+    mNextFeatureSpace = addCommand(actionMenu, "action.nextFeatureSpace");
     connect(mNextFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(+1); });
-    mPreviousFeatureSpace = actionMenu->addAction(tr("Previous Feature Spa&ce"));
-    // Shift+Tab arrives as Backtab, so the chord is Ctrl+Shift+Backtab.
-    mPreviousFeatureSpace->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Backtab));
-    mPreviousFeatureSpace->setToolTip(tr("Show the previous feature space in the Space box."));
+    mPreviousFeatureSpace = addCommand(actionMenu, "action.previousFeatureSpace");
     connect(mPreviousFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(-1); });
 
-    mSortSpikesByTime = actionMenu->addAction(tr("Sort Spikes by &Time"));
-    mSortSpikesByTime->setToolTip(tr(
-        "Realign and nudge keep each spike in its own row, so the .res can drift "
-        "out of time order.  This sorts the saved .res by time and moves the same "
-        "rows in every method's .spk and .fet and in the .clu and .clc, then "
-        "reopens the document.  Save first; undo history is cleared."));
-    connect(mSortSpikesByTime, &QAction::triggered,
-            this, &KlustersApp::slotSortSpikesByTime);
+    mSortSpikesByTime = addCommand(actionMenu, "action.sortSpikesByTime");
 
-    mDipSplit = reclusterMenu->addAction(tr("&DipSplit Selected Cluster"));
-    mDipSplit->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_D));
-    mDipSplit->setToolTip(
-        tr("Test the selected cluster for hidden bimodality.  If a valley is\n"
-           "detected along one of its top-3 principal components AND the two-\n"
-           "cluster model beats the single-cluster BIC, split the cluster in two."));
-    connect(mDipSplit, &QAction::triggered, this, &KlustersApp::slotDipSplit);
+    mDipSplit = addCommand(reclusterMenu, "recluster.dipSplit");
 
     actionMenu->addSeparator();
 
-    mGenerateProbeDrift = actionMenu->addAction(tr("&Generate Probe Drift…"));
-    // No keyboard shortcut: Shift+P is owned by "PCA-Center Align All Clusters"
-    // (mPcaAlignAllClusters, above).  Both actions used to bind Shift+P, so Qt
-    // reported an ambiguous shortcut overload and dispatched neither; probe
-    // drift is now reachable from the Actions menu only.
-    mGenerateProbeDrift->setToolTip(
-        tr("Run ndm_estimatedrift on the current electrode group to estimate probe "
-           "displacement over time.  Requires that this group is already curated "
-           "(a .clu.N file exists).  Produces SESSION.drift alongside the data files."));
-    connect(mGenerateProbeDrift, &QAction::triggered,
-            this, &KlustersApp::slotGenerateProbeDrift);
+    mGenerateProbeDrift = addCommand(actionMenu, "action.generateProbeDrift");
 
-    mApplyDriftSiblings = actionMenu->addAction(tr("Apply Drift + &Recluster Siblings…"));
-    mApplyDriftSiblings->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_F));
-    mApplyDriftSiblings->setToolTip(
-        tr("Compute drift-adaptive chunk boundaries from SESSION.drift and optionally "
-           "re-run KlustaKwik on the other electrode groups that share this probe.  "
-           "Requires SESSION.drift (generate it first with 'Generate Probe Drift')."));
-    connect(mApplyDriftSiblings, &QAction::triggered,
-            this, &KlustersApp::slotApplyDriftSiblings);
-
+    mApplyDriftSiblings = addCommand(actionMenu, "action.applyDriftSiblings");
 
     //Tools menu
     QMenu *toolsMenu = menuBar()->addMenu(tr("&Tools"));
@@ -1043,172 +608,80 @@ void KlustersApp::createMenus()
     // tool off, so a dedicated menu/toolbar entry is redundant.  slotZoom() is kept as a plain
     // method, still called programmatically to drop back to the normal cursor.)
 
-    // The four curation tools are checkable, mutually-exclusive toggles (Overview
-    // redesign step 4): selecting one highlights its toolbar/menu button and clears
-    // the others; clicking the active one (or "Normal Cursor") returns to the no-tool
-    // default.  The checked state is driven from the active view's real mode by
-    // updateToolModeActions(); the slots below toggle it.  Keyboard: Ctrl+1..Ctrl+4.
-    mNewCluster = toolsMenu->addAction(tr("New Cluster"));
-    mNewCluster->setCheckable(true);
-    // Shortcut removed; reachable via menu / toolbar / Ctrl+1 (slotSingleNew).
-    connect(mNewCluster,&QAction::triggered, this,&KlustersApp::slotSingleNew);
+    mNewCluster = addCommand(toolsMenu, "tools.newCluster");
 
-    mSplitClusters = toolsMenu->addAction(tr("&Split Clusters"));
-    mSplitClusters->setCheckable(true);
-    connect(mSplitClusters,&QAction::triggered, this,&KlustersApp::slotMultipleNew);
+    mSplitClusters = addCommand(toolsMenu, "tools.splitClusters");
 
-    // Multi-lasso: a lasso tool whose closed lassos are kept rather than cut, and the
-    // button that splits by them.  (Their icons are drawn: actionicons.cpp.)
-    mMultiLasso = toolsMenu->addAction(tr("&Multi-Lasso"));
-    mMultiLasso->setCheckable(true);
-    mMultiLasso->setToolTip(tr("Multi-lasso (Ctrl+5): closing a lasso keeps it instead of cutting.\n"
-                               "Draw several, then Split by Lassos (Enter): each overlap pattern\n"
-                               "becomes a cluster -- two overlapping lassos give three."));
-    connect(mMultiLasso,&QAction::triggered, this,&KlustersApp::slotMultiLasso);
+    mMultiLasso = addCommand(toolsMenu, "tools.multiLasso");
 
-    mApplyMultiLasso = toolsMenu->addAction(tr("Split by &Lassos"));
-    mApplyMultiLasso->setToolTip(tr("Split the kept multi-lassos by their overlaps (Enter)"));
-    connect(mApplyMultiLasso,&QAction::triggered, this,&KlustersApp::slotApplyMultiLasso);
+    mApplyMultiLasso = addCommand(toolsMenu, "tools.applyMultiLasso");
 
     toolsMenu->addSeparator();
 
-    mDeleteArtifactSpikes = toolsMenu->addAction(tr("Delete &Artifact Spikes"));
-    mDeleteArtifactSpikes->setCheckable(true);
-    // Reachable via menu / toolbar / Ctrl+3.
-    connect(mDeleteArtifactSpikes,&QAction::triggered, this,&KlustersApp::slotDeleteArtefact);
+    mDeleteArtifactSpikes = addCommand(toolsMenu, "tools.deleteArtifactSpikes");
 
-    mDeleteNoisySpikes = toolsMenu->addAction(tr("Delete &Noisy Spikes"));
-    mDeleteNoisySpikes->setCheckable(true);
-    // Reachable via menu / toolbar / Ctrl+4.
-    connect(mDeleteNoisySpikes,&QAction::triggered, this,&KlustersApp::slotDeleteNoise);
+    mDeleteNoisySpikes = addCommand(toolsMenu, "tools.deleteNoisySpikes");
 
     // (The "Select Time" tool was retired in the Overview redesign — the feature-view
     //  normal-cursor click now jumps the trace to the picked time; see slotSingleNew's
     //  sibling cluster.pickTime command.)
 
-
     //Waveforms menu
     QMenu *waveFormsMenu = menuBar()->addMenu(tr("&Waveforms"));
-    timeFrameMode = waveFormsMenu->addAction(tr("&Time Frame"));
-    // Shortcut removed; reachable via menu only.  This frees plain "T"
-    // entirely for the palette-focus "renumber-to-end" intercept (which
-    // is handled in eventFilter rather than as a QAction).
-    timeFrameMode->setCheckable(true);
-    connect(timeFrameMode,&QAction::triggered, this,&KlustersApp::slotTimeFrameMode);
+    timeFrameMode = addCommand(waveFormsMenu, "waveforms.timeFrame");
 
-    overlayPresentation = waveFormsMenu->addAction(tr("&Overlay"));
-    overlayPresentation->setShortcut(Qt::Key_O);
-    overlayPresentation->setCheckable(true);
-    connect(overlayPresentation,&QAction::triggered, this,&KlustersApp::setOverLayPresentation);
+    overlayPresentation = addCommand(waveFormsMenu, "waveforms.overlay");
 
-    meanPresentation = waveFormsMenu->addAction(tr("&Mean and Standard Deviation"));
-    meanPresentation->setShortcut(Qt::Key_M);
-    meanPresentation->setCheckable(true);
-    connect(meanPresentation,&QAction::triggered, this,&KlustersApp::slotMeanPresentation);
+    meanPresentation = addCommand(waveFormsMenu, "waveforms.meanStd");
 
     waveFormsMenu->addSeparator();
 
+    mIncreaseAmplitude = addCommand(waveFormsMenu, "waveforms.increaseAmplitude");
 
-    mIncreaseAmplitude = waveFormsMenu->addAction(tr("&Increase Amplitude"));
-    mIncreaseAmplitude->setShortcut(Qt::Key_I);
-    connect(mIncreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotIncreaseAmplitude);
-
-    mDecreaseAmplitude = waveFormsMenu->addAction(tr("&Decrease Amplitude"));
-    mDecreaseAmplitude->setShortcut(Qt::Key_D);
-    connect(mDecreaseAmplitude,&QAction::triggered, this,&KlustersApp::slotDecreaseAmplitude);
-
-    timeFrameMode->setChecked(false);
-    overlayPresentation->setChecked(false);
-    meanPresentation->setChecked(false);
-
+    mDecreaseAmplitude = addCommand(waveFormsMenu, "waveforms.decreaseAmplitude");
 
     //Correlations menu
     QMenu *correlationsMenu = menuBar()->addMenu(tr("&Correlations"));
-    scaleByMax = correlationsMenu->addAction(tr("Scale by &Maximum"));
+    scaleByMax = addCommand(correlationsMenu, "correlations.scaleByMax");
 
     QActionGroup *grp = new QActionGroup(this);
     grp->addAction(scaleByMax);
-    // Shift+M is now the median-residual recluster shortcut; Scale-by-Maximum
-    // stays available from the Correlations menu (no accelerator).
-    scaleByMax->setCheckable(true);
-    connect(scaleByMax,&QAction::triggered, this,&KlustersApp::slotScaleByMax);
 
-    scaleByShouler = correlationsMenu->addAction(tr("Scale by &Asymptote"));
+    scaleByShouler = addCommand(correlationsMenu, "correlations.scaleByAsymptote");
     grp->addAction(scaleByShouler);
-    scaleByShouler->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_A));
-    scaleByShouler->setCheckable(true);
-    connect(scaleByShouler,&QAction::triggered, this,&KlustersApp::slotScaleByShouler);
 
-    noScale = correlationsMenu->addAction(tr("&Uniform Scale"));
+    noScale = addCommand(correlationsMenu, "correlations.uniformScale");
     grp->addAction(noScale);
-    noScale->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_U));
-    noScale->setCheckable(true);
-    connect(noScale,&QAction::triggered, this,&KlustersApp::slotNoScale);
 
     correlationsMenu->addSeparator();
 
-    shoulderLine = correlationsMenu->addAction(tr("Asymptote &Line"));
-    shoulderLine->setShortcut(Qt::Key_L);
-    shoulderLine->setCheckable(true);
-    connect(shoulderLine,&QAction::triggered, this,&KlustersApp::slotShoulderLine);
+    shoulderLine = addCommand(correlationsMenu, "correlations.asymptoteLine");
 
     correlationsMenu->addSeparator();
 
-    //Initialize the presentation mode to scale by maximum.
-    scaleByMax->setChecked(true);
-    mIncreaseAmplitudeCorrelation = correlationsMenu->addAction(tr("&Increase Amplitude"));
-    // Shortcut removed (Shift+I freed for future use; reach via menu only).
-    connect(mIncreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotIncreaseCorrelogramsAmplitude);
+    mIncreaseAmplitudeCorrelation = addCommand(correlationsMenu, "correlations.increaseAmplitude");
 
-    mDecreaseAmplitudeCorrelation = correlationsMenu->addAction(tr("&Decrease Amplitude"));
-    // Shortcut removed (Shift+D was conflicting with DipSplit; reach via menu only).
-    connect(mDecreaseAmplitudeCorrelation,&QAction::triggered, this,&KlustersApp::slotDecreaseCorrelogramsAmplitude);
-
-
+    mDecreaseAmplitudeCorrelation = addCommand(correlationsMenu, "correlations.decreaseAmplitude");
 
     //Traces menu
     QMenu *traceMenu = menuBar()->addMenu(tr("T&races"));
-    mIncreaseChannelAmplitudes = traceMenu->addAction(tr("&Increase Channel Amplitudes"));
-    mIncreaseChannelAmplitudes->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_I));
-    connect(mIncreaseChannelAmplitudes,&QAction::triggered, this,&KlustersApp::slotIncreaseAllChannelsAmplitude);
+    mIncreaseChannelAmplitudes = addCommand(traceMenu, "trace.increaseChannelAmplitudes");
 
-    mDecreaseChannelAmplitudes = traceMenu->addAction(tr("&Decrease Channel Amplitudes"));
-    mDecreaseChannelAmplitudes->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_D));
-    connect(mDecreaseChannelAmplitudes,&QAction::triggered, this,&KlustersApp::slotDecreaseAllChannelsAmplitude);
-
+    mDecreaseChannelAmplitudes = addCommand(traceMenu, "trace.decreaseChannelAmplitudes");
 
     traceMenu->addSeparator();
 
-    mNextSpike = traceMenu->addAction(tr("&Next Spike"));
-    mNextSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Right));
-    connect(mNextSpike,&QAction::triggered, this,&KlustersApp::slotShowNextCluster);
+    mNextSpike = addCommand(traceMenu, "trace.nextSpike");
 
-    mPreviousSpike = traceMenu->addAction(tr("&Previous Spike"));
-    mPreviousSpike->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Left));
-    connect(mPreviousSpike,&QAction::triggered, this,&KlustersApp::slotShowPreviousCluster);
-
+    mPreviousSpike = addCommand(traceMenu, "trace.previousSpike");
 
     traceMenu->addSeparator();
 
-    showHideLabels = traceMenu->addAction(tr("Show &Labels"));
-    showHideLabels->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_L));
-    showHideLabels->setCheckable(true);
-    connect(showHideLabels,&QAction::triggered, this,&KlustersApp::slotShowLabels);
-
-    showHideLabels->setChecked(false);
-
-
+    showHideLabels = addCommand(traceMenu, "trace.showLabels");
 
     //Displays menu
     QMenu *displayMenu = menuBar()->addMenu(tr("&Displays"));
-    mHierarchicalView = displayMenu->addAction(tr("Hierarchical Session (.clc + .clp)"));
-    mHierarchicalView->setCheckable(true);
-    mHierarchicalView->setChecked(false);
-    mHierarchicalView->setEnabled(false);   // committed at open from the file set; never a runtime toggle
-    mHierarchicalView->setToolTip(tr("Checked when the opened clustering has both a .clc child\n"
-                                     "and a .clp parent-map sibling — the session is then\n"
-                                     "hierarchical.  Determined by the files present at open, not\n"
-                                     "toggled at runtime; a flat .clu session is the alternative."));
+    mHierarchicalView = addCommand(displayMenu, "display.hierarchicalSession");
     // No toggled() connection: the mode is set once in the open path
     // (see slotHierarchicalViewToggled, called directly there).
     displayMenu->addSeparator();
@@ -1217,242 +690,90 @@ void KlustersApp::createMenus()
     // parents selected in the main palette; promote / move the children selected
     // in the child palette.  Each regenerates .clu/.clc/.clp on Save.
     QMenu* hierarchyMenu = menuBar()->addMenu(tr("&Hierarchy"));
-    // The one entry for a FLAT session: turn it into a hierarchical one.
-    mPromoteToHierarchy = hierarchyMenu->addAction(tr("Promote to &Hierarchical Session (.clc + .clp)…"));
-    mPromoteToHierarchy->setToolTip(tr(
-        "Make this flat clustering hierarchical: write a .clc child layer and a\n"
-        ".clp parent map next to the .clu, then reopen the session with the child\n"
-        "palette.  Every unit starts as one atom with the same id; split a unit's\n"
-        "atoms in the child palette from there.  An existing .clc that is nested in\n"
-        "the .clu is kept.  Unsaved edits are saved first; the undo history is cleared."));
-    mPromoteToHierarchy->setEnabled(false);
-    connect(mPromoteToHierarchy, &QAction::triggered, this, &KlustersApp::slotPromoteToHierarchy);
+    mPromoteToHierarchy = addCommand(hierarchyMenu, "hierarchy.promoteToHierarchical");
     hierarchyMenu->addSeparator();
-    mMergeParents = hierarchyMenu->addAction(tr("&Merge Selected Parents"));
-    mPromoteChild = hierarchyMenu->addAction(tr("&Promote Child to New Parent"));
+    mMergeParents = addCommand(hierarchyMenu, "hierarchy.mergeParents");
+    mPromoteChild = addCommand(hierarchyMenu, "hierarchy.promoteChild");
     hierarchyMenu->addSeparator();
-    mGroupChildren = hierarchyMenu->addAction(tr("&Group Selected Children into New Parent"));
-    mDissolveParent = hierarchyMenu->addAction(tr("&Dissolve Parent into Children"));
-    mBreakUpParents = hierarchyMenu->addAction(tr("Brea&k Up Parent by Template…"));
-    mBreakUpParents->setToolTip(tr(
-        "Break the selected parent(s) up: each child moves, whole and keeping its id,\n"
-        "to the parent whose template (mean waveform) it matches best among the\n"
-        "parents with more than a given number of spikes (default 100).  The children\n"
-        "matching none become parents of their own, the largest keeping the parent's\n"
-        "id, as Dissolve Parent does.  Shows the plan first."));
-    mDropChildNoise = hierarchyMenu->addAction(tr("Drop Child to &Noise"));
-    mCompactIds = hierarchyMenu->addAction(tr("Compact Cluster &IDs (parents and children)"));
-    mCompactIds->setToolTip(tr(
-        "Renumber both layers into the low integers with no gaps: parents become\n"
-        "2, 3, 4 … and atoms likewise, with the noise and artefact bins left in\n"
-        "place.  Occasional housekeeping after a long session of splitting.\n"
-        "The atom undo history is dropped, because it names ids that move."));
-    connect(mCompactIds, &QAction::triggered, this, &KlustersApp::slotCompactClusterIds);
+    mGroupChildren = addCommand(hierarchyMenu, "hierarchy.groupChildren");
+    mDissolveParent = addCommand(hierarchyMenu, "hierarchy.dissolveParent");
+    mBreakUpParents = addCommand(hierarchyMenu, "hierarchy.breakUpParents");
+    mDropChildNoise = addCommand(hierarchyMenu, "hierarchy.dropChildNoise");
+    mCompactIds = addCommand(hierarchyMenu, "hierarchy.compactIds");
 
-    mMergeOrphanChildren = hierarchyMenu->addAction(tr("Merge &Orphan Children (by median waveform)…"));
-    mMergeOrphanChildren->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_B));
-    mMergeOrphanChildren->setToolTip(tr(
-        "Gather the selected parent's tiny children — the single-spike debris that\n"
-        "accumulates after repeated splitting — judged against the median waveform\n"
-        "of the parent's other children, the ones not being merged: those whose\n"
-        "shape matches are merged into one child, the rest stay as they are.\n"
-        "Nothing is deleted; the merged child is an ordinary atom of the same parent."));
-    connect(mMergeOrphanChildren, &QAction::triggered, this, &KlustersApp::slotMergeOrphanChildren);
+    mMergeOrphanChildren = addCommand(hierarchyMenu, "hierarchy.mergeOrphanChildren");
 
-    mMergeOrphanParents = hierarchyMenu->addAction(tr("Merge Orphan Paren&ts (by template)…"));
-    mMergeOrphanParents->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B));
-    mMergeOrphanParents->setToolTip(tr(
-        "Gather the tiny parents (below a spike count) by the parent whose template\n"
-        "(mean waveform) each matches best among the parents that are not being\n"
-        "merged: those matching the same parent are merged into one new parent\n"
-        "beside it, and those matching none stay as they are.  The parents they are\n"
-        "compared with are not changed.  Works on the selected parents, or on all\n"
-        "of them when fewer than two are selected; shows the plan first."));
-    connect(mMergeOrphanParents, &QAction::triggered, this, &KlustersApp::slotMergeOrphanParents);
+    mMergeOrphanParents = addCommand(hierarchyMenu, "hierarchy.mergeOrphanParents");
 
-    mRepairNesting = hierarchyMenu->addAction(tr("Re&repairNesting (re-cut atoms onto parents)"));
-    // Shift+N, not bare F.  QAction shortcuts here use Qt's default
-    // WindowShortcut context -- they fire whenever the main window is active,
-    // whatever has focus -- so a bare-F action silently outranked the feature
-    // view's own F handler from every focus position.  One key, one owner:
-    // F belongs to the feature view (see the F/A intercept in eventFilter),
-    // and repair-nesting takes a free Shift combination.
-    mRepairNesting->setShortcut(QKeySequence(Qt::SHIFT | Qt::Key_N));
-    mRepairNesting->setToolTip(tr("Re-cut child atoms that now straddle more than one parent so each\n"
-                               "atom belongs to a single parent again, and regenerate the .clp\n"
-                               "parent map.  Run after reassigning / consolidating the parents."));
+    mRepairNesting = addCommand(hierarchyMenu, "hierarchy.repairNesting");
     hierarchyMenu->addSeparator();
-    mMergeChildren = hierarchyMenu->addAction(tr("Merge Selected &Children (atom)"));
-    mMergeAllChildren = hierarchyMenu->addAction(tr("&Flatten Hierarchy to Flat Clustering"));
-    mMergeAllChildren->setToolTip(tr("Walk every parent and merge its child atoms into one self child\n"
-                                     "(numbered parent + 10000), so the atom layer becomes a copy of the\n"
-                                     "parent layer.  Discards all sub-mode structure -- undo with\n"
-                                     "Ctrl+Shift+Z."));
-    mUndoChildEdit = hierarchyMenu->addAction(tr("&Undo Child-Layer Edit"));
-    mUndoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z));
-    mRedoChildEdit = hierarchyMenu->addAction(tr("&Redo Child-Layer Edit"));
-    mRedoChildEdit->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Y));
-    mMergeParents->setEnabled(false);
-    mPromoteChild->setEnabled(false);
-    mGroupChildren->setEnabled(false);
-    mDissolveParent->setEnabled(false);
-    mBreakUpParents->setEnabled(false);
-    mDropChildNoise->setEnabled(false);
-    mRepairNesting->setEnabled(false);
-    mMergeOrphanChildren->setEnabled(false);
-    mMergeOrphanParents->setEnabled(false);
-    mCompactIds->setEnabled(false);
-    mMergeChildren->setEnabled(false);
-    mMergeAllChildren->setEnabled(false);
-    mUndoChildEdit->setEnabled(false);
-    mRedoChildEdit->setEnabled(false);
-    connect(mMergeParents, &QAction::triggered, this, &KlustersApp::slotMergeParents);
-    connect(mPromoteChild, &QAction::triggered, this, &KlustersApp::slotPromoteChildren);
-    connect(mGroupChildren, &QAction::triggered, this, &KlustersApp::slotGroupChildrenIntoParent);
-    connect(mDissolveParent, &QAction::triggered, this, &KlustersApp::slotDissolveParent);
-    connect(mBreakUpParents, &QAction::triggered, this, &KlustersApp::slotBreakUpParents);
-    connect(mDropChildNoise, &QAction::triggered, this, &KlustersApp::slotDropChildToNoise);
-    connect(mRepairNesting, &QAction::triggered, this, &KlustersApp::slotRepairNesting);
-    connect(mMergeChildren, &QAction::triggered, this, &KlustersApp::slotMergeChildren);
-    connect(mMergeAllChildren, &QAction::triggered, this, &KlustersApp::slotFlattenHierarchyToClu);
-    connect(mUndoChildEdit, &QAction::triggered, this, &KlustersApp::slotUndoChildEdit);
-    connect(mRedoChildEdit, &QAction::triggered, this, &KlustersApp::slotRedoChildEdit);
-    newClusterDisplay = displayMenu->addAction(tr("New C&luster Display"));
-    connect(newClusterDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewClusterDisplay);
+    mMergeChildren = addCommand(hierarchyMenu, "hierarchy.mergeChildren");
+    mMergeAllChildren = addCommand(hierarchyMenu, "hierarchy.flatten");
+    mUndoChildEdit = addCommand(hierarchyMenu, "hierarchy.undoChildEdit");
+    mRedoChildEdit = addCommand(hierarchyMenu, "hierarchy.redoChildEdit");
+    newClusterDisplay = addCommand(displayMenu, "display.newCluster");
 
-    newWaveformDisplay = displayMenu->addAction(tr("New &Waveform Display"));
-    connect(newWaveformDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewWaveformDisplay);
+    newWaveformDisplay = addCommand(displayMenu, "display.newWaveform");
 
-    newCrosscorrelationDisplay = displayMenu->addAction(tr("New C&orrelation Display"));
-    connect(newCrosscorrelationDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewCrosscorrelationDisplay);
+    newCrosscorrelationDisplay = addCommand(displayMenu, "display.newCorrelation");
 
-    // ???????????????
-    newOverViewDisplay = displayMenu->addAction(tr("New &Overview Display"));
-    connect(newOverViewDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewOverViewDisplay);
+    newOverViewDisplay = addCommand(displayMenu, "display.newOverview");
 
-    newGroupingAssistantDisplay = displayMenu->addAction(tr("New &Grouping Assistant Display"));
-    connect(newGroupingAssistantDisplay,&QAction::triggered, this,&KlustersApp::slotWindowNewGroupingAssistantDisplay);
+    newGroupingAssistantDisplay = addCommand(displayMenu, "display.newGroupingAssistant");
 
+    mNewTraceDisplay = addCommand(displayMenu, "display.newTrace");
 
-    mNewTraceDisplay = displayMenu->addAction(tr("New &Trace Display"));
-    connect(mNewTraceDisplay,&QAction::triggered, this,&KlustersApp::slotNewTraceDisplay);
+    mNewResidualMatrix = addCommand(displayMenu, "display.newResidualMatrix");
 
+    mNewDriftMatrix = addCommand(displayMenu, "display.newDriftMatrix");
 
-    mNewResidualMatrix = displayMenu->addAction(tr("New &Residual Matrix Display"));
-    mNewResidualMatrix->setToolTip(
-        tr("Add a residual-matrix display to the active view.  Cell (row A,\n"
-           "col B) is the variance of cluster A's spikes taken about cluster\n"
-           "B's mean waveform; the diagonal is A's within-cluster variance.\n"
-           "Press U to (re)compute it along with the error/template matrices."));
-    connect(mNewResidualMatrix,&QAction::triggered, this,&KlustersApp::slotNewResidualMatrix);
-
-    // Open a drift-shifted correlation matrix on the active display.  Purely
-    // diagnostic: it never moves spikes and takes no part in the reorder /
-    // residual-gated sort decisions.
-    mNewDriftMatrix = displayMenu->addAction(tr("New &Drift Matrix Display"));
-    mNewDriftMatrix->setToolTip(
-        tr("Add a drift-matrix display to the active view.  Cell (row A,\n"
-           "col B) is the correlation between A's mean waveform shifted along\n"
-           "the probe depth axis by the slider's µm value and B's mean: +Δ\n"
-           "above the diagonal, −Δ below.  A unit pair split by probe drift\n"
-           "reads high at the Δ that realigns it.  Needs probe geometry\n"
-           "(the session YAML probes: section)."));
-    connect(mNewDriftMatrix,&QAction::triggered, this,&KlustersApp::slotNewDriftMatrix);
-
-    mNewTemplateLibrary = displayMenu->addAction(tr("New Template &Library Display"));
-    mNewTemplateLibrary->setToolTip(
-        tr("Open the template library for the open group: the marked units'\n"
-           "linked waveform series (.wtf/.wti).  Pick a unit and a link\n"
-           "(drift / adapt) and scrub its bins; select two or more units and\n"
-           "pin them as the oblique (template-axis) basis.  Mark units as\n"
-           "templates and save to build the library."));
-    connect(mNewTemplateLibrary,&QAction::triggered, this,&KlustersApp::slotWindowNewTemplateLibraryDisplay);
+    mNewTemplateLibrary = addCommand(displayMenu, "display.newTemplateLibrary");
 
     displayMenu->addSeparator();
 
-    mRenameActiveDisplay = displayMenu->addAction(tr("&Rename Active Display"));
-    mRenameActiveDisplay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_R));
-    connect(mRenameActiveDisplay,&QAction::triggered, this,&KlustersApp::renameActiveDisplay);
+    mRenameActiveDisplay = addCommand(displayMenu, "display.renameActive");
 
     displayMenu->addSeparator();
 
-    mCloseActiveDisplay = displayMenu->addAction(tr("&Close Active Display"));
-    mCloseActiveDisplay->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_W));
-    connect(mCloseActiveDisplay,&QAction::triggered, this,&KlustersApp::slotDisplayClose);
-
+    mCloseActiveDisplay = addCommand(displayMenu, "display.closeActive");
 
     //Settings menu
     QMenu *settingsMenu = menuBar()->addMenu(tr("&Settings"));
 
+    viewMainToolBar = addCommand(settingsMenu, "settings.viewMainToolBar");
 
-    viewMainToolBar = settingsMenu->addAction(tr("Show Main Toolbar"));
+    viewActionBar = addCommand(settingsMenu, "settings.viewActionBar");
 
-    viewMainToolBar->setCheckable(true);
-    viewMainToolBar->setChecked(true);
-    connect(viewMainToolBar,&QAction::triggered, this,&KlustersApp::slotViewMainToolBar);
+    viewToolBar = addCommand(settingsMenu, "settings.viewToolBar");
 
-    viewActionBar = settingsMenu->addAction(tr("Show Actions"));
-    viewActionBar->setCheckable(true);
-    connect(viewActionBar,&QAction::triggered, this,&KlustersApp::slotViewActionBar);
+    viewParameterBar = addCommand(settingsMenu, "settings.viewParameterBar");
 
-    viewActionBar->setChecked(true);
-    viewToolBar = settingsMenu->addAction(tr("Show Tools"));
-    viewToolBar->setCheckable(true);
-    connect(viewToolBar,&QAction::triggered, this,&KlustersApp::slotViewToolBar);
+    viewClusterInfo = addCommand(settingsMenu, "settings.viewClusterInfo");
 
-    viewToolBar->setChecked(true);
-    viewParameterBar = settingsMenu->addAction(tr("Show Parameters"));
-    viewParameterBar->setCheckable(true);
-    connect(viewParameterBar,&QAction::triggered, this,&KlustersApp::slotViewParameterBar);
-
-    viewParameterBar->setChecked(true);
-
-    viewClusterInfo = settingsMenu->addAction(tr("Show Cluster Info"));
-    viewClusterInfo->setCheckable(true);
-    connect(viewClusterInfo,&QAction::triggered, this,&KlustersApp::slotViewClusterInfo);
-
-    viewClusterInfo->setChecked(false);
-
-
-
-    mViewStatusBar = settingsMenu->addAction(tr("Show StatusBar"));
-    mViewStatusBar->setCheckable(true);
-    mViewStatusBar->setChecked(true);
-    connect(mViewStatusBar,&QAction::triggered, this,&KlustersApp::slotViewStatusBar);
+    mViewStatusBar = addCommand(settingsMenu, "settings.viewStatusBar");
 
     settingsMenu->addSeparator();
 
-    mIncreasePointSize = settingsMenu->addAction(tr("Increase Point Size"));
+    mIncreasePointSize = addCommand(settingsMenu, "settings.increasePointSize");
     mIncreasePointSize->setShortcuts({QKeySequence(Qt::Key_Equal),
                                       QKeySequence(Qt::SHIFT | Qt::Key_Equal)});
-    connect(mIncreasePointSize, &QAction::triggered, this, &KlustersApp::slotIncreasePointSize);
 
-    mDecreasePointSize = settingsMenu->addAction(tr("Decrease Point Size"));
+    mDecreasePointSize = addCommand(settingsMenu, "settings.decreasePointSize");
     mDecreasePointSize->setShortcuts({QKeySequence(Qt::Key_Minus),
                                       QKeySequence(Qt::Key_Underscore)});
-    connect(mDecreasePointSize, &QAction::triggered, this, &KlustersApp::slotDecreasePointSize);
 
     settingsMenu->addSeparator();
 
-    mImmediateSelection = settingsMenu->addAction(tr("Immediate Update"));
+    mImmediateSelection = addCommand(settingsMenu, "settings.immediateSelection");
     grp = new QActionGroup(this);
     grp->addAction(mImmediateSelection);
-    mImmediateSelection->setCheckable(true);
-    connect(mImmediateSelection,&QAction::triggered, this,&KlustersApp::slotImmediateSelection);
 
-    mDelaySelection = settingsMenu->addAction(tr("Delayed Update"));
+    mDelaySelection = addCommand(settingsMenu, "settings.delaySelection");
     grp->addAction(mDelaySelection);
-    mDelaySelection->setCheckable(true);
-    connect(mDelaySelection,&QAction::triggered, this,&KlustersApp::slotDelaySelection);
 
     settingsMenu->addSeparator();
-    mPreferenceAction = settingsMenu->addAction(tr("&Preferences"));
-    mPreferenceAction->setShortcut(Qt::Key_P);
-    connect(mPreferenceAction,&QAction::triggered, this,&KlustersApp::executePreferencesDlg);
+    mPreferenceAction = addCommand(settingsMenu, "settings.preferenceAction");
 
-
-    //Initialize the update mode
-    mImmediateSelection->setChecked(true);
     settingsMenu->addSeparator();
 
     mPluginsMenu = menuBar()->addMenu(tr("&Plugins"));
@@ -1461,9 +782,7 @@ void KlustersApp::createMenus()
 
     QMenu *helpMenu = menuBar()->addMenu(tr("Help"));
 
-    mShortcutsHelp = helpMenu->addAction(tr("Keyboard Shortcuts…"));
-    mShortcutsHelp->setShortcut(Qt::Key_H);
-    connect(mShortcutsHelp, &QAction::triggered, this, &KlustersApp::slotShowShortcutHelp);
+    mShortcutsHelp = addCommand(helpMenu, "help.shortcuts");
     helpMenu->addSeparator();
     QAction *handbook = helpMenu->addAction(tr("Handbook"));
     handbook->setShortcut(Qt::Key_F1);
@@ -2679,142 +1998,19 @@ void KlustersApp::registerInputBindings()
     input::BindingRegistry& reg = input::registry();
     reg.addScope({ QStringLiteral("app"), input::Layer::App, nullptr });
 
-    // Representative slice across categories (input-remapping plan P0c proof); the
-    // remaining actions follow the same one-liner in a later patch.  Default chord =
-    // each action's current shortcut, so nothing changes until the user rebinds.
-    registerActionCommand(QStringLiteral("file.open"),             QStringLiteral("File"),    mOpenAction);
-    registerActionCommand(QStringLiteral("file.save"),             QStringLiteral("File"),    mSaveAction);
-    registerActionCommand(QStringLiteral("file.renumberAndSave"),  QStringLiteral("File"),    mRenumberAndSave);
-    registerActionCommand(QStringLiteral("file.quit"),             QStringLiteral("File"),    mQuitAction);
-    registerActionCommand(QStringLiteral("edit.undo"),             QStringLiteral("Edit"),    mUndo);
-    registerActionCommand(QStringLiteral("edit.redo"),             QStringLiteral("Edit"),    mRedo);
-    registerActionCommand(QStringLiteral("edit.cancelJob"),        QStringLiteral("Edit"),    mCancelJob);
-    registerActionCommand(QStringLiteral("edit.selectAll"),        QStringLiteral("Edit"),    mSelectAllAction);
-    registerActionCommand(QStringLiteral("edit.selectAllExcept"),  QStringLiteral("Edit"),    mSelectAllExceptAction);
-    registerActionCommand(QStringLiteral("view.showReservedClusters"), QStringLiteral("View"), mShowReservedClusters);
-    registerActionCommand(QStringLiteral("view.showChildPalette"),     QStringLiteral("View"), mShowChildPalette);
-    registerActionCommand(QStringLiteral("view.followSelectionInMatrices"), QStringLiteral("View"), mFollowSelectionInMatrices);
-    registerActionCommand(QStringLiteral("view.showTemplatePalette"),  QStringLiteral("View"), mShowTemplatePalette);
-    registerActionCommand(QStringLiteral("action.deleteArtifact"), QStringLiteral("Actions"), mDeleteArtifact);
-    registerActionCommand(QStringLiteral("action.deleteNoisy"),    QStringLiteral("Actions"), mDeleteNoisy);
-    registerActionCommand(QStringLiteral("action.groupClusters"),  QStringLiteral("Actions"), mGroupeClusters);
-
-    // The remaining menu actions, so every one is listed and rebindable in Preferences > Input.
-    // registerActionCommand mirrors each QAction using its CURRENT shortcut as the default — which
-    // is empty for the many that ship without one, so they appear as unassigned rows the curator
-    // can bind (no shortcut is invented for them).  Deliberately NOT mirrored: the four curation
-    // tool-mode toggles (New Cluster / Split / Delete Artifact|Noisy Spikes), which already have
-    // app-scope resolver commands (Ctrl+1..4, 0680/0653) — mirroring them would double-list the
-    // same behaviour — and the Settings/view-chrome toggles (Show Toolbar/…, point size, update
-    // mode, Preferences).
-    registerActionCommand(QStringLiteral("file.import"),             QStringLiteral("File"),    mImportFile);
-    registerActionCommand(QStringLiteral("file.saveAs"),            QStringLiteral("File"),    mSaveAsAction);
-    registerActionCommand(QStringLiteral("file.print"),            QStringLiteral("File"),    mPrintAction);
-    registerActionCommand(QStringLiteral("file.close"),            QStringLiteral("File"),    mCloseAction);
-
-    registerActionCommand(QStringLiteral("action.chunkMode"),            QStringLiteral("Actions"), mChunkMode);
-    registerActionCommand(QStringLiteral("action.prevChunk"),            QStringLiteral("Actions"), mPrevChunk);
-    registerActionCommand(QStringLiteral("action.nextChunk"),            QStringLiteral("Actions"), mNextChunk);
-    registerActionCommand(QStringLiteral("action.autoMerge"),            QStringLiteral("Actions"), mAutoMerge);
-    registerActionCommand(QStringLiteral("action.purgeSmallClusters"),   QStringLiteral("Actions"), mPurgeSmallClusters);
-    registerActionCommand(QStringLiteral("action.stripOutliers"),        QStringLiteral("Actions"), mStripOutliers);
-    registerActionCommand(QStringLiteral("action.stripWaveformOutliers"),QStringLiteral("Actions"), mStripWaveformOutliers);
-    registerActionCommand(QStringLiteral("action.stripResidualOutliers"),QStringLiteral("Actions"), mStripResidualOutliers);
-    registerActionCommand(QStringLiteral("action.splitBurstFollowers"),  QStringLiteral("Actions"), mSplitBurstFollowers);
-    registerActionCommand(QStringLiteral("action.splitOffSpurious"),     QStringLiteral("Actions"), mSplitOffSpurious);
-    registerActionCommand(QStringLiteral("action.setObliqueBasis"),      QStringLiteral("Actions"), mSetObliqueBasis);
-    registerActionCommand(QStringLiteral("action.markAsTemplate"),       QStringLiteral("Actions"), mMarkAsTemplate);
-    registerActionCommand(QStringLiteral("action.generateTemplate"),     QStringLiteral("Actions"), mGenerateTemplate);
-    registerActionCommand(QStringLiteral("action.updateDisplay"),        QStringLiteral("Actions"), mUpdateDisplay);
-    registerActionCommand(QStringLiteral("action.renumberClusters"),     QStringLiteral("Actions"), mRenumberClusters);
-    registerActionCommand(QStringLiteral("action.updateErrorMatrix"),    QStringLiteral("Actions"), mUpdateErrorMatrix);
-    registerActionCommand(QStringLiteral("action.watershed"),            QStringLiteral("Actions"), mWatershed);
-    registerActionCommand(QStringLiteral("action.realignSpikes"),        QStringLiteral("Actions"), mRealignSpikes);
-    registerActionCommand(QStringLiteral("action.partitionByTime"),      QStringLiteral("Actions"), mPartitionByTime);
-    registerActionCommand(QStringLiteral("action.pcaAlignAllClusters"),  QStringLiteral("Actions"), mPcaAlignAllClusters);
-    registerActionCommand(QStringLiteral("action.nextFeatureSpace"),     QStringLiteral("Actions"), mNextFeatureSpace);
-    registerActionCommand(QStringLiteral("action.previousFeatureSpace"), QStringLiteral("Actions"), mPreviousFeatureSpace);
-    registerActionCommand(QStringLiteral("action.generateProbeDrift"),   QStringLiteral("Actions"), mGenerateProbeDrift);
-    registerActionCommand(QStringLiteral("action.applyDriftSiblings"),   QStringLiteral("Actions"), mApplyDriftSiblings);
-
-    registerActionCommand(QStringLiteral("sort.bySimilarity"),      QStringLiteral("Sort"), mReorderClustersBySimilarity);
-    registerActionCommand(QStringLiteral("sort.bySpikeCount"),      QStringLiteral("Sort"), mSortClustersBySpikeCount);
-    registerActionCommand(QStringLiteral("sort.byTime"),            QStringLiteral("Sort"), mSortClustersByTime);
-    registerActionCommand(QStringLiteral("sort.byContamination"),   QStringLiteral("Sort"), mSortClustersByContamination);
-    registerActionCommand(QStringLiteral("sort.bySnr"),             QStringLiteral("Sort"), mSortClustersBySnr);
-    registerActionCommand(QStringLiteral("sort.byAmplitude"),       QStringLiteral("Sort"), mSortClustersByAmplitude);
-    registerActionCommand(QStringLiteral("sort.byErrorPval"),       QStringLiteral("Sort"), mSortClustersByErrorPval);
-    registerActionCommand(QStringLiteral("sort.byResidualGated"),   QStringLiteral("Sort"), mSortByResidualGated);
-    registerActionCommand(QStringLiteral("sort.byWaveformNN"),      QStringLiteral("Sort"), mSortByWaveformNN);
-    registerActionCommand(QStringLiteral("sort.byWaveformSpectral"),QStringLiteral("Sort"), mSortByWaveformSpectral);
-
-    registerActionCommand(QStringLiteral("recluster.recluster"),    QStringLiteral("Recluster"), mReCluster);
-    registerActionCommand(QStringLiteral("recluster.median"),       QStringLiteral("Recluster"), mReclusterMedian);
-    registerActionCommand(QStringLiteral("recluster.against"),      QStringLiteral("Recluster"), mReclusterAgainst);
-    registerActionCommand(QStringLiteral("recluster.fiberkit"),     QStringLiteral("Recluster"), mReclusterFiberKit);
-    registerActionCommand(QStringLiteral("recluster.engine.klustakwik"), QStringLiteral("Recluster"), mEngineKlustaKwik);
-    registerActionCommand(QStringLiteral("recluster.engine.fiberkit"),   QStringLiteral("Recluster"), mEngineFiberKit);
-    registerActionCommand(QStringLiteral("recluster.engine.manifold"),   QStringLiteral("Recluster"), mEngineManifold);
-    registerActionCommand(QStringLiteral("recluster.channelVar"),   QStringLiteral("Recluster"), mReclusterChannelVar);
-    registerActionCommand(QStringLiteral("recluster.splitByKnn"),   QStringLiteral("Recluster"), mSplitByKnn);
-    registerActionCommand(QStringLiteral("recluster.stripByTemplate"), QStringLiteral("Recluster"), mStripByTemplate);
-    registerActionCommand(QStringLiteral("recluster.dipSplit"),     QStringLiteral("Recluster"), mDipSplit);
-
-    registerActionCommand(QStringLiteral("waveforms.timeFrame"),    QStringLiteral("Waveforms"), timeFrameMode);
-    registerActionCommand(QStringLiteral("waveforms.overlay"),      QStringLiteral("Waveforms"), overlayPresentation);
-    registerActionCommand(QStringLiteral("waveforms.meanStd"),      QStringLiteral("Waveforms"), meanPresentation);
-    registerActionCommand(QStringLiteral("waveforms.increaseAmplitude"), QStringLiteral("Waveforms"), mIncreaseAmplitude);
-    registerActionCommand(QStringLiteral("waveforms.decreaseAmplitude"), QStringLiteral("Waveforms"), mDecreaseAmplitude);
-
-    registerActionCommand(QStringLiteral("correlations.scaleByMax"),     QStringLiteral("Correlations"), scaleByMax);
-    registerActionCommand(QStringLiteral("correlations.scaleByAsymptote"), QStringLiteral("Correlations"), scaleByShouler);
-    registerActionCommand(QStringLiteral("correlations.uniformScale"),   QStringLiteral("Correlations"), noScale);
-    registerActionCommand(QStringLiteral("correlations.asymptoteLine"),  QStringLiteral("Correlations"), shoulderLine);
-    registerActionCommand(QStringLiteral("correlations.increaseAmplitude"), QStringLiteral("Correlations"), mIncreaseAmplitudeCorrelation);
-    registerActionCommand(QStringLiteral("correlations.decreaseAmplitude"), QStringLiteral("Correlations"), mDecreaseAmplitudeCorrelation);
-
-    registerActionCommand(QStringLiteral("trace.increaseChannelAmplitudes"), QStringLiteral("Traces"), mIncreaseChannelAmplitudes);
-    registerActionCommand(QStringLiteral("trace.decreaseChannelAmplitudes"), QStringLiteral("Traces"), mDecreaseChannelAmplitudes);
-    registerActionCommand(QStringLiteral("trace.nextSpike"),        QStringLiteral("Traces"), mNextSpike);
-    registerActionCommand(QStringLiteral("trace.previousSpike"),    QStringLiteral("Traces"), mPreviousSpike);
-    registerActionCommand(QStringLiteral("trace.showLabels"),       QStringLiteral("Traces"), showHideLabels);
-
-    registerActionCommand(QStringLiteral("hierarchy.mergeParents"),       QStringLiteral("Hierarchy"), mMergeParents);
-    registerActionCommand(QStringLiteral("hierarchy.promoteChild"),       QStringLiteral("Hierarchy"), mPromoteChild);
-    registerActionCommand(QStringLiteral("hierarchy.groupChildren"),      QStringLiteral("Hierarchy"), mGroupChildren);
-    registerActionCommand(QStringLiteral("hierarchy.dissolveParent"),     QStringLiteral("Hierarchy"), mDissolveParent);
-    registerActionCommand(QStringLiteral("hierarchy.dropChildNoise"),     QStringLiteral("Hierarchy"), mDropChildNoise);
-    registerActionCommand(QStringLiteral("hierarchy.compactIds"),         QStringLiteral("Hierarchy"), mCompactIds);
-    registerActionCommand(QStringLiteral("hierarchy.mergeOrphanChildren"),QStringLiteral("Hierarchy"), mMergeOrphanChildren);
-    registerActionCommand(QStringLiteral("hierarchy.mergeOrphanParents"), QStringLiteral("Hierarchy"), mMergeOrphanParents);
-    registerActionCommand(QStringLiteral("hierarchy.breakUpParents"),     QStringLiteral("Hierarchy"), mBreakUpParents);
-    registerActionCommand(QStringLiteral("hierarchy.repairNesting"),      QStringLiteral("Hierarchy"), mRepairNesting);
-    registerActionCommand(QStringLiteral("hierarchy.promoteToHierarchical"), QStringLiteral("Hierarchy"), mPromoteToHierarchy);
-    registerActionCommand(QStringLiteral("hierarchy.mergeChildren"),      QStringLiteral("Hierarchy"), mMergeChildren);
-    registerActionCommand(QStringLiteral("hierarchy.flatten"),            QStringLiteral("Hierarchy"), mMergeAllChildren);
-    registerActionCommand(QStringLiteral("hierarchy.undoChildEdit"),      QStringLiteral("Hierarchy"), mUndoChildEdit);
-    registerActionCommand(QStringLiteral("hierarchy.redoChildEdit"),      QStringLiteral("Hierarchy"), mRedoChildEdit);
-
-    registerActionCommand(QStringLiteral("display.hierarchicalSession"),  QStringLiteral("Display"), mHierarchicalView);
-    registerActionCommand(QStringLiteral("display.newCluster"),          QStringLiteral("Display"), newClusterDisplay);
-    registerActionCommand(QStringLiteral("display.newWaveform"),         QStringLiteral("Display"), newWaveformDisplay);
-    registerActionCommand(QStringLiteral("display.newCorrelation"),      QStringLiteral("Display"), newCrosscorrelationDisplay);
-    registerActionCommand(QStringLiteral("display.newOverview"),         QStringLiteral("Display"), newOverViewDisplay);
-    registerActionCommand(QStringLiteral("display.newGroupingAssistant"),QStringLiteral("Display"), newGroupingAssistantDisplay);
-    registerActionCommand(QStringLiteral("display.newTrace"),            QStringLiteral("Display"), mNewTraceDisplay);
-    registerActionCommand(QStringLiteral("display.newResidualMatrix"),   QStringLiteral("Display"), mNewResidualMatrix);
-    registerActionCommand(QStringLiteral("display.newDriftMatrix"),      QStringLiteral("Display"), mNewDriftMatrix);
-    registerActionCommand(QStringLiteral("display.newTemplateLibrary"),  QStringLiteral("Display"), mNewTemplateLibrary);
-    registerActionCommand(QStringLiteral("display.renameActive"),        QStringLiteral("Display"), mRenameActiveDisplay);
-    registerActionCommand(QStringLiteral("display.closeActive"),         QStringLiteral("Display"), mCloseActiveDisplay);
-
-    // Help ▸ Keyboard Shortcuts (bare "H").  A plain menu QAction with a bare-letter
-    // shortcut, dispatched by Qt like the other bare-letter menu actions (R/U/M/I/L/P);
-    // mirroring it here lists H in Preferences ▸ Input + the cheat-sheet and makes it
-    // rebindable.  The redundant inline eventFilter H branch (shadowed by this QAction —
-    // the shortcut fires and consumes the key before the KeyPress-only branch ran) is
-    // retired in the same patch, so this is now H's single source of truth.
-    registerActionCommand(QStringLiteral("help.shortcuts"),              QStringLiteral("Help"),    mShortcutsHelp);
+    // Every row of the command table that has a category (klusters_commands.cpp) is mirrored
+    // here, so that it is listed and rebindable in Preferences > Input.  registerActionCommand
+    // takes the action's CURRENT shortcut as the default -- empty for the many that ship
+    // without one: they appear as unassigned rows the curator can bind.  The rows WITHOUT a
+    // category are deliberately not mirrored: the curation tool-mode toggles (New Cluster /
+    // Split / Delete Artifact|Noisy Spikes), which have app-scope resolver commands of their
+    // own (Ctrl+1..4) -- mirroring them would list the same behaviour twice -- and the
+    // Settings / view-chrome toggles (the toolbars, point size, update mode, Preferences).
+    for (const QString& id : std::as_const(commandOrder)) {
+        const CommandSpec& spec = commandSpecs[id];
+        if (!spec.category.isEmpty())
+            registerActionCommand(id, spec.category, commandActions.value(id));
+    }
 
     // ── app-scope resolver-dispatched keys (not QActions) ─────────────────────
     // Bare letters with no QAction behind them, dispatched from eventFilter via

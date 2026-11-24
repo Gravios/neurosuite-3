@@ -75,6 +75,7 @@ set(klusters_SRCS
     radiallayout.cpp            # the radial menu's layout as data (JSON in the settings)
     actionid.cpp                # stable ids for menu actions (registry id, else menu path)
     klusters_actionids.cpp      # KlustersApp::actionCatalog() / actionsById() / applyActionIcons()
+    klusters_commands.cpp       # KlustersApp::commandTable() / addCommand(): the menu commands, described once
     actionicons.cpp             # the one table of action icons (keyed by action id)
     prefradialmenu.cpp          # Preferences ▸ Radial menu: the wheel editor
     klusters_timesort.cpp       # KlustersApp Sort Spikes by Time (confirm, rewrite, reopen)

@@ -27,6 +27,7 @@
 
 //include files application specific
 #include "spinbox.h"
+#include "commandspec.h"
 #include "klustersview.h"
 #include "klustersdoc.h"   // needed by inline slot methods on KlustersDoc
 #include "pluginregistry.h"  // Plugins menu (discovery + descriptors)
@@ -2276,6 +2277,17 @@ private:
      *  is raised, and by a timer, which is what sees a job END. */
     void refreshEditLock();
     void collectEditLockActions();
+
+    // ── The command table (klusters_commands.cpp, commandspec.h) ──────────────
+    /** Every menu command, described once: id, registry category, text, key, tips,
+     *  initial state, slot, and whether it edits. */
+    QList<CommandSpec> commandTable();
+    /** Adds the command @p id of the table to @p menu: the action with its text, key,
+     *  tips and state, connected to its slot.  createMenus() is a list of these. */
+    QAction* addCommand(QMenu* menu, const char* id);
+    QHash<QString, CommandSpec> commandSpecs;      ///< the table, by id
+    QStringList                 commandOrder;      ///< the ids in table order
+    QHash<QString, QAction*>    commandActions;    ///< the actions addCommand made, by id
     /** Edit > Cancel Running Job, and its button in the status bar (shown only
      *  while there is something to cancel).  A recluster, drift or plugin
      *  program is stopped and its result discarded; a realign of several

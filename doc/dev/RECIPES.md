@@ -19,7 +19,8 @@ fix the recipe in the same patch.
 [2.4 Add an ndmanager plugin step](#24-add-an-ndmanager-plugin-step) ·
 [2.5 Change a format version, the plugin protocol or the session schema](#25-change-a-format-version-the-plugin-protocol-or-the-session-schema) ·
 [2.6 Give a Klusters action an icon](#26-give-a-klusters-action-an-icon) ·
-[2.7 Recipes on other pages](#27-recipes-on-other-pages)
+[2.7 Add a Klusters menu command](#27-add-a-klusters-menu-command) ·
+[2.8 Recipes on other pages](#28-recipes-on-other-pages)
 
 ---
 
@@ -359,8 +360,8 @@ visible there too.
 
 ### 2.6 Give a Klusters action an icon
 
-1. Find the action's id: its `registerActionCommand` id in `klusters.cpp`, or,
-   if it has none, `menu:` + its menu path (`menu:Tools/Split Clusters`;
+1. Find the action's id: its row in `klusters_commands.cpp` if the row has a
+   category (§2.7), or, if it has none, `menu:` + its menu path (`menu:Tools/Split Clusters`;
    mnemonics and a trailing "…" dropped — `actionid.h`). Preferences ▸ Radial
    menu shows every id as a tooltip in *Available actions*.
 2. Pick the kind (STANDARDIZATION.md §2.11):
@@ -379,7 +380,35 @@ visible there too.
 decodes; a drawn icon follows the palette). A build with `-DNS3_VERBOSE=1`
 prints any row whose id names no action when Klusters starts.
 
-### 2.7 Recipes on other pages
+### 2.7 Add a Klusters menu command
+
+A menu command is described once, by its row in `KlustersApp::commandTable()`
+(`src/klusters/src/klusters_commands.cpp`):
+
+```cpp
+t << CommandSpec("clusters.frobnicate", "Clusters", tr("&Frobnicate"), ON(triggered, slotFrobnicate))
+         .shortcut(Qt::CTRL | Qt::Key_F).statusTip(tr("Frobnicate the selected clusters")).editing();
+```
+
+1. Add the row, next to its menu's other rows. A row with a category is listed
+   and rebindable in Preferences ▸ Input under that category and id; a row
+   with an empty category is in the menu only. `.editing()` if it changes the
+   clustering, its files or the cluster ids, or starts a job that does: the
+   edit lock then disables it while a job runs, and the slot must also begin
+   with `refuseWhileBlocked()`.
+2. Declare the `QAction*` member in `klusters.h` and place it in its menu in
+   `createMenus()`: `mFrobnicate = addCommand(clustersMenu, "clusters.frobnicate");`.
+   A connection that is not one signal to one member slot (a lambda, an action
+   group, `setData`) stays there, under that line.
+3. If it is off in some state, add it to that state's list in
+   `slotStateChanged()`.
+4. Run `test_command_table.py --update`, read the diff of
+   `commands.golden.json`, commit it with the change.
+
+**Test:** `ctest -R klusters_selftest_command_table` (every command's id, menu,
+text, keys, tips, flags and whether the edit lock holds it are the snapshot's).
+
+### 2.8 Recipes on other pages
 
 | Change | Recipe |
 |---|---|

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the menu commands are described in one table](#2026-11-24--klusters-the-menu-commands-are-described-in-one-table) |
 | 2026-11-24 | [Klusters: a snapshot test of every command, and 24 command names cut short](#2026-11-24--klusters-a-snapshot-test-of-every-command-and-24-command-names-cut-short) |
 | 2026-11-24 | [Klusters: unused code removed](#2026-11-24--klusters-unused-code-removed) |
 | 2026-11-24 | [Audit tool: the unused-function count was three times too high](#2026-11-24--audit-tool-the-unused-function-count-was-three-times-too-high) |
@@ -263,6 +264,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the menu commands are described in one table
+
+Each menu command of Klusters is now one row of a table that gives its id, text, key, slot and whether it edits; the menus, the Preferences list and the edit lock are built from it. No behaviour changes.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** A menu command was written in three places: built in `createMenus` (text, key,
+  tips, connection — 1,368 lines), given its id and category in `registerInputBindings`
+  (716 lines), and named again in the edit lock's list. Leaving a command out of the last one
+  left it enabled during a recluster.
+- **Now.** `KlustersApp::commandTable()` (new `klusters_commands.cpp`, with `commandspec.h`)
+  has one row per command: id, category, text, key, tips, check state, the slot, and
+  `.editing()`. `createMenus` places a command with `addCommand(menu, id)`;
+  `registerInputBindings` registers every row that has a category in one loop;
+  `collectEditLockActions` takes the rows marked `.editing()`. 132 commands; `createMenus` is
+  688 lines and `registerInputBindings` 593. The total number of lines is about the same.
+- **Not changed.** What the menus contain and in which order, every text, key and tip, every
+  id and category, the set of 72 commands the edit lock holds: `test_command_table.py` shows
+  no difference from the snapshot taken before. The connections cannot be seen by that test;
+  they were compared textually, old `createMenus` against the table: the same 121
+  action-to-slot pairs and the same 6 lambdas.
+- **One difference.** The commands are registered in menu order, not in the order of the old
+  list. Preferences ▸ Input sorts them by category and label, so nothing shown changes; the
+  snapshot test now compares the registry by id.
+- **Not done.** The per-state lists of `slotStateChanged`, the icon table and the `QAction`
+  members are still separate. Adding a command: RECIPES.md §2.7.
+
+</details>
 
 ---
 
