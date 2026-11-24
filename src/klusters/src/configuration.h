@@ -479,7 +479,7 @@ public:
     bool   getRealignFromAnySpaceDefault() const {return true;}
     int    getSupersampleModeDefault() const     {return 0;}
     bool   getSupersampleAdoptDefault() const    {return false;}
-    int    getSupersampleInterpDefault() const   {return 0;}
+    int    getSupersampleInterpDefault() const   {return 2;}   // the smoothing spline, as read() has it
     bool   getAutoRealignAfterMergeDefault() const {return true;}
     bool   getAutoRenumberAfterMergeDefault() const {return true;}
     int    getTsneSpikeCapDefault() const {return 32000;}

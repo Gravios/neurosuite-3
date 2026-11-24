@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: Defaults gave the wrong super-sampling interpolation](#2026-11-24--klusters-defaults-gave-the-wrong-super-sampling-interpolation) |
 | 2026-11-24 | [Klusters: a snapshot test of the settings file](#2026-11-24--klusters-a-snapshot-test-of-the-settings-file) |
 | 2026-11-24 | [Klusters: Preferences from the keyboard](#2026-11-24--klusters-preferences-from-the-keyboard) |
 | 2026-11-24 | [Klusters: the menus are arranged by what a command does](#2026-11-24--klusters-the-menus-are-arranged-by-what-a-command-does) |
@@ -273,6 +274,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: Defaults gave the wrong super-sampling interpolation
+
+Preferences ▸ Defaults now sets the super-sampling interpolation to the smoothing spline, the value a new installation has; it set the plain spline.
+
+<details>
+<summary>Details</summary>
+
+- Preferences ▸ Defaults set *Curation ▸ Realignment ▸ Super-sampling ▸ Interpolation* to
+  the first entry (spline); a new installation starts with the third (smoothing spline). The
+  default was written in two places with two values. Defaults now gives the smoothing spline.
+- Found by `test_settings_file.py`; its snapshot changes by that one line.
+
+</details>
 
 ---
 

@@ -337,7 +337,7 @@
    "showEapCollisions": "false",
    "showMergeRecommendPanel": "true",
    "supersampleAdopt": "false",
-   "supersampleInterp": "0",
+   "supersampleInterp": "2",
    "supersampleMode": "0",
    "suppressReclusterOutputTab": "true",
    "syncFeatureSpaceOnSwitch": "false",
