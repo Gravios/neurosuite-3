@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: legibility and organization audit](#2026-11-24--klusters-legibility-and-organization-audit) |
 | 2026-11-24 | [Klusters: Purge Small Clusters in the child view](#2026-11-24--klusters-purge-small-clusters-in-the-child-view) |
 | 2026-11-24 | [Klusters: a click in a parent matrix leaves the child view](#2026-11-24--klusters-a-click-in-a-parent-matrix-leaves-the-child-view) |
 | 2026-11-24 | [Klusters: Cancel Running Job](#2026-11-24--klusters-cancel-running-job) |
@@ -258,6 +259,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: legibility and organization audit
+
+An audit of the Klusters source at 114k lines; documentation and two measuring scripts, no code change.
+
+<details>
+<summary>Details</summary>
+
+- `doc/klusters/ORGANIZATION-AUDIT.md`: measured on 114k lines, nothing changed.  Ten findings,
+  each with its evidence and what a fix would be, and an order of work.
+- The heaviest: five functions of 774 to 2,085 lines (`KlustersDoc::realignSpikes`, cyclomatic
+  complexity 349); `KlustersApp` and `KlustersDoc` hold half the application with ~390 members
+  each; an action is described in four places; the self-test harness is inside the application
+  class and 30 of the 36 self-tests are not registered with `ctest`.
+- Also: 27% comment lines of which 309 narrate history; parent / child in the code against
+  fiber / atom in the manual; three source files outside the build and 388 candidate unused
+  functions; the four matrix views as copies of one another.
+- Found on the way: `src/klusters/docs/DOCUMENT_MODEL.md` §5.2 still describes two undo stacks.
+  The undo and lock patches of this day changed the manual and not the internal references.
+- Tools: `scripts/audit/function_metrics.py` (needs `lizard`) and
+  `scripts/audit/dead_and_dupes_textual.py`.
+
+</details>
 
 ---
 
