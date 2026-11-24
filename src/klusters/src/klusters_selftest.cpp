@@ -50,6 +50,8 @@
  *                                        click on that child in it; reports what it lists and selects
  *        {"matrixSelect": [ids]}         a click on a cell of a curation matrix ("add": true: Ctrl);
  *                                        reports the layer shown and both palettes' selections
+ *        {"commandDump": true}           every menu command with its text, keys, tips and state, the
+ *                                        binding registry's commands, and the edit lock's set
  *        {"cancelJob": true}             Edit > Cancel Running Job; reports whether there was one to cancel
  *        {"actionsEnabled": true}        the command ids that can be triggered now and those that
  *                                        cannot, and which jobs run
@@ -91,6 +93,10 @@
 #include "serialjobqueue.h"
 #include "configuration.h"
 #include "prefdialog.h"
+#include "actionid.h"
+#include "input/bindingregistry.h"
+#include "input/inputdispatcher.h"
+#include "input/chord.h"
 
 #include <cmath>
 #include <vector>
@@ -826,6 +832,50 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("job"), what);
         result.insert(QStringLiteral("actionEnabled"), mCancelJob && mCancelJob->isEnabled());
         cancelRunningJob();
+        return true;
+    }
+    if (step.contains(QStringLiteral("commandDump"))) {
+        // {"commandDump": true}: every command of the menus, in menu order, with what a
+        // curator sees of it (menu, text, keys, tips, checkable, whether it is on), and the
+        // binding registry's application commands in their order.  test_command_table.py
+        // compares it with a stored snapshot: a change of the menus is a change of that file.
+        collectEditLockActions();                       // so that the lock's set is known when idle
+        QJsonArray cmds;
+        for (const ActionCatalogEntry& e : actionCatalog()) {
+            const QAction* a = e.action;
+            QJsonObject o;
+            QStringList keys;
+            for (const QKeySequence& k : a->shortcuts()) keys << k.toString(QKeySequence::PortableText);
+            o.insert(QStringLiteral("id"), e.id);
+            o.insert(QStringLiteral("menu"), e.path.join(QLatin1Char('/')));
+            o.insert(QStringLiteral("text"), a->text());
+            o.insert(QStringLiteral("keys"), keys.join(QStringLiteral(" | ")));
+            o.insert(QStringLiteral("statusTip"), a->statusTip());
+            o.insert(QStringLiteral("toolTip"), a->toolTip() == actionid::plainText(a->text()) ? QString() : a->toolTip());
+            o.insert(QStringLiteral("checkable"), a->isCheckable());
+            o.insert(QStringLiteral("checked"), a->isChecked());
+            o.insert(QStringLiteral("enabled"), a->isEnabled());
+            o.insert(QStringLiteral("visible"), a->isVisible());
+            o.insert(QStringLiteral("group"), a->actionGroup() != nullptr);
+            o.insert(QStringLiteral("editLocked"), editLockDesired.contains(const_cast<QAction*>(a)));
+            cmds.append(o);
+        }
+        QJsonArray reg;
+        for (const input::Command& c : input::registry().commands()) {
+            if (!c.external) continue;                  // the mirrors of the menu actions
+            QJsonObject o;
+            o.insert(QStringLiteral("id"), c.id);
+            o.insert(QStringLiteral("category"), c.category);
+            o.insert(QStringLiteral("label"), c.label);
+            o.insert(QStringLiteral("default"), c.defaultChord.toStored());
+            reg.append(o);
+        }
+        QJsonArray locked;
+        for (const ActionCatalogEntry& e : actionCatalog())
+            if (editLockDesired.contains(e.action)) locked.append(e.id);
+        result.insert(QStringLiteral("commands"), cmds);
+        result.insert(QStringLiteral("registry"), reg);
+        result.insert(QStringLiteral("editLocked"), locked);
         return true;
     }
     if (step.contains(QStringLiteral("actionsEnabled"))) {

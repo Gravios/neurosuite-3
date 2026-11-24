@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: a snapshot test of every command, and 24 command names cut short](#2026-11-24--klusters-a-snapshot-test-of-every-command-and-24-command-names-cut-short) |
 | 2026-11-24 | [Klusters: unused code removed](#2026-11-24--klusters-unused-code-removed) |
 | 2026-11-24 | [Audit tool: the unused-function count was three times too high](#2026-11-24--audit-tool-the-unused-function-count-was-three-times-too-high) |
 | 2026-11-24 | [Klusters: every self-test is a ctest test](#2026-11-24--klusters-every-self-test-is-a-ctest-test) |
@@ -262,6 +263,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: a snapshot test of every command, and 24 command names cut short
+
+The key-binding names of 24 commands were truncated.
+
+<details>
+<summary>Details</summary>
+
+- **A fault found while preparing the command table:** the name a command has in the key
+  bindings (Preferences, the cheat sheet) is the menu text without its mnemonic and its
+  ellipsis, and the ellipsis -- one character -- was cut off as three.  24 commands were named
+  short: "Open…" was "Op", "Save…" "Sa", "Purge Small Clusters…" "Purge Small Cluste".
+- **`test_command_table.py`** and `commands.golden.json`: every command of the menus in menu
+  order (id, menu, text, keys, tips, checkable, checked, enabled, held by the edit lock), and
+  the binding registry's commands in their order, in two states.  136 commands.  A change of a
+  menu, a key or a tip is from now on a change of that file (`--update`), to be read and
+  committed with it.  It is the check under the rewrite that follows.
+- Self-test step `commandDump`.  Taken on Linux; elsewhere the keys are not compared.
+
+</details>
 
 ---
 

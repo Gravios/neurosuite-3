@@ -2578,7 +2578,7 @@ void KlustersApp::registerActionCommand(const QString& id, const QString& catego
     c.scopeId  = QStringLiteral("app");
     QString label = action->text();
     label.remove(QLatin1Char('&'));                 // drop the menu mnemonic
-    if(label.endsWith(QStringLiteral("…"))) label.chop(3);
+    if(label.endsWith(QStringLiteral("…"))) label.chop(1);   // one character (chop(3) cut "Save…" to "Sa")
     c.label    = label.trimmed();
     c.category = category;
     c.kind     = input::Kind::Action;
