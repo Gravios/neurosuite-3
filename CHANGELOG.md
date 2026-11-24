@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: undo and redo, five faults from an audit](#2026-11-24--klusters-undo-and-redo-five-faults-from-an-audit) |
 | 2026-11-24 | [Klusters: the curation log covers the child layer](#2026-11-24--klusters-the-curation-log-covers-the-child-layer) |
 | 2026-11-24 | [Klusters: the curation log says what started an action, what it did, and what was looked at and left](#2026-11-24--klusters-the-curation-log-says-what-started-an-action-what-it-did-and-what-was-looked-at-and-left) |
 | 2026-11-23 | [Roadmap brought up to date](#2026-11-23--roadmap-brought-up-to-date) |
@@ -243,6 +244,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: undo and redo, five faults from an audit
+
+The undo paths were read and probed with scripted sessions at the default depth of 2.
+
+<details>
+<summary>Details</summary>
+
+- **The log held one undo fewer than the data.**  An action without an undo twin -- a realign, a
+  nudge, a rejected split, a `CONSIDERED` -- is begun like any other and marked not-undoable at
+  its end; while open it counted against the depth and evicted the oldest merge.  Klusters
+  realigns after every merge, so at depth 2 only the last merge's undo was recorded: merge,
+  merge, undo, undo left the first `GROUP` written `good`.  The buffer is now trimmed before a
+  new entry joins it.  **`status` in a log written before this undercounts undone merges.**
+- **A child undo past the depth** reported success, logged an `UNDO` and changed nothing: the
+  child stack was unbounded, the child history is `nbUndo` deep.  Capped.
+- **A child undo after a parent undo** reverted the re-cut that undo had made and left a child
+  across two parents ("1 atom(s) span more than one parent").  The child stacks are dropped when
+  that re-cut changed the child labelling, as they already are after a parent edit.
+- Ctrl+Z with nothing to undo no longer tells the log an undo happened;
+  `compactAllClusterIds` clears the child redo stack with the undo stack.
+- A child `UNDO` / `REDO` record carries `reverts_action_idx` (the edit's own status stays `good`).
+- `test_undo_pairing.py` (10 checks), `klusters_test_curationlogger` (3 more).
+- Left open, listed in `doc/dev/ROADMAP.md`: a hierarchy command is several undo steps; a parent
+  undo does not restore the child layer; a parent split or delete drops the child undo history;
+  the default depth of 2; realign and nudge are not undoable.
+
+</details>
 
 ---
 

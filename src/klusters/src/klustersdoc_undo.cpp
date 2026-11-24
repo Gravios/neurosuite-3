@@ -277,6 +277,7 @@ void KlustersDoc::undo(){
     //If clusterColorListUndoList is not empty, make the current clusterColorList become the first element
     //of the clusterColorListRedoList and the first element of the clusterColorListUndoList become the current clusterColorList
     //do the same for the addedClusters and modifiedClusters Lists.
+    const bool didUndo = clusterColorListUndoList.count() > 0;
     if(clusterColorListUndoList.count()>0){
         // Quiesce every view's worker threads BEFORE the data layer swaps
         // spikesByCluster/clusterInfoMap.  A WaveformThread (or CorrelationThread)
@@ -400,7 +401,9 @@ void KlustersDoc::undo(){
     // record reflects that the user reverted this action.  No disk write
     // happens here — the entry stays in the in-memory ring until it
     // either gets pushed out by overflow or is finalised at close().
-    if (curationLogger && curationLogger->isOpen()) {
+    // Only when a level was reverted: Ctrl+Z on an empty stack changes nothing, and
+    // flipping an entry for it would mark an action undone that still stands.
+    if (didUndo && curationLogger && curationLogger->isOpen()) {
         curationLogger->notifyUndo();
     }
     // Hierarchical view: this reverts clusteringData only.  The two layers keep
@@ -422,7 +425,7 @@ void KlustersDoc::undo(){
     // is a strict superset of what was here, and it commits nothing when nothing is
     // loose -- no undo level, no cache invalidation -- so an undo that leaves the
     // layers consistent still costs only one scan.
-    if (childData) collapseToSelfChildren();
+    if (childData) recutChildrenAfterParentUndo();
 }
 
 
@@ -437,6 +440,7 @@ void KlustersDoc::redo(){
     //If clusterColorListRedoList is not empty, make the current clusterColorList become the first element
     //of the clusterColorListUndoList and the first element of the clusterColorListRedoList become the current clusterColorList
     //do the same for the addedClusters and modifiedClusters Lists.
+    const bool didRedo = clusterColorListRedoList.count() > 0;
     if(clusterColorListRedoList.count()>0){
         clusterColorListUndoList.prepend(clusterColorList);
         ItemColors* clusterColorListTemp = clusterColorListRedoList.takeAt(0);
@@ -556,7 +560,7 @@ void KlustersDoc::redo(){
     // Curation log: flip the topmost bad entry back to "good" — the user
     // restored this action so its on-disk record (when eventually
     // flushed) should not be marked as a reverted decision.
-    if (curationLogger && curationLogger->isOpen()) {
+    if (didRedo && curationLogger && curationLogger->isOpen()) {
         curationLogger->notifyRedo();
     }
     // Hierarchical view: same reasoning as undo() -- a redo re-applies the parent
@@ -565,6 +569,6 @@ void KlustersDoc::redo(){
     // as harmless in the modelled scenarios, but it is the same asymmetry and the
     // no-op case is free, so repair symmetrically rather than rely on redo happening
     // to be safe.
-    if (childData) collapseToSelfChildren();
+    if (childData) recutChildrenAfterParentUndo();
 }
 

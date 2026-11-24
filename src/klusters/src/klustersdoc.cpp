@@ -877,6 +877,7 @@ void KlustersDoc::logChildBefore(CurationLogger::ActionType action, const QList<
         return;
     QList<ClusterSnapshot> snaps = snapshotClusters(atomIds, 3.0, /*childLayer=*/true);
     lastLoggedActionIdx = curationLogger->beginAction(action, snaps);
+    childEditLogIdx = lastLoggedActionIdx;
     logActionOpen = true;
 }
 
@@ -891,7 +892,7 @@ void KlustersDoc::logChildAfter(const QList<int>& atomIds)
 }
 
 void KlustersDoc::logChildUndoRedo(bool redo, const QList<int>& added, const QList<int>& modified,
-                                   const QList<int>& deleted)
+                                   const QList<int>& deleted, int revertsActionIdx)
 {
     if (!curationLogger || !curationLogger->isOpen())
         return;
@@ -903,6 +904,10 @@ void KlustersDoc::logChildUndoRedo(bool redo, const QList<int>& added, const QLi
         { QStringLiteral("added"),    lst(added) },
         { QStringLiteral("modified"), lst(modified) },
         { QStringLiteral("deleted"),  lst(deleted) },
+        // The child edit this reverts or replays: its own entry keeps status "good"
+        // (the child stack is not the one the status walk follows), so this is the
+        // only link from the undo to what was undone.  -1: that edit was not logged.
+        { QStringLiteral("reverts_action_idx"), revertsActionIdx },
     });
     curationLogger->markCurrentActionNotUndoable();
 }

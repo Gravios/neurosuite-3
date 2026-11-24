@@ -547,6 +547,7 @@ bool KlustersDoc::compactAllClusterIds(){
         // so in the status bar.  (The parent undo entry that renumberClusters
         // pushed is unaffected: it carries its own old<->new maps.)
         childUndoStack.clear();
+        childRedoStack.clear();          // the same ids, the same reason: it was left standing
 
         // The joint working set also names atoms, but unlike the undo stack it
         // is only ids, so it translates instead of dropping: atomOldNew is the
@@ -1329,6 +1330,17 @@ void KlustersDoc::collapseToSelfChildren(){
     // policy starts drifting.  Consuming it means the map cannot disagree with the
     // split, because it is using the split's own output.
 
+}
+
+void KlustersDoc::recutChildrenAfterParentUndo(){
+    if (!childData) return;
+    const QVector<dataType> before = childData->labelByFeatureRow();
+    collapseToSelfChildren();
+    if (before != childData->labelByFeatureRow()) {
+        childUndoStack.clear();
+        childRedoStack.clear();
+        refreshUndoRedoEnable();
+    }
 }
 
 void KlustersDoc::repairNesting(){
@@ -2207,7 +2219,7 @@ bool KlustersDoc::undoChildEdit(KlustersView& activeView){
     ChildEdit e = childUndoStack.takeFirst();
     childData->undo();                                 // reverts childData's tables
     childRedoStack.prepend(e);
-    logChildUndoRedo(/*redo=*/false, e.added, e.modified, e.deleted);
+    logChildUndoRedo(/*redo=*/false, e.added, e.modified, e.deleted, e.logIdx);
     normaliseChildIds();               // names are not on the undo stack (see normaliseChildIds)
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
@@ -2229,7 +2241,7 @@ bool KlustersDoc::redoChildEdit(KlustersView& activeView){
     ChildEdit e = childRedoStack.takeFirst();
     childData->redo();                                // re-applies the atom edit
     childUndoStack.prepend(e);
-    logChildUndoRedo(/*redo=*/true, e.added, e.modified, e.deleted);
+    logChildUndoRedo(/*redo=*/true, e.added, e.modified, e.deleted, e.logIdx);
     normaliseChildIds();               // the redone table carries the names it had before they were settled
     syncChildColors();
     // Child-primary: an undo restores a previous labelling, and the map that goes
@@ -2261,8 +2273,17 @@ void KlustersDoc::refreshUndoRedoEnable(){
     emit updateRedoNb(childScopeActive ? childRedoCount() : parentRedoCount());
 }
 
-void KlustersDoc::recordChildEdit(const ChildEdit& e){
+extern int nbUndo;      // the undo depth both layers' Data rings are capped at (main.cpp)
+
+void KlustersDoc::recordChildEdit(const ChildEdit& eIn){
+    ChildEdit e = eIn;
+    e.logIdx = childEditLogIdx;                   // the log entry this edit was written as, if any
+    childEditLogIdx = -1;
     childUndoStack.prepend(e);
+    // As deep as the data can go back, and no deeper: childData keeps nbUndo levels,
+    // and an entry beyond that popped NO level -- the undo reported success, logged
+    // an UNDO and changed nothing.
+    while (childUndoStack.size() > qMax(1, nbUndo)) childUndoStack.removeLast();
     childRedoStack.clear();                       // a new edit invalidates atom redo
     refreshUndoRedoEnable();
 }

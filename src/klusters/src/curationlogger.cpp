@@ -101,6 +101,7 @@ void CurationLogger::checkpoint()
 {
     if (!file.isOpen() || pending.isEmpty())
         return;
+    trimBuffer();
     for (const PendingEntry& e : pending)
         flushEntry(e, /*final=*/false);
     out << "{"
@@ -194,6 +195,16 @@ int CurationLogger::beginAction(ActionType type,
     if (!file.isOpen())
         return nextActionIdx;
 
+    // Trim for what is buffered BEFORE this entry joins it, and not after: whether
+    // the new entry has an undo twin is only known when it is committed (a realign,
+    // a nudge, a rejected split, a CONSIDERED are begun like any other and marked
+    // not-undoable afterwards).  Trimming with the new entry counted made every
+    // such action evict the oldest still-undoable entry -- with the automatic
+    // realign after each merge the log held one undo fewer than the data, and an
+    // undone merge was written "good".  The eviction a real push causes happens at
+    // the next begin, undo, redo, checkpoint or close, all of which trim first.
+    trimBuffer();
+
     // A new undo-paired action makes Data clear its redo stack, so every
     // buffered "bad" loses its redo forever -- lock those labels now, or a
     // later Ctrl+Y (replaying a DIFFERENT action) would flip one of them.
@@ -216,10 +227,6 @@ int CurationLogger::beginAction(ActionType type,
     e.trigger   = trigger;
     actionCounts[actionName(type)]++;
     pending.append(e);
-
-    // Overflow: an entry pushed beyond the undo-paired capacity can no
-    // longer be undone; its current status is final.
-    trimBuffer();
 
     return e.actionIdx;
 }
@@ -326,6 +333,7 @@ void CurationLogger::recordActionDetails(const QMap<QString, QVariant>& details)
 // ---------------------------------------------------------------------------
 void CurationLogger::notifyUndo()
 {
+    trimBuffer();          // the newest entry is settled now: evict what its push evicted
     // Walk back from the most recent UNDO-PAIRED entry; flip the first one
     // whose status is still "good".  Not-undoable entries have no twin on
     // the stack the pop came from, so they are transparent to the walk.
@@ -352,6 +360,7 @@ void CurationLogger::notifyRedo()
     // so with two or more undos buffered every redo relabelled the wrong
     // action.  Entries whose redo was revoked by a newer push, and
     // not-undoable entries, are transparent.
+    trimBuffer();
     for (int i = 0; i < pending.size(); ++i) {
         if (!pending[i].undoable || pending[i].revokedEpoch != 0)
             continue;

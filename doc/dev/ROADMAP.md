@@ -81,6 +81,26 @@ outstanding from the Qt 6.4–6.12 work: the per-release matrix covers
 
 ### 📋 planned
 
+#### Klusters undo: what the 2026-11-24 audit left open
+
+The audit fixed five faults (CHANGELOG, 2026-11-24).  These are behaviour, not crashes, and each
+needs a decision rather than a patch:
+
+- **A hierarchy command is several undo steps.**  Promoting three children pushes three parent
+  levels; at the default depth of 2 the first move cannot be undone and one Ctrl+Z leaves the
+  command half-reverted.  Wanted: the levels of one gesture grouped into one step.
+- **A parent undo does not restore the child layer.**  A parent split that cut across children
+  leaves the fragments as extra children after it is undone, and any parent split, delete,
+  watershed, dipsplit or recluster drops the child undo history (`repairNesting`), silently.
+  Wanted: a joint level (parent and child labelling together), which also gives one timeline in
+  place of the two per-layer stacks.
+- **A child recluster** records its edit and then re-cuts: when the re-cut changes labels the
+  child history is one level deeper than the stack.  Read in the code, not reproduced.
+- **Default depth 2** (`Configuration::nbUndoDefault`); a merge with automatic renumbering is
+  two levels.  A level is one labelling.
+- **Not undoable**: realign (the automatic ones too), nudge, the `.cli` annotations.
+- In the log a child edit is never `bad`; readers join `UNDO.reverts_action_idx`.
+
 **Apple GPU (Metal) backend.**
 macOS has no CUDA, HIP or SYCL, so every GPU site needs a Metal
 implementation beside the others.  Decided: Apple silicon only (M1+, macOS

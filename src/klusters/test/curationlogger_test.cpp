@@ -251,6 +251,50 @@ int main(int argc, char** argv)
     check(by["GROUP"] == 1 && by["REALIGN"] == 1 && by["CONSIDERED"] == 1 && closeLine["n_actions"] == 3
           && closeLine.contains("duration_s"), "SESSION_CLOSE counts the actions by kind and gives the duration");
 
+    // ── an action without an undo twin must not cost the buffer an undo ──
+    // Depth 2.  merge A, realign (Klusters' own), merge B, realign, a CONSIDERED; then both
+    // merges are undone.  Each realign and the CONSIDERED is begun like any action and marked
+    // not-undoable afterwards; counted while open, each evicted the oldest merge, and A was
+    // written "good" although it was undone.
+    const QString path4 = dir.filePath("rat.cur.stderiv.6.cap");
+    {
+        CurationLogger log;
+        log.open(path4, "rat.clu.stderiv.6.cap", "6", 32552.0, 8, 32, {});
+        log.setMaxBufferEntries(2);
+        auto notUndoable = [&](CurationLogger::ActionType t) {
+            log.beginAction(t, snap(9)); log.commitAction(snap(9)); log.markCurrentActionNotUndoable();
+        };
+        log.beginAction(CurationLogger::ActionType::GROUP, QList<ClusterSnapshot>{snap(2), snap(3)}); log.commitAction(snap(2));   // 0: A
+        notUndoable(CurationLogger::ActionType::REALIGN);                                                                          // 1
+        log.beginAction(CurationLogger::ActionType::GROUP, QList<ClusterSnapshot>{snap(2), snap(4)}); log.commitAction(snap(2));   // 2: B
+        notUndoable(CurationLogger::ActionType::REALIGN);                                                                          // 3
+        log.beginAction(CurationLogger::ActionType::CONSIDERED, QList<ClusterSnapshot>());                                         // 4
+        log.recordActionDetails({{"detail", "pair"}}); log.markCurrentActionNotUndoable();
+        log.notifyUndo();      // B
+        log.notifyUndo();      // A
+        log.close();
+    }
+    QMap<int, QString> st4;
+    for (const QJsonObject& o : readLines(path4)) if (o.contains("action")) st4[o["action_idx"].toInt()] = o["status"].toString();
+    check(st4.value(0) == "bad" && st4.value(2) == "bad",
+          "two merges within the undo depth, both undone, are both written bad -- the realigns and the CONSIDERED between them cost no undo");
+    check(st4.value(1) == "good" && st4.value(3) == "good" && st4.value(4) == "good", "... and those stay good");
+    // The capacity itself still holds: a THIRD merge evicts the first, whose undo the data no longer has.
+    const QString path5 = dir.filePath("rat.cur.stderiv.6.cap3");
+    {
+        CurationLogger log;
+        log.open(path5, "rat.clu.stderiv.6.cap3", "6", 32552.0, 8, 32, {});
+        log.setMaxBufferEntries(2);
+        for (int k = 0; k < 3; ++k) { log.beginAction(CurationLogger::ActionType::GROUP, QList<ClusterSnapshot>{snap(2), snap(3 + k)}); log.commitAction(snap(2)); }
+        log.notifyUndo(); log.notifyUndo();
+        log.notifyUndo();      // the data has no third level: nothing to flip
+        log.close();
+    }
+    QMap<int, QString> st5;
+    for (const QJsonObject& o : readLines(path5)) if (o.contains("action")) st5[o["action_idx"].toInt()] = o["status"].toString();
+    check(st5.value(0) == "good" && st5.value(1) == "bad" && st5.value(2) == "bad",
+          "three merges at depth 2: the two the data can undo are flipped, the first is final");
+
     std::printf("%s (%d checks, %d failed)\n", g_fail ? "FAILED" : "OK", g_ran, g_fail);
     return g_fail ? 1 : 0;
 }

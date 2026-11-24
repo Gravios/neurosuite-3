@@ -950,6 +950,12 @@ public:
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
      *  separate map-undo stack. */
     void rebuildHierarchyFromData();
+    /** collapseToSelfChildren() after a parent undo / redo.  When the re-cut changed
+     *  the child labelling it pushed a childData undo level that no ChildEdit stands
+     *  for; the child undo stacks are dropped then, as repairNesting() does after a
+     *  parent edit -- the next child undo would otherwise pop the re-cut itself and
+     *  put a child back across two parents. */
+    void recutChildrenAfterParentUndo();
 
     /**Compacts the ids of BOTH clusterings into the low integers with no gaps:
   * parents become 2,3,4,... and atoms likewise, with the reserve bins 0 and 1
@@ -3058,7 +3064,11 @@ private:
     // clusters that changed, for childData->undo()/redo() (cache invalidation)
     // and for the deterministic colour re-sync.  rebuildHierarchyFromData() then
     // keeps the parent maps consistent regardless of which timeline moved.
-    struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted; };
+    struct ChildEdit { QList<int> added; QList<int> modified; QList<int> deleted;
+                       int logIdx = -1; };   ///< action_idx of the edit's curation-log entry (-1: none)
+    /// The log entry of the child edit being made: set by logChildBefore, taken by
+    /// recordChildEdit, so the UNDO / REDO record can name what it reverts.
+    int childEditLogIdx = -1;
     QList<ChildEdit> childUndoStack;
     QList<ChildEdit> childRedoStack;
     // The two undo stacks are independent and layer-scoped: undoDispatch/redoDispatch
@@ -3314,7 +3324,8 @@ private:
     void logChildAfter(const QList<int>& atomIds);
     /** One not-undoable entry recording an atom-layer undo / redo (which the
      *  parent walk cannot pair): the ChildEdit's added / modified / deleted. */
-    void logChildUndoRedo(bool redo, const QList<int>& added, const QList<int>& modified, const QList<int>& deleted);
+    void logChildUndoRedo(bool redo, const QList<int>& added, const QList<int>& modified, const QList<int>& deleted,
+                          int revertsActionIdx = -1);
 
     /** Bracket a hierarchy command: every primitive logged until endGesture
      *  carries this gesture's index.  No-ops without an open logger. */
