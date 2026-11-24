@@ -539,6 +539,13 @@ the ndmanager-plugins script tests (`ndm_test_*`) and the fiber-kit contract
 check (`core_shared_contract`, with `-DNS_FIBER_KIT_ROOT`).  CI runs the suite
 on every push.
 
+**The Klusters self-tests** (`src/klusters/test/selftest/test_*.py`) drive the
+built binary over synthetic sessions and are part of that suite: every file in
+the directory is a `ctest` test (`klusters_selftest_<name>`, label `selftest`).
+`ctest -L selftest` runs them alone in about three minutes.  A change to
+Klusters' curation, undo, realign, hierarchy or job handling runs them before
+it ships; a new behaviour gets a file there, which registers itself.
+
 For terminal/TTY-related features (progressbar):
 - `script(1)` for PTY emulation in container — `script -q -c '<cmd>' /tmp/cap.log`.
 - Python `pty` module for finer control with redirections.

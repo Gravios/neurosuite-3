@@ -37,7 +37,7 @@ def main():
     kkk = K.sorter()
     if not kkk:
         print("test_cancel_job: SKIP (no KiloKlustaKwik_cpu: build it or set KKK_BIN)")
-        return 0
+        return 77        # ctest: skipped, not passed
     rc = {"recluster": "", "opts": dict(exe=kkk, autoSelect=False, args=K.T + "1111111111111")}
 
     # ---- a recluster

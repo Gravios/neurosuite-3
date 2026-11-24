@@ -116,8 +116,9 @@ shipped binary; `selfTestRunStep` is one 973-line chain of `if (step.contains(..
 complexity of 292. Each new scripted step is another branch with full access to the
 application's privates.
 
-- 36 scripted self-tests exist; **6 are registered with `ctest`**
-  (`src/klusters/test/CMakeLists.txt`). The other 30 run only when someone runs them by hand.
+- 36 scripted self-tests exist; **6 were registered with `ctest`**
+  (`src/klusters/test/CMakeLists.txt`) and the other 30 ran only when someone ran them by hand.
+  *Done the same day:* every `test_*.py` is registered by being in the directory.
 - Helpers are imported from one test file into another (`test_undo_pairing` from five others),
   so a test file is also a library.
 
@@ -222,7 +223,8 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
 
 ## Order of work
 
-1. Register the 30 self-tests with `ctest`. It costs nothing and protects every step below.
+1. ~~Register the 30 self-tests with `ctest`.~~ Done: `ctest -L selftest`, 36 tests, about
+   three minutes.
 2. Delete the three unbuilt files; triage the unused functions.
 3. The command table (§3). The three functions it replaces are 2,622 lines, and it removes
    the class of fault the lock audit found.

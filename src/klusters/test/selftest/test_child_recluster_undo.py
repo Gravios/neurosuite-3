@@ -32,7 +32,7 @@ def main():
     kkk = K.sorter()
     if not kkk:
         print("test_child_recluster_undo: SKIP (no KiloKlustaKwik_cpu: build it or set KKK_BIN)")
-        return 0
+        return 77        # ctest: skipped, not passed
     with tempfile.TemporaryDirectory() as d:
         base, m = S.make_session(d, "kk", n_per_unit=400)
         n = m["clu"].size

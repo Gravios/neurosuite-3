@@ -292,15 +292,27 @@ endif()
 # (NS3_KLUSTERS_SELFTEST=<spec.json>) and checks the files it wrote: the one way realign,
 # nudge, the follow of other spaces, super-sampling and Save are exercised without a person
 # at the GUI.  Needs python3 with numpy; each test SKIPs (exit 77) without them.
+#
+# EVERY selftest/test_*.py is a test: a new one is registered by being there (until 2026-11-24
+# six were listed by name and the other thirty ran only when someone ran them by hand).
+#   ctest -L selftest        the self-tests alone (about three minutes, one at a time)
+# The reclustering ones find KiloKlustaKwik_cpu in the build tree (or KKK_BIN) and SKIP without.
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND AND TARGET klusters)
-    foreach(_t IN ITEMS follow_supersampled realign_in_shown_space realign_base_from_supersampled_clu detached_space supersample_interp_detect realign_kernel)
-        add_test(NAME klusters_selftest_${_t}
-                 COMMAND "${Python3_EXECUTABLE}" -I "${CMAKE_CURRENT_SOURCE_DIR}/selftest/test_${_t}.py")
+    file(GLOB _klu_selftests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/selftest/test_*.py")
+    # These read the clock or catch a job while it runs: not beside other tests on a busy machine.
+    set(_klu_selftests_timed cancel_job curation_log edit_lock)
+    foreach(_f IN LISTS _klu_selftests)
+        get_filename_component(_t "${_f}" NAME_WE)
+        string(REGEX REPLACE "^test_" "" _t "${_t}")
+        add_test(NAME klusters_selftest_${_t} COMMAND "${Python3_EXECUTABLE}" -I "${_f}")
         set_tests_properties(klusters_selftest_${_t} PROPERTIES
             ENVIRONMENT "KLUSTERS_BIN=$<TARGET_FILE:klusters>"
             SKIP_RETURN_CODE 77
             TIMEOUT 1800
             LABELS "selftest")
+        if(_t IN_LIST _klu_selftests_timed)
+            set_tests_properties(klusters_selftest_${_t} PROPERTIES RUN_SERIAL TRUE)
+        endif()
     endforeach()
 endif()

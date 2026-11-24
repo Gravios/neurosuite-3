@@ -89,7 +89,7 @@ def main():
     kkk = sorter()
     if not kkk:
         print("test_recluster_klustakwik: SKIP (no KiloKlustaKwik_cpu: build it or set KKK_BIN)")
-        return 0
+        return 77        # ctest: skipped, not passed
 
     # ── the time axis ────────────────────────────────────────────────────────
     _, _, on = recluster(klusters, kkk, args=T + "1111111111111")

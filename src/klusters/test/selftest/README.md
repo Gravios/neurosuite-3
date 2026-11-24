@@ -16,6 +16,12 @@ entry with its shift count and log. Spec keys `realignFromAnySpace`, `realignVer
 the tests that compare ticks to raw samples exactly set 0) set those preferences for the run (a private `QSettings` under the work
 directory, never the user's).
 
+**Every `test_*.py` here is a `ctest` test** (`klusters_selftest_<name>`, label `selftest`): a new
+file is registered by being here, at the next configure. `ctest -L selftest` runs them alone, in
+about three minutes; they need python3 with numpy and exit 77 (skipped) without the built
+binary, and the reclustering ones without `KiloKlustaKwik_cpu` (the build tree's, or `KKK_BIN`).
+By hand: `KLUSTERS_BIN=<build>/klusters/src/klusters python3 test_<name>.py`.
+
 Tests: `test_follow_supersampled.py` (a `_U4`/`_U2` space follows a realign made in the `.clu`'s
 space, and the reverse), `test_realign_in_shown_space.py` (realign and nudge computed in the
 shown `_U4` space with the `.clu` in `standard`: sub-sample phases, the base space follows,

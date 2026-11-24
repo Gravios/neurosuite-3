@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: every self-test is a ctest test](#2026-11-24--klusters-every-self-test-is-a-ctest-test) |
 | 2026-11-24 | [Klusters: legibility and organization audit](#2026-11-24--klusters-legibility-and-organization-audit) |
 | 2026-11-24 | [Klusters: Purge Small Clusters in the child view](#2026-11-24--klusters-purge-small-clusters-in-the-child-view) |
 | 2026-11-24 | [Klusters: a click in a parent matrix leaves the child view](#2026-11-24--klusters-a-click-in-a-parent-matrix-leaves-the-child-view) |
@@ -259,6 +260,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: every self-test is a ctest test
+
+Thirty of the 36 scripted self-tests were not part of the test suite.
+
+<details>
+<summary>Details</summary>
+
+- Step 1 of the organization audit.  Six of the 36 scripted Klusters self-tests were listed by
+  name in `src/klusters/test/CMakeLists.txt`; the other thirty ran only when someone ran them
+  by hand.
+- Every `src/klusters/test/selftest/test_*.py` is now a `ctest` test
+  (`klusters_selftest_<name>`, label `selftest`), found by a glob: a new file registers itself
+  at the next configure.  `ctest -L selftest`: 36 tests in about 3 min one at a time, under 2
+  min with `-j2`.  The three that read the clock or catch a running job (`cancel_job`,
+  `curation_log`, `edit_lock`) run alone.
+- The four reclustering tests exit 77 without KiloKlustaKwik, so `ctest` reports them skipped;
+  they printed SKIP and returned 0, which reads as passed.
+- CI runs the suite on every push: it now runs these too.  Not tried on the CI machines.
+
+</details>
 
 ---
 
