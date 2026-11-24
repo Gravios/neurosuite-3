@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: an undone child edit is written bad in the curation log](#2026-11-24--klusters-an-undone-child-edit-is-written-bad-in-the-curation-log) |
 | 2026-11-24 | [Klusters: a saved undo depth of 2 is raised to 20](#2026-11-24--klusters-a-saved-undo-depth-of-2-is-raised-to-20) |
 | 2026-11-24 | [Klusters: Repair Nesting and an atom compaction are undo steps](#2026-11-24--klusters-repair-nesting-and-an-atom-compaction-are-undo-steps) |
 | 2026-11-24 | [Klusters: one undo history for both layers](#2026-11-24--klusters-one-undo-history-for-both-layers) |
@@ -247,6 +248,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: an undone child edit is written bad in the curation log
+
+The status of a child edit never changed.
+
+<details>
+<summary>Details</summary>
+
+- A child edit's entry was exempt from the undo status: it stayed `good` when undone, and a
+  reader had to join the `UNDO` record's `reverts_action_idx`.
+- It is now held in the buffer like a parent action and flipped by its index when its step of
+  the undo history is undone or redone (`CurationLogger::markCurrentActionRevertedByIndex`,
+  `setUndone`).  The walk that pairs parent undos with parent entries passes over it.
+- A child edit counts against the buffer depth, as its step counts against the undo depth.
+- **Logs written before this**: undone child edits are `good`; join `reverts_action_idx`.
+- `klusters_test_curationlogger` (2 more checks), `test_undo_pairing.py` (1 more).
+
+</details>
 
 ---
 

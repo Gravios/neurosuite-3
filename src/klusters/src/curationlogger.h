@@ -373,6 +373,14 @@ public:
      *  entry keeps its records and details but is exempt from the undo/redo
      *  status walk and from the undo-paired buffer capacity. */
     void markCurrentActionNotUndoable();
+    /** The entry just committed is undone and redone BY INDEX (setUndone), not by
+     *  the walk of notifyUndo / notifyRedo: a child edit, whose step of the undo
+     *  history is not a level of the parent Data.  It stays buffered like any
+     *  undo-paired entry, so its status can still flip. */
+    void markCurrentActionRevertedByIndex();
+    /** Flip the status of entry @p actionIdx: "bad" when @p undone, "good" when
+     *  redone.  @return false when it has left the buffer (its status is on disk). */
+    bool setUndone(int actionIdx, bool undone);
 
     /** Open a GESTURE: a hierarchy command made of several primitives.  Every
      *  beginAction until endGesture() is stamped with this gesture's index
@@ -416,6 +424,8 @@ private:
         /// Hidden twin of an unlogged Data undo entry (full renumber):
         /// participates in the walk, emits nothing at flush.
         bool                                 placeholder = false;
+        /// Undo-paired, but flipped by setUndone() and transparent to the walk.
+        bool                                 byIndex     = false;
         /// Epoch stamped at beginAction (monotonic per logger).  Lets a late
         /// markCurrentActionNotUndoable() restore exactly the revocations its
         /// own begin made and no others.

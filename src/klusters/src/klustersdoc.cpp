@@ -888,7 +888,9 @@ void KlustersDoc::logChildAfter(const QList<int>& atomIds)
     logActionOpen = false;
     if (!atomIds.isEmpty() && childData)
         curationLogger->commitAction(snapshotClusters(atomIds, 3.0, /*childLayer=*/true));
-    curationLogger->markCurrentActionNotUndoable();     // atom stack, not Data's: no twin to pair with
+    // Its step of the undo history is a child entry, not a level of the parent Data:
+    // the entry is flipped by index when that step is undone (logChildUndoRedo).
+    curationLogger->markCurrentActionRevertedByIndex();
 }
 
 void KlustersDoc::logChildUndoRedo(bool redo, const QList<int>& added, const QList<int>& modified,
@@ -904,12 +906,12 @@ void KlustersDoc::logChildUndoRedo(bool redo, const QList<int>& added, const QLi
         { QStringLiteral("added"),    lst(added) },
         { QStringLiteral("modified"), lst(modified) },
         { QStringLiteral("deleted"),  lst(deleted) },
-        // The child edit this reverts or replays: its own entry keeps status "good"
-        // (the child stack is not the one the status walk follows), so this is the
-        // only link from the undo to what was undone.  -1: that edit was not logged.
+        // The child edit this reverts or replays (-1: that edit was not logged).  Its own
+        // entry is flipped below while it is still buffered; this link holds either way.
         { QStringLiteral("reverts_action_idx"), revertsActionIdx },
     });
     curationLogger->markCurrentActionNotUndoable();
+    curationLogger->setUndone(revertsActionIdx, !redo);
 }
 
 void KlustersDoc::setLogTrigger(const QString& trigger)

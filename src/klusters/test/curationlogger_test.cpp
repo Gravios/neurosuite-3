@@ -295,6 +295,29 @@ int main(int argc, char** argv)
     check(st5.value(0) == "good" && st5.value(1) == "bad" && st5.value(2) == "bad",
           "three merges at depth 2: the two the data can undo are flipped, the first is final");
 
+    // An entry reverted by index (a child edit): the walk passes over it, setUndone flips it.
+    const QString path6 = dir.filePath("rat.cur.stderiv.6.byidx");
+    bool flipped = false, gone = true;
+    {
+        CurationLogger log;
+        log.open(path6, "rat.clu.stderiv.6.byidx", "6", 32552.0, 8, 32, {});
+        log.setMaxBufferEntries(2);
+        log.beginAction(CurationLogger::ActionType::HIERARCHY_EDIT, snap(20000)); log.commitAction(snap(20000));   // 0
+        log.markCurrentActionRevertedByIndex();
+        log.beginAction(CurationLogger::ActionType::GROUP, QList<ClusterSnapshot>{snap(2), snap(3)}); log.commitAction(snap(2));   // 1
+        log.beginAction(CurationLogger::ActionType::HIERARCHY_EDIT, snap(20001)); log.commitAction(snap(20001));   // 2
+        log.markCurrentActionRevertedByIndex();
+        flipped = log.setUndone(2, true);          // the child edit, the newest step
+        log.notifyUndo();                          // the parent merge: must flip 1, not 2 again
+        gone = log.setUndone(0, true);             // left the buffer at depth 2: on disk as good
+        log.close();
+    }
+    QMap<int, QString> st6;
+    for (const QJsonObject& o : readLines(path6)) if (o.contains("action")) st6[o["action_idx"].toInt()] = o["status"].toString();
+    check(flipped && st6.value(2) == "bad" && st6.value(1) == "bad",
+          "a child edit is flipped by index, and the walk flips the parent merge under it");
+    check(!gone && st6.value(0) == "good", "a child edit past the depth has left the buffer: setUndone says so, it stays good");
+
     std::printf("%s (%d checks, %d failed)\n", g_fail ? "FAILED" : "OK", g_ran, g_fail);
     return g_fail ? 1 : 0;
 }

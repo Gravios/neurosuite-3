@@ -282,6 +282,25 @@ void CurationLogger::markCurrentActionNotUndoable()
     }
 }
 
+void CurationLogger::markCurrentActionRevertedByIndex()
+{
+    if (PendingEntry* p = currentPending())
+        p->byIndex = true;
+}
+
+bool CurationLogger::setUndone(int actionIdx, bool undone)
+{
+    if (!file.isOpen() || actionIdx < 0)
+        return false;
+    trimBuffer();
+    for (PendingEntry& e : pending)
+        if (e.actionIdx == actionIdx && e.byIndex) {
+            e.status = undone ? QStringLiteral("bad") : QStringLiteral("good");
+            return true;
+        }
+    return false;
+}
+
 void CurationLogger::notePlaceholderUndoable()
 {
     if (!file.isOpen())
@@ -338,7 +357,7 @@ void CurationLogger::notifyUndo()
     // whose status is still "good".  Not-undoable entries have no twin on
     // the stack the pop came from, so they are transparent to the walk.
     for (int i = pending.size() - 1; i >= 0; --i) {
-        if (!pending[i].undoable)
+        if (!pending[i].undoable || pending[i].byIndex)
             continue;
         if (pending[i].status == QLatin1String("good")) {
             pending[i].status = QStringLiteral("bad");
@@ -362,7 +381,7 @@ void CurationLogger::notifyRedo()
     // not-undoable entries, are transparent.
     trimBuffer();
     for (int i = 0; i < pending.size(); ++i) {
-        if (!pending[i].undoable || pending[i].revokedEpoch != 0)
+        if (!pending[i].undoable || pending[i].byIndex || pending[i].revokedEpoch != 0)
             continue;
         if (pending[i].status == QLatin1String("bad")) {
             pending[i].status = QStringLiteral("good");

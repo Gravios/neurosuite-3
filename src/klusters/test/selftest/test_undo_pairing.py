@@ -109,6 +109,9 @@ def main():
         undos = {o["action_idx"]: o for o in lines if o.get("action") == "UNDO" and o.get("event") == "ACTION_DETAIL"}
         edits = sorted(i for i, v in status(lines).items() if v[0] == "HIERARCHY_EDIT")
         check(len(undos) == 2, "two UNDO records, not three", sorted(undos))
+        check([status(lines)[i][1] for i in edits] == ["good", "bad", "bad"],
+              "the two undone child merges are written bad (a child edit was never bad)",
+              [status(lines)[i] for i in edits])
         check(sorted(o.get("reverts_action_idx") for o in undos.values()) == edits[1:],
               "each UNDO names the child edit it reverts (reverts_action_idx): the last two merges",
               ([o.get("reverts_action_idx") for o in undos.values()], edits))

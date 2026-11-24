@@ -93,7 +93,6 @@ The audit fixed five faults and the single undo history closed the four behaviou
   explicitly.
 - **Not undoable**: realign (the automatic ones too), nudge, Sort Spikes by Time, the `.cli`
   annotations.
-- **In the log a child edit is never `bad`**; readers join `UNDO.reverts_action_idx`.
 - **Memory**: every level of the history holds one atom labelling (4 bytes a spike) next to the
   parent level: 20 levels of 2 M spikes are 160 MB.
 - Tested with scripted synthetic sessions only (`test_undo_pairing.py`).
