@@ -45,6 +45,8 @@
  *                                        layer), "undoChild" / "redoChild": true; none: only
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
+ *        {"annotate": {...}}             a cluster's information: "cluster", "quality", "notes"
+ *                                        set it (one undo step), neither only reads it
  *        {"group": [ids]}                the palette's Group on those parents (the automatic
  *                                        realign / renumber of the result run as configured)
  *        {"wait": ms}                    let time pass with events running
@@ -739,6 +741,31 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("redo"))) {
         // {"redo": true}: Edit > Redo.
         slotRedo();
+        return true;
+    }
+    if (step.contains(QStringLiteral("annotate"))) {
+        // {"annotate": {"cluster": id, "quality": "..", "notes": "..", "child": false}}: what the
+        // palette's information dialog does on OK ("quality" / "notes" absent: only read).
+        // Reports the cluster's quality and notes afterwards, and the undo steps.
+        const QJsonObject o = step.value(QStringLiteral("annotate")).toObject();
+        const bool childLayer = o.value(QStringLiteral("child")).toBool();
+        const int id = o.value(QStringLiteral("cluster")).toInt();
+        Data* layer = childLayer ? (doc->hasChildClustering() ? &doc->childClusterData() : nullptr) : &doc->parentData();
+        QList<QString> fields;
+        if (layer) layer->getUserClusterInformation(id, fields);
+        UnitAnnotation a = UnitAnnotation::fromFields(fields);
+        if (o.contains(QStringLiteral("quality")) || o.contains(QStringLiteral("notes"))) {
+            if (o.contains(QStringLiteral("quality"))) a.quality = o.value(QStringLiteral("quality")).toString();
+            if (o.contains(QStringLiteral("notes")))   a.notes   = o.value(QStringLiteral("notes")).toString();
+            result.insert(QStringLiteral("changed"), doc->setClusterAnnotation(childLayer, id, a));
+            fields.clear();
+            if (layer) layer->getUserClusterInformation(id, fields);
+            a = UnitAnnotation::fromFields(fields);
+        }
+        result.insert(QStringLiteral("quality"), a.quality);
+        result.insert(QStringLiteral("notes"), a.notes);
+        result.insert(QStringLiteral("undoSteps"), doc->undoStepCount());
+        result.insert(QStringLiteral("redoSteps"), doc->redoStepCount());
         return true;
     }
     if (step.contains(QStringLiteral("labels"))) {

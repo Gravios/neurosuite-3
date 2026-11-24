@@ -213,6 +213,8 @@ public:
       * @param electrodeGroupId id of the current electrode group.
      */
     void showUserClusterInformation(int electrodeGroupId);
+    /// Re-read the information shown beside the ids, when it is shown.
+    void refreshUserClusterInformation(int electrodeGroupId) { if (isInUserClusterInfoMode) showUserClusterInformation(electrodeGroupId); }
 
     /**updates the background color of the palette.*/
     void changeBackgroundColor(const QColor& color);

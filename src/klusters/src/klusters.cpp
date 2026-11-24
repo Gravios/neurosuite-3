@@ -1491,6 +1491,11 @@ void KlustersApp::createMenus()
         else if(clusterPalette)
             slotUpdateShownClusters(clusterPalette->selectedClusters());
     });
+    // An undo or redo of a cluster information change: the palette showing it re-reads.
+    connect(doc, &KlustersDoc::clusterAnnotationRestored, this, [this](bool childLayer, int){
+        ClusterPalette* p = childLayer ? childPalette : clusterPalette;
+        if (p) p->refreshUserClusterInformation(doc->currentElectrodeGroupID().toInt());
+    });
     // hierarchical view: after a hierarchy edit or an undo/redo of one, refresh
     // the child palette for the current parent selection.
     connect(doc, &KlustersDoc::hierarchyChanged, this, [this]{

@@ -641,7 +641,8 @@ void ClusterPalette::slotCustomContextMenuRequested(const QPoint& pos) {
             {
                 //Update the cluster user information (every field).
                 const UnitAnnotation annotation = clusterInformationDialog->annotation();
-                boundData().setUserClusterAnnotation(boundColors().itemId(item->data(INDEX).toInt()), annotation);
+                // Through the document: one step of the undo history.
+                doc->setClusterAnnotation(showsChildScope, boundColors().itemId(item->data(INDEX).toInt()), annotation);
 
                 //update the text of the item
                 if(isInUserClusterInfoMode){

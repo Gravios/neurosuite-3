@@ -2231,6 +2231,15 @@ int KlustersDoc::stepCount(const QList<UndoEntry>& l) {
     }
     return n;
 }
+int KlustersDoc::labelSteps(const QList<UndoEntry>& l) {
+    int n = 0, last = -1;
+    for (const UndoEntry& e : l) {
+        if (e.annotation) continue;
+        if (e.group == 0 || e.group != last) ++n;
+        last = e.group ? e.group : -1;
+    }
+    return n;
+}
 int KlustersDoc::undoStepCount() const { return stepCount(undoTimeline); }
 int KlustersDoc::redoStepCount() const { return stepCount(redoTimeline); }
 
@@ -2251,13 +2260,13 @@ void KlustersDoc::pushUndoEntry(UndoEntry e){
     // The depth counts STEPS: the oldest step goes whole.  Each entry holds a labelling,
     // so the entries are bounded too, and a command larger than that loses its oldest.
     while (undoTimeline.size() > 1
-           && (stepCount(undoTimeline) > qMax(1, nbUndo) || undoTimeline.size() > Data::maxUndoLevels()))
+           && (labelSteps(undoTimeline) > qMax(1, nbUndo) || undoTimeline.size() > Data::maxUndoLevels()))
         undoTimeline.removeLast();
     redoTimeline.clear();                          // a new edit ends every redo, of either layer
     // The level histories (Data, the colours, the edit descriptors, the views) keep the
     // levels of these steps, and one more for the push that comes next.
     int parents = 0;
-    for (const UndoEntry& u : undoTimeline) parents += !u.child;
+    for (const UndoEntry& u : undoTimeline) parents += (!u.child && !u.annotation);
     Data::setUndoLevelsNeeded(parents + 1);
     // ... and the curation log keeps their entries, whose status an undo still flips.
     if (curationLogger && curationLogger->isOpen())
@@ -2275,6 +2284,25 @@ void KlustersDoc::recordChildEdit(const ChildEdit& eIn){
     // the edit itself just pushed (every caller records straight after its one commit).
     if (childData) u.childLabels = childData->labelsOfLastUndoLevel();
     pushUndoEntry(u);
+}
+
+bool KlustersDoc::setClusterAnnotation(bool childLayer, int id, const UnitAnnotation& annotation){
+    Data* layer = childLayer ? childData : clusteringData;
+    if (!layer) return false;
+    QList<QString> fields;
+    layer->getUserClusterInformation(id, fields);
+    if (fields.isEmpty()) return false;            // no such cluster
+    const UnitAnnotation before = UnitAnnotation::fromFields(fields);
+    if (before == annotation) return false;
+    layer->setUserClusterAnnotation(id, annotation);
+    clusterInformationModified();
+    UndoEntry u;
+    u.child = childLayer;
+    u.annotation = true;
+    u.annotatedCluster = id;
+    u.annotationToRestore = before;
+    pushUndoEntry(u);
+    return true;
 }
 
 bool KlustersDoc::recordChildChange(const QVector<dataType>& before){
@@ -2304,9 +2332,24 @@ void KlustersDoc::afterChildLabelsRestored(KlustersView& activeView){
     modified = true;
 }
 
+// Put the entry's annotation back and keep the one it replaced, for the opposite direction.
+void KlustersDoc::swapAnnotation(UndoEntry& e){
+    Data* layer = e.child ? childData : clusteringData;
+    if (!layer) return;
+    QList<QString> fields;
+    layer->getUserClusterInformation(e.annotatedCluster, fields);
+    if (fields.isEmpty()) return;                  // the cluster is gone: nothing to put back
+    const UnitAnnotation now = UnitAnnotation::fromFields(fields);
+    layer->setUserClusterAnnotation(e.annotatedCluster, e.annotationToRestore);
+    e.annotationToRestore = now;
+    clusterInformationModified();
+    emit clusterAnnotationRestored(e.child, e.annotatedCluster);
+}
+
 bool KlustersDoc::undoOneEntry(KlustersView& activeView){
     if (undoTimeline.isEmpty()) return false;
     UndoEntry e = undoTimeline.takeFirst();
+    if (e.annotation) { swapAnnotation(e); redoTimeline.prepend(e); return true; }
     const QVector<dataType> now = childData ? childData->labelByFeatureRow() : QVector<dataType>();
     if (!e.child) {
         if (parentUndoCount() == 0) return false;  // no level left for it (the depth was lowered)
@@ -2327,6 +2370,7 @@ bool KlustersDoc::undoOneEntry(KlustersView& activeView){
 bool KlustersDoc::redoOneEntry(KlustersView& activeView){
     if (redoTimeline.isEmpty()) return false;
     UndoEntry e = redoTimeline.takeFirst();
+    if (e.annotation) { swapAnnotation(e); undoTimeline.prepend(e); return true; }
     const QVector<dataType> now = childData ? childData->labelByFeatureRow() : QVector<dataType>();
     if (!e.child) {
         if (parentRedoCount() == 0) return false;

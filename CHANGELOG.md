@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: a change of cluster information is an undo step](#2026-11-24--klusters-a-change-of-cluster-information-is-an-undo-step) |
 | 2026-11-24 | [Klusters: the undo depth counts steps, not levels](#2026-11-24--klusters-the-undo-depth-counts-steps-not-levels) |
 | 2026-11-24 | [Klusters: an undone child edit is written bad in the curation log](#2026-11-24--klusters-an-undone-child-edit-is-written-bad-in-the-curation-log) |
 | 2026-11-24 | [Klusters: a saved undo depth of 2 is raised to 20](#2026-11-24--klusters-a-saved-undo-depth-of-2-is-raised-to-20) |
@@ -249,6 +250,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: a change of cluster information is an undo step
+
+Undoing an edit silently took back the cluster information entered after it.
+
+<details>
+<summary>Details</summary>
+
+- The information of a cluster (structure, type, quality, notes; saved in the `.cli`) is held
+  with the labelling, and an Undo restores the level from before an edit with the information
+  as it was then.  A change made after a merge was therefore dropped when the merge was
+  undone, and came back with the redo (read in `Data::undo`; not reproduced on the old build).
+- The palette's dialog now goes through `KlustersDoc::setClusterAnnotation`: one step of the
+  undo history, undone on its own before anything older.  It holds no labelling and does not
+  count against the depth, so annotating a session does not push the edits out of the history.
+- OK on an unchanged dialog is no step.  The palette re-reads the shown information after an
+  undo or redo.
+- Self-test step `annotate`; `test_annotation_undo.py` (6 checks, parent layer; the child
+  layer goes through the same call and is not covered).
+
+</details>
 
 ---
 

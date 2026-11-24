@@ -314,6 +314,8 @@ on the atoms, and whichever layer is shown.
   up to ten times the depth in changes.
   A 2 saved while that was the default is raised to 20 once; any other saved
   value is kept.
+- A change of a cluster's information (the palette's dialog: structure, type,
+  quality, notes) is a step too. It does not count against the depth.
 - Not undoable: realign (also the automatic ones), nudge, Sort Spikes by Time.
 
 ## Repair Nesting

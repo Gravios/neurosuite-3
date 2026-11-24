@@ -2379,6 +2379,11 @@ public:
 
     /**Sets the modified status of the current opend document to true .*/
     void clusterInformationModified(){modified = true; unitsInfoModified = true;}
+    /** The information of cluster @p id on a layer (the palette's dialog), as one
+     *  step of the undo history.  It needs to be one: the information travels with
+     *  the labelling levels, so without a step an Undo of an OLDER edit dropped it.
+     *  @return whether it changed. */
+    bool setClusterAnnotation(bool childLayer, int id, const UnitAnnotation& annotation);
 
     // ── Curation logging ──────────────────────────────────────────────────
     /** Compute a ClusterSnapshot for @p clusterId from the current in-memory
@@ -2461,6 +2466,8 @@ Q_SIGNALS:
     /** Emitted after a hierarchy edit (merge/promote/move) or an undo/redo that
      *  changed the parent<-child maps, so the app can repopulate the child palette. */
     void hierarchyChanged();
+    /// An undo or redo changed a cluster's information: the palettes showing it re-read.
+    void clusterAnnotationRestored(bool childLayer, int cluster);
 
     /**Emitted when the waveform-view channel selection changes.  Empty list =
      * no restriction (all channels).*/
@@ -3091,7 +3098,15 @@ private:
         int  group = 0;
         QVector<dataType> childLabels;   ///< empty: no child layer when it was pushed
         ChildEdit edit;                  ///< child entries: the ids, for the log
+        /// A change of one cluster's information (structure, type, quality, notes...)
+        /// on the layer `child` says: no labelling, no level.  It does not count
+        /// against the depth (see labelSteps), so annotating does not push edits out.
+        bool annotation = false;
+        int  annotatedCluster = 0;
+        UnitAnnotation annotationToRestore;
     };
+    /// The steps that hold a labelling: what the undo depth counts.
+    static int labelSteps(const QList<UndoEntry>& l);
     QList<UndoEntry> undoTimeline;
     QList<UndoEntry> redoTimeline;
     int  undoGroupDepth   = 0;           ///< open gestures (beginGesture / endGesture)
@@ -3101,6 +3116,7 @@ private:
     static int stepCount(const QList<UndoEntry>& l);
     void pushUndoEntry(UndoEntry e);
     bool undoOneEntry(KlustersView& activeView);
+    void swapAnnotation(UndoEntry& e);
     bool redoOneEntry(KlustersView& activeView);
     /// The child layer was replaced wholesale: colours, maps, views.
     void afterChildLabelsRestored(KlustersView& activeView);
