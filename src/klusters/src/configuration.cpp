@@ -85,201 +85,53 @@ Configuration::Configuration():nbChannels(0) {
     read(); // read the settings or set them to the default values
 }
 
-void Configuration::read() {
-    QSettings settings;
-
-    settings.beginGroup("General");
-    crashRecovery = settings.value("crashRecovery",crashRecoveryDefault).toBool();
-    crashRecoveryIndex = settings.value("crashRecoveryIndex",crashRecoveryIndexDefault).toInt();
-    nbUndo = settings.value("nbUndo",nbUndoDefault).toInt();
-    // Every write() stores the value, so settings written while the default was 2 hold
-    // a 2 nobody chose.  Once, a stored 2 becomes the default of today; any other value
-    // was set by hand and is kept, and so is a 2 set after this ran.
+// The one-time changes of an old default.  Every write() stores every value, so a file
+// written before a default changed holds the OLD default as if it had been chosen.  Each
+// change below is applied once and recorded by a flag that write() stores, so the same
+// value set by hand afterwards is kept.  @p settings is in the General group.
+void Configuration::applyOldDefaults(QSettings& settings) {
+    // The undo depth was 2 until 2026-11-24.
     if (!settings.value("nbUndoRaisedFromOldDefault", false).toBool() && settings.contains("nbUndo")
         && nbUndo == nbUndoOldDefault)
         nbUndo = nbUndoDefault;
-    backgroundColor = settings.value("backgroundColor", backgroundColorDefault).value<QColor>();
-    reclusteringExecutable = settings.value("reclusteringExecutable",reclusteringExecutableDefault).toString();
-    // Settings written by earlier versions hold their default, "KlustaKwik" (every
-    // write() stores the value).  neurosuite-3 never installs a program of that
-    // name, so where none is on PATH the stored old default becomes the new one;
-    // a KlustaKwik that is installed, or any other program, is kept.
+    // Earlier versions stored "KlustaKwik" as the recluster program.  neurosuite-3 never
+    // installs a program of that name, so where none is on PATH it becomes today's
+    // default; a KlustaKwik that is installed, or any other program, is kept.
     if (reclusteringExecutable == QLatin1String("KlustaKwik")
         && QStandardPaths::findExecutable(reclusteringExecutable).isEmpty())
         reclusteringExecutable = reclusteringExecutableDefault;
-    reclusteringArgs = settings.value("reclusteringArgs",reclusteringArgsDefault).toString();
-    fiberKitReclusterCommand = settings.value("fiberKitReclusterCommand", fiberKitReclusterCommandDefault).toString();
-    reclusterEngine = settings.value("reclusterEngine", reclusterEngineDefault).toString();
-    realignExecutable = settings.value("realignExecutable",realignExecutableDefault).toString();
-    realignArgs = settings.value("realignArgs",realignArgsDefault).toString();
-    realignThreshold  = settings.value("realignThreshold",  getRealignThresholdDefault()).toDouble();
-    // The default was 0.70 until 2026-11-24, and every write() stores the value: once, a
-    // stored 0.70 becomes the default of today (0.10).  At 0.70 the spikes that score lower
-    // stay where they are while the rest of their cluster moves.  Any other value was set
-    // by hand and is kept, and so is a 0.70 set after this ran.
+    // The realign threshold was 0.70 until 2026-11-24.  At 0.70 the spikes that score
+    // lower stay where they are while the rest of their cluster moves.
     if (!settings.value("realignThresholdLoweredFromOldDefault", false).toBool()
         && settings.contains("realignThreshold") && qAbs(realignThreshold - 0.70) < 1e-6)
         realignThreshold = getRealignThresholdDefault();
-    realignIterations = settings.value("realignIterations",  2).toInt();
-    realignMaxShift   = settings.value("realignMaxShift",    0).toInt();
-    realignKernel     = settings.value("realignKernel",      0).toInt();
-    realignKernelWidth = settings.value("realignKernelWidth", 0).toInt();
-    realignMode       = settings.value("realignMode",        0).toInt();
-    reorderMethod     = settings.value("reorderMethod",      0).toInt();
-    waveformSortMean  = settings.value("waveformSortMean",   false).toBool();
-    // Through the setters, not straight to the members like the knobs above: a
-    // hand-edited settings file could otherwise put a negative max here, and the
-    // panel casts it to size_t -- which underflows to "no cap" and lists every
-    // pair in the session.  The setters clamp.
-    setMergeRecommendMax(settings.value("mergeRecommendMax",                 20).toInt());
-    setShowMergeRecommendPanel(settings.value("showMergeRecommendPanel",     true).toBool());
-    setDriftSliderMaxClusters(settings.value("driftSliderMaxClusters",      1000).toInt());
-    setMergeRecommendMaxShift(settings.value("mergeRecommendMaxShift",        2).toInt());
-    setMergeRecommendErrorFloor(settings.value("mergeRecommendErrorFloor",   0.05).toDouble());
-    setMergeRecommendQualityFloor(settings.value("mergeRecommendQualityFloor", 0.90).toDouble());
-    curationLogging   = settings.value("curationLogging",    true).toBool();
-    reorderDisplayOnly= settings.value("reorderDisplayOnly", false).toBool();
-    realignVerbose    = settings.value("realignVerbose",     false).toBool();
-    reextractSpikesOnSave = settings.value("reextractSpikesOnSave", false).toBool();
-    syncFeatureSpaceOnSwitch = settings.value("syncFeatureSpaceOnSwitch", false).toBool();
-    realignFromAnySpace = settings.value("realignFromAnySpace", true).toBool();
-    { const int m = settings.value("supersampleMode", 0).toInt(); supersampleMode = (m == 2 || m == 4) ? m : 0; }
-    supersampleAdopt    = settings.value("supersampleAdopt", false).toBool();
-    supersampleInterp   = std::clamp(settings.value("supersampleInterp", 2).toInt(), 0, 2);   // 2 = smoothing spline (0965 default)
-    matrixFollowSelection = settings.value("matrixFollowSelection", true).toBool();
-    autoRealignAfterMerge = settings.value("autoRealignAfterMerge", true).toBool();
-    autoRenumberAfterMerge = settings.value("autoRenumberAfterMerge", true).toBool();
-    tsneSpikeCap = settings.value("tsneSpikeCap", 32000).toInt();
-    if (tsneSpikeCap < 1000) tsneSpikeCap = 1000;
-    tsnePerplexityStep = settings.value("tsnePerplexityStep", 5).toInt();
-    if (tsnePerplexityStep < 1) tsnePerplexityStep = 1;
-    setTsneStartPerplexity(settings.value("tsneStartPerplexity", 30.0).toDouble());
-    setTsneIterations(settings.value("tsneIterations", 500).toInt());
-    setTsneTheta(settings.value("tsneTheta", 0.5).toDouble());
-    setTsneMaxDimensions(settings.value("tsneMaxDimensions", 0).toInt());
-    setTsneSubsampleOverCap(settings.value("tsneSubsampleOverCap", false).toBool());
-    setTsneRandomSeed(settings.value("tsneRandomSeed", false).toBool());
-    setTsneLearningRate(settings.value("tsneLearningRate", 200.0).toDouble());
-    setTsneExaggeration(settings.value("tsneExaggeration", 12.0).toDouble());
-    setTsneExaggerationIterations(settings.value("tsneExaggerationIterations", 250).toInt());
-    autoUpdateMatricesAfterMerge = settings.value("autoUpdateMatricesAfterMerge", true).toBool();
-    errorMatrixIncremental  = settings.value("errorMatrixIncremental",  false).toBool();
-    errorMatrixLowPrecision = settings.value("errorMatrixLowPrecision", true).toBool();
-    dipSplitMinSize      = settings.value("dipSplitMinSize",      50).toInt();
-    dipSplitBloatFactor  = settings.value("dipSplitBloatFactor",  0.0).toDouble();
-    dipSplitValleyThresh = settings.value("dipSplitValleyThresh", 0.20).toDouble();
-    projectionScopeMode        = settings.value("projectionScopeMode",        0).toInt();
-    projectionScopeMinutes     = settings.value("projectionScopeMinutes",     12.0).toDouble();
-    projectionOutOfScopeHidden = settings.value("projectionOutOfScopeHidden", false).toBool();
-    correctCollisionRows       = settings.value("correctCollisionRows",       true).toBool();
-    showEapCollisions          = settings.value("showEapCollisions",          false).toBool();
-    showEapClassMembers        = settings.value("showEapClassMembers",        false).toBool();
-    setDensitySigmaPx(settings.value("densitySigmaPx", 3.0).toDouble());
-    knnK         = settings.value("knnK",         10).toInt();
-    knnThreshold = settings.value("knnThreshold", 0.50).toDouble();
-    knnMinNew    = settings.value("knnMinNew",    5).toInt();
-    knnMinRef    = settings.value("knnMinRef",    100).toInt();
-    {
-        const CoreCut d;
-        CoreCut c;
-        c.onsetFactor = settings.value("coreCutOnsetFactor", d.onsetFactor).toDouble();
-        c.riseStartMs = settings.value("coreCutRiseStartMs", d.riseStartMs).toDouble();
-        c.flatStartMs = settings.value("coreCutFlatStartMs", d.flatStartMs).toDouble();
-        c.flatEndMs   = settings.value("coreCutFlatEndMs",   d.flatEndMs).toDouble();
-        c.fallEndMs   = settings.value("coreCutFallEndMs",   d.fallEndMs).toDouble();
-        c.maxShiftMs  = settings.value("coreCutMaxShiftMs",  d.maxShiftMs).toDouble();
-        c.maxOrdered  = settings.value("coreCutMaxOrdered",  d.maxOrdered).toInt();
-        c.minSpikes   = settings.value("coreCutMinSpikes",   d.minSpikes).toInt();
-        c.useGpu      = settings.value("coreCutUseGpu",      d.useGpu).toBool();
-        setCoreCut(c);
-    }
-    {
-        const HoverSpike d;
-        HoverSpike h;
-        h.enabled      = settings.value("hoverSpikeEnabled",      d.enabled).toBool();
-        h.ringMarginPx = settings.value("hoverSpikeRingMarginPx", d.ringMarginPx).toInt();
-        h.ringWidthPx  = settings.value("hoverSpikeRingWidthPx",  d.ringWidthPx).toDouble();
-        h.traceWidthPx = settings.value("hoverSpikeTraceWidthPx", d.traceWidthPx).toDouble();
-        setHoverSpike(h);
-        const WaveformQuality qd;
-        WaveformQuality q;
-        q.enabled    = settings.value("waveformQualityEnabled",    qd.enabled).toBool();
-        q.yellow     = settings.value("waveformQualityYellow",     qd.yellow).toDouble();
-        q.orange     = settings.value("waveformQualityOrange",     qd.orange).toDouble();
-        q.red        = settings.value("waveformQualityRed",        qd.red).toDouble();
-        q.diameterPx = settings.value("waveformQualityDiameterPx", qd.diameterPx).toInt();
-        setWaveformQuality(q);
-    }
-
-    // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
-    autoMergeAlgorithm           = settings.value("autoMergeAlgorithm",           1).toInt();
-    autoMergeMedianK             = settings.value("autoMergeMedianK",             50).toInt();
-    autoMergeScoreThreshold      = settings.value("autoMergeScoreThreshold",      0.98).toDouble();
-    autoMergeUseErrorMatrix      = settings.value("autoMergeUseErrorMatrix",      false).toBool();
-    autoMergeErrorProbThreshold  = settings.value("autoMergeErrorProbThreshold",  0.15).toDouble();
-    autoMergeMaxShift            = settings.value("autoMergeMaxShift",            0).toInt();
-    autoMergeTaperSamples        = settings.value("autoMergeTaperSamples",        0).toInt();
-    autoMergeMinClusterSize      = settings.value("autoMergeMinClusterSize",      25).toInt();
-    autoMergeScope               = settings.value("autoMergeScope",               0).toInt();
-    autoMergePreviewBeforeApply  = settings.value("autoMergePreviewBeforeApply",  true).toBool();
-    markerSize = settings.value("markerSize", markerSizeDefault).toInt();
-    selectionLineWidth = settings.value("selectionLineWidth", selectionLineWidthDefault).toInt();
-    templateThresholdMin = settings.value("templateThresholdMin", templateThresholdMinDefault).toDouble();
-    templateThresholdMax = settings.value("templateThresholdMax", templateThresholdMaxDefault).toDouble();
-    if (settings.contains("templateXcorrMetric"))
-        templateXcorrMetric = settings.value("templateXcorrMetric", templateXcorrMetricDefault).toInt();
-    else  // migrate the pre-3.x boolean key (Pearson on/off)
+    // Before 3.x the template metric was a flag, Pearson on / off.
+    if (!settings.contains("templateXcorrMetric"))
         templateXcorrMetric = settings.value("templateXcorrPearson", false).toBool() ? 1 : 0;
-    templateXcorrMetric = qBound(0, templateXcorrMetric, templateXcorrMetricMax);
-    useWhiteColorDuringPrinting = settings.value("useWhiteColorDuringPrinting", useWhiteColorDuringPrintingDefault).toBool();
-    autoSelectFeatures = settings.value("autoSelectFeatures", autoSelectFeaturesDefault).toBool();
-    includeTimeInAutoSelect = settings.value("includeTimeInAutoSelect", includeTimeInAutoSelectDefault).toBool();
-    autoSelectNFeatures = settings.value("autoSelectNFeatures", autoSelectNFeaturesDefault).toInt();
-    // patch76 — single-cluster mean-subtracted sub-dimensional recluster
-    reclusterMeanSubtractedSubdim = settings.value(
-        "reclusterMeanSubtractedSubdim",
-        reclusterMeanSubtractedSubdimDefault).toBool();
-    reclusterChannelVariance = settings.value(
-        "reclusterChannelVariance",
-        reclusterChannelVarianceDefault).toBool();
-    reclusterMedianWaveformResidual = settings.value(
-        "reclusterMedianWaveformResidual",
-        reclusterMedianWaveformResidualDefault).toBool();
-    suppressReclusterOutputTab = settings.value(
-        "suppressReclusterOutputTab",
-        suppressReclusterOutputTabDefault).toBool();
-    reclusterChunking = qBound(0, settings.value("reclusterChunking", reclusterChunkingDefault).toInt(), 3);
-    reclusterChunkMinutes = settings.value("reclusterChunkMinutes", reclusterChunkMinutesDefault).toDouble();
-    if (!(reclusterChunkMinutes > 0.0)) reclusterChunkMinutes = reclusterChunkMinutesDefault;
-    // patch79 — auto-show error & template matrices on document open
-    autoShowMatricesOnOpen = settings.value(
-        "autoShowMatricesOnOpen",
-        autoShowMatricesOnOpenDefault).toBool();
-    // Settings revision: every write() stores every value, so a file written
-    // before a default changed holds the OLD default as if it had been chosen.
-    // Revision 1 (2026-10-29): the matrices are shown on open by default
-    // (was off); a file below revision 1 takes the new default once, and the
-    // next write() records revision 1, so a later choice of "off" is kept.
+    // Settings revision 1 (2026-10-29): the matrices are shown on open by default (was
+    // off).  A file below revision 1 takes the new default once; write() records the
+    // revision, so a later choice of "off" is kept.
     if (settings.value("settingsRevision", 0).toInt() < 1)
         autoShowMatricesOnOpen = autoShowMatricesOnOpenDefault;
-    autoShowTemplateLibraryOnOpen = settings.value(
-        "autoShowTemplateLibraryOnOpen",
-        autoShowTemplateLibraryOnOpenDefault).toBool();
-    templatesMode = settings.value(
-        "templatesMode",
-        templatesModeDefault).toBool();
-    autoscaleMarginPercent = settings.value("autoscaleMarginPercent", autoscaleMarginPercentDefault).toDouble();
-    settings.endGroup();
+}
 
-    //read cluster view options
-    settings.beginGroup("clusterView");
-    timeInterval = settings.value("timeInterval",timeIntervalDefault).toInt();
-    settings.endGroup();
+void Configuration::read() {
+    QSettings settings;
 
-    //read waveform view options
-    settings.beginGroup("waveformView");
-    gain = settings.value("gain",gainDefault).toInt();
-    settings.endGroup();
+    // Every preference of the table (configuration_prefs.cpp): the stored value, or the
+    // default where the key is absent, through the preference's limits.
+    for (const char* group : { "General", "clusterView", "waveformView" }) {
+        settings.beginGroup(QLatin1String(group));
+        for (const PrefSpec& spec : prefTable())
+            if (spec.group == QLatin1String(group)) spec.set(*this, settings.value(spec.key, spec.def));
+        if (QLatin1String(group) == QLatin1String("General")) applyOldDefaults(settings);
+        settings.endGroup();
+    }
+    // The settings structs were filled field by field: their setters bring a struct as a
+    // whole within its limits (an edge out of order, a width out of range).
+    setCoreCut(CoreCut(coreCut));
+    setHoverSpike(HoverSpike(hoverSpike));
+    setWaveformQuality(WaveformQuality(waveformQuality));
 
     //read the input-binding overrides (input-remapping plan §5): a thin diff from
     //the shipped defaults, keyed by command id -> Chord::toString().  The app
@@ -331,145 +183,21 @@ void Configuration::read() {
     settings.endGroup();
 }
 
-void Configuration::write() const {  
+void Configuration::write() const {
     QSettings settings;
 
-    settings.beginGroup("General");
-    settings.setValue("crashRecovery",crashRecovery);
-    settings.setValue("crashRecoveryIndex",crashRecoveryIndex);
-    settings.setValue("nbUndo",nbUndo);
-    settings.setValue("nbUndoRaisedFromOldDefault", true);
-    settings.setValue("backgroundColor",backgroundColor);
-    settings.setValue("reclusteringExecutable",reclusteringExecutable);
-    settings.setValue("reclusteringArgs",reclusteringArgs);
-    settings.setValue("fiberKitReclusterCommand", fiberKitReclusterCommand);
-    settings.setValue("reclusterEngine", reclusterEngine);
-    settings.setValue("realignExecutable",realignExecutable);
-    settings.setValue("realignArgs",realignArgs);
-    settings.setValue("realignThreshold",  realignThreshold);
-    settings.setValue("realignThresholdLoweredFromOldDefault", true);
-    settings.setValue("realignIterations", realignIterations);
-    settings.setValue("realignMaxShift",   realignMaxShift);
-    settings.setValue("realignKernel",     realignKernel);
-    settings.setValue("realignKernelWidth", realignKernelWidth);
-    settings.setValue("realignMode",       realignMode);
-    settings.setValue("reorderMethod",     reorderMethod);
-    settings.setValue("waveformSortMean",  waveformSortMean);
-    settings.setValue("mergeRecommendMax",          mergeRecommendMax);
-    settings.setValue("showMergeRecommendPanel",    showMergeRecommendPanel);
-    settings.setValue("driftSliderMaxClusters",     driftSliderMaxClusters);
-    settings.setValue("mergeRecommendMaxShift",     mergeRecommendMaxShift);
-    settings.setValue("mergeRecommendErrorFloor",   mergeRecommendErrorFloor);
-    settings.setValue("mergeRecommendQualityFloor", mergeRecommendQualityFloor);
-    settings.setValue("curationLogging",   curationLogging);
-    settings.setValue("reorderDisplayOnly",reorderDisplayOnly);
-    settings.setValue("realignVerbose",    realignVerbose);
-    settings.setValue("reextractSpikesOnSave", reextractSpikesOnSave);
-    settings.setValue("syncFeatureSpaceOnSwitch", syncFeatureSpaceOnSwitch);
-    settings.setValue("realignFromAnySpace", realignFromAnySpace);
-    settings.setValue("supersampleMode", supersampleMode);
-    settings.setValue("supersampleAdopt", supersampleAdopt);
-    settings.setValue("supersampleInterp", supersampleInterp);
-    settings.setValue("matrixFollowSelection", matrixFollowSelection);
-    settings.setValue("autoRealignAfterMerge", autoRealignAfterMerge);
-    settings.setValue("tsneSpikeCap", tsneSpikeCap);
-    settings.setValue("tsnePerplexityStep", tsnePerplexityStep);
-    settings.setValue("tsneStartPerplexity", tsneStartPerplexity);
-    settings.setValue("tsneIterations", tsneIterations);
-    settings.setValue("tsneTheta", tsneTheta);
-    settings.setValue("tsneMaxDimensions", tsneMaxDimensions);
-    settings.setValue("tsneSubsampleOverCap", tsneSubsampleOverCap);
-    settings.setValue("tsneRandomSeed", tsneRandomSeed);
-    settings.setValue("tsneLearningRate", tsneLearningRate);
-    settings.setValue("tsneExaggeration", tsneExaggeration);
-    settings.setValue("tsneExaggerationIterations", tsneExaggerationIterations);
-    settings.setValue("autoRenumberAfterMerge", autoRenumberAfterMerge);
-    settings.setValue("autoUpdateMatricesAfterMerge", autoUpdateMatricesAfterMerge);
-    settings.setValue("errorMatrixIncremental",  errorMatrixIncremental);
-    settings.setValue("errorMatrixLowPrecision", errorMatrixLowPrecision);
-    settings.setValue("dipSplitMinSize",      dipSplitMinSize);
-    settings.setValue("dipSplitBloatFactor",  dipSplitBloatFactor);
-    settings.setValue("dipSplitValleyThresh", dipSplitValleyThresh);
-    settings.setValue("projectionScopeMode",        projectionScopeMode);
-    settings.setValue("projectionScopeMinutes",     projectionScopeMinutes);
-    settings.setValue("projectionOutOfScopeHidden", projectionOutOfScopeHidden);
-    settings.setValue("correctCollisionRows",       correctCollisionRows);
-    settings.setValue("showEapCollisions",          showEapCollisions);
-    settings.setValue("showEapClassMembers",        showEapClassMembers);
-    settings.setValue("densitySigmaPx",             densitySigmaPx);
-    settings.setValue("knnK",         knnK);
-    settings.setValue("knnThreshold", knnThreshold);
-    settings.setValue("knnMinNew",    knnMinNew);
-    settings.setValue("knnMinRef",    knnMinRef);
-    settings.setValue("coreCutOnsetFactor", coreCut.onsetFactor);
-    settings.setValue("coreCutRiseStartMs", coreCut.riseStartMs);
-    settings.setValue("coreCutFlatStartMs", coreCut.flatStartMs);
-    settings.setValue("coreCutFlatEndMs",   coreCut.flatEndMs);
-    settings.setValue("coreCutFallEndMs",   coreCut.fallEndMs);
-    settings.setValue("coreCutMaxShiftMs",  coreCut.maxShiftMs);
-    settings.setValue("coreCutMaxOrdered",  coreCut.maxOrdered);
-    settings.setValue("coreCutMinSpikes",   coreCut.minSpikes);
-    settings.setValue("coreCutUseGpu",      coreCut.useGpu);
-    settings.setValue("hoverSpikeEnabled",      hoverSpike.enabled);
-    settings.setValue("hoverSpikeRingMarginPx", hoverSpike.ringMarginPx);
-    settings.setValue("hoverSpikeRingWidthPx",  hoverSpike.ringWidthPx);
-    settings.setValue("hoverSpikeTraceWidthPx", hoverSpike.traceWidthPx);
-    settings.setValue("waveformQualityEnabled",    waveformQuality.enabled);
-    settings.setValue("waveformQualityYellow",     waveformQuality.yellow);
-    settings.setValue("waveformQualityOrange",     waveformQuality.orange);
-    settings.setValue("waveformQualityRed",        waveformQuality.red);
-    settings.setValue("waveformQualityDiameterPx", waveformQuality.diameterPx);
-
-    // Auto-Merge (patch 0068)
-    settings.setValue("autoMergeAlgorithm",           autoMergeAlgorithm);
-    settings.setValue("autoMergeMedianK",             autoMergeMedianK);
-    settings.setValue("autoMergeScoreThreshold",      autoMergeScoreThreshold);
-    settings.setValue("autoMergeUseErrorMatrix",      autoMergeUseErrorMatrix);
-    settings.setValue("autoMergeErrorProbThreshold",  autoMergeErrorProbThreshold);
-    settings.setValue("autoMergeMaxShift",            autoMergeMaxShift);
-    settings.setValue("autoMergeTaperSamples",        autoMergeTaperSamples);
-    settings.setValue("autoMergeMinClusterSize",      autoMergeMinClusterSize);
-    settings.setValue("autoMergeScope",               autoMergeScope);
-    settings.setValue("autoMergePreviewBeforeApply",  autoMergePreviewBeforeApply);
-    settings.setValue("markerSize", markerSize);
-    settings.setValue("selectionLineWidth", selectionLineWidth);
-    settings.setValue("templateThresholdMin", templateThresholdMin);
-    settings.setValue("templateThresholdMax", templateThresholdMax);
-    settings.setValue("templateXcorrMetric", templateXcorrMetric);
-    settings.setValue("useWhiteColorDuringPrinting",useWhiteColorDuringPrinting);
-    settings.setValue("autoSelectFeatures", autoSelectFeatures);
-    settings.setValue("includeTimeInAutoSelect", includeTimeInAutoSelect);
-    settings.setValue("autoSelectNFeatures", autoSelectNFeatures);
-    // patch76
-    settings.setValue("reclusterMeanSubtractedSubdim",
-                      reclusterMeanSubtractedSubdim);
-    settings.setValue("reclusterChannelVariance",
-                      reclusterChannelVariance);
-    settings.setValue("reclusterMedianWaveformResidual",
-                      reclusterMedianWaveformResidual);
-    settings.setValue("suppressReclusterOutputTab",
-                      suppressReclusterOutputTab);
-    settings.setValue("reclusterChunking", reclusterChunking);
-    settings.setValue("reclusterChunkMinutes", reclusterChunkMinutes);
-    // patch79
-    settings.setValue("autoShowMatricesOnOpen",
-                      autoShowMatricesOnOpen);
-    settings.setValue("settingsRevision", settingsRevision);
-    settings.setValue("autoShowTemplateLibraryOnOpen",
-                      autoShowTemplateLibraryOnOpen);
-    settings.setValue("templatesMode", templatesMode);
-    settings.setValue("autoscaleMarginPercent", autoscaleMarginPercent);
-    settings.endGroup();
-    
-    //write cluster view options
-    settings.beginGroup("clusterView");
-    settings.setValue("timeInterval",timeInterval);
-    settings.endGroup();
-
-    //write waveform view options
-    settings.beginGroup("waveformView");
-    settings.setValue("gain",gain);
-    settings.endGroup();
+    // Every preference of the table, and the flags of the one-time changes (applyOldDefaults).
+    for (const char* group : { "General", "clusterView", "waveformView" }) {
+        settings.beginGroup(QLatin1String(group));
+        for (const PrefSpec& spec : prefTable())
+            if (spec.group == QLatin1String(group)) settings.setValue(spec.key, spec.get(*this));
+        if (QLatin1String(group) == QLatin1String("General")) {
+        settings.setValue("nbUndoRaisedFromOldDefault", true);
+        settings.setValue("realignThresholdLoweredFromOldDefault", true);
+        settings.setValue("settingsRevision", settingsRevision);
+        }
+        settings.endGroup();
+    }
 
     //write the input-binding overrides (input-remapping plan §5).  remove() drops
     //any previous array first, so a binding reset to default (removed from the map)

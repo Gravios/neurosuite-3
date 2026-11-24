@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the preferences are described in one table](#2026-11-24--klusters-the-preferences-are-described-in-one-table) |
 | 2026-11-24 | [Klusters: Defaults gave the wrong super-sampling interpolation](#2026-11-24--klusters-defaults-gave-the-wrong-super-sampling-interpolation) |
 | 2026-11-24 | [Klusters: a snapshot test of the settings file](#2026-11-24--klusters-a-snapshot-test-of-the-settings-file) |
 | 2026-11-24 | [Klusters: Preferences from the keyboard](#2026-11-24--klusters-preferences-from-the-keyboard) |
@@ -274,6 +275,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the preferences are described in one table
+
+Each preference of the settings file is now one row giving its key, default and limits; reading, writing and the defaults are built from the rows. No behaviour changes.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** A preference was written in `Configuration` in up to six places: the member,
+  the setter, the getter, the default (a constant, or a number repeated in the reader and
+  in the default getter), a line of `read()` and a line of `write()`. 116 keys; `read()`
+  and `write()` were 370 lines of them.
+- **Now.** `Configuration::prefTable()` (`configuration_prefs.cpp`, `prefspec.h`) has one
+  row per preference: group, key, member, default, limit. `read()` and `write()` are a
+  loop each, and 29 default getters that repeated a number look it up in the table. The
+  one-time changes of old defaults are together in `applyOldDefaults()`.
+  `configuration.cpp`: 557 lines to 285; the table with its helpers is 213, so the
+  total is about the same — what changes is that a default and a limit exist once.
+- **No behaviour changes**: `test_settings_file.py` gives the same settings file, key by
+  key, in all six cases (defaults, changed values, both limits, old defaults, the Defaults
+  button).
+- **Not done (step two):** the Preferences pages. A preference still needs its widget, the
+  page's get / set and four lines of the dialog; RECIPES.md §2.8 lists them.
+- **Left as found:** a stored value outside a preference's limits is taken as it is for the
+  preferences whose reader never applied the setter's limits (the undo depth, the realign
+  threshold and others). With the table that is a small change per row.
+
+</details>
 
 ---
 

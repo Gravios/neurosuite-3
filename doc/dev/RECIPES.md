@@ -20,7 +20,8 @@ fix the recipe in the same patch.
 [2.5 Change a format version, the plugin protocol or the session schema](#25-change-a-format-version-the-plugin-protocol-or-the-session-schema) ·
 [2.6 Give a Klusters action an icon](#26-give-a-klusters-action-an-icon) ·
 [2.7 Add a Klusters menu command](#27-add-a-klusters-menu-command) ·
-[2.8 Recipes on other pages](#28-recipes-on-other-pages)
+[2.8 Add a Klusters preference](#28-add-a-klusters-preference) ·
+[2.9 Recipes on other pages](#29-recipes-on-other-pages)
 
 ---
 
@@ -415,7 +416,41 @@ t << CommandSpec("clusters.frobnicate", "Clusters", tr("&Frobnicate"), ON(trigge
 **Test:** `ctest -R klusters_selftest_command_table` (every command's id, menu,
 text, keys, tips, flags and whether the edit lock holds it are the snapshot's).
 
-### 2.8 Recipes on other pages
+### 2.8 Add a Klusters preference
+
+A preference is one row of `Configuration::prefTable()`
+(`src/klusters/src/configuration_prefs.cpp`): its group and key in the settings
+file, the member that holds it, its default, and its limit.
+
+```cpp
+t << pref("General", "frobThreshold", &Configuration::frobThreshold, 0.25,
+          [](double v) { return qBound(0.0, v, 1.0); });
+```
+
+`read()`, `write()` and the default getters are loops and look-ups over the
+table: the row is the only place the key, the default and the limit are
+written.
+
+1. **The row**, with the member and its accessors in `configuration.h`
+   (`getFrobThreshold()`, `setFrobThreshold()`, and
+   `getFrobThresholdDefault() const { return prefDefault("frobThreshold").value<double>(); }`).
+   `prefVia` in place of `pref` when the setter holds the limits; `prefField`
+   for a field of a settings struct. The key is permanent: settings files hold
+   it.
+2. **The page** (until the pages are generated from the table too): the widget
+   in the page's `.ui`, the page's `get…` / `set…`, and four lines in
+   `prefdialog.cpp` — `updateDialog()` (load), `updateConfiguration()` (apply),
+   `restoreDefaults()` and the `enableApply` connection.
+3. **A changed default** of an existing preference is a one-time change for the
+   files that hold the old one: add it to `Configuration::applyOldDefaults()`
+   with a flag that `write()` stores (see the undo depth there).
+4. Run `test_settings_file.py --update`, read the diff of
+   `settings.golden.json`, commit it with the change.
+
+**Test:** `ctest -R klusters_selftest_settings_file` (every key in six cases:
+defaults, changed values, both limits, old defaults, and the Defaults button).
+
+### 2.9 Recipes on other pages
 
 | Change | Recipe |
 |---|---|

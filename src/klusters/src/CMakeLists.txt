@@ -23,6 +23,7 @@ set(klusters_SRCS
     clustersprovider.cpp
     clusterview.cpp
     configuration.cpp
+    configuration_prefs.cpp     # Configuration::prefTable(): every preference of the settings file, one row each
     correlationthread.cpp
     correlationview.cpp
     curationlogger.cpp

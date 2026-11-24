@@ -19,6 +19,7 @@
 #define CONFIGURATION_H
 
 // include files for QT
+#include "prefspec.h"
 #include <QString>
 #include <QFont>
 #include <QColor>
@@ -36,6 +37,7 @@
   *@author Lynn Hazan
 */
 
+class QSettings;
 class Configuration : public input::InputPrefsStore {
 public:
     /** Reads the configuration data from the application config file.
@@ -454,10 +456,10 @@ public:
     QString getRealignArgumentsDefault() const{return realignArgsDefault;}
 
     double getRealignThresholdDefault()  const {return 0.10;}
-    int    getRealignIterationsDefault() const {return 2;}
+    int    getRealignIterationsDefault() const {return prefDefault("realignIterations").value<int>();}
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
     int    getRealignKernelDefault()     const {return 0;}  // none: the whole window, as before
-    int    getRealignKernelWidthDefault() const {return 0;} // 0 = half the peak position
+    int    getRealignKernelWidthDefault() const {return prefDefault("realignKernelWidth").value<int>();} // 0 = half the peak position
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
     int    getReorderMethodDefault()     const {return 0;}  // 0 = single-linkage (MST), 1 = spectral (Fiedler), 2 = feature-space (fet PC1)
     bool   getWaveformSortMeanDefault()  const {return false;}  // median
@@ -470,47 +472,47 @@ public:
     int    getDriftSliderMaxClustersDefault()     const {return 1000;}
     int    getMergeRecommendMaxShiftDefault()     const {return 2;}
     double getMergeRecommendErrorFloorDefault()   const {return 0.05;}
-    double getMergeRecommendQualityFloorDefault() const {return 0.90;}
+    double getMergeRecommendQualityFloorDefault() const {return prefDefault("mergeRecommendQualityFloor").value<double>();}
     bool   getCurationLoggingDefault()   const {return true;}
     bool   getReorderDisplayOnlyDefault()const {return false;}
     bool   getRealignVerboseDefault()    const {return false;}
-    bool   getReextractSpikesOnSaveDefault() const {return false;}
-    bool   getSyncFeatureSpaceOnSwitchDefault() const {return false;}
-    bool   getRealignFromAnySpaceDefault() const {return true;}
-    int    getSupersampleModeDefault() const     {return 0;}
-    bool   getSupersampleAdoptDefault() const    {return false;}
-    int    getSupersampleInterpDefault() const   {return 2;}   // the smoothing spline, as read() has it
-    bool   getAutoRealignAfterMergeDefault() const {return true;}
-    bool   getAutoRenumberAfterMergeDefault() const {return true;}
-    int    getTsneSpikeCapDefault() const {return 32000;}
-    int    getTsnePerplexityStepDefault() const {return 5;}
-    double getTsneStartPerplexityDefault() const {return 30.0;}
-    int    getTsneIterationsDefault() const {return 500;}
-    double getTsneThetaDefault() const {return 0.5;}
-    int    getTsneMaxDimensionsDefault() const {return 0;}
-    bool   getTsneSubsampleOverCapDefault() const {return false;}
-    bool   getTsneRandomSeedDefault() const {return false;}
-    double getTsneLearningRateDefault() const {return 200.0;}
-    double getTsneExaggerationDefault() const {return 12.0;}
-    int    getTsneExaggerationIterationsDefault() const {return 250;}
-    bool   getAutoUpdateMatricesAfterMergeDefault() const {return true;}
+    bool   getReextractSpikesOnSaveDefault() const {return prefDefault("reextractSpikesOnSave").value<bool>();}
+    bool   getSyncFeatureSpaceOnSwitchDefault() const {return prefDefault("syncFeatureSpaceOnSwitch").value<bool>();}
+    bool   getRealignFromAnySpaceDefault() const {return prefDefault("realignFromAnySpace").value<bool>();}
+    int    getSupersampleModeDefault() const {return prefDefault("supersampleMode").value<int>();}
+    bool   getSupersampleAdoptDefault() const {return prefDefault("supersampleAdopt").value<bool>();}
+    int    getSupersampleInterpDefault() const {return prefDefault("supersampleInterp").value<int>();}   // the smoothing spline, as read() has it
+    bool   getAutoRealignAfterMergeDefault() const {return prefDefault("autoRealignAfterMerge").value<bool>();}
+    bool   getAutoRenumberAfterMergeDefault() const {return prefDefault("autoRenumberAfterMerge").value<bool>();}
+    int    getTsneSpikeCapDefault() const {return prefDefault("tsneSpikeCap").value<int>();}
+    int    getTsnePerplexityStepDefault() const {return prefDefault("tsnePerplexityStep").value<int>();}
+    double getTsneStartPerplexityDefault() const {return prefDefault("tsneStartPerplexity").value<double>();}
+    int    getTsneIterationsDefault() const {return prefDefault("tsneIterations").value<int>();}
+    double getTsneThetaDefault() const {return prefDefault("tsneTheta").value<double>();}
+    int    getTsneMaxDimensionsDefault() const {return prefDefault("tsneMaxDimensions").value<int>();}
+    bool   getTsneSubsampleOverCapDefault() const {return prefDefault("tsneSubsampleOverCap").value<bool>();}
+    bool   getTsneRandomSeedDefault() const {return prefDefault("tsneRandomSeed").value<bool>();}
+    double getTsneLearningRateDefault() const {return prefDefault("tsneLearningRate").value<double>();}
+    double getTsneExaggerationDefault() const {return prefDefault("tsneExaggeration").value<double>();}
+    int    getTsneExaggerationIterationsDefault() const {return prefDefault("tsneExaggerationIterations").value<int>();}
+    bool   getAutoUpdateMatricesAfterMergeDefault() const {return prefDefault("autoUpdateMatricesAfterMerge").value<bool>();}
     bool   getErrorMatrixIncrementalDefault()  const {return false;}
-    bool   getErrorMatrixLowPrecisionDefault() const {return true;}
+    bool   getErrorMatrixLowPrecisionDefault() const {return prefDefault("errorMatrixLowPrecision").value<bool>();}
 
     int    getDipSplitMinSizeDefault()      const {return 50;}
     double getDipSplitBloatFactorDefault()  const {return 0.0;}
-    double getDipSplitValleyThreshDefault() const {return 0.20;}
+    double getDipSplitValleyThreshDefault() const {return prefDefault("dipSplitValleyThresh").value<double>();}
 
     int    getProjectionScopeModeDefault()        const {return 0;}      // session-spanning
     double getProjectionScopeMinutesDefault()     const {return 12.0;}   // 12-min chunk granularity
-    bool   getProjectionOutOfScopeHiddenDefault() const {return false;}  // grey/non-selectable
+    bool   getProjectionOutOfScopeHiddenDefault() const {return prefDefault("projectionOutOfScopeHidden").value<bool>();}  // grey/non-selectable
     bool   getCorrectCollisionRowsDefault()       const {return true;}   // a collision row is shown as its own unit's spike
     bool   getShowEapCollisionsDefault()          const {return false;}  // overlay off by default
     bool   getShowEapClassMembersDefault()        const {return false;}  // overlay off by default
     double getDensitySigmaPxDefault()             const {return 3.0;}    // ~ a point's own footprint
 
     int    getKnnKDefault()         const {return 10;}
-    double getKnnThresholdDefault() const {return 0.50;}
+    double getKnnThresholdDefault() const {return prefDefault("knnThreshold").value<double>();}
     int    getKnnMinNewDefault()    const {return 5;}
     int    getKnnMinRefDefault()    const {return 100;}
 
@@ -519,12 +521,12 @@ public:
     int    getAutoMergeMedianKDefault()          const {return 50;}     ///< matches KKE MedianKnnTemplateMatchK
     double getAutoMergeScoreThresholdDefault()   const {return 0.98;}   ///< matches KKE TemplateMatchScore
     bool   getAutoMergeUseErrorMatrixDefault()     const {return false;}  ///< default criterion is template xcorr
-    double getAutoMergeErrorProbThresholdDefault() const {return 0.15;}   ///< error-matrix mode merge threshold
+    double getAutoMergeErrorProbThresholdDefault() const {return prefDefault("autoMergeErrorProbThreshold").value<double>();}   ///< error-matrix mode merge threshold
     int    getAutoMergeMaxShiftDefault()         const {return 0;}      ///< 0 = auto (nSamp/4)
     int    getAutoMergeTaperSamplesDefault()     const {return 0;}      ///< off
     int    getAutoMergeMinClusterSizeDefault()   const {return 25;}     ///< matches KKE min
     int    getAutoMergeScopeDefault()            const {return 0;}      ///< selected only (safer default)
-    bool   getAutoMergePreviewBeforeApplyDefault() const {return true;}
+    bool   getAutoMergePreviewBeforeApplyDefault() const {return prefDefault("autoMergePreviewBeforeApply").value<bool>();}
 
     /**Returns the default scatter plot marker size.*/
     int getMarkerSizeDefault() const{return markerSizeDefault;}
@@ -664,6 +666,13 @@ public:
     }
 
 private:
+    /// The preferences of the settings file, one row each (configuration_prefs.cpp).
+    static const QList<PrefSpec>& prefTable();
+    /// The default of the preference @p key of the table.
+    static QVariant prefDefault(const char* key);
+    /// The one-time changes of an old default; @p settings is in the General group.
+    void applyOldDefaults(QSettings& settings);
+
     /**Boolean indicating if a crash and recovery is ask.*/
     bool crashRecovery;
     /**Index of a dropdown list giving the time-interval between 2 autosave for a crashRecovery.*/
