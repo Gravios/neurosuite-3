@@ -45,6 +45,7 @@
  *                                        layer), "undoChild" / "redoChild": true; none: only
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
+ *        {"purge": n}                    Actions > Purge Small Clusters below n spikes, confirmed
  *        {"childPalette": {...}}         "show": View > Show Child Cluster Palette; "click": a left
  *                                        click on that child in it; reports what it lists and selects
  *        {"matrixSelect": [ids]}         a click on a cell of a curation matrix ("add": true: Ctrl);
@@ -755,6 +756,17 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("redo"))) {
         // {"redo": true}: Edit > Redo.
         slotRedo();
+        return true;
+    }
+    if (step.contains(QStringLiteral("purge"))) {
+        // {"purge": n}: Actions > Purge Small Clusters with n spikes, both its boxes answered yes.
+        // Reports the ids it purged and the layer shown before and after.
+        result.insert(QStringLiteral("childScopeBefore"), doc->isChildClusteringActive());
+        QJsonArray a;
+        for (int x : purgeSmallClusters(step.value(QStringLiteral("purge")).toInt(), false)) a.append(x);
+        result.insert(QStringLiteral("purged"), a);
+        result.insert(QStringLiteral("childScope"), doc->isChildClusteringActive());
+        result.insert(QStringLiteral("undoSteps"), doc->undoStepCount());
         return true;
     }
     if (step.contains(QStringLiteral("childPalette"))) {

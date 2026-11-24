@@ -6997,35 +6997,69 @@ void KlustersApp::slotPurgeSmallClusters()
     if (!ok) return;                                 // user cancelled
     purgeSmallClusterThreshold = n;
 
-    // Collect clusters below N, skipping the reserved artefact(0)/noise(1) and the
-    // reserved chunk clusters of a fiber-kit chunk run (in the child scope, their
-    // atoms), which only reclustering and feature-space selections take spikes out of.
-    auto& d = doc->data();
-    const bool childScope = doc->isChildClusteringActive();
-    QList<int> small;
-    const auto ids = d.clusterIds();
-    for (const auto id : ids) {
-        if (id <= 1) continue;
-        if (isReservedClusterId(childScope ? doc->parentOfChild(static_cast<int>(id)) : id)) continue;
-        if (d.nbOfSpikes(id) < n)
-            small.append(static_cast<int>(id));
-    }
+    purgeSmallClusters(n, /*ask=*/true);
+}
 
+// The purge itself.  Which clusters it takes depends on what is shown:
+//   parent view -- every parent below n spikes, moved to the noise cluster;
+//   child view  -- the CHILDREN below n spikes of the parents being curated (the ones the
+//                  child palette lists), dropped to the noise bin as Drop to Noise does.
+// The child view used to collect the small children of EVERY parent and hand their ids to
+// the parent-layer delete, which knows none of them: nothing was purged and Klusters crashed.
+QList<int> KlustersApp::purgeSmallClusters(int n, bool ask)
+{
+    QList<int> small;
+    if (!doc || !activeView()) return small;
+    const bool childView = doc->isChildClusteringActive() && doc->hasChildClustering() && childPalette;
+    // Skipping the reserved artefact(0)/noise(1) and the reserved chunk clusters of a
+    // fiber-kit chunk run (in the child view, their atoms), which only reclustering and
+    // feature-space selections take spikes out of.
+    if (childView) {
+        Data& kids = doc->childClusterData();
+        for (int id : childPalette->listedClusters()) {
+            const int parent = doc->parentOfChild(id);
+            if (id <= 1 || parent <= 1 || isReservedClusterId(parent)) continue;
+            if (kids.nbOfSpikes(id) < n) small.append(id);
+        }
+    } else {
+        Data& d = doc->parentData();
+        for (const auto id : d.clusterIds()) {
+            if (id <= 1 || isReservedClusterId(id)) continue;
+            if (d.nbOfSpikes(id) < n) small.append(static_cast<int>(id));
+        }
+    }
     if (small.isEmpty()) {
-        slotStatusMsg(tr("Purge: no clusters smaller than %1 spikes.").arg(n));
-        return;
+        slotStatusMsg(childView ? tr("Purge: no children of the shown parent(s) smaller than %1 spikes.").arg(n)
+                                : tr("Purge: no clusters smaller than %1 spikes.").arg(n));
+        return small;
     }
     std::sort(small.begin(), small.end());
 
-    QMessageBox box(QMessageBox::Question, tr("Purge Small Clusters"),
-        tr("Move %1 cluster(s) with fewer than %2 spikes into the noise cluster?")
-            .arg(small.size()).arg(n),
-        QMessageBox::Yes | QMessageBox::No, this);
-    box.setDefaultButton(QMessageBox::Yes);          // Enter / focus = Yes
-    if (box.exec() != QMessageBox::Yes) return;
+    if (ask) {
+        QMessageBox box(QMessageBox::Question, tr("Purge Small Clusters"),
+            childView ? tr("Child view: move %1 child(ren) of the shown parent(s) with fewer than %2 spikes "
+                           "into the noise cluster?\n\nOnly these parents' children are purged.  For the "
+                           "parents themselves, run the purge from the parent view.")
+                            .arg(small.size()).arg(n)
+                      : tr("Move %1 cluster(s) with fewer than %2 spikes into the noise cluster?")
+                            .arg(small.size()).arg(n),
+            QMessageBox::Yes | QMessageBox::No, this);
+        box.setDefaultButton(QMessageBox::Yes);          // Enter / focus = Yes
+        if (box.exec() != QMessageBox::Yes) return QList<int>();
+    }
 
+    if (childView) {
+        slotStatusMsg(tr("Purging %1 small child(ren) into noise…").arg(small.size()));
+        QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+        const bool moved = doc->dropChildrenToBin(small, /*noise=*/1, *activeView());
+        QApplication::restoreOverrideCursor();
+        slotStatusMsg(tr("Ready."));
+        if (!moved) small.clear();
+        return small;
+    }
     moveSelectedClustersToReservedId(small, /*noise=*/1,
         tr("Purging %1 small cluster(s) into noise…").arg(small.size()));
+    return small;
 }
 
 // ---------------------------------------------------------------------------

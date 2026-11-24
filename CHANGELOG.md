@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: Purge Small Clusters in the child view](#2026-11-24--klusters-purge-small-clusters-in-the-child-view) |
 | 2026-11-24 | [Klusters: a click in a parent matrix leaves the child view](#2026-11-24--klusters-a-click-in-a-parent-matrix-leaves-the-child-view) |
 | 2026-11-24 | [Klusters: Cancel Running Job](#2026-11-24--klusters-cancel-running-job) |
 | 2026-11-24 | [Klusters: the cluster information dialog keeps its cluster](#2026-11-24--klusters-the-cluster-information-dialog-keeps-its-cluster) |
@@ -257,6 +258,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: Purge Small Clusters in the child view
+
+Run from the child view, the purge did nothing and crashed.
+
+<details>
+<summary>Details</summary>
+
+- In the child view the purge collected the small children of **every** parent (the active
+  layer's clusters) and handed their ids to the parent-layer delete, which knows none of them:
+  "cluster 20001 is in the delete list but absent from clusterInfoMap", nothing purged, and a
+  **crash** (reproduced on a scripted session).
+- It now follows the view.  Parent view: the parents below the number, as before.  Child view:
+  the children below it **of the parents being curated** (the ones the child palette lists),
+  dropped to the noise bin by `dropChildrenToBin` -- one undo step.  Other parents' children
+  are not touched; the confirmation says which it is.
+- Self-test step `purge`; `test_purge_child_view.py` (6 checks).
+- Not looked at: the other commands "over all clusters" in the child view (the outlier strips,
+  Partition by Time).
+
+</details>
 
 ---
 

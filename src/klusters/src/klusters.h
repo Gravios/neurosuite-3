@@ -1559,6 +1559,10 @@ private:
     /** Last spike-count threshold used by slotPurgeSmallClusters (remembered
      *  for the session; the purge dialog is pre-filled with it). */
     int purgeSmallClusterThreshold{10};
+    /** The purge behind slotPurgeSmallClusters, for @p n spikes; @p ask: the
+     *  confirmation box.  @return the ids purged (parents in the parent view,
+     *  the curated parents' children in the child view). */
+    QList<int> purgeSmallClusters(int n, bool ask);
     QAction *mUpdateDisplay;
     QAction *mRenumberClusters;
     QAction *mReCluster;

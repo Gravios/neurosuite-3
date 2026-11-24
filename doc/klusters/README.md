@@ -1088,7 +1088,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Entry | Key | What it does |
 |---|---|---|
 | Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
-| Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation |
+| Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
 | Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
 | Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
 | Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; with three, two references sort the third; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
