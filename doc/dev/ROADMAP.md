@@ -93,10 +93,6 @@ The audit fixed five faults and the single undo history closed the four behaviou
   explicitly.
 - **Not undoable**: realign (the automatic ones too), nudge, Sort Spikes by Time, the `.cli`
   annotations.
-- **Changes the history does not record.**  A standalone Repair Nesting and an id compaction
-  that only renumbers atoms are not steps.  An undo puts the atom labelling back as it was
-  before the edit it reverts, so undoing an edit made *before* one of these reverts it as well.
-  Repair Nesting can be run again; nothing is lost.
 - **In the log a child edit is never `bad`**; readers join `UNDO.reverts_action_idx`.
 - **Memory**: every level of the history holds one atom labelling (4 bytes a spike) next to the
   parent level: 20 levels of 2 M spikes are 160 MB.

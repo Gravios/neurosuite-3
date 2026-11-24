@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: Repair Nesting and an atom compaction are undo steps](#2026-11-24--klusters-repair-nesting-and-an-atom-compaction-are-undo-steps) |
 | 2026-11-24 | [Klusters: one undo history for both layers](#2026-11-24--klusters-one-undo-history-for-both-layers) |
 | 2026-11-24 | [Klusters: undo and redo, five faults from an audit](#2026-11-24--klusters-undo-and-redo-five-faults-from-an-audit) |
 | 2026-11-24 | [Klusters: the curation log covers the child layer](#2026-11-24--klusters-the-curation-log-covers-the-child-layer) |
@@ -245,6 +246,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: Repair Nesting and an atom compaction are undo steps
+
+Two changes to the children were outside the undo history.
+
+<details>
+<summary>Details</summary>
+
+- An undo puts the whole atom labelling back as it was before the edit it reverts.  A change
+  the history did not record was therefore reverted together with any older edit.
+- **Hierarchy ▸ Repair Nesting** run by hand, and **Compact Cluster IDs** when it moves only
+  atoms, are now each one step (`KlustersDoc::recordChildChange`).  A repair that finds
+  nothing to re-cut is no step, and the status bar says which it was.
+- Self-test: hierarchy ops `compact`, `repairNesting`; `test_undo_pairing.py` scenario 7
+  (compaction).  The repair step is not covered by a test: no scripted edit leaves an atom
+  across two parents.
+
+</details>
 
 ---
 

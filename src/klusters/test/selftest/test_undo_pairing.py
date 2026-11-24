@@ -18,6 +18,9 @@ child labelling to restore.
      merge made before the split is still undoable (the split dropped the child history).
      Redo brings the split and its fragments back.
   6. a merge and the renumbering Klusters runs after it are one step.
+  7. a change to the children that is no edit of one is a step of its own: an id compaction
+     that moved only atoms is undone alone, and the child merge before it by the next Undo
+     (undoing the merge took the compaction along).
 Also: Ctrl+Z with nothing to undo flips no log entry.
 """
 import json
@@ -178,6 +181,21 @@ def main():
               "(merge 2 + 3 with renumbering on: clusters 2 and 3 afterwards)", pal[1] if len(pal) > 1 else pal)
         check(len(pal) == 4 and pal[2] == pal[0], "ONE Undo takes back the merge and the renumbering (it took two)", pal[2] if len(pal) > 2 else pal)
         check(len(pal) == 4 and pal[3] == pal[1], "one Redo makes both again")
+
+    # ---- 7. an atom-only compaction is its own step
+    with tempfile.TemporaryDirectory() as d:
+        base = hier(d, "k")
+        rep = R.run(klusters, f"{base}.clu.{M}.1",
+                    [H(), H(mergeChildren=[20000, 20001]), H(compact=True), H(undo=True), H(undo=True)],
+                    d, timeout=900, autoRenumber=False)
+        res = [r for r in rep.get("results", []) if "hierarchy" in r.get("step", {})]
+        kids = [sorted(int(k) for k in r.get("childParents", {})) for r in res]
+        check(len(res) == 5 and res[2].get("returned") is True and kids[2] != kids[1] and len(kids[2]) == 7,
+              "after a child merge, Compact Cluster IDs renumbers the atoms", kids[1:3])
+        check(res[2].get("undoSteps") == 2, "... and is a step of the history (2 steps: the merge, the compaction)",
+              res[2].get("undoSteps"))
+        check(kids[3] == kids[1], "Undo takes the compaction back alone: the atoms as the merge left them", kids[3])
+        check(kids[4] == kids[0] and len(kids[4]) == 8, "the next Undo takes the merge back", kids[4])
 
     print(f"test_undo_pairing: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

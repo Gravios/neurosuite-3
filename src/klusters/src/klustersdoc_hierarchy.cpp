@@ -499,6 +499,7 @@ bool KlustersDoc::compactAllClusterIds(){
         view->supersedeAllViewThreads();
 
     QMap<int,int> atomOldNew, atomNewOld;
+    const QVector<dataType> atomsBefore = childData->labelByFeatureRow();
     childData->renumber(atomOldNew, atomNewOld);
     const bool atomsMoved = !atomOldNew.isEmpty();
     if (parentsMoved || atomsMoved) {
@@ -560,6 +561,8 @@ bool KlustersDoc::compactAllClusterIds(){
         for (int& c : scopeSortOrder)                     // same id space, same map
             if (atomOldNew.contains(c)) c = atomOldNew.value(c);
 
+        // With the parents renumbered too, their entry already holds the atoms from before.
+        if (!parentsMoved) recordChildChange(atomsBefore);
         emit hierarchyChanged();
         setModified(true);
     }
@@ -2260,6 +2263,22 @@ void KlustersDoc::recordChildEdit(const ChildEdit& eIn){
     // the edit itself just pushed (every caller records straight after its one commit).
     if (childData) u.childLabels = childData->labelsOfLastUndoLevel();
     pushUndoEntry(u);
+}
+
+bool KlustersDoc::recordChildChange(const QVector<dataType>& before){
+    if (!childData || before.isEmpty() || childData->labelByFeatureRow() == before) return false;
+    UndoEntry u;
+    u.child = true;
+    u.childLabels = before;
+    pushUndoEntry(u);
+    return true;
+}
+
+bool KlustersDoc::repairNestingAsStep(){
+    if (!childData) return false;
+    const QVector<dataType> before = childData->labelByFeatureRow();
+    repairNesting();
+    return recordChildChange(before);
 }
 
 void KlustersDoc::afterChildLabelsRestored(KlustersView& activeView){

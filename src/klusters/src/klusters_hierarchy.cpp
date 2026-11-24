@@ -284,8 +284,10 @@ void KlustersApp::slotDissolveParent(){
 
 void KlustersApp::slotRepairNesting(){
     if(!activeView()) return;
-    doc->repairNesting();   // re-cut straddling atoms + rebuild the child<->parent maps (.clp on Save)
-    statusBar()->showMessage(tr("Nesting repaired: atoms re-cut onto the current parents."), 4000);
+    // re-cut straddling atoms + rebuild the child<->parent maps (.clp on Save)
+    const bool changed = doc->repairNestingAsStep();
+    statusBar()->showMessage(changed ? tr("Nesting repaired: atoms re-cut onto the current parents (one undo step).")
+                                     : tr("Nesting checked: every atom already lies in one parent."), 4000);
 }
 
 void KlustersApp::slotDropChildToNoise(){

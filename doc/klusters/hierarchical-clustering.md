@@ -319,8 +319,8 @@ on the atoms, and whichever layer is shown.
 **Hierarchy → Repair Nesting** (`Shift+N`, `repairNesting()`) resyncs the
 atom layer to the fiber layer: it re-cuts every atom whose spikes now lie in
 more than one fiber so that each atom belongs to one fiber again, re-derives
-the atom→fiber maps from the current data. The undo history is kept; the
-repair itself is not a step of it. The next save writes the
+the atom→fiber maps from the current data. The undo history is kept, and a
+repair that changed something is one step of it. The next save writes the
 regenerated `.clp`. Fiber edits do not do this on their own: run it after
 reassigning or consolidating fibers in a way that leaves atoms straddling
 fibers.

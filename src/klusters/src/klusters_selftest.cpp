@@ -38,7 +38,8 @@
  *                                        "mergeChildren": [..], "promoteChildren": [..],
  *                                        "dropChildren": [..] (to noise), "showChildren": [..]
  *                                        (the child palette selecting them; [] = back to parents),
- *                                        "flatten": true, "renumber": true (parents made
+ *                                        "compact": true (Compact Cluster IDs), "repairNesting":
+ *                                        true, "flatten": true, "renumber": true (parents made
  *                                        consecutive), "toEnd": [parents] (the palette's T),
  *                                        "order": [parents] (a sort), "undo": true (the parent
  *                                        layer), "undoChild" / "redoChild": true; none: only
@@ -878,6 +879,8 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (o.contains(QStringLiteral("mergeParents")))    result.insert(QStringLiteral("returned"), doc->mergeParents(ids("mergeParents"), *view));
         if (o.contains(QStringLiteral("mergeChildren")))   result.insert(QStringLiteral("returned"), doc->mergeChildren(ids("mergeChildren"), *view));
         if (o.contains(QStringLiteral("promoteChildren"))) result.insert(QStringLiteral("returned"), doc->promoteChildren(ids("promoteChildren"), *view));
+        if (o.contains(QStringLiteral("compact")))         result.insert(QStringLiteral("returned"), doc->compactAllClusterIds());
+        if (o.contains(QStringLiteral("repairNesting")))   result.insert(QStringLiteral("returned"), doc->repairNestingAsStep());
         if (o.contains(QStringLiteral("dropChildren")))    result.insert(QStringLiteral("returned"), doc->dropChildrenToBin(ids("dropChildren"), 1, *view));
         if (o.contains(QStringLiteral("showChildren"))) {
             // What the child palette's selection does (slotChildSelectionChanged): the views

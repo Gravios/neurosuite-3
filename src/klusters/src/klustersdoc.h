@@ -993,6 +993,9 @@ public:
      *  longer do this implicitly; the user reassigns/consolidates parents and then
      *  refiberizes.  Independent of the parent and atom undo stacks. */
     void repairNesting();
+    /** Hierarchy > Repair Nesting: repairNesting() as one step of the undo history.
+     *  @return whether the child labelling changed. */
+    bool repairNestingAsStep();
     /** Shared core of repairNesting: collapse "loose" spikes (in a real parent but covered only
      *  by a reserve or straddling atom) into their parent's self child (hierarchyfiles::selfChildOf: parent + 10000),
      *  preserving intact sub-structure, then rebuild child->parent and emit hierarchyChanged.
@@ -3105,6 +3108,10 @@ private:
     // (with the atom labels from before it), invalidate the redo, and refresh the
     // Undo/Redo enable.  The single funnel for child edits.
     void recordChildEdit(const ChildEdit& e);
+    /// A change to the children that is no edit of one (Repair Nesting run by hand, an
+    /// id compaction that moved only atoms): one step of the history when the labelling
+    /// differs from @p before.  Without it an undo of an OLDER edit took it along.
+    bool recordChildChange(const QVector<dataType>& before);
     // Emit updateUndoNb/updateRedoNb with the steps of the undo history (the same
     // whichever layer is shown).  Call after any edit/undo/redo.
     void refreshUndoRedoEnable();
