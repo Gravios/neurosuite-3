@@ -139,7 +139,7 @@ void KlustersApp::slotRealignSpikes()
         // A user who invokes a realignment manually while one is running gets the
         // same information without losing their place.
         statusBar()->showMessage(
-            tr("A realignment is already running — use Abort Realignment to cancel it."),
+            tr("A realignment is already running — Edit > Cancel Running Job (Ctrl+.) stops a batch."),
             4000);
         return;
     }
@@ -606,7 +606,7 @@ void KlustersApp::slotPcaAlignAllClusters()
         // A user who invokes a realignment manually while one is running gets the
         // same information without losing their place.
         statusBar()->showMessage(
-            tr("A realignment is already running — use Abort Realignment to cancel it."),
+            tr("A realignment is already running — Edit > Cancel Running Job (Ctrl+.) stops a batch."),
             4000);
         return;
     }
@@ -645,7 +645,7 @@ void KlustersApp::slotPcaAlignAllClusters()
         "Realign %1 cluster(s) with the Realign Spikes settings (%2)?\n\n"
         "Each cluster's result is auto-accepted as a pending change. "
         "Save the document to commit or close without saving to discard "
-        "the batch.  Use \"Abort Realignment\" to stop mid-batch.")
+        "the batch.  Edit > Cancel Running Job (Ctrl+.) stops it after the cluster in progress.")
         .arg(clusters.size())
         .arg(realignBatchArgs);
     if (QMessageBox::question(this, tr("Align All Clusters"),

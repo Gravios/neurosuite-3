@@ -430,6 +430,14 @@ void KlustersApp::createMenus()
                                                               // is free for the atom layer
     connect(mRedo, &QAction::triggered, this, &KlustersApp::slotRedo);
 
+    // The one command that works WHILE a job runs (the edit lock leaves it alone).
+    mCancelJob = editMenu->addAction(tr("&Cancel Running Job"));
+    mCancelJob->setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Period));
+    mCancelJob->setStatusTip(tr("Stop the running recluster, drift or plugin job (its result is discarded), "
+                                "or a realignment of several clusters after the cluster in progress"));
+    mCancelJob->setEnabled(false);
+    connect(mCancelJob, &QAction::triggered, this, &KlustersApp::cancelRunningJob);
+
     editMenu->addSeparator();
 
     mSelectAllAction = editMenu->addAction(tr("Select &All"));
@@ -940,7 +948,7 @@ void KlustersApp::createMenus()
         "Run Realign Spikes on every cluster (skipping noise=0 and "
         "artifact=1) with its settings: the Refinement preferences and the "
         "Top-Channels spin box.  Each cluster's result is auto-accepted as a "
-        "pending change; the batch can be aborted via \"Abort Realignment\"."));
+        "pending change; the batch can be stopped with Edit > Cancel Running Job (Ctrl+.)."));
     connect(mPcaAlignAllClusters, &QAction::triggered,
             this, &KlustersApp::slotPcaAlignAllClusters);
 
@@ -2672,6 +2680,7 @@ void KlustersApp::registerInputBindings()
     registerActionCommand(QStringLiteral("file.quit"),             QStringLiteral("File"),    mQuitAction);
     registerActionCommand(QStringLiteral("edit.undo"),             QStringLiteral("Edit"),    mUndo);
     registerActionCommand(QStringLiteral("edit.redo"),             QStringLiteral("Edit"),    mRedo);
+    registerActionCommand(QStringLiteral("edit.cancelJob"),        QStringLiteral("Edit"),    mCancelJob);
     registerActionCommand(QStringLiteral("edit.selectAll"),        QStringLiteral("Edit"),    mSelectAllAction);
     registerActionCommand(QStringLiteral("edit.selectAllExcept"),  QStringLiteral("Edit"),    mSelectAllExceptAction);
     registerActionCommand(QStringLiteral("view.showReservedClusters"), QStringLiteral("View"), mShowReservedClusters);
@@ -10002,6 +10011,11 @@ void KlustersApp::slotPluginFinished(int exitCode, QProcess::ExitStatus status)
     if (mPluginsMenu)
         mPluginsMenu->setEnabled(true);
 
+    if (mPluginCancelled) {                       // stopped by Edit > Cancel Running Job
+        mPluginCancelled = false;
+        statusBar()->showMessage(tr("\"%1\" cancelled; nothing was changed.").arg(mRunningPlugin.name), 6000);
+        return;
+    }
     if (!(status == QProcess::NormalExit && exitCode == 0)) {
         if (mPluginReportModal)
             QMessageBox::critical(this, tr("Plugins"),

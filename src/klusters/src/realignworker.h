@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -68,7 +69,7 @@ private:
     KlustersDoc* doc;
     int          clusterId;
     QString      args;
-    bool         cancelRequested;
+    std::atomic<bool> cancelRequested;   ///< set on the GUI thread, read between clusters on the worker's
     bool         verbose{false};   // stream per-spike detail to stderr
     QList<int>   clusterIds;   // non-empty → batch mode (see setBatch)
 };

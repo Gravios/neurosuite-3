@@ -77,6 +77,7 @@ class ClusterView;     // for watershed live-preview overlay
 class SaveThread;
 class SaveInputBlocker;
 class QProgressDialog;
+class QToolButton;
 class QComboBox;
 class PrefDialog;
 class QShortcut;       // for dipsplit post-commit Esc/Enter shortcuts
@@ -1619,7 +1620,7 @@ private:
      *  noise=0 and artifact=1), using the top 2 channels per cluster.
      *  Runs sequentially in the background and auto-accepts each result
      *  as a pending change (no per-cluster review dialog).  The user can
-     *  abort mid-batch via the existing "Abort Realignment" action and
+     *  stop mid-batch with Edit > Cancel Running Job (cancelRunningJob) and
      *  commit (Save) or discard (close without saving) the batch as a
      *  whole.*/
     QAction *mPcaAlignAllClusters;
@@ -2271,6 +2272,17 @@ private:
      *  is raised, and by a timer, which is what sees a job END. */
     void refreshEditLock();
     void collectEditLockActions();
+    /** Edit > Cancel Running Job, and its button in the status bar (shown only
+     *  while there is something to cancel).  A recluster, drift or plugin
+     *  program is stopped and its result discarded; a realign of several
+     *  clusters stops after the cluster in progress (one cluster's realign
+     *  writes its rows in place and is not interrupted); a save and a nudge are
+     *  not cancellable. */
+    bool cancellableJobRuns(QString* what = nullptr) const;
+    void cancelRunningJob();
+    QAction*     mCancelJob = nullptr;
+    QToolButton* cancelJobButton = nullptr;
+    bool         mPluginCancelled = false;      ///< the plugin was stopped by Cancel: no failure box
     QList<QAction*>       editLockActions;
     QHash<QAction*, bool> editLockDesired;      ///< what was last asked of each, lock aside
     bool    editLockEngaged  = false;

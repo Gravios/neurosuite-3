@@ -91,6 +91,9 @@ While a job runs every editing action is disabled (CHANGELOG, 2026-11-24).  Left
 - **Entry points that are not actions**: a mouse tool armed before the job started, the palettes'
   context menus, the Recommended-merges panel, the template palette.  Each needs
   `refuseWhileBlocked` at its commit.
+- **Cancel** stops a process job and a realign of several clusters between two of them.  One
+  cluster's realign cannot be stopped halfway (rows written in place, no journal of the part
+  done), nor the realign job of the queue lane (the one after a merge).
 - The per-state lists in `slotStateChanged` (reclusterState, realignState) are now redundant
   with the lock for the editing actions and can go once the lock has been used for a while.
 

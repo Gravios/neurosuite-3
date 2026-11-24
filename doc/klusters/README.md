@@ -1580,6 +1580,14 @@ menu, the split, strip and sort commands, Recluster and Realign, the
 feature-space switch, Undo and Redo, Save.  Looking stays possible: selecting
 clusters, the displays, the views, the trace navigation.
 
+- **Edit → Cancel Running Job** (`Ctrl+.`, and the **Cancel job** button that
+  appears in the status bar) is the one command that works meanwhile:
+  - a recluster, drift or plugin program is stopped; its result is discarded
+    and the clustering is as it was;
+  - a realignment of several clusters (after an edit, Align All) stops after
+    the cluster in progress; the clusters already realigned stay realigned;
+  - the realignment of one cluster, a nudge and a save cannot be interrupted
+    (a realign writes its rows in place): they end by themselves.
 - The commands come back when the job ends, as they were before it.
 - A command reached while one runs says so in the status bar ("Undo / Redo:
   wait for the realignment to finish.").

@@ -45,6 +45,7 @@
  *                                        layer), "undoChild" / "redoChild": true; none: only
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
+ *        {"cancelJob": true}             Edit > Cancel Running Job; reports whether there was one to cancel
  *        {"actionsEnabled": true}        the command ids that can be triggered now and those that
  *                                        cannot, and which jobs run
  *        "whileBusy": true on any step   it runs on the next tick, without waiting for the job the
@@ -750,6 +751,24 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("redo"))) {
         // {"redo": true}: Edit > Redo.
         slotRedo();
+        return true;
+    }
+    if (step.contains(QStringLiteral("cancelJob"))) {
+        // {"cancelJob": true}: Edit > Cancel Running Job (with "whileBusy": true to reach a job).
+        // {"cancelJob": {"when": "realign"}}: first let events run until a job of that kind
+        // ("process", "plugin", "realign") is the cancellable one, for 60 s at most.
+        QString what;
+        const QString when = step.value(QStringLiteral("cancelJob")).toObject().value(QStringLiteral("when")).toString();
+        if (!when.isEmpty()) {
+            QElapsedTimer t; t.start();
+            while (t.elapsed() < 60000 && !(cancellableJobRuns(&what) && what == when))
+                QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
+            what.clear();
+        }
+        result.insert(QStringLiteral("cancellable"), cancellableJobRuns(&what));
+        result.insert(QStringLiteral("job"), what);
+        result.insert(QStringLiteral("actionEnabled"), mCancelJob && mCancelJob->isEnabled());
+        cancelRunningJob();
         return true;
     }
     if (step.contains(QStringLiteral("actionsEnabled"))) {

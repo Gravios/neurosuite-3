@@ -690,6 +690,48 @@ bool KlustersApp::refuseWhileBlocked(const QString& what)
     return true;
 }
 
+bool KlustersApp::cancellableJobRuns(QString* what) const
+{
+    auto is = [what](const QString& w) { if (what) *what = w; return true; };
+    if (saveThread && saveThread->isRunning()) return false;          // a save runs to its end
+    if (processWidget && processWidget->isRunning() && !(processFinished && processOutputsFinished))
+        return is(QStringLiteral("process"));
+    if (mPluginRunning && mPluginProcess && mPluginProcess->isRunning())
+        return is(QStringLiteral("plugin"));
+    // Several clusters in one worker (the realign after an edit, Align All): it can stop
+    // between two of them.  One cluster's realign cannot be stopped halfway.
+    if (realignRunning && realignWorker && realignBatchTotal > 1)
+        return is(QStringLiteral("realign"));
+    return false;
+}
+
+void KlustersApp::cancelRunningJob()
+{
+    QString what;
+    if (!cancellableJobRuns(&what)) {
+        QString why;
+        statusBar()->showMessage(editingBlocked(&why)
+            ? tr("Cancel: %1 cannot be interrupted; it ends by itself.").arg(why)
+            : tr("Cancel: no job is running."), 5000);
+        return;
+    }
+    if (what == QLatin1String("process")) {
+        // As File > Close stops it: slotProcessExited then drops the result and the
+        // temporary files without a failure box, and unlocks.
+        processKilled = true;
+        processWidget->killJob();
+        statusBar()->showMessage(tr("Job cancelled: its result is discarded, the clustering is unchanged."), 6000);
+    } else if (what == QLatin1String("plugin")) {
+        mPluginCancelled = true;
+        mPluginProcess->killJob();
+    } else if (RealignWorker* w = qobject_cast<RealignWorker*>(realignWorker)) {
+        w->cancel();
+        statusBar()->showMessage(tr("Realignment: stopping after the cluster in progress.  The clusters already "
+                                    "realigned stay realigned."), 8000);
+    }
+    refreshEditLock();
+}
+
 bool KlustersApp::realignLaneBusy(const QString& what)
 {
     if (!(realignRunning || realignBatchActive || nudgeInProgress || (realignQueue && realignQueue->isBusy())))
@@ -754,6 +796,21 @@ void KlustersApp::refreshEditLock()
         editLockTimer->start();
     }
     const bool blocked = doc && editingBlocked();
+    // Cancel is the one command that is ON while a job runs.
+    if (mCancelJob) {
+        const bool can = doc && cancellableJobRuns();
+        if (mCancelJob->isEnabled() != can) mCancelJob->setEnabled(can);
+        if (!cancelJobButton) {
+            cancelJobButton = new QToolButton(this);
+            cancelJobButton->setDefaultAction(mCancelJob);
+            cancelJobButton->setText(tr("Cancel job"));
+            cancelJobButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+            cancelJobButton->setAutoRaise(true);
+            statusBar()->addPermanentWidget(cancelJobButton);
+            cancelJobButton->hide();
+        }
+        if (cancelJobButton->isVisible() != can) cancelJobButton->setVisible(can);
+    }
     if (blocked == editLockEngaged) return;
     collectEditLockActions();                                // actions registered since (plugins)
     editLockEngaged = blocked;

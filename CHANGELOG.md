@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: Cancel Running Job](#2026-11-24--klusters-cancel-running-job) |
 | 2026-11-24 | [Klusters: the cluster information dialog keeps its cluster](#2026-11-24--klusters-the-cluster-information-dialog-keeps-its-cluster) |
 | 2026-11-24 | [Klusters: nothing edits the clustering while a job runs](#2026-11-24--klusters-nothing-edits-the-clustering-while-a-job-runs) |
 | 2026-11-24 | [Klusters: a move of spikes no longer wipes the cluster information](#2026-11-24--klusters-a-move-of-spikes-no-longer-wipes-the-cluster-information) |
@@ -255,6 +256,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: Cancel Running Job
+
+A running job could only be stopped by closing the session.
+
+<details>
+<summary>Details</summary>
+
+- There was no way to stop a job short of closing the session, and three messages pointed at an
+  "Abort Realignment" command that did not exist.
+- **Edit ▸ Cancel Running Job** (Ctrl+., command `edit.cancelJob`) and a **Cancel job** button
+  in the status bar, shown only while there is something to cancel.  The edit lock leaves it on.
+  - A recluster, drift or plugin program is stopped; its result is discarded, the clustering
+    and the undo history are as they were, no failure box.
+  - A realign of several clusters (after an edit, Align All) stops after the cluster in
+    progress; what was realigned stays realigned.
+  - One cluster's realign, a nudge and a save are not interrupted: the command says so.
+- `RealignWorker::cancelRequested` is atomic (set on the GUI thread, read on the worker's).
+- Self-test step `cancelJob` (`{"when": <job>}` waits for that job); `test_cancel_job.py`
+  (9 checks: a recluster; the realign of the 7 clusters a recluster left stops after 1).
+- Not tested: a plugin (none installed here), a drift job, Align All through its question box,
+  the button on a screen.
+
+</details>
 
 ---
 
