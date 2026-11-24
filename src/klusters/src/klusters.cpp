@@ -2027,7 +2027,7 @@ void KlustersApp::registerInputBindings()
         c.kind     = input::Kind::Action;
         c.defaultChord = input::Chord::key(Qt::Key_T);
         c.enabled  = [this](const input::Ctx&){ return doc && !focusIsInTextInput(); };
-        c.invoke   = [this](const input::Ctx&){ slotMoveSelectedClustersToEnd(); };
+        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("Move selection to end"))) slotMoveSelectedClustersToEnd(); };
         reg.addCommand(c);
     }
     {   // V — toggle the child-scoped matrices (statement of intent; works from anywhere)
@@ -2104,7 +2104,7 @@ void KlustersApp::registerInputBindings()
         c.defaultChord = input::Chord::key(Qt::Key_1, Qt::ControlModifier);
         c.enabled  = [this](const input::Ctx&){
             return !isInit && doc && activeView() && !editConsolidationLock; };
-        c.invoke   = [this](const input::Ctx&){ slotSingleNew(); };
+        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("New Cluster"))) slotSingleNew(); };
         reg.addCommand(c);
     }
     {   // Ctrl+5 — enter the Multi-Lasso tool
@@ -2117,7 +2117,7 @@ void KlustersApp::registerInputBindings()
         c.defaultChord = input::Chord::key(Qt::Key_5, Qt::ControlModifier);
         c.enabled  = [this](const input::Ctx&){
             return !isInit && doc && activeView() && !editConsolidationLock; };
-        c.invoke   = [this](const input::Ctx&){ slotMultiLasso(); };
+        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("Multi-Lasso"))) slotMultiLasso(); };
         reg.addCommand(c);
     }
     {   // Ctrl+2 — enter the Split Clusters tool
@@ -2130,7 +2130,7 @@ void KlustersApp::registerInputBindings()
         c.defaultChord = input::Chord::key(Qt::Key_2, Qt::ControlModifier);
         c.enabled  = [this](const input::Ctx&){
             return !isInit && doc && activeView() && !editConsolidationLock; };
-        c.invoke   = [this](const input::Ctx&){ slotMultipleNew(); };
+        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("Split Clusters"))) slotMultipleNew(); };
         reg.addCommand(c);
     }
     {   // Ctrl+3 — enter the Delete Artifact tool (no QAction owns this chord)
@@ -2143,7 +2143,7 @@ void KlustersApp::registerInputBindings()
         c.defaultChord = input::Chord::key(Qt::Key_3, Qt::ControlModifier);
         c.enabled  = [this](const input::Ctx&){
             return !isInit && doc && activeView() && !editConsolidationLock; };
-        c.invoke   = [this](const input::Ctx&){ slotDeleteArtefact(); };
+        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("Delete Artifact Spikes"))) slotDeleteArtefact(); };
         reg.addCommand(c);
     }
     {   // Ctrl+4 — enter the Delete Noise tool
@@ -2156,7 +2156,7 @@ void KlustersApp::registerInputBindings()
         c.defaultChord = input::Chord::key(Qt::Key_4, Qt::ControlModifier);
         c.enabled  = [this](const input::Ctx&){
             return !isInit && doc && activeView() && !editConsolidationLock; };
-        c.invoke   = [this](const input::Ctx&){ slotDeleteNoise(); };
+        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("Delete Noisy Spikes"))) slotDeleteNoise(); };
         reg.addCommand(c);
     }
     {   // E — step through the open matrix tabs (Error -> Template -> Residual -> Drift)
@@ -2393,9 +2393,9 @@ void KlustersApp::registerInputBindings()
               [this](const input::Ctx& c){ const WsKeyMod m = wsKeyMod(c);
                   if(m.act){ wsThreshPct = qBound(0, wsThreshPct - m.step, 50); wsRecompute(); } });
         wsCmd(QStringLiteral("ws.commit"), tr("Apply watershed split"), Qt::Key_Return,
-              [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/true); });
+              [this](const input::Ctx& c){ if(wsKeyMod(c).act && !refuseWhileBlocked(tr("Watershed Split"))) wsExit(/*commit=*/true); });
         wsCmd(QStringLiteral("ws.commitKeypad"), tr("Apply watershed split (keypad Enter)"), Qt::Key_Enter,
-              [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/true); });
+              [this](const input::Ctx& c){ if(wsKeyMod(c).act && !refuseWhileBlocked(tr("Watershed Split"))) wsExit(/*commit=*/true); });
         wsCmd(QStringLiteral("ws.cancel"), tr("Cancel watershed preview"), Qt::Key_Escape,
               [this](const input::Ctx& c){ if(wsKeyMod(c).act) wsExit(/*commit=*/false); });
     }
@@ -2436,18 +2436,21 @@ void KlustersApp::registerInputBindings()
         };
         reg.addScope(ml);
         auto mlCmd = [&](const QString& id, const QString& label, int key,
-                         std::function<void(ClusterView*)> fn){
+                         std::function<void(ClusterView*)> fn, bool edits = false){
             input::Command c;
             c.id = id; c.scopeId = ml.id; c.label = label; c.category = tr("Multi-lasso");
             c.kind = input::Kind::Locked;
             c.defaultChord = input::Chord::key(key);
-            c.invoke = [this, fn](const input::Ctx&){ if(ClusterView* cv = activeClusterView()) fn(cv); };
+            c.invoke = [this, fn, edits](const input::Ctx&){
+                if(edits && refuseWhileBlocked(tr("Split by Lassos"))) return;
+                if(ClusterView* cv = activeClusterView()) fn(cv);
+            };
             reg.addCommand(c);
         };
         mlCmd(QStringLiteral("multiLasso.split"),       tr("Split by the kept lassos"),        Qt::Key_Return,
-              [](ClusterView* cv){ cv->applyMultiLasso(); });
+              [](ClusterView* cv){ cv->applyMultiLasso(); }, /*edits=*/true);
         mlCmd(QStringLiteral("multiLasso.splitKeypad"), tr("Split by the kept lassos (keypad Enter)"), Qt::Key_Enter,
-              [](ClusterView* cv){ cv->applyMultiLasso(); });
+              [](ClusterView* cv){ cv->applyMultiLasso(); }, /*edits=*/true);
         mlCmd(QStringLiteral("multiLasso.removeLast"),  tr("Remove the last kept lasso"),      Qt::Key_Backspace,
               [](ClusterView* cv){ cv->removeLastMultiLasso(); });
         mlCmd(QStringLiteral("multiLasso.clear"),       tr("Discard the kept lassos"),         Qt::Key_Escape,
@@ -2466,6 +2469,7 @@ void KlustersApp::registerInputBindings()
             reg.addCommand(c);
         };
         auto confirm = [this](const input::Ctx&){
+            if(refuseWhileBlocked(tr("New Cluster"))) return;
             if(ClusterView* cv = activeClusterView()) cv->confirmPendingLasso();
         };
         plCmd(QStringLiteral("lasso.confirm"),       tr("Confirm lasso (cut new cluster)"), Qt::Key_Return, confirm);
@@ -2475,7 +2479,7 @@ void KlustersApp::registerInputBindings()
         plCmd(QStringLiteral("lasso.decollide"),     tr("Decollide lasso against oblique basis"), Qt::Key_D,
               [this](const input::Ctx&){
                   ClusterView* cv = activeClusterView();
-                  if(!cv) return;
+                  if(!cv || refuseWhileBlocked(tr("Decollide"))) return;
                   // D = decollide the lassoed spikes against the pinned basis pair (instead
                   // of Enter's new-cluster cut).  Defer off the key-event stack: the commit
                   // closes+reopens the document, which must not run while this view is
@@ -2562,7 +2566,7 @@ void KlustersApp::registerInputBindings()
             c.repeat = input::Repeat::Fire;          // matches the old inline (fired on auto-repeat)
             c.defaultChord = chord;
             c.enabled = [this](const input::Ctx&){ return paletteHasFocus(); };
-            c.invoke  = [this, key, mods](const input::Ctx&){ dispatchHierarchyKey(key, mods); };
+            c.invoke  = [this, key, mods, label](const input::Ctx&){ if(!refuseWhileBlocked(label)) dispatchHierarchyKey(key, mods); };
             reg.addCommand(c);
         };
         hierCmd(QStringLiteral("hierarchy.promoteChildren"), tr("New parent from children"),

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the editing keys refuse while a job runs](#2026-11-24--klusters-the-editing-keys-refuse-while-a-job-runs) |
 | 2026-11-24 | [Klusters: two commands shared the id hierarchy.dissolveParent](#2026-11-24--klusters-two-commands-shared-the-id-hierarchydissolveparent) |
 | 2026-11-24 | [ndmanager-plugins: ndm_alignspikes_pca removed](#2026-11-24--ndmanager-plugins-ndmalignspikespca-removed) |
 | 2026-11-24 | [Klusters: the realign threshold defaults to 0.10](#2026-11-24--klusters-the-realign-threshold-defaults-to-010) |
@@ -269,6 +270,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the editing keys refuse while a job runs
+
+T, the tool keys, Enter on a lasso or a watershed preview and the child-view keys could edit during a recluster or a realign: they are not menu commands, so the edit lock did not hold them. They now refuse.
+
+<details>
+<summary>Details</summary>
+
+- **Found** while checking the input customization against the edit lock of 2026-11-24. The
+  lock disables the menu commands that edit, and with them their keys, rebound or not. A key
+  the input resolver dispatches is not a menu command, and 17 of those edit: T (move the
+  selection to the end), the five tool keys, Enter on a pending lasso, on the kept lassos and
+  on a watershed preview, D (decollide), and the four child-view keys. They stayed live
+  during a recluster, a realign, a save or a plugin run: T renumbered a cluster while a
+  realign was writing its spikes.
+- **Now** each of them refuses while a job runs and says so in the status bar.
+- Test: `test_edit_lock.py` runs T during a realign (new harness step `keyCommand`); without
+  the change the cluster ids change, with it they do not, and T works again afterwards.
+  The other 16 keys take the same guard and were not each run.
+- `CONCURRENCY.md` §7.4 lists them and the rule for a new key command.
+
+</details>
 
 ---
 

@@ -108,6 +108,21 @@ def main():
         base, _ = S.make_session(d, "a", n_per_unit=9000, method=T.METHOD)
         rep = R.run(klusters, f"{base}.clu.{T.METHOD}.1", [{"select": [2]}, AE, {"realign": 2}, BUSY, AE], d, timeout=1200)
         judge("realign", rep, "realignRunning")
+    # A key the resolver dispatches is not an action, so disabling actions does not stop it:
+    # T (move the selection to the end) renumbers the cluster.  It must refuse during a job.
+    KEY = {"keyCommand": "clusters.moveSelectionToEnd", "paletteSelect": [2]}
+    with tempfile.TemporaryDirectory() as d:
+        base, _ = S.make_session(d, "k", n_per_unit=9000, method=T.METHOD)
+        rep = R.run(klusters, f"{base}.clu.{T.METHOD}.1",
+                    [{"select": [2]}, {"realign": 2}, dict(KEY, whileBusy=True), KEY], d, timeout=1200, autoRenumber=False)
+        ks = [r for r in rep.get("results", []) if "keyCommand" in r]
+        if len(ks) != 2 or not all(k["known"] for k in ks):
+            check(False, "key command: the run finished", rep.get("stderr", "")[-400:])
+        elif not ks[0]["blocked"]:
+            print("  note: key command: the realign had ended before the key; not counted")
+        else:
+            check(not ks[0]["idsChanged"], "a key command that edits (T) does nothing while a realign runs")
+            check(not ks[1]["blocked"] and ks[1]["idsChanged"], "and works again when the realign has ended", ks[1])
     print(f"test_edit_lock: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0
 

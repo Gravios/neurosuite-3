@@ -52,6 +52,7 @@
  *                                        reports the layer shown and both palettes' selections
  *        {"commandDump": true}           every menu command with its text, keys, tips and state, the
  *                                        binding registry's commands, and the edit lock's set
+ *        {"keyCommand": "<id>"}          run a key command of the binding registry; reports blocked / idsChanged
  *        {"cancelJob": true}             Edit > Cancel Running Job; reports whether there was one to cancel
  *        {"actionsEnabled": true}        the command ids that can be triggered now and those that
  *                                        cannot, and which jobs run
@@ -814,6 +815,35 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("shown"), arr(activeView() ? activeView()->clusters() : QList<int>()));
         result.insert(QStringLiteral("parentSelection"), arr(clusterPalette ? clusterPalette->selectedClusters() : QList<int>()));
         result.insert(QStringLiteral("childSelection"), arr(childPalette ? childPalette->selectedClusters() : QList<int>()));
+        return true;
+    }
+    if (step.contains(QStringLiteral("keyCommand"))) {
+        // {"keyCommand": "<id>", "paletteSelect": [ids]}: run a command of the binding registry as its key would (with
+        // "whileBusy": true, during a job).  Reports whether a job blocked editing, whether the
+        // command was enabled, and whether the parent cluster ids changed.
+        const QString id = step.value(QStringLiteral("keyCommand")).toString();
+        const input::Command* c = input::registry().command(id);
+        auto ids = [this] {
+            QJsonArray a;
+            if (doc) for (dataType i : doc->parentData().clusterIds()) a.append(static_cast<int>(i));
+            return a;
+        };
+        if (step.contains(QStringLiteral("paletteSelect")) && clusterPalette) {   // what the key acts on
+            QList<int> sel;
+            for (const QJsonValue& v : step.value(QStringLiteral("paletteSelect")).toArray()) sel.append(v.toInt());
+            clusterPalette->selectItems(sel);
+        }
+        const QJsonArray before = ids();
+        const bool blocked = editingBlocked();
+        input::Ctx ctx;
+        const bool on = c && (!c->enabled || c->enabled(ctx));
+        if (on && c->invoke) c->invoke(ctx);
+        QApplication::processEvents();
+        result.insert(QStringLiteral("keyCommand"), id);
+        result.insert(QStringLiteral("known"), c != nullptr);
+        result.insert(QStringLiteral("blocked"), blocked);
+        result.insert(QStringLiteral("commandEnabled"), on);
+        result.insert(QStringLiteral("idsChanged"), before != ids());
         return true;
     }
     if (step.contains(QStringLiteral("cancelJob"))) {

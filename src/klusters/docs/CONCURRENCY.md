@@ -374,6 +374,12 @@ every command that edits is off.
   which says in the status bar what is waited for. The other editing slots have no
   such guard: they are protected by the disabled action only.
   `realignLaneBusy(what)` is the narrower test Quit, Open and Close use.
+- **The key commands that edit refuse too.** A key the resolver dispatches is not
+  an action (`registerInputBindings`): T (move the selection to the end), the tool
+  keys Ctrl+1..5, Enter on a pending lasso, on the kept lassos and on a watershed
+  preview, D (decollide), and the child-view keys (Ctrl+Up / Down, Ctrl+Shift+Down,
+  G). Each `invoke` begins with `refuseWhileBlocked`. A new key command that edits
+  must do the same.
 - **Cancel** (`mCancelJob`, Ctrl+., and a status-bar button shown while it
   applies) is the one command that is on during a job.
   `cancellableJobRuns()` says whether there is something to stop: the recluster
@@ -388,8 +394,7 @@ Tests: `test_edit_lock.py`, `test_cancel_job.py` (steps `actionsEnabled`,
 **Not covered.** The lock is whole-document: a recluster of one cluster blocks
 edits of every other. What reaches an editing slot without its action is not
 stopped: an armed mouse tool, a palette's or a view's own context menu, the
-Recommended-merges panel, the template palette. The keys the resolver dispatches
-that are not actions were not checked.
+Recommended-merges panel, the template palette.
 
 ---
 
