@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: a settings file is read within each preference's limits](#2026-11-24--klusters-a-settings-file-is-read-within-each-preferences-limits) |
 | 2026-11-24 | [Klusters: the preferences are described in one table](#2026-11-24--klusters-the-preferences-are-described-in-one-table) |
 | 2026-11-24 | [Klusters: Defaults gave the wrong super-sampling interpolation](#2026-11-24--klusters-defaults-gave-the-wrong-super-sampling-interpolation) |
 | 2026-11-24 | [Klusters: a snapshot test of the settings file](#2026-11-24--klusters-a-snapshot-test-of-the-settings-file) |
@@ -275,6 +276,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: a settings file is read within each preference's limits
+
+A value outside its range in the settings file (edited by hand, or damaged) is now brought into range when read, as it would be when set in Preferences. Values in range are read as before.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** For 34 preferences the settings file was read straight into the member, past
+  the limits their setter has: a file edited by hand, or damaged, could give an undo depth
+  of -7, a realign threshold of 100000, a KNN `k` of 0.
+- **Now** every row of the preference table that has a setter with limits reads through
+  it (35 rows; for 5 of them the limit was written twice, in the reader and in the setter,
+  and twice differently for the super-sampling interpolation). The four that had no limit
+  anywhere but their page's spin box take that range: the undo depth 0-30, the crash
+  recovery interval, the waveform gain 200-6000, the time interval 60-6000.
+- A value in range is read as before: the default file, the old-defaults file and the
+  Defaults button give the same settings file. `test_settings_file.py`: 65 lines of the
+  snapshot change, 63 in the two out-of-range cases and two values the "changed" case
+  had pushed out of range.
+- Still without an upper limit, because their setter has none: the realign iterations,
+  kernel width and maximum shift, the t-SNE iterations, learning rate, exaggeration and
+  spike cap, and a few sizes.
+
+</details>
 
 ---
 

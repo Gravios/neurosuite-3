@@ -75,8 +75,10 @@ const QList<PrefSpec>& Configuration::prefTable()
 
         // ── [General] ──
         t << pref("General", "crashRecovery", &Configuration::crashRecovery, crashRecoveryDefault);
-        t << pref("General", "crashRecoveryIndex", &Configuration::crashRecoveryIndex, crashRecoveryIndexDefault);
-        t << pref("General", "nbUndo", &Configuration::nbUndo, nbUndoDefault);
+        t << pref("General", "crashRecoveryIndex", &Configuration::crashRecoveryIndex, crashRecoveryIndexDefault,
+                  [](int i) { return qBound(0, i, 5); });   // the range its page allows
+        t << pref("General", "nbUndo", &Configuration::nbUndo, nbUndoDefault,
+                  [](int n) { return qBound(0, n, 30); });   // the range its page allows
         t << pref("General", "backgroundColor", &Configuration::backgroundColor, backgroundColorDefault);
         t << pref("General", "reclusteringExecutable", &Configuration::reclusteringExecutable, reclusteringExecutableDefault);
         t << pref("General", "reclusteringArgs", &Configuration::reclusteringArgs, reclusteringArgsDefault);
@@ -84,13 +86,13 @@ const QList<PrefSpec>& Configuration::prefTable()
         t << pref("General", "reclusterEngine", &Configuration::reclusterEngine, reclusterEngineDefault);
         t << pref("General", "realignExecutable", &Configuration::realignExecutable, realignExecutableDefault);
         t << pref("General", "realignArgs", &Configuration::realignArgs, realignArgsDefault);
-        t << pref("General", "realignThreshold", &Configuration::realignThreshold, 0.10);
-        t << pref("General", "realignIterations", &Configuration::realignIterations, 2);
-        t << pref("General", "realignMaxShift", &Configuration::realignMaxShift, 0);
-        t << pref("General", "realignKernel", &Configuration::realignKernel, 0);
-        t << pref("General", "realignKernelWidth", &Configuration::realignKernelWidth, 0);
-        t << pref("General", "realignMode", &Configuration::realignMode, 0);
-        t << pref("General", "reorderMethod", &Configuration::reorderMethod, 0);
+        t << prefVia("General", "realignThreshold", &Configuration::realignThreshold, 0.10, &Configuration::setRealignThreshold);
+        t << prefVia("General", "realignIterations", &Configuration::realignIterations, 2, &Configuration::setRealignIterations);
+        t << prefVia("General", "realignMaxShift", &Configuration::realignMaxShift, 0, &Configuration::setRealignMaxShift);
+        t << prefVia("General", "realignKernel", &Configuration::realignKernel, 0, &Configuration::setRealignKernel);
+        t << prefVia("General", "realignKernelWidth", &Configuration::realignKernelWidth, 0, &Configuration::setRealignKernelWidth);
+        t << prefVia("General", "realignMode", &Configuration::realignMode, 0, &Configuration::setRealignMode);
+        t << prefVia("General", "reorderMethod", &Configuration::reorderMethod, 0, &Configuration::setReorderMethod);
         t << pref("General", "waveformSortMean", &Configuration::waveformSortMean, false);
         t << prefVia("General", "mergeRecommendMax", &Configuration::mergeRecommendMax, 20, &Configuration::setMergeRecommendMax);
         t << prefVia("General", "showMergeRecommendPanel", &Configuration::showMergeRecommendPanel, true, &Configuration::setShowMergeRecommendPanel);
@@ -104,18 +106,14 @@ const QList<PrefSpec>& Configuration::prefTable()
         t << pref("General", "reextractSpikesOnSave", &Configuration::reextractSpikesOnSave, false);
         t << pref("General", "syncFeatureSpaceOnSwitch", &Configuration::syncFeatureSpaceOnSwitch, false);
         t << pref("General", "realignFromAnySpace", &Configuration::realignFromAnySpace, true);
-        t << pref("General", "supersampleMode", &Configuration::supersampleMode, 0,
-                  [](int m) { return (m == 2 || m == 4) ? m : 0; });
+        t << prefVia("General", "supersampleMode", &Configuration::supersampleMode, 0, &Configuration::setSupersampleMode);
         t << pref("General", "supersampleAdopt", &Configuration::supersampleAdopt, false);
-        t << pref("General", "supersampleInterp", &Configuration::supersampleInterp, 2,
-                  [](int i) { return std::clamp(i, 0, 2); });
+        t << prefVia("General", "supersampleInterp", &Configuration::supersampleInterp, 2, &Configuration::setSupersampleInterp);
         t << pref("General", "matrixFollowSelection", &Configuration::matrixFollowSelection, true);
         t << pref("General", "autoRealignAfterMerge", &Configuration::autoRealignAfterMerge, true);
         t << pref("General", "autoRenumberAfterMerge", &Configuration::autoRenumberAfterMerge, true);
-        t << pref("General", "tsneSpikeCap", &Configuration::tsneSpikeCap, 32000,
-                  [](int n) { return n < 1000 ? 1000 : n; });
-        t << pref("General", "tsnePerplexityStep", &Configuration::tsnePerplexityStep, 5,
-                  [](int n) { return n < 1 ? 1 : n; });
+        t << prefVia("General", "tsneSpikeCap", &Configuration::tsneSpikeCap, 32000, &Configuration::setTsneSpikeCap);
+        t << prefVia("General", "tsnePerplexityStep", &Configuration::tsnePerplexityStep, 5, &Configuration::setTsnePerplexityStep);
         t << prefVia("General", "tsneStartPerplexity", &Configuration::tsneStartPerplexity, 30.0, &Configuration::setTsneStartPerplexity);
         t << prefVia("General", "tsneIterations", &Configuration::tsneIterations, 500, &Configuration::setTsneIterations);
         t << prefVia("General", "tsneTheta", &Configuration::tsneTheta, 0.5, &Configuration::setTsneTheta);
@@ -128,20 +126,20 @@ const QList<PrefSpec>& Configuration::prefTable()
         t << pref("General", "autoUpdateMatricesAfterMerge", &Configuration::autoUpdateMatricesAfterMerge, true);
         t << pref("General", "errorMatrixIncremental", &Configuration::errorMatrixIncremental, false);
         t << pref("General", "errorMatrixLowPrecision", &Configuration::errorMatrixLowPrecision, true);
-        t << pref("General", "dipSplitMinSize", &Configuration::dipSplitMinSize, 50);
-        t << pref("General", "dipSplitBloatFactor", &Configuration::dipSplitBloatFactor, 0.0);
-        t << pref("General", "dipSplitValleyThresh", &Configuration::dipSplitValleyThresh, 0.20);
-        t << pref("General", "projectionScopeMode", &Configuration::projectionScopeMode, 0);
-        t << pref("General", "projectionScopeMinutes", &Configuration::projectionScopeMinutes, 12.0);
+        t << prefVia("General", "dipSplitMinSize", &Configuration::dipSplitMinSize, 50, &Configuration::setDipSplitMinSize);
+        t << prefVia("General", "dipSplitBloatFactor", &Configuration::dipSplitBloatFactor, 0.0, &Configuration::setDipSplitBloatFactor);
+        t << prefVia("General", "dipSplitValleyThresh", &Configuration::dipSplitValleyThresh, 0.20, &Configuration::setDipSplitValleyThresh);
+        t << prefVia("General", "projectionScopeMode", &Configuration::projectionScopeMode, 0, &Configuration::setProjectionScopeMode);
+        t << prefVia("General", "projectionScopeMinutes", &Configuration::projectionScopeMinutes, 12.0, &Configuration::setProjectionScopeMinutes);
         t << pref("General", "projectionOutOfScopeHidden", &Configuration::projectionOutOfScopeHidden, false);
         t << pref("General", "correctCollisionRows", &Configuration::correctCollisionRows, true);
         t << pref("General", "showEapCollisions", &Configuration::showEapCollisions, false);
         t << pref("General", "showEapClassMembers", &Configuration::showEapClassMembers, false);
         t << prefVia("General", "densitySigmaPx", &Configuration::densitySigmaPx, 3.0, &Configuration::setDensitySigmaPx);
-        t << pref("General", "knnK", &Configuration::knnK, 10);
-        t << pref("General", "knnThreshold", &Configuration::knnThreshold, 0.50);
-        t << pref("General", "knnMinNew", &Configuration::knnMinNew, 5);
-        t << pref("General", "knnMinRef", &Configuration::knnMinRef, 100);
+        t << prefVia("General", "knnK", &Configuration::knnK, 10, &Configuration::setKnnK);
+        t << prefVia("General", "knnThreshold", &Configuration::knnThreshold, 0.50, &Configuration::setKnnThreshold);
+        t << prefVia("General", "knnMinNew", &Configuration::knnMinNew, 5, &Configuration::setKnnMinNew);
+        t << prefVia("General", "knnMinRef", &Configuration::knnMinRef, 100, &Configuration::setKnnMinRef);
         t << prefField("General", "coreCutOnsetFactor", &Configuration::coreCut, &CoreCut::onsetFactor);
         t << prefField("General", "coreCutRiseStartMs", &Configuration::coreCut, &CoreCut::riseStartMs);
         t << prefField("General", "coreCutFlatStartMs", &Configuration::coreCut, &CoreCut::flatStartMs);
@@ -160,26 +158,25 @@ const QList<PrefSpec>& Configuration::prefTable()
         t << prefField("General", "waveformQualityOrange", &Configuration::waveformQuality, &WaveformQuality::orange);
         t << prefField("General", "waveformQualityRed", &Configuration::waveformQuality, &WaveformQuality::red);
         t << prefField("General", "waveformQualityDiameterPx", &Configuration::waveformQuality, &WaveformQuality::diameterPx);
-        t << pref("General", "autoMergeAlgorithm", &Configuration::autoMergeAlgorithm, 1);
-        t << pref("General", "autoMergeMedianK", &Configuration::autoMergeMedianK, 50);
-        t << pref("General", "autoMergeScoreThreshold", &Configuration::autoMergeScoreThreshold, 0.98);
+        t << prefVia("General", "autoMergeAlgorithm", &Configuration::autoMergeAlgorithm, 1, &Configuration::setAutoMergeAlgorithm);
+        t << prefVia("General", "autoMergeMedianK", &Configuration::autoMergeMedianK, 50, &Configuration::setAutoMergeMedianK);
+        t << prefVia("General", "autoMergeScoreThreshold", &Configuration::autoMergeScoreThreshold, 0.98, &Configuration::setAutoMergeScoreThreshold);
         t << pref("General", "autoMergeUseErrorMatrix", &Configuration::autoMergeUseErrorMatrix, false);
-        t << pref("General", "autoMergeErrorProbThreshold", &Configuration::autoMergeErrorProbThreshold, 0.15);
-        t << pref("General", "autoMergeMaxShift", &Configuration::autoMergeMaxShift, 0);
-        t << pref("General", "autoMergeTaperSamples", &Configuration::autoMergeTaperSamples, 0);
-        t << pref("General", "autoMergeMinClusterSize", &Configuration::autoMergeMinClusterSize, 25);
-        t << pref("General", "autoMergeScope", &Configuration::autoMergeScope, 0);
+        t << prefVia("General", "autoMergeErrorProbThreshold", &Configuration::autoMergeErrorProbThreshold, 0.15, &Configuration::setAutoMergeErrorProbThreshold);
+        t << prefVia("General", "autoMergeMaxShift", &Configuration::autoMergeMaxShift, 0, &Configuration::setAutoMergeMaxShift);
+        t << prefVia("General", "autoMergeTaperSamples", &Configuration::autoMergeTaperSamples, 0, &Configuration::setAutoMergeTaperSamples);
+        t << prefVia("General", "autoMergeMinClusterSize", &Configuration::autoMergeMinClusterSize, 25, &Configuration::setAutoMergeMinClusterSize);
+        t << prefVia("General", "autoMergeScope", &Configuration::autoMergeScope, 0, &Configuration::setAutoMergeScope);
         t << pref("General", "autoMergePreviewBeforeApply", &Configuration::autoMergePreviewBeforeApply, true);
-        t << pref("General", "markerSize", &Configuration::markerSize, markerSizeDefault);
-        t << pref("General", "selectionLineWidth", &Configuration::selectionLineWidth, selectionLineWidthDefault);
-        t << pref("General", "templateThresholdMin", &Configuration::templateThresholdMin, templateThresholdMinDefault);
-        t << pref("General", "templateThresholdMax", &Configuration::templateThresholdMax, templateThresholdMaxDefault);
-        t << pref("General", "templateXcorrMetric", &Configuration::templateXcorrMetric, templateXcorrMetricDefault,
-                  [](int m) { return qBound(0, m, templateXcorrMetricMax); });
+        t << prefVia("General", "markerSize", &Configuration::markerSize, markerSizeDefault, &Configuration::setMarkerSize);
+        t << prefVia("General", "selectionLineWidth", &Configuration::selectionLineWidth, selectionLineWidthDefault, &Configuration::setSelectionLineWidth);
+        t << prefVia("General", "templateThresholdMin", &Configuration::templateThresholdMin, templateThresholdMinDefault, &Configuration::setTemplateThresholdMin);
+        t << prefVia("General", "templateThresholdMax", &Configuration::templateThresholdMax, templateThresholdMaxDefault, &Configuration::setTemplateThresholdMax);
+        t << prefVia("General", "templateXcorrMetric", &Configuration::templateXcorrMetric, templateXcorrMetricDefault, &Configuration::setTemplateXcorrMetric);
         t << pref("General", "useWhiteColorDuringPrinting", &Configuration::useWhiteColorDuringPrinting, useWhiteColorDuringPrintingDefault);
         t << pref("General", "autoSelectFeatures", &Configuration::autoSelectFeatures, autoSelectFeaturesDefault);
         t << pref("General", "includeTimeInAutoSelect", &Configuration::includeTimeInAutoSelect, includeTimeInAutoSelectDefault);
-        t << pref("General", "autoSelectNFeatures", &Configuration::autoSelectNFeatures, autoSelectNFeaturesDefault);
+        t << prefVia("General", "autoSelectNFeatures", &Configuration::autoSelectNFeatures, autoSelectNFeaturesDefault, &Configuration::setAutoSelectNFeatures);
         t << pref("General", "reclusterMeanSubtractedSubdim", &Configuration::reclusterMeanSubtractedSubdim, reclusterMeanSubtractedSubdimDefault);
         t << pref("General", "reclusterChannelVariance", &Configuration::reclusterChannelVariance, reclusterChannelVarianceDefault);
         t << pref("General", "reclusterMedianWaveformResidual", &Configuration::reclusterMedianWaveformResidual, reclusterMedianWaveformResidualDefault);
@@ -191,13 +188,15 @@ const QList<PrefSpec>& Configuration::prefTable()
         t << pref("General", "autoShowMatricesOnOpen", &Configuration::autoShowMatricesOnOpen, autoShowMatricesOnOpenDefault);
         t << pref("General", "autoShowTemplateLibraryOnOpen", &Configuration::autoShowTemplateLibraryOnOpen, autoShowTemplateLibraryOnOpenDefault);
         t << pref("General", "templatesMode", &Configuration::templatesMode, templatesModeDefault);
-        t << pref("General", "autoscaleMarginPercent", &Configuration::autoscaleMarginPercent, autoscaleMarginPercentDefault);
+        t << prefVia("General", "autoscaleMarginPercent", &Configuration::autoscaleMarginPercent, autoscaleMarginPercentDefault, &Configuration::setAutoscaleMarginPercent);
 
         // ── [clusterView] ──
-        t << pref("clusterView", "timeInterval", &Configuration::timeInterval, timeIntervalDefault);
+        t << pref("clusterView", "timeInterval", &Configuration::timeInterval, timeIntervalDefault,
+                  [](int s) { return qBound(60, s, 6000); });   // the range its page allows
 
         // ── [waveformView] ──
-        t << pref("waveformView", "gain", &Configuration::gain, gainDefault);
+        t << pref("waveformView", "gain", &Configuration::gain, gainDefault,
+                  [](int g) { return qBound(200, g, 6000); });   // the range its page allows
         return t;
     }();
     return table;
