@@ -52,6 +52,7 @@
  *                                        reports the layer shown and both palettes' selections
  *        {"commandDump": true}           every menu command with its text, keys, tips and state, the
  *                                        binding registry's commands, and the edit lock's set
+ *        {"configWrite": true}           write the configuration as read; {"prefKeys": [keys]} work Preferences by keys
  *        {"keyCommand": "<id>"}          run a key command of the binding registry; reports blocked / idsChanged
  *        {"cancelJob": true}             Edit > Cancel Running Job; reports whether there was one to cancel
  *        {"actionsEnabled": true}        the command ids that can be triggered now and those that
@@ -97,6 +98,7 @@
 #include "actionid.h"
 #include <pagekeynavigator.h>
 #include <QAbstractItemView>
+#include <QSettings>
 #include "input/bindingregistry.h"
 #include "input/inputdispatcher.h"
 #include "input/chord.h"
@@ -1008,6 +1010,22 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (children) result.insert(QStringLiteral("createdParent"), parents);
         result.insert(QStringLiteral("created"), made);
         result.insert(QStringLiteral("summary"), summary);
+        return true;
+    }
+    if (step.contains(QStringLiteral("configWrite"))) {
+        // {"configWrite": true}: store the configuration as read at start-up (Configuration::write),
+        // for test_settings_file.py: what a settings file becomes by being read and written.
+        // With "defaults": true, first Preferences > Defaults and OK: what that button stores.
+        if (step.value(QStringLiteral("defaults")).toBool()) {
+            if (mPluginRegistry.plugins().isEmpty()) mPluginRegistry.reload();
+            PrefDialog dialog(this, (mainDock && doc) ? doc->nbOfchannels() : 0, &mPluginRegistry);
+            dialog.setRadialCatalog(actionCatalog());
+            dialog.updateDialog();
+            dialog.restoreDefaults();
+            dialog.updateConfiguration();
+        }
+        configuration().write();
+        QSettings().sync();
         return true;
     }
     if (step.contains(QStringLiteral("prefKeys"))) {

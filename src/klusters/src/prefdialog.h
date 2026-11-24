@@ -51,6 +51,8 @@ class PrefDialog : public QPageDialog {
 
     void updateDialog();
     void updateConfiguration();
+    /** Every page back to the defaults (what the Defaults button does once confirmed). */
+    void restoreDefaults();
     bool isApplyEnable() const { return applyEnable; }
 
     void resetChannelList(int nbChannels);

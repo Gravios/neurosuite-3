@@ -618,7 +618,11 @@ void PrefDialog::slotDefault()
             tr("This will set the default options in ALL pages of the preferences dialog! Do you wish to continue?"),
             QMessageBox::RestoreDefaults | QMessageBox::Cancel) != QMessageBox::RestoreDefaults)
         return;
+    restoreDefaults();
+}
 
+void PrefDialog::restoreDefaults()
+{
     prefSession->setCrashRecovery(configuration().isCrashRecoveryDefault());
     prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndexDefault());
     prefSession->setNbUndo(configuration().getNbUndoDefault());

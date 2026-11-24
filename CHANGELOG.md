@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: a snapshot test of the settings file](#2026-11-24--klusters-a-snapshot-test-of-the-settings-file) |
 | 2026-11-24 | [Klusters: Preferences from the keyboard](#2026-11-24--klusters-preferences-from-the-keyboard) |
 | 2026-11-24 | [Klusters: the menus are arranged by what a command does](#2026-11-24--klusters-the-menus-are-arranged-by-what-a-command-does) |
 | 2026-11-24 | [Klusters: the editing keys refuse while a job runs](#2026-11-24--klusters-the-editing-keys-refuse-while-a-job-runs) |
@@ -272,6 +273,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: a snapshot test of the settings file
+
+A test now pins what every preference becomes when the settings file is read and written: defaults, limits, the one-time changes of old defaults, and the Defaults button. No behaviour changes.
+
+<details>
+<summary>Details</summary>
+
+- `test_settings_file.py` runs six cases through `Configuration::read()` and `write()` and
+  compares the settings file that results, key by key, with `settings.golden.json`: no file
+  (every default), every value changed, every number at -7 and at 100000 (the limits), the
+  values of old defaults without the "migrated" flags, and the changed file after
+  Preferences ▸ Defaults. 116 keys.
+- It is the check for the preference table that follows: the table must give the same file
+  in every case.
+- Taking it showed, in the code as it is:
+  - **Defaults sets the super-sampling interpolation to 0** (linear); a new installation has
+    2 (smoothing spline). The default is written twice, with two values. Fixed next.
+  - **Reading does not apply the limits the setters have** for some settings: a settings
+    file can hold an undo depth of -7 or a realign threshold of 100000 and both are taken.
+    Recorded in the snapshot, not changed.
+  - Three settings are on no page and so are not reset by Defaults:
+    `includeTimeInAutoSelect`, `matrixFollowSelection` (the View menu's toggle),
+    `mergeRecommendMaxShift`.
+- For the test, the Defaults button's work is `PrefDialog::restoreDefaults()` (the question
+  stays in `slotDefault`), and the harness has the step `configWrite`.
+
+</details>
 
 ---
 
