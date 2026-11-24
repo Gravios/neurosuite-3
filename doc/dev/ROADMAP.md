@@ -167,21 +167,49 @@ infrastructure (no migrators yet — just the chain).  Cheaper to do now,
 while the schema is small, than after a breakage.  Estimate: 1 session for
 infrastructure; migrators added as the schema evolves.
 
-**KiloKlustaKwik experimental sweeps.**
+**Prune KiloKlustaKwik to the classic sorter.** *(decided 2026-11-24)*
+KiloKlustaKwik is needed only as the KlustaKwik behind Klusters ▸ Recluster;
+fiber-kit is the sorter and has a classic CEM of its own
+(`fiber_kit/klustakwik.py`). Of 32,495 lines in 54 files and 219 options, the
+classic sorter is about 9,500: CEM (`KK.cpp`), farthest-point and k-means++
+seeding, the two-phase pass, the parallel restarts, the GPU E-step back ends,
+the method-tagged file names. The rest — time chunks and their merge, time
+shift and the realign port, the split stages, phase 2b, template matching,
+re-featurising, VB-GMM, quality, priors, the fiber stage — goes.
+Order:
+1. Klusters: make the classic pass the recluster default (Preferences ▸
+   Reclustering ▸ chunking "Off"; today's default is the sorter's 7-minute
+   chunks) and compare the two on real selections. This is the check that
+   nothing a curator relies on is in the part to be cut.
+2. Cut: the 39 files, their options, tests and reference text; Klusters'
+   chunking preference; add an OpenMP loop to the E-step (`KK.cpp` is serial
+   on the CPU — the CPU gains today are across restarts and chunks).
+3. The pipeline steps that need the cut parts: `ndm_applydrift` (chunk files),
+   `kk_build_prior.py` / `kk_resolve_prior.py` (priors), and the chunking
+   options of `ndm_klustakwik` and `ndm_subcluster_unmatched`.
+4. Then compare the pruned C++ with fiber-kit's CEM on the same `.fet` and
+   keep one, on evidence.
+Open: whether the ndmanager sorting pipeline (step 3) is still used.
+The pruning removes `klusters_realign.cpp`, the sorter's copy of Klusters'
+realign pass, and with it the question of its two differences (rounding,
+zero-filled pre-roll). It supersedes the three KiloKlustaKwik items below.
+Estimate: 3-4 sessions.
+
+**KiloKlustaKwik experimental sweeps.** *(superseded by the pruning above, if it goes ahead)*
 Run with `-TimeMergeIter 100 -ChunkPreseedFraction 0.08`.  Scale vote-match
 floor to `max(3, overlapSpikes/500)` in overlap merge.  Re-run
 `eval_tier1.py` sweeps with corrected invocation (prior runs produced NaN
 metrics).  Establishes performance baseline for ongoing algorithm work.
 Estimate: 1-2 sessions including analysis writeup.
 
-**KiloKlustaKwik 5-phase audit.**
+**KiloKlustaKwik 5-phase audit.** *(superseded by the pruning above, if it goes ahead)*
 Run the same audit pipeline that hit klusters and libklustersshared over
 `src/kiloklustakwik/`.  Expected yield: legacy code paths.  (The
 `MergeThresh` and `UseFeatures` default issues once listed here are fixed:
 `MergeThresh 0` auto-calibrates to χ², `UseFeatures` defaults to `"all"`.)
 Estimate: 2-3 sessions.
 
-**Refactor duplicated `_RunChunkedCEMFromPoints` body in KiloKlustaKwik.**
+**Refactor duplicated `_RunChunkedCEMFromPoints` body in KiloKlustaKwik.** *(superseded by the pruning above, if it goes ahead)*
 From memory entries, this is duplicated.  Standalone refactor; doesn't
 require the full audit.  Estimate: half a session.
 
