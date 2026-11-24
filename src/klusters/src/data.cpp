@@ -355,16 +355,6 @@ void Data::setSpkcOverlay(std::shared_ptr<const SpkOverlay> overlay, const QList
     for(const int id : clusters) invalidateWaveformCache(id);
 }
 
-void Data::setSpkcShown(bool shown, const QList<int>& clusters){
-    {
-        QMutexLocker lk(&mutex);
-        if(spkcShown == shown) return;
-        spkcShown = shown;
-    }
-    publishSnapshot();
-    for(const int id : clusters) invalidateWaveformCache(id);
-}
-
 qint64 Data::spkcActiveRecordCount() const{
     QMutexLocker lk(&mutex);
     const std::shared_ptr<const SpkOverlay> o = spkcForSnapshot();
@@ -5282,35 +5272,6 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
     // Push the previous tables onto the undo stack and swap in the new ones.
     // renumberPartial does not affect cluster 0, so dimensionChanged = false.
     prepareUndo(spikesByClusterTemp, clusterInfoMapTemp, false);
-}
-
-bool Data::saveClusters(FILE* clusterFile)
-{
-    // Binary .clu format:
-    //   int32_t  nClusters
-    //   nSpikes x int32_t  cluster ids in timestamp order
-
-    SortableTable spikesByClusterTemp;
-    ClusterInfoMap clusterInfoMapTemp;
-    {
-        QMutexLocker lk(&mutex);
-        spikesByClusterTemp = *spikesByCluster;
-        for (auto it = clusterInfoMap->constBegin(); it != clusterInfoMap->constEnd(); ++it)
-            clusterInfoMapTemp.insert(it.key(), it.value());
-    }
-
-    int32_t nClusters = static_cast<int32_t>(clusterInfoMapTemp.count());
-    if (fwrite(&nClusters, sizeof(int32_t), 1, clusterFile) != 1) return false;
-
-    // Sort by spike order (row 1 = feature index = timestamp order)
-    spikesByClusterTemp.sort(1);
-
-    for (long i = 1; i <= nbSpikes; ++i) {
-        int32_t id = static_cast<int32_t>((spikesByClusterTemp)(2, i));
-        if (fwrite(&id, sizeof(int32_t), 1, clusterFile) != 1) return false;
-    }
-
-    return true;
 }
 
 

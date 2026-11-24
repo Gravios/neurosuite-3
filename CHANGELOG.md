@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: unused code removed](#2026-11-24--klusters-unused-code-removed) |
 | 2026-11-24 | [Audit tool: the unused-function count was three times too high](#2026-11-24--audit-tool-the-unused-function-count-was-three-times-too-high) |
 | 2026-11-24 | [Klusters: every self-test is a ctest test](#2026-11-24--klusters-every-self-test-is-a-ctest-test) |
 | 2026-11-24 | [Klusters: legibility and organization audit](#2026-11-24--klusters-legibility-and-organization-audit) |
@@ -261,6 +262,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: unused code removed
+
+Three files and 28 functions that nothing reached.
+
+<details>
+<summary>Details</summary>
+
+- Step 2 of the organization audit: 1,365 lines that nothing reaches.
+- **Files:** `waveformcomparewidget` (in no build file), and two dialog classes that were built
+  but never created, `RealignReviewDialog` and `SpikeRealignDialog` -- all three left from the
+  realign review that was taken out of the application.
+- **28 unused functions** of four lines or more, each checked to have no caller in the
+  sources, the tests or the shared library: among them `KlustersDoc::rejectLastRealign`,
+  `EventsProvider::loadData` / `renameEvent` / `initializeEmptyProvider`, `Data::saveClusters`,
+  `Data::setUserClusterInformation`, the `maskClusters` / `unmaskClusters` pair,
+  `KlustersDoc::updateAllViews` / `refreshAllViews`, `ProcessWidget::maybeScrollToBottom`.
+  Five comments that pointed at them are corrected.
+- **Left on purpose** (listed in `doc/klusters/ORGANIZATION-AUDIT.md` §7): the two QtXml files
+  (`ARCHITECTURE.md` records a decision to leave them, `ROADMAP.md` says to delete one: the two
+  disagree); `Data::clusterEnvelopeOverlap`, which six comments use to state a contract;
+  `KlustersDoc::isChildScopeHidden`, the only reader of a filter that is still written;
+  `Data::revertLastSpkOverlayBatch`, which an undo of a realign needs; the `BinFile` helpers;
+  64 functions of one to three lines.
+- No behaviour changes.  124 unit tests and 36 self-tests pass; the lint gate passes.
+- Not checked: data members that only the removed functions used.
+
+</details>
 
 ---
 

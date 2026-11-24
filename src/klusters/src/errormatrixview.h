@@ -130,8 +130,6 @@ public:
     /// scoped Sort Clusters application.  This is what makes a child-scope
     /// sort survive recomputes until the scope itself is left.
     void applyScopeSortOrder();
-    /// Drop any display permutation (back to matrix/computed order).
-    void resetDisplayOrder();
     /// Pointer to the [N x N] probability matrix (1-based; may be null).
     const Array<double>* matrixData() const { return probabilities; }
 

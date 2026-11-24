@@ -113,7 +113,6 @@ public:
     void supersedeRunningThreads();
 
     void updateMatrixContents();
-    void updateSliderRange();
 
     /** Marked-node templates to append as cluster×template columns/rows (§11.5).
      *  Empty clears the strip.  Recomputes the cells against the current per-cluster

@@ -1125,19 +1125,6 @@ int KlustersDoc::supersamplePhaseColumn() const
     return nFeat >= 1 ? nFeat - 1 : -1;
 }
 
-std::vector<int8_t> KlustersDoc::supersamplePhases() const
-{
-    std::vector<int8_t> ph;
-    const int col = supersamplePhaseColumn();
-    if (col < 0) return ph;
-    const int64_t n = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
-    ph.resize(static_cast<size_t>(n));
-    for (int64_t i = 0; i < n; ++i)
-        ph[static_cast<size_t>(i)] = static_cast<int8_t>(
-            clusteringData->featureValue(static_cast<dataType>(i + 1), col + 1));
-    return ph;
-}
-
 bool KlustersDoc::buildSupersampledSpace(int factor, QString* token, QString& logOut, QString* error)
 {
     QTextStream log(&logOut);

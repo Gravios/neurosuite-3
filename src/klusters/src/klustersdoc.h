@@ -399,10 +399,6 @@ public:
     //  splits keep producing globally-unique ids that never collide with a
     //  masked cluster.  Time-chunk curation is just
     //  setMaskKeeping(clustersInTimeWindow(chunk)).
-    /**Masks @p clustersToMask (removes them from the active list/view fg).*/
-    void maskClusters(const QList<int>& clustersToMask);
-    /**Unmasks @p clustersToUnmask (returns them to the active set).*/
-    void unmaskClusters(const QList<int>& clustersToUnmask);
     /**Masks every cluster EXCEPT those in @p clustersToKeep (the focus set).*/
     void setMaskKeeping(const QList<int>& clustersToKeep);
     /**Clears the mask: all clusters become active again.*/
@@ -1029,8 +1025,6 @@ public:
     bool hasMask() const {return !maskedClusters.isEmpty();}
     /**Currently masked cluster ids.*/
     QList<int> maskedClusterIds() const;
-    /**Currently unmasked (active) cluster ids.*/
-    QList<int> unmaskedClusterIds() const;
 
     // ── time-chunk curation ──────────────────────────────────────────────
     //  Splits the session into uniform chunkMinutes windows (matching
@@ -1051,8 +1045,6 @@ public:
     /**Step to the next / previous chunk; returns false at the ends.*/
     bool nextChunk();
     bool prevChunk();
-    /**Jump to chunk @p index (clamped to [0, chunkCount()-1]).*/
-    void gotoChunk(int index);
     /**[t0,t1] of chunk @p index in recording units (samples).*/
     void chunkTimeWindow(int index, long& t0, long& t1) const;
     
@@ -1949,8 +1941,8 @@ public:
 
     // ── Pending realignment ────────────────────────────────────────────────
     /** One modified spike record, held in memory until saveDocument() writes
-     *  it to disk.  Original values are stored so rejectLastRealign() can
-     *  undo the in-memory Data changes without touching disk. */
+     *  it to disk.  The original values are stored with it: what an undo of
+     *  the realign would put back (there is none: doc/dev/ROADMAP.md). */
     struct PendingSpkRecord {
         // The rewritten .spk bytes live in the Data-side SpkOverlay (one
         // shared copy per record, epoch-snapshot step 7); this record keeps
@@ -2057,8 +2049,6 @@ public:
     /** Rows the last realign measured on their corrected record instead of the raw one. */
     int realignMeasuredCorrectedRows() const { return realignRowsMeasuredCorrected; }
     int collisionRowsBuildCount() const { return collisionRowBuilds; }
-    /** Shows the corrected rows (the default) or the raw records, keeping what was built. */
-    void setCollisionRowsShown(bool shown);
     /** Corrected rows served now (0 when hidden, stale or none). */
     qint64 collisionRowsActive() const;
     /** True when corrected rows are held for another .spk than the one read now. */
@@ -2132,8 +2122,6 @@ public:
      *  phase column, time) -- an ordinary space the Space selector lists.  @p token
      *  receives the new feature-space token.  Returns false with @p error. */
     bool buildSupersampledSpace(int factor, QString* token, QString& log, QString* error);
-    /** Phases of every spike in the shown super-sampled space (empty when not one). */
-    std::vector<int8_t> supersamplePhases() const;
     /** True while another method's space is loaded.  File writers that belong
      *  to the .clu's own space (realign, nudge, Save As, decollide, template
      *  generation) refuse in this state. */
@@ -2266,11 +2254,6 @@ public:
      *  @p plan, so the caller closes the document first and reopens it after. */
     bool applyTimeSort(const TimeSortPlan& plan, QString& logOut);
 
-    /** Discards the most recent pending realignment and restores the
-     *  in-memory Data to its state before that realignment was run.
-     *  Called when the user hits Reject in the review dialog. */
-    void rejectLastRealign();
-
     /**Integrates in the data the clusters obtained by automatic reclustering.
   * Suppress the reclustered ones and add the newly created ones.
   * @param clustersToRecluster list of clusters reclustered.
@@ -2392,17 +2375,6 @@ public:
     bool setClusterAnnotation(bool childLayer, int id, const UnitAnnotation& annotation);
 
     // ── Curation logging ──────────────────────────────────────────────────
-    /** Compute a ClusterSnapshot for @p clusterId from the current in-memory
-     *  state.  Returns an invalid snapshot (clusterId == -1) on failure.
-     *  @param allCentroids  Precomputed centroid map; pass nullptr to skip
-     *                       nearest-cluster metrics. */
-    ClusterSnapshot snapshotCluster(int clusterId,
-                                     double isiThreshMs = 3.0,
-                                     const QMap<int,QVector<double>>* allCentroids = nullptr,
-                                     bool liteIsolation = false) const {
-        return clusteringData->computeSnapshot(clusterId, isiThreshMs, allCentroids,
-                                               liteIsolation);
-    }
 
     /** Convenience: snapshot each cluster in @p clusterIds.
      *  Computes all cluster centroids once and reuses them across the set.
@@ -2553,14 +2525,6 @@ Q_SIGNALS:
     void spikesDeleted();
     
 public Q_SLOTS:
-    /** Calls repaint() on all views connected to the document object and is called by the view by which the document has been changed.
-     * As this view normally repaints itself, it is excluded from the paintEvent.
-     */
-    void updateAllViews(KlustersView* sender);
-    /** Repaint all views AND trigger correlogram recomputation by firing
-     *  updateDrawing() on each view.  Call after realignment so that the
-     *  scatter, waveform, and correlation views all refresh. */
-    void refreshAllViews();
 
     /** Forces all views to discard cached data for @p clusterId and re-fetch.
      *  Equivalent to emitting spikesAddedToCluster on each KlustersView. */

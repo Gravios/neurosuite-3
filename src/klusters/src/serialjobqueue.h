@@ -115,15 +115,6 @@ public:
     /** Active (0 or 1) plus pending. */
     int totalCount() const { return pending.size() + (active ? 1 : 0); }
 
-    /** Drop all not-yet-started jobs; the active job is left to finish. */
-    void clearPending()
-    {
-        if (pending.isEmpty()) return;
-        qDeleteAll(pending);
-        pending.clear();
-        emit queueLengthChanged(totalCount());
-    }
-
 signals:
     void jobStarted(const QString& name);
     void jobFinished(const QString& name);

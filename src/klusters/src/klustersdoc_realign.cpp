@@ -4,7 +4,7 @@
 // in-GUI spike-realignment machinery of KlustersDoc — realignSpikes and its
 // file-static helpers (readSpkWaveform/writeSpkWaveform/readTextFile/writeTextFile/
 // swapSpkEntries/parseRealignArgs/realignRmsRecenter), the pending-file lifecycle
-// (initPendingFiles/stagePendingFiles/renewPendingAfterCommit/rejectLastRealign), the waveform/correlogram
+// (initPendingFiles/stagePendingFiles/renewPendingAfterCommit), the waveform/correlogram
 // cache invalidators, the cluster-membership checks, and nudgeClusterTimestamps.
 //
 // Mechanical relocation, no logic change.  Declarations remain in klustersdoc.h.
@@ -2691,7 +2691,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // ... except the one just written: its working copy IS the new times.
     if (!ws.isOrigin) syncedGeneration.insert(ws.fetCommitted, spikeTimesGeneration.load());
 
-    //Publish the overlay batch (revertible: rejectLastRealign pairs with it).
+    //Publish the overlay batch (revertible: Data::revertLastSpkOverlayBatch pops it).
     //Both Data layers read the same pending .spk, so both get the batch —
     //the records are shared, not copied.
     clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ true);
@@ -3040,57 +3040,6 @@ void KlustersDoc::renewPendingAfterCommit(bool waveformsCommitted)
     // instead of letting it surface later in a curation-log snapshot.
     if (clusteringData) clusteringData->checkSpikeFeatureInvariant("realign-commit/parent");
     if (childData)      childData->checkSpikeFeatureInvariant("realign-commit/child");
-}
-
-void KlustersDoc::rejectLastRealign()
-{
-    if (pendingRealign.empty()) return;
-    // It restores the rows of the space the realign ran in into the loaded
-    // table, and re-seeds the .clu space's working copies: only with that space
-    // shown, and only for a realign made in the .clu's own space (a borrowed
-    // space's working copy is dropped with the synced set, not restored row by
-    // row).  The app no longer offers this; File > Close without saving is the
-    // way back.
-    if (isBorrowedSpace() || pendingRealign.back().method != originMethod) {
-        qWarning() << "[realign] undo refused: the realign ran in" << pendingRealign.back().method
-                   << "and" << activeMethod << "is shown";
-        return;
-    }
-
-    // The undo re-seeds the .clu space's working copies from the saved files
-    // (initPendingFiles below), so every synced copy -- made at times that are
-    // no longer on disk -- is dropped with them and the other spaces fall back
-    // to their saved files too; sync again after the undo if wanted.  Switching
-    // is refused while a realign is pending, so none of them is the space shown.
-    discardSyncedFeatureSpaces();
-    ++spikeTimesGeneration;
-
-    const PendingRealign& p = pendingRealign.back();
-
-    // Restore in-memory feature/timestamp data.
-    for (const PendingSpkRecord& rec : p.records) {
-        clusteringData->updateFeatureRow(
-            static_cast<dataType>(rec.destPos + 1),
-            rec.origFet);
-        clusteringData->updateTimestamp(
-            static_cast<dataType>(rec.destPos + 1),
-            static_cast<dataType>(rec.origTs));
-    }
-
-    pendingRealign.pop_back();
-
-    //Restore the overlay generation from before the rejected batch
-    //(epoch-snapshot step 7).  Unlike the file reseed below — which wipes
-    //EVERY uncommitted batch's bytes from the pending copy — this keeps
-    //earlier batches' records readable, from memory.
-    clusteringData->revertLastSpkOverlayBatch();
-    if (childData) childData->revertLastSpkOverlayBatch();
-
-    // Re-seed pending files from the untouched originals so the waveform
-    // viewer immediately reflects the restored state.
-    initPendingFiles();
-    // The records are the earlier ones again: so are the corrected collision rows.
-    refreshCollisionRows();
 }
 
 // ---------------------------------------------------------------------------

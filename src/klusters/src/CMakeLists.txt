@@ -62,8 +62,6 @@ set(klusters_SRCS
     ${_xcorr_dir}/realign_center.cpp
     realignworker.cpp
     serialjobqueue.h   # header-only QObject — listed so AUTOMOC generates its moc
-    realignreviewdialog.cpp
-    spikerealigndialog.cpp
     klusters.cpp
     klusters_recluster.cpp      # KlustersApp reclustering / process execution (split from klusters.cpp)
     klusters_state.cpp          # KlustersApp action-state machine slotStateChanged (split from klusters.cpp)

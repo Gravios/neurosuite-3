@@ -75,9 +75,6 @@ public:
     bool   partitionReady() const { return partitionReady_; }
     double tEnd() const { return tEnd_; }
 
-    // Replace the partition and re-grain every class onto it (tile with
-    // placeholders; re-bin pooled drift spikes; re-parent leaves).  No-op if not ready.
-    void setPartition(const neurosuite::drift::Partition& p);
     // Split the region containing `tSec` at `tSec`; re-grain.  False if not ready / invalid.
     bool splitAt(double tSec);
     // Delete interior boundary `i` (merge the two regions it separates); re-grain.

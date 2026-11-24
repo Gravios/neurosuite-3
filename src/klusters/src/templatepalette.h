@@ -37,8 +37,6 @@ public:
 
     // (Re)load the class layer for the open group+stage and rebuild the list.
     void reload(const std::string& base, int group, const std::string& stage, int64_t nSpikes);
-    // Re-read the .eap/.tcl from disk (e.g. after the tab changed them) and rebuild.
-    void refreshFromDisk();
     void clearClasses();
 
     bool hasClasses() const { return loaded_; }

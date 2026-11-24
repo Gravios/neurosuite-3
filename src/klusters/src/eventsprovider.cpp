@@ -57,116 +57,6 @@ EventsProvider::EventsProvider(const QString& fileUrl,double rate,int position)
 EventsProvider::~EventsProvider(){
 }
 
-int EventsProvider::loadData(){
-
-    int nbEventsRead = 0;
-    QFile file(fileName);
-    if(file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        while (!file.atEnd()) {
-            file.readLine();
-            ++nbEventsRead;
-        }
-    }
-    if(nbEventsRead==0){
-        initializeEmptyProvider();
-        return OK;
-    }
-    QFile eventFile(fileName);
-    bool status = eventFile.open(QIODevice::ReadOnly);
-    if(!status){
-        events.setSize(0,0);
-        timeStamps.setSize(0,0);
-        return OPEN_ERROR;
-    }
-
-    //Set the size of the Arrays containing the time and ids of the events.
-    events.setSize(1,nbEventsRead);
-    timeStamps.setSize(1,nbEventsRead);
-
-    QTextStream fileStream(&eventFile);
-    QString line;
-    int lineCounter = 0;
-    for(line = fileStream.readLine(); !line.isNull() && lineCounter< nbEventsRead;line = fileStream.readLine()){
-        line = line.trimmed();
-
-        int index1 = line.indexOf(QRegularExpression("\\s"));
-        int index2 = line.indexOf(QRegularExpression("\\S"), index1);
-
-        timeStamps[lineCounter] = line.left(index1).toDouble();
-        EventDescription label = line.right(line.length() - index2);
-        events[lineCounter] = label;
-        if(eventDescriptionCounter.contains(label)){
-            eventDescriptionCounter.insert(label,eventDescriptionCounter[label] + 1);
-        }
-        else eventDescriptionCounter.insert(label,1);
-        lineCounter ++;
-    }
-
-    eventFile.close();
-
-
-    //The number of events read has to be coherent with the number of events read.
-    if(lineCounter != nbEventsRead){
-        events.setSize(0,0);
-        timeStamps.setSize(0,0);
-        return INCORRECT_CONTENT;
-    }
-
-    //Assign an id to each event description
-    //The iterator iterates on the keys sorted
-    QMap<EventDescription,int>::Iterator iterator;
-    int id = 1;
-    long maxSize = 0;
-    long sum = 0;
-    long sumOfSquares = 0;
-    for(iterator = eventDescriptionCounter.begin(); iterator != eventDescriptionCounter.end(); ++iterator){
-        eventIds.insert(iterator.key(),id);
-        idsDescriptions.insert(id,iterator.key());
-        long length = static_cast<long>(iterator.key().length());
-        if(length > maxSize) maxSize = length;
-        sum += length;
-        sumOfSquares += (length * length);
-        id++;
-    }
-
-    //Compute the length to use to display the descrption of the events in the event palette.
-    // descriptionLength = min(mean + 1 * standard deviation, maxsize)
-    long mean = sum / eventIds.size();
-    //variance(X) = mean(X^2) - mean(X)^2
-    long variance =  (sumOfSquares / eventIds.size()) - (mean * mean);
-    //standard deviation = square root of the variance
-    long stdVar = static_cast<long>(sqrt(static_cast<double>(variance)));
-    descriptionLength = static_cast<int>(qMin((mean + stdVar),maxSize));
-    //Be sure that the length is minimum 2 digits
-    descriptionLength = qMax(descriptionLength,2);
-
-    //Initialize the variables
-    nbEvents = nbEventsRead;    //the request path returns early while this is 0
-    previousStartTime = 0;
-    previousStartIndex = 1;
-    previousEndIndex = nbEventsRead;
-    previousEndTime = static_cast<long>(floor(0.5 + timeStamps(1,nbEventsRead)));
-    fileMaxTime = previousEndTime;
-
-    return OK;
-}
-
-void EventsProvider::initializeEmptyProvider(){
-    modified = true;
-    nbEvents = 0;
-    events.setSize(0,0);
-    timeStamps.setSize(0,0);
-    ///Default description length is 2 characters
-    descriptionLength = 2;
-
-    //Initialize the variables
-    previousStartTime = 0;
-    previousStartIndex = 1;
-    previousEndIndex = 1;
-    previousEndTime = 0;
-    fileMaxTime = 0;
-}
-
 void EventsProvider::requestData(long startTime,long endTime,QObject* initiator,long startTimeInRecordingUnits){
     retrieveData(startTime,endTime,initiator);
 }
@@ -1055,18 +945,6 @@ void EventsProvider::redo(){
     }
 }
 
-void EventsProvider::clearUndoRedoData(){
-    //Clear the redo arrays
-    eventsRedo.setSize(0,0);
-    timeStampsRedo.setSize(0,0);
-    eventDescriptionCounterRedo.clear();
-
-    //Clear the undo arrays
-    eventsUndo.setSize(0,0);
-    timeStampsUndo.setSize(0,0);
-    eventDescriptionCounterUndo.clear();
-}
-
 int EventsProvider::save(QFile* eventFile){
     QTextStream fileStream(eventFile);
     fileStream.setRealNumberPrecision(12);
@@ -1331,47 +1209,6 @@ void EventsProvider::removeEventDescription(const QString &eventDescriptionToRem
     }
 
     emit eventDescriptionRemoved(name,oldNewEventIds,newOldEventIds,removedEventId,eventDescriptionToRemove);
-}
-
-void EventsProvider::renameEvent(int selectedEventId,const QString& newEventDescription,double time){
-    modified = true;
-
-    //Clear the redo variables
-    eventsRedo.setSize(0,0);
-    timeStampsRedo.setSize(0,0);
-    eventDescriptionCounterRedo.clear();
-
-    //Prepare the undo variables
-    eventsUndo = events;
-    timeStampsUndo = timeStamps;
-    eventDescriptionCounterUndo = eventDescriptionCounter;
-
-    //remove the old event description
-    EventDescription description = idsDescriptions[selectedEventId];
-    eventDescriptionCounter[description] = eventDescriptionCounter[description] - 1;
-
-    if(eventDescriptionCounter[description] == 0){
-        removeEventDescription(description);
-        eventDescriptionCounter.remove(description);
-    }
-
-    //replace the old description by the new one.
-    if(nbEvents != 0){
-        long timeIndex = findIndex(time);
-
-        events(1,timeIndex) = EventDescription(newEventDescription);
-    }
-    //New (empty) event file, should never be possible
-    else return;
-
-
-    //Check if the newEventDescription is a new event description.
-    bool newDescription = !eventIds.contains(EventDescription(newEventDescription));
-
-    //Add the new description to the list of existing ones and compute the new descriptionLength
-    if(newDescription) addEventDescription(newEventDescription);
-    else eventDescriptionCounter[newEventDescription] = eventDescriptionCounter[newEventDescription] + 1;
-
 }
 
 

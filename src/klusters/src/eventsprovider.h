@@ -96,11 +96,6 @@ public:
   */
     void requestPreviousEventData(long endTime,long timeFrame,const QList<int>& selectedIds,QObject* initiator);
 
-    /**Loads the event ids and the corresponding spike time.
-  * @return an loadReturnMessage enum giving the load status
-  */
-    int loadData();
-
     /**Returns the number of events in the event file the provider provides the data for.
   * @return number of events.
   */
@@ -154,9 +149,6 @@ public:
     /** Reverts the last undo action.*/
     void redo();
 
-    /** Empties the undo and redo state of the data.*/
-    void clearUndoRedoData();
-
     /**Saves the data to disk.
   * @param eventFile file where to save the data.
   * @return the output file status.
@@ -167,30 +159,6 @@ public:
   * @return true if the file has been modified, false otherwise.
   */
     bool isModified() const {return modified;}
-
-    /**Initializes the provider as it is the provider of a new empty event file.*/
-    void initializeEmptyProvider();
-
-    /**Updates the sampling rate for the current document.
-  * @param rate sampling rate.
-  */
-    void updateSamplingRate(double rate){
-        currentSamplingRate = rate / 1000.0;
-
-        //Initialize the variables
-        previousStartTime = 0;
-        previousStartIndex = 1;
-        previousEndIndex = nbEvents;
-        previousEndTime = static_cast<long>(floor(0.5 + timeStamps(1,nbEvents)));
-        fileMaxTime = previousEndTime;
-    }
-
-    /** Updates the provider data to take into account the renaming of an event.
-  * @param selectedEventId id of the event to rename.
-  * @param newEventDescription new name for the event to rename.
-  * @param time time of the event to rename.
-  */
-    void renameEvent(int selectedEventId,const QString& newEventDescription,double time);
 
 Q_SIGNALS:
     /**Signals that the data have been retrieved.

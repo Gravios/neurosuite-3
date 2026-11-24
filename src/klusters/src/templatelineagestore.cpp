@@ -226,13 +226,6 @@ std::vector<int64_t> TemplateLineageStore::restrictToRegion(const std::vector<in
     return out;
 }
 
-void TemplateLineageStore::setPartition(const dr::Partition& p)
-{
-    if (!partitionReady_) return;
-    partition_ = p;
-    retile();
-}
-
 bool TemplateLineageStore::splitAt(double tSec)
 {
     if (!partitionReady_) return false;

@@ -198,20 +198,6 @@ QSize ProcessWidget::minimumSizeHint() const
                   (fontMetrics().lineSpacing()+2)*4 );
 }
 
-void ProcessWidget::maybeScrollToBottom()
-{
-    if ( verticalScrollBar()->value() == verticalScrollBar()->maximum() ) {
-        // Qt does not always flush the scroll position in a single pass after
-        // a processEvents() pump when new content is appended to the widget.
-        // A second setValue() after a second pump ensures the scrollbar
-        // actually reaches the bottom before the function returns.
-        qApp->processEvents();
-        verticalScrollBar()->setValue( verticalScrollBar()->maximum() );
-        qApp->processEvents();
-        verticalScrollBar()->setValue( verticalScrollBar()->maximum() );
-    }
-}
-
 void ProcessWidget::hideWidget(){
     if(childproc->state() == QProcess::Running)
         childproc->terminate();

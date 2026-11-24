@@ -786,13 +786,6 @@ void ErrorMatrixView::setDisplayOrder(const QList<int>& order)
     update();
 }
 
-void ErrorMatrixView::resetDisplayOrder()
-{
-    if(displayOrder.isEmpty()) return;
-    displayOrder.clear();
-    update();
-}
-
 void ErrorMatrixView::applyScopeSortOrder()
 {
     // Derive the display permutation from the doc's HELD child-scope sort

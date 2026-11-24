@@ -890,12 +890,6 @@ public:
   */
     dataType minDimension(int dimension) const {return dimensionMinima(dimension,1);}
 
-    /**Saves the clusters information to file
-  * @param clusterFile the .clu.i file
-  * @return true if the data have been successfully saved to file, false otherwise.
-  */
-    bool saveClusters(FILE* clusterFile);
-
     /**Returns the number of points used to describe a waveform. Each point
   correspond to a diffrent instant in time.*/
     int nbOfSampleInWaveform()const{return nbSamplesInWaveform;}
@@ -1329,29 +1323,6 @@ public:
         return nbClusters;
     }
 
-    /**Assignes to the cluster the information given by the user.
-  * @param clusterId id of the cluster for which the information are given.
-  * @param structure structure in which the cluster is supposed to be.
-  * @param type type of the cluster.
-  * @param ID Isolation distance of the cluster.
-  * @param quality quality of the cluster.
-  * @param notes notes of any type on the cluster.
-  */
-    void setUserClusterInformation(int clusterId, const QString& structure,
-                                          const QString&	type,const QString& ID, const QString&	quality, const QString& notes){
-        if((*clusterInfoMap).contains(static_cast<dataType>(clusterId))){
-            ClusterInfo currentClusterInfo = clusterInfoMap->value(static_cast<dataType>(clusterId));
-
-            currentClusterInfo.setStructure(structure);
-            currentClusterInfo.setType(type);
-            currentClusterInfo.setId(ID);
-            currentClusterInfo.setQuality(quality);
-            currentClusterInfo.setNotes(notes);
-
-            clusterInfoMap->insert(static_cast<dataType>(clusterId),currentClusterInfo);
-        }
-    }
-
     /** Sets every field the curator records about a cluster (unitannotation.h). */
     void setUserClusterAnnotation(int clusterId, const UnitAnnotation& annotation){
         if((*clusterInfoMap).contains(static_cast<dataType>(clusterId))){
@@ -1709,9 +1680,10 @@ public:
     * byte writers (realign, nudge) after writing the same records into
     * the pending file (which stays the journal for Save and for the
     * writers' own readbacks).  @p revertible: true pushes the previous
-    * generation onto the history stack, pairing the batch with a
-    * rejectLastRealign(); the nudge — which has no reject path — passes
-    * false, so a later reject can only ever pop a realign's batch.*/
+    * generation onto the history stack, so that revertLastSpkOverlayBatch()
+    * can pop it; the nudge passes false, so a pop can only ever take a
+    * realign's batch.  (Nothing pops one today: a realign is not undoable,
+    * doc/dev/ROADMAP.md.)*/
     void applySpkOverlayBatch(const QHash<qint64, std::shared_ptr<const QByteArray>>& batch,
                               bool revertible);
 
@@ -1731,8 +1703,6 @@ public:
     * drops the waveform caches of @p clusters -- every cluster holding a
     * row that is, or was, corrected -- and publishes a new epoch.*/
     void setSpkcOverlay(std::shared_ptr<const SpkOverlay> overlay, const QList<int>& clusters);
-    /**Shows or hides the corrected rows without discarding them.*/
-    void setSpkcShown(bool shown, const QList<int>& clusters);
     bool isSpkcShown() const { return spkcShown; }
     /**Corrected rows a read is served from now (0 when hidden or stale).*/
     qint64 spkcActiveRecordCount() const;

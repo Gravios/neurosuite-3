@@ -307,19 +307,6 @@ void TemplateMatrixView::initializeColorMap()
 
 // ── slider range ─────────────────────────────────────────────────────────────
 
-void TemplateMatrixView::updateSliderRange()
-{
-    sliderMin = configuration().getTemplateThresholdMin();
-    sliderMax = configuration().getTemplateThresholdMax();
-    currentThreshold = std::max(sliderMin, std::min(sliderMax, currentThreshold));
-    colourLow        = std::max(sliderMin, std::min(currentThreshold, colourLow));
-    thresholdSlider->setRange(sliderMin, sliderMax);
-    thresholdSlider->setSpan(colourLow, currentThreshold);   // no echo: setSpan is silent
-    updateThresholdLabel();
-    updateSliderPreview();
-    update();
-}
-
 // ── compute ──────────────────────────────────────────────────────────────────
 
 void TemplateMatrixView::launchCompute()

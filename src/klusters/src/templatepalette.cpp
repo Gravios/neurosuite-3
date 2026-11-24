@@ -71,13 +71,6 @@ void TemplatePalette::reload(const std::string& base, int group, const std::stri
     rebuild();
 }
 
-void TemplatePalette::refreshFromDisk()
-{
-    if (base_.empty()) return;
-    loaded_ = classStore_.load(base_, group_, stage_, nSpikes_, 128);
-    rebuild();
-}
-
 void TemplatePalette::clearClasses()
 {
     loaded_ = false;

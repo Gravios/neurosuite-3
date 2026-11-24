@@ -710,8 +710,6 @@ public:
      *  nudge).  Unlike forceClusterRefresh() this sets REDRAW mode on
      *  ClusterView so old ghost points are cleared first. */
     void invalidateClusterDisplay(int clusterId);
-    /**Propagates new slider range from configuration to the template matrix view.*/
-    void updateTemplateMatrixSliderRange();
 
     /**Returns a boolean indicating if the view contains a Grouping Assistant View.
   * @return true if the view contains a Grouping Assistant View, false otherwise.*/

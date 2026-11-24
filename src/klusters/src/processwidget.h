@@ -126,9 +126,6 @@ protected Q_SLOTS:
     void slotOutputTreatmentOver();
     
 private Q_SLOTS:
-    // Legacy slot kept for ABI compatibility; auto-scroll is now driven by
-    // verticalScrollBar::rangeChanged → scrollToBottom() lambda in the constructor.
-    void maybeScrollToBottom();
 
 private:
     QProcess* childproc;

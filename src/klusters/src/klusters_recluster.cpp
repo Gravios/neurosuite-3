@@ -383,7 +383,7 @@ void KlustersApp::slotRecluster(){
     // hint why their visibly-1500-spike cluster failed to recluster.
     //
     // Catch the desync here, refuse to launch, and tell the user what
-    // recovery action will fix it.  Save+reopen IS safe: saveClusters()
+    // recovery action will fix it.  Save+reopen IS safe: the save
     // writes .clu from spikesByCluster (the source of truth), and the
     // load path rebuilds clusterInfoMap from .clu — so the in-memory
     // desync does not survive a round-trip through disk.

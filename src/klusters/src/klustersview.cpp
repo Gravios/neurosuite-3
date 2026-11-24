@@ -791,13 +791,6 @@ void KlustersView::driftMatrixDockClosed(QObject*){
     isThereDriftMatrixView = false;
 }
 
-void KlustersView::updateTemplateMatrixSliderRange(){
-    for(ViewWidget* w : std::as_const(viewList)) {
-        TemplateMatrixView* tmv = qobject_cast<TemplateMatrixView*>(w);
-        if(tmv) { tmv->updateSliderRange(); return; }
-    }
-}
-
 void KlustersView::traceDockClosed(QObject* /*traceWidget*/){
     if(viewCounter["TraceView"] == 1){
         viewCounter.remove("TraceView");

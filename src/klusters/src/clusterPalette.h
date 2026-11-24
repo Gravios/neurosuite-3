@@ -168,8 +168,6 @@ public:
      *  order.  The order is stored by id and self-heals across edits (ids no longer
      *  present drop out; new clusters fall to the natural-order tail). */
     void setSimilarityOrder(const QList<int>& orderedIds);
-    /** Drop the view-only similarity order (back to natural id order). */
-    void clearSimilarityOrder();
     void selectItems(const QList<int> &selectedClusters);
 
     /** Rewrite the S-pinned-ids set through a partial cluster-rename map.

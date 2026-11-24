@@ -26,7 +26,7 @@ approximate. `libklustersshared` and the other applications were not audited.
 | 4 | The self-test harness is part of the application class | 1,271 lines; one 973-line dispatcher | medium |
 | 5 | Comments tell the history, not the code | 27% comment lines; 309 narrate what used to be | medium |
 | 6 | Two vocabularies for the same things | parent/child in code, fiber/atom in the manual; artefact and artifact | medium |
-| 7 | Code that is not used or not built | 3 files outside the build; 388 candidate functions | medium |
+| 7 | Code that is not used or not built | 3 files outside the build; 2 dialogs nobody creates; 107 candidate functions | medium |
 | 8 | Parallel copies | the four matrix views; undo / redo twins | medium |
 | 9 | Where things are | 258 files in one directory; undo in the hierarchy file; documents in two trees | medium |
 | 10 | Small debts | spelling, stale `@param`, long lines, long parameter lists, one global | low |
@@ -158,17 +158,33 @@ mechanical patch per word; the manual and the code should not need a translation
 
 - **Not in any `CMakeLists.txt`:** `klustersxmlreader.cpp` (589 lines),
   `parameterxmlmodifier.cpp` (244), `waveformcomparewidget.cpp` (160).
-- **388 member functions (1,408 lines) whose name appears nowhere else in code.** Most are short
-  accessors. The larger ones, spot-checked: `AutoMerge::computeProposalsByErrorMatrix` (97
-  lines), `EventsProvider::loadData` (93), `KlustersDoc::rejectLastRealign` (50, which three
-  status messages told the user to use until 2026-11-24), `Data::clusterEnvelopeOverlap` (31),
-  `Data::saveClusters` (28), the whole `BinFile` reader and writer set in `binfile.h`.
+- **107 member functions (716 lines) whose name appears nowhere else in code.** *Corrected the
+  same day:* this said 388 functions and 1,408 lines. The first count took a function defined
+  inside its class body and called once for an unused one, and one of the examples given,
+  `AutoMerge::computeProposalsByErrorMatrix`, is in use.
+- **Two dialog classes nobody creates**, built into the binary: `RealignReviewDialog` and
+  `SpikeRealignDialog` (587 lines), left from the realign review that was taken out of the
+  application.
 - `src/klusters/docs/CONCURRENCY.md` already notes `stopAllViewThreads()` has no caller.
 
 The list is textual: a function reached only through a string or a template would be on it
-wrongly. `scripts/audit/dead_and_dupes_textual.py` prints it.
+wrongly (the two `QValidator::fixup` overrides are). `scripts/audit/dead_and_dupes_textual.py`
+prints it.
 
-**Fix.** Delete the three files; triage the list largest first.
+*Done the same day (step 2):* 1,365 lines removed — `waveformcomparewidget`, the two dialogs
+and 28 unused functions of four lines or more, among them `KlustersDoc::rejectLastRealign`,
+`EventsProvider::loadData` and `renameEvent`, `Data::saveClusters`. Left on purpose:
+
+- the two XML files: `doc/dev/ARCHITECTURE.md` records a decision to leave the QtXml readers
+  alone, and `doc/dev/ROADMAP.md` says to delete one of them. The two documents disagree;
+- `Data::clusterEnvelopeOverlap` and `invalidateClusterTemplate`: six comments define the
+  merge-recommendation scan's contract by the first;
+- `KlustersDoc::isChildScopeHidden`: the only reader of `childScopeVisible`, which
+  `setChildScope` still writes — a filter that is set and never applied, to settle whole;
+- `Data::revertLastSpkOverlayBatch`: unused since `rejectLastRealign` went, and what an undo
+  of a realign needs;
+- the `BinFile` read / write helpers (a symmetric set in one small header);
+- 64 functions of one to three lines.
 
 ## 8. Parallel copies
 
@@ -225,7 +241,8 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
 
 1. ~~Register the 30 self-tests with `ctest`.~~ Done: `ctest -L selftest`, 36 tests, about
    three minutes.
-2. Delete the three unbuilt files; triage the unused functions.
+2. ~~Delete the three unbuilt files; triage the unused functions.~~ Done, but for the two XML
+   files (§7).
 3. The command table (§3). The three functions it replaces are 2,622 lines, and it removes
    the class of fault the lock audit found.
 4. Move the undo history into one object (§2, §9); update the two internal references.

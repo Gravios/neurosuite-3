@@ -467,13 +467,6 @@ void ClusterPalette::setSimilarityOrder(const QList<int>& orderedIds){
     updateClusterList();
 }
 
-void ClusterPalette::clearSimilarityOrder(){
-    if(similarityOrder.isEmpty())
-        return;
-    similarityOrder.clear();
-    updateClusterList();
-}
-
 void ClusterPalette::updateClusterList(){
     if(!doc)
         return;

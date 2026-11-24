@@ -240,24 +240,6 @@ bool KlustersDoc::isLastView() {
 }
 
 
-void KlustersDoc::updateAllViews(KlustersView *sender){
-    for(int i =0; i<viewList->count();++i)
-    {
-        KlustersView *view = viewList->at(i);
-        view->update(sender);
-    }
-
-}
-
-void KlustersDoc::refreshAllViews()
-{
-    for (int i = 0; i < viewList->count(); ++i) {
-        KlustersView* view = viewList->at(i);
-        view->update(nullptr);         // repaint scatter + waveform
-        view->updateViewContents();    // fires updateDrawing() → askForCorrelograms()
-    }
-}
-
 void KlustersDoc::forceClusterRefresh(int clusterId)
 {
     for (int i = 0; i < viewList->count(); ++i)
@@ -507,17 +489,6 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow){
 }
 
 // ── cluster masking ─────────────────────────────────────────────────────────
-void KlustersDoc::maskClusters(const QList<int>& clustersToMask){
-    for(int id : clustersToMask)
-        maskedClusters.insert(id);
-    applyMask();
-}
-
-void KlustersDoc::unmaskClusters(const QList<int>& clustersToUnmask){
-    for(int id : clustersToUnmask)
-        maskedClusters.remove(id);
-    applyMask();
-}
 
 void KlustersDoc::setMaskKeeping(const QList<int>& clustersToKeep){
     const QSet<int> keep(clustersToKeep.constBegin(),clustersToKeep.constEnd());
@@ -540,18 +511,6 @@ void KlustersDoc::clearMask(){
 
 QList<int> KlustersDoc::maskedClusterIds() const{
     return maskedClusters.values();
-}
-
-QList<int> KlustersDoc::unmaskedClusterIds() const{
-    QList<int> out;
-    const QList<dataType> all = clusteringData->clusterIds();
-    out.reserve(all.size());
-    for(dataType id : all){
-        const int cid = static_cast<int>(id);
-        if(!maskedClusters.contains(cid))
-            out.append(cid);
-    }
-    return out;
 }
 
 void KlustersDoc::applyMask(){
@@ -648,17 +607,6 @@ bool KlustersDoc::prevChunk(){
     --currentChunkIndex;
     applyChunkWindow();
     return true;
-}
-
-void KlustersDoc::gotoChunk(int index){
-    if(!chunkMode)
-        return;
-    if(index < 0)
-        index = 0;
-    if(index > nbChunks - 1)
-        index = nbChunks - 1;
-    currentChunkIndex = index;
-    applyChunkWindow();
 }
 
 void KlustersDoc::chunkTimeWindow(int index, long& t0, long& t1) const{

@@ -529,17 +529,6 @@ bool KlustersDoc::collisionRowsOutdated() const
     return clusteringData->currentSnapshot()->spikesByCluster != collisionRowsBuiltOn;
 }
 
-void KlustersDoc::setCollisionRowsShown(bool shown)
-{
-    if (!clusteringData) return;
-    clusteringData->setSpkcShown(shown, collisionRowClusters);
-    if (childData) {
-        QList<int> kids;
-        for (const dataType id : childData->clusterIds()) kids.append(static_cast<int>(id));
-        childData->setSpkcShown(shown, kids);
-    }
-}
-
 qint64 KlustersDoc::collisionRowsActive() const
 {
     return clusteringData ? clusteringData->spkcActiveRecordCount() : 0;

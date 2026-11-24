@@ -61,14 +61,6 @@ public:
         computeRecordingLength();
     }
 
-    /**Sets the resolution used to record the data contained in the file identified by fileUrl.
-  * @param res resolution.
-  */
-    void setResolution(int res){
-        resolution = res;
-        computeRecordingLength();
-    }
-
     /**Sets the sampling rate used to record the data contained in the file identified by fileUrl.
   * @param rate the sampling rate.
   */
