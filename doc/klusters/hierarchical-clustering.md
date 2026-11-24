@@ -200,14 +200,14 @@ child palette is shown.
 | Dissolve Parent into Children | — | Each atom of the selected fiber becomes its own fiber (one keeps the fiber's id). |
 | Break Up Parent by Template… | — | Each atom of the selected fiber(s) moves, whole and keeping its id, to the fiber whose template it matches best among those with more than a given number of spikes (default 100); the atoms matching none become fibers of their own. See [Break Up Parent by Template](#break-up-parent-by-template) below. |
 | Drop Child to Noise | — | Moves the selected atoms' spikes to the noise cluster (1), all in one step. The same as `Delete` in the child palette (`dropChildrenToBin`); the selection lands on the next atom, or on the next fiber when the fiber emptied. |
-| Compact Cluster IDs (parents and children) | — | Renumbers both layers into the low integers without gaps (0 and 1 stay). Clears the atom undo history. |
+| Compact Cluster IDs (parents and children) | — | Renumbers both layers into the low integers without gaps (0 and 1 stay). The undo history is kept. |
 | Merge Orphan Children (by median waveform)… | `Shift+B` | Gathers the selected fiber's tiny leftover atoms (below a spike count): those that match the median waveform of the fiber's other atoms, the ones not being merged, are merged into one atom; the rest stay as they are. Nothing is deleted; *Undo Child-Layer Edit* (`Ctrl+Shift+Z`) takes the merge back. |
 | Merge Orphan Parents (by template)… | `Ctrl+Shift+B` | Gathers the tiny fibers: each is matched to the template (mean waveform) of the fiber it resembles most among those not being merged; those matching the same fiber are merged into one new fiber beside it, those matching none stay as they are. See [Merge Orphan Parents](#merge-orphan-parents) below. |
 | Repair Nesting (re-cut atoms onto parents) | `Shift+N` | See [Repair Nesting](#repair-nesting) below. |
 | Merge Selected Children (atom) | — | Merges the selected atoms of one fiber into one atom. |
 | *Actions → Recluster → Recluster with fiber-kit* | `Shift+Q` | With atoms selected, runs the fiber-kit plan on those atoms' spikes and replaces them with the atoms it finds (see the README, "Recluster with fiber-kit"). |
 | Flatten Hierarchy to Flat Clustering | — | Merges every fiber's atoms into one atom with the fiber's id, so the atom layer becomes a copy of the fiber layer. |
-| Undo Child-Layer Edit / Redo Child-Layer Edit | `Ctrl+Shift+Z` / `Ctrl+Shift+Y` | Undo or redo in the atom layer's own history. |
+| Undo Child-Layer Edit / Redo Child-Layer Edit | `Ctrl+Shift+Z` / `Ctrl+Shift+Y` | Undo or redo the most recent edit when it is an atom edit (see Atom-level undo/redo). |
 
 The corresponding document methods are `mergeParents`, `promoteChildren`,
 `dissolveParent`, `dropChildToNoise` / `dropChildrenToBin`, `mergeChildren`,
@@ -251,9 +251,10 @@ fiber at or above it a template. A high threshold merges little. A fiber
 with few spikes has a noisy mean waveform, so its correlation with a template
 stays well below 1 even when it is the same unit: at 0.99 often no orphan
 matches at all. The noise and artefact clusters and the reserved chunk clusters
-take no part. Each new fiber is one step in **Edit → Undo**, so only as many as the
-undo depth (**Preferences → General → Session**) can be undone; the box says
-so when the plan needs more.
+take no part. **Edit → Undo** takes the whole command back in one step. Each new
+fiber is one level of the undo depth (**Preferences → General → Session**, 20 by
+default), so a plan with more fibers than that is only partly undone; the box
+says so.
 
 ### Break Up Parent by Template
 
@@ -273,9 +274,10 @@ it belongs to.
 4. A box shows the plan; **Show Details…** lists every atom with its best match
    and correlation. Nothing changes until it is accepted.
 
-Every atom keeps its id. The atoms going to the same target move in one step,
-and each new fiber is another, so the box says how many undo steps the plan
-takes when the undo depth (**Preferences → General → Session**) is smaller.
+Every atom keeps its id. **Edit → Undo** takes the whole command back in one
+step. The atoms going to the same target are one level of the undo depth and
+each new fiber is another, so the box says so when the plan needs more levels
+than the depth (**Preferences → General → Session**) keeps.
 The selection lands on every fiber that received an atom or now holds one. A
 fiber whose only atom matches nothing is left as it is.
 
@@ -292,19 +294,33 @@ among themselves. Compact Cluster IDs keeps its id. See
 
 ## Atom-level undo/redo
 
-The atom layer has its **own** undo/redo history, separate from the fiber
-layer (**Hierarchy → Undo / Redo Child-Layer Edit**, `Ctrl+Shift+Z` /
-`Ctrl+Shift+Y`). The main **Edit → Undo/Redo** follows whichever layer is
-currently shown, so undo affects atom edits while the child view has focus
-and fiber edits otherwise.
+There is **one** undo history for both layers (since 2026-11-24; there were
+two, and **Edit → Undo** took from whichever layer was shown). **Edit →
+Undo/Redo** takes the most recent edit, whether it was made on the fibers or
+on the atoms, and whichever layer is shown.
+
+- Undoing a fiber edit puts the atoms back as they were before it. A fiber
+  split that cut across atoms no longer leaves the fragments behind as extra
+  atoms, and an atom edit made before a fiber edit can still be undone after
+  it (a fiber split, delete, watershed or recluster used to drop the atom
+  history).
+- A hierarchy command (Promote, Drop to Noise, Dissolve, Break Up, Merge
+  Orphans) is one step, however many atoms it moved. So are a merge and the
+  renumbering Klusters runs after it.
+- **Hierarchy → Undo / Redo Child-Layer Edit** (`Ctrl+Shift+Z` /
+  `Ctrl+Shift+Y`) undoes the most recent edit only when it is an atom edit. It
+  does not step over a newer fiber edit: undo that first.
+- The depth is **Preferences → General → Session** (20 by default; it was 2).
+  A setting saved earlier keeps its value.
+- Not undoable: realign (also the automatic ones), nudge, Sort Spikes by Time.
 
 ## Repair Nesting
 
 **Hierarchy → Repair Nesting** (`Shift+N`, `repairNesting()`) resyncs the
 atom layer to the fiber layer: it re-cuts every atom whose spikes now lie in
 more than one fiber so that each atom belongs to one fiber again, re-derives
-the atom→fiber maps from the current data, and clears the atom undo/redo
-history (the atom structure has just been re-cut). The next save writes the
+the atom→fiber maps from the current data. The undo history is kept; the
+repair itself is not a step of it. The next save writes the
 regenerated `.clp`. Fiber edits do not do this on their own: run it after
 reassigning or consolidating fibers in a way that leaves atoms straddling
 fibers.

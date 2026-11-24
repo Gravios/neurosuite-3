@@ -6228,8 +6228,9 @@ void KlustersApp::slotMergeOrphanParents(){
                        .arg(nOrphans).arg(where).arg(minSpikes).arg(nTemplates)
                        .arg(besideOrphans).arg(besideMerges).arg(minCorr, 0, 'f', 2).arg(stay);
     if(besideMerges > nbUndo)
-        text += tr("\n\nEach new parent is one undo step, and only the last %1 can be "
-                   "undone (Preferences ▸ General ▸ Session).").arg(nbUndo);
+        text += tr("\n\nUndo takes the whole command back in one step, but each new parent is one "
+                   "level of the undo depth and only the last %1 are kept: Undo will take back "
+                   "only those (Preferences ▸ General ▸ Session).").arg(nbUndo);
     QMessageBox box(QMessageBox::Question, tr("Merge Orphan Parents"), text,
                     QMessageBox::Yes | QMessageBox::No, this);
     box.setDefaultButton(QMessageBox::Yes);
@@ -6340,7 +6341,8 @@ void KlustersApp::slotBreakUpParents(){
     const int steps = static_cast<int>(moves.size()) + own;
     if(steps > nbUndo)
         text += QStringLiteral("\n\n") +
-                tr("This takes %1 undo steps, and only the last %2 can be undone (Preferences ▸ General ▸ Session).")
+                tr("Undo takes the whole command back in one step, but it needs %1 levels of the undo depth and "
+                   "only the last %2 are kept: Undo will take back only those (Preferences ▸ General ▸ Session).")
                     .arg(steps).arg(nbUndo);
     QMessageBox box(QMessageBox::Question, title, text, QMessageBox::Yes | QMessageBox::No, this);
     box.setDefaultButton(QMessageBox::Yes);
@@ -6792,8 +6794,11 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
     // No realign (option off, lane busy, or nothing realignable): renumber first
     // (only when the set actually changed and the option is on), then recompute
     // matrices against the final ids.
-    if (clusterSetChanged && configuration().getAutoRenumberAfterMerge())
+    if (clusterSetChanged && configuration().getAutoRenumberAfterMerge()) {
+        doc->joinNextUndoLevel();              // Klusters' own renumbering: undone with the edit
         doc->renumberClusters();
+        doc->joinNextUndoLevel(false);
+    }
     if (configuration().getAutoUpdateMatricesAfterMerge()){
         slotUpdateErrorMatrix();
         // The matrix recompute runs on a background thread; lock further edits

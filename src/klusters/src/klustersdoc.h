@@ -922,27 +922,29 @@ public:
      *  from the child palette.
      */
     int flattenHierarchyToClu(KlustersView& activeView);
-    /** Undo / redo the most recent atom-layer edit (childData), independent of
-     *  the parent Ctrl+Z timeline. */
+    /** The forced child undo / redo (Ctrl+Shift+Z / Y): the newest entry of the
+     *  undo history when it is a child edit; false when the newest is a parent
+     *  edit (that one is undone first, with Undo). */
     bool undoChildEdit(KlustersView& activeView);
     bool redoChildEdit(KlustersView& activeView);
-    int childUndoCount() const { return childUndoStack.count(); }
-    int childRedoCount() const { return childRedoStack.count(); }
-    /** Undo/redo dispatcher for Ctrl+Z / Ctrl+Y.  Routes to the SHOWN layer's
-     *  stack ONLY: the parent (clusteringData) stack when the parent layer is
-     *  shown, the atom (childData) stack when the child layer is shown — gated on
-     *  childScopeActive via the live per-layer stack counts.  There is no unified
-     *  cross-layer timeline: a keystroke reverts the most recent edit in the
-     *  active layer, and an atom undo never reverts a parent edit or vice versa
-     *  (switch scope, or use the forced atom undo/redo Ctrl+Shift+Z/Y, to reach
-     *  the other layer). */
+    /// Child edits at the TOP of the undo / redo history: what the forced child
+    /// undo (Ctrl+Shift+Z) can reach without stepping over a newer parent edit.
+    int childUndoCount() const;
+    int childRedoCount() const;
+    /// Steps Undo / Redo can take (a hierarchy command counts as one).
+    int undoStepCount() const;
+    int redoStepCount() const;
+    /** The next undo-level pushed joins the step of the level before it: the
+     *  renumbering Klusters runs by itself after a merge is undone WITH the merge.
+     *  Reset by the push, or by passing false when nothing was pushed. */
+    void joinNextUndoLevel(bool join = true) { undoJoinNext = join; }
+    /** Undo / Redo (Ctrl+Z / Ctrl+Y): one step of the ONE history both layers
+     *  share (see UndoEntry) -- the newest edit whatever its layer and whichever
+     *  layer is shown, and with it every level of the same hierarchy command. */
     void undoDispatch();
     void redoDispatch();
     int  parentUndoCount() const { return clusterColorListUndoList.count(); }
     int  parentRedoCount() const { return clusterColorListRedoList.count(); }
-    /** Force the atom timeline (Ctrl+Shift+Z and its redo): revert / replay the
-     *  most recent atom edit even when a newer parent edit exists, keeping the
-     *  unified order timeline consistent. */
     bool undoChildEditDispatch();
     bool redoChildEditDispatch();
     /** Re-derive parentToChildren/childToParent from the live .clu + .clc (a
@@ -950,12 +952,6 @@ public:
      *  the data, so it keeps the maps correct across edits AND undo/redo with no
      *  separate map-undo stack. */
     void rebuildHierarchyFromData();
-    /** collapseToSelfChildren() after a parent undo / redo.  When the re-cut changed
-     *  the child labelling it pushed a childData undo level that no ChildEdit stands
-     *  for; the child undo stacks are dropped then, as repairNesting() does after a
-     *  parent edit -- the next child undo would otherwise pop the re-cut itself and
-     *  put a child back across two parents. */
-    void recutChildrenAfterParentUndo();
 
     /**Compacts the ids of BOTH clusterings into the low integers with no gaps:
   * parents become 2,3,4,... and atoms likewise, with the reserve bins 0 and 1
@@ -3069,18 +3065,48 @@ private:
     /// The log entry of the child edit being made: set by logChildBefore, taken by
     /// recordChildEdit, so the UNDO / REDO record can name what it reverts.
     int childEditLogIdx = -1;
-    QList<ChildEdit> childUndoStack;
-    QList<ChildEdit> childRedoStack;
-    // The two undo stacks are independent and layer-scoped: undoDispatch/redoDispatch
-    // act on the active layer's own stack (parent clusteringData via undo()/redo(),
-    // or the atom childData stack above), so an undo never crosses layers.  There is
-    // no unified-order timeline -- switch scope to undo the other layer.
-    // Record one atom-layer edit: push its ChildEdit, invalidate the atom redo, and
-    // refresh the active-layer Undo/Redo enable.  The single funnel for child edits.
+    /** ONE history for both layers, newest first.
+     *
+     *  There were two -- the parent stack and a child stack -- and Ctrl+Z took from
+     *  whichever layer was shown.  The layers are not independent: a parent edit
+     *  re-cuts the children, so undoing it must put the children back, and a child
+     *  edit made before it must not be undone until it is.  Each entry now carries
+     *  the child labelling to restore when it is undone (the state before the edit),
+     *  and Undo takes the newest entry whatever its layer.  A parent entry also
+     *  reverts one level of the parent Data history, as before; a child entry
+     *  restores its labelling and nothing else -- childData's own undo history is
+     *  no longer what child undo pops (the re-cut after a parent edit pushes levels
+     *  on it that no entry stands for).
+     *
+     *  `group`: the entries one hierarchy command (a gesture) pushed share it and
+     *  are undone together; 0 = an entry of its own.
+     *
+     *  Depth: nbUndo entries.  The parent Data history holds nbUndo levels, so every
+     *  parent entry here has its level. */
+    struct UndoEntry {
+        bool child = false;
+        int  group = 0;
+        QVector<dataType> childLabels;   ///< empty: no child layer when it was pushed
+        ChildEdit edit;                  ///< child entries: the ids, for the log
+    };
+    QList<UndoEntry> undoTimeline;
+    QList<UndoEntry> redoTimeline;
+    int  undoGroupDepth   = 0;           ///< open gestures (beginGesture / endGesture)
+    int  undoGroupCurrent = 0;           ///< the group of the entries being pushed, 0 outside a gesture
+    int  undoGroupCounter = 0;
+    bool undoJoinNext     = false;
+    static int stepCount(const QList<UndoEntry>& l);
+    void pushUndoEntry(UndoEntry e);
+    bool undoOneEntry(KlustersView& activeView);
+    bool redoOneEntry(KlustersView& activeView);
+    /// The child layer was replaced wholesale: colours, maps, views.
+    void afterChildLabelsRestored(KlustersView& activeView);
+    // Record one atom-layer edit: push it on the undo history as a child entry
+    // (with the atom labels from before it), invalidate the redo, and refresh the
+    // Undo/Redo enable.  The single funnel for child edits.
     void recordChildEdit(const ChildEdit& e);
-    // Emit updateUndoNb/updateRedoNb for the ACTIVE layer's stack, so the main Undo/
-    // Redo enable tracks whichever layer is shown.  Call after any edit/undo/redo and
-    // on every scope switch (setActiveClustering).
+    // Emit updateUndoNb/updateRedoNb with the steps of the undo history (the same
+    // whichever layer is shown).  Call after any edit/undo/redo.
     void refreshUndoRedoEnable();
     // sibling paths captured at open so the child clustering can be re-read lazily
     QString     siblingFetPath, siblingSpkPath, siblingYamlPath;

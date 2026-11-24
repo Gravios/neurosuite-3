@@ -81,25 +81,26 @@ outstanding from the Qt 6.4–6.12 work: the per-release matrix covers
 
 ### 📋 planned
 
-#### Klusters undo: what the 2026-11-24 audit left open
+#### Klusters undo: what is left after the single history (2026-11-24)
 
-The audit fixed five faults (CHANGELOG, 2026-11-24).  These are behaviour, not crashes, and each
-needs a decision rather than a patch:
+The audit fixed five faults and the single undo history closed the four behaviour gaps
+(CHANGELOG, 2026-11-24, two entries).  Left:
 
-- **A hierarchy command is several undo steps.**  Promoting three children pushes three parent
-  levels; at the default depth of 2 the first move cannot be undone and one Ctrl+Z leaves the
-  command half-reverted.  Wanted: the levels of one gesture grouped into one step.
-- **A parent undo does not restore the child layer.**  A parent split that cut across children
-  leaves the fragments as extra children after it is undone, and any parent split, delete,
-  watershed, dipsplit or recluster drops the child undo history (`repairNesting`), silently.
-  Wanted: a joint level (parent and child labelling together), which also gives one timeline in
-  place of the two per-layer stacks.
-- **A child recluster** records its edit and then re-cuts: when the re-cut changes labels the
-  child history is one level deeper than the stack.  Read in the code, not reproduced.
-- **Default depth 2** (`Configuration::nbUndoDefault`); a merge with automatic renumbering is
-  two levels.  A level is one labelling.
-- **Not undoable**: realign (the automatic ones too), nudge, the `.cli` annotations.
-- In the log a child edit is never `bad`; readers join `UNDO.reverts_action_idx`.
+- **A command larger than the depth.**  One Undo takes a whole hierarchy command back, but each
+  parent it creates is one level of the depth (20 by default): a Break Up into 30 parents is
+  undone for its last 20 only, and the box says so before it runs.  Wanted: one level per
+  command (the labelling before and after), which needs `Data` to open and close a level
+  explicitly.
+- **Not undoable**: realign (the automatic ones too), nudge, Sort Spikes by Time, the `.cli`
+  annotations.
+- **Changes the history does not record.**  A standalone Repair Nesting and an id compaction
+  that only renumbers atoms are not steps.  An undo puts the atom labelling back as it was
+  before the edit it reverts, so undoing an edit made *before* one of these reverts it as well.
+  Repair Nesting can be run again; nothing is lost.
+- **In the log a child edit is never `bad`**; readers join `UNDO.reverts_action_idx`.
+- **Memory**: every level of the history holds one atom labelling (4 bytes a spike) next to the
+  parent level: 20 levels of 2 M spikes are 160 MB.
+- Tested with scripted synthetic sessions only (`test_undo_pairing.py`).
 
 **Apple GPU (Metal) backend.**
 macOS has no CUDA, HIP or SYCL, so every GPU site needs a Metal

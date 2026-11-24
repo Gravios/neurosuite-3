@@ -356,8 +356,11 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     // otherwise have done.  A manual PCA-Center Align All does not renumber.
     if (realignPostOpRenumberMatrix) {
         realignPostOpRenumberMatrix = false;
-        if (realignPostOpSetChanged && configuration().getAutoRenumberAfterMerge())
+        if (realignPostOpSetChanged && configuration().getAutoRenumberAfterMerge()) {
+            doc->joinNextUndoLevel();          // Klusters' own renumbering: undone with the edit
             doc->renumberClusters();
+            doc->joinNextUndoLevel(false);     // (it pushed nothing when the ids were consecutive)
+        }
     }
     // The batch realign shifted spikes, so waveforms and the reprojected features
     // changed and the error / template / residual matrices are now stale.

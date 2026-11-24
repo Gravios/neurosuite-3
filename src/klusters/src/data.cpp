@@ -4300,6 +4300,19 @@ void Data::moveSpikeSubset(int fromCluster, const QSet<dataType>& featureRowSet,
     }
 }
 
+QVector<dataType> Data::labelsOfLastUndoLevel() const
+{
+    if (undoSnapshots.isEmpty() || !undoSnapshots.first() || !undoSnapshots.first()->spikesByCluster)
+        return QVector<dataType>();
+    const SortableTable& t = *undoSnapshots.first()->spikesByCluster;
+    QVector<dataType> labels(static_cast<int>(nbSpikes) + 1, 0);
+    for (dataType pos = 1; pos <= nbSpikes; ++pos) {
+        const dataType row = t(1, pos);
+        if (row >= 1 && row <= nbSpikes) labels[static_cast<int>(row)] = t(2, pos);
+    }
+    return labels;
+}
+
 void Data::restoreClusterLabels(const QVector<dataType>& labels)
 {
     // Inverse of labelByFeatureRow(): group every feature row by its target

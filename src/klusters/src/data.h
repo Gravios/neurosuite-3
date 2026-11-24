@@ -955,6 +955,12 @@ public:
      *    time_overlap          overlap of the two spans / the shorter span */
     QMap<QString, QVariant> pairEvidence(int a, int b) const;
 
+    /** The labelling (as labelByFeatureRow gives it) held by the newest undo
+     *  level: the state before the last committed edit.  Empty when there is no
+     *  level.  KlustersDoc keeps it with a child edit so that undoing the edit
+     *  restores that state itself, whatever was pushed on this history since. */
+    QVector<dataType> labelsOfLastUndoLevel() const;
+
     /** Compute the feature-space centroid for every cluster currently in memory.
      *  Returns a map: clusterId → centroid vector of length (nbDimensions-1).
      *  Used by callers that snapshot multiple clusters so centroid computation

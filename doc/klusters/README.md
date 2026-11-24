@@ -1385,11 +1385,11 @@ Every snapshot line carries `layer`: `parent` (the `.clu` units) or `child`
 (the `.clc` atoms).  Child ids collide with parent numerals, so readers key on
 (`layer`, `cluster`).  A child-scope edit -- a split, watershed, delete or
 recluster of atoms, `mergeChildren` -- writes its snapshots from the atom
-layer with `layer: child`.  Child edits live on the atom undo stack, which the
-logger's status walk cannot see, so these entries are not undo-paired: their
-`status` stays `good`, and an atom-layer `Ctrl+Shift+Z` / redo is logged as its
-own `UNDO` / `REDO` detail (`layer: child`, with the `added` / `modified` /
-`deleted` atom ids of the edit reverted).
+layer with `layer: child`.  The status walk follows the parent levels only, so
+these entries are not undo-paired: their `status` stays `good`, and the undo or
+redo of a child edit is logged as its own `UNDO` / `REDO` detail (`layer:
+child`, the `added` / `modified` / `deleted` atom ids, and
+`reverts_action_idx`: the entry of the edit it reverts or replays).
 
 A hierarchy **command** is logged as a `GESTURE` entry -- one per command,
 no snapshots, not undo-paired -- whose first `ACTION_DETAIL` holds the plan

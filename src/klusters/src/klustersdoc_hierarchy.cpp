@@ -546,8 +546,9 @@ bool KlustersDoc::compactAllClusterIds(){
         // stack is dropped rather than silently misapplied -- the caller says
         // so in the status bar.  (The parent undo entry that renumberClusters
         // pushed is unaffected: it carries its own old<->new maps.)
-        childUndoStack.clear();
-        childRedoStack.clear();          // the same ids, the same reason: it was left standing
+        // (The child entries of the undo history are not dropped any more: each holds the
+        // labelling to restore, ids and all, and the parent renumbering entry above them
+        // holds the labelling from before this renumbering.)
 
         // The joint working set also names atoms, but unlike the undo stack it
         // is only ids, so it translates instead of dropping: atomOldNew is the
@@ -1332,17 +1333,6 @@ void KlustersDoc::collapseToSelfChildren(){
 
 }
 
-void KlustersDoc::recutChildrenAfterParentUndo(){
-    if (!childData) return;
-    const QVector<dataType> before = childData->labelByFeatureRow();
-    collapseToSelfChildren();
-    if (before != childData->labelByFeatureRow()) {
-        childUndoStack.clear();
-        childRedoStack.clear();
-        refreshUndoRedoEnable();
-    }
-}
-
 void KlustersDoc::repairNesting(){
     // Deliberate full resync of the atom layer to the parent layer, independent of the parent
     // and atom undo timelines: collapse loose spikes to self children (above) and reset the
@@ -1350,10 +1340,10 @@ void KlustersDoc::repairNesting(){
     // (inside collapseToSelfChildren) re-derives childToParent / parentToChildren, which the
     // next Save writes out as the regenerated .clp.
     collapseToSelfChildren();
-    if (childData){
-        childUndoStack.clear();
-        childRedoStack.clear();
-    }
+    // The undo history is kept.  It used to be dropped here -- silently, on every parent
+    // split, delete, watershed and recluster -- because the re-cut pushes a level on
+    // childData's own history that no child entry stood for.  Entries now restore the
+    // labelling they hold, so that level is nobody's concern.
 }
 
 int KlustersDoc::mergeParents(const QList<int>& parentsIn, KlustersView& activeView){
@@ -2214,110 +2204,160 @@ int KlustersDoc::flattenHierarchyToClu(KlustersView& activeView){
     return atomsBefore - static_cast<int>(after.size());   // atoms removed
 }
 
-bool KlustersDoc::undoChildEdit(KlustersView& activeView){
-    if (!childData || childUndoStack.isEmpty()) return false;
-    ChildEdit e = childUndoStack.takeFirst();
-    childData->undo();                                 // reverts childData's tables
-    childRedoStack.prepend(e);
-    logChildUndoRedo(/*redo=*/false, e.added, e.modified, e.deleted, e.logIdx);
-    normaliseChildIds();               // names are not on the undo stack (see normaliseChildIds)
-    syncChildColors();
-    // Child-primary: an undo restores a previous labelling, and the map that goes
-    // with it is not recoverable from the ChildEdit -- it records id SETS, not the
-    // parentage they had.  So the map is reseeded from the restored arrays.  That
-    // is correct but wasteful: recording the map delta alongside the ChildEdit
-    // would make undo O(edited) like every other operation, and is the one place
-    // this backend still needs a design decision rather than wiring.
-    rebuildHierarchyFromData();
-    if (childScopeActive) activeView.showAllWidgets();
-    emit hierarchyChanged();
-    modified = true;
-    refreshUndoRedoEnable();
-    return true;
-}
+// ── undo / redo: one history for both layers ────────────────────────────────
+// See UndoEntry (klustersdoc.h).  undo() / redo() in klustersdoc_undo.cpp remain the
+// PARENT workers -- one level of clusteringData, the colours, the views, the log -- and
+// are reached through undoOneEntry / redoOneEntry only.
+extern int nbUndo;      // the undo depth (main.cpp)
 
-bool KlustersDoc::redoChildEdit(KlustersView& activeView){
-    if (!childData || childRedoStack.isEmpty()) return false;
-    ChildEdit e = childRedoStack.takeFirst();
-    childData->redo();                                // re-applies the atom edit
-    childUndoStack.prepend(e);
-    logChildUndoRedo(/*redo=*/true, e.added, e.modified, e.deleted, e.logIdx);
-    normaliseChildIds();               // the redone table carries the names it had before they were settled
-    syncChildColors();
-    // Child-primary: an undo restores a previous labelling, and the map that goes
-    // with it is not recoverable from the ChildEdit -- it records id SETS, not the
-    // parentage they had.  So the map is reseeded from the restored arrays.  That
-    // is correct but wasteful: recording the map delta alongside the ChildEdit
-    // would make undo O(edited) like every other operation, and is the one place
-    // this backend still needs a design decision rather than wiring.
-    rebuildHierarchyFromData();
-    if (childScopeActive) activeView.showAllWidgets();
-    emit hierarchyChanged();
-    modified = true;
-    refreshUndoRedoEnable();
-    return true;
+int KlustersDoc::childUndoCount() const {
+    int n = 0;
+    for (const UndoEntry& e : undoTimeline) { if (!e.child) break; ++n; }
+    return n;
 }
-
-// ── layer-scoped undo/redo dispatch ──────────────────────────────────────────
-// The two layers keep independent undo stacks: the parent stack (clusteringData,
-// driven by undo()/redo()) and the atom stack (childData, driven by
-// undoChildEdit()/redoChildEdit()).  There is no unified-order timeline -- a
-// keystroke reverts the most recent edit IN THE ACTIVE LAYER only, so an atom
-// undo can never revert a parent edit and vice versa; switch scope to undo the
-// other layer.  The forced atom undo/redo (Ctrl+Shift+Z / Ctrl+Shift+Y) reaches
-// the atom stack regardless of which layer is shown.
+int KlustersDoc::childRedoCount() const {
+    int n = 0;
+    for (const UndoEntry& e : redoTimeline) { if (!e.child) break; ++n; }
+    return n;
+}
+int KlustersDoc::stepCount(const QList<UndoEntry>& l) {
+    int n = 0, last = -1;
+    for (const UndoEntry& e : l) {
+        if (e.group == 0 || e.group != last) ++n;
+        last = e.group ? e.group : -1;
+    }
+    return n;
+}
+int KlustersDoc::undoStepCount() const { return stepCount(undoTimeline); }
+int KlustersDoc::redoStepCount() const { return stepCount(redoTimeline); }
 
 void KlustersDoc::refreshUndoRedoEnable(){
-    // The main Undo/Redo act on the shown layer, so report that layer's counts.
-    emit updateUndoNb(childScopeActive ? childUndoCount() : parentUndoCount());
-    emit updateRedoNb(childScopeActive ? childRedoCount() : parentRedoCount());
+    emit updateUndoNb(undoStepCount());
+    emit updateRedoNb(redoStepCount());
 }
 
-extern int nbUndo;      // the undo depth both layers' Data rings are capped at (main.cpp)
+void KlustersDoc::pushUndoEntry(UndoEntry e){
+    e.group = undoGroupCurrent;
+    if (undoJoinNext && !undoTimeline.isEmpty()) {
+        // Klusters' own follow-up to the edit before it (the renumbering after a merge).
+        if (undoTimeline.first().group == 0) undoTimeline.first().group = ++undoGroupCounter;
+        e.group = undoTimeline.first().group;
+    }
+    undoJoinNext = false;
+    undoTimeline.prepend(e);
+    while (undoTimeline.size() > qMax(1, nbUndo)) undoTimeline.removeLast();
+    redoTimeline.clear();                          // a new edit ends every redo, of either layer
+    refreshUndoRedoEnable();
+}
 
 void KlustersDoc::recordChildEdit(const ChildEdit& eIn){
-    ChildEdit e = eIn;
-    e.logIdx = childEditLogIdx;                   // the log entry this edit was written as, if any
+    UndoEntry u;
+    u.child = true;
+    u.edit = eIn;
+    u.edit.logIdx = childEditLogIdx;               // the log entry this edit was written as, if any
     childEditLogIdx = -1;
-    childUndoStack.prepend(e);
-    // As deep as the data can go back, and no deeper: childData keeps nbUndo levels,
-    // and an entry beyond that popped NO level -- the undo reported success, logged
-    // an UNDO and changed nothing.
-    while (childUndoStack.size() > qMax(1, nbUndo)) childUndoStack.removeLast();
-    childRedoStack.clear();                       // a new edit invalidates atom redo
-    refreshUndoRedoEnable();
+    // The state to go back to: what childData held before this edit, which is the level
+    // the edit itself just pushed (every caller records straight after its one commit).
+    if (childData) u.childLabels = childData->labelsOfLastUndoLevel();
+    pushUndoEntry(u);
+}
+
+void KlustersDoc::afterChildLabelsRestored(KlustersView& activeView){
+    syncChildColors();
+    rebuildHierarchyFromData();
+    // A safety net, not the mechanism: the restored labelling was consistent with the
+    // parents when it was taken, so this finds nothing to re-cut.
+    collapseToSelfChildren();
+    if (childScopeActive) activeView.showAllWidgets();
+    emit hierarchyChanged();
+    modified = true;
+}
+
+bool KlustersDoc::undoOneEntry(KlustersView& activeView){
+    if (undoTimeline.isEmpty()) return false;
+    UndoEntry e = undoTimeline.takeFirst();
+    const QVector<dataType> now = childData ? childData->labelByFeatureRow() : QVector<dataType>();
+    if (!e.child) {
+        if (parentUndoCount() == 0) return false;  // no level left for it (the depth was lowered)
+        undo();                                    // one parent level: data, colours, views, log
+    }
+    if (childData && !e.childLabels.isEmpty() && e.childLabels != now) {
+        childData->restoreClusterLabels(e.childLabels);
+        afterChildLabelsRestored(activeView);
+    } else if (childData && !e.child) {
+        afterChildLabelsRestored(activeView);      // the parents moved under the children: re-derive
+    }
+    if (e.child) logChildUndoRedo(/*redo=*/false, e.edit.added, e.edit.modified, e.edit.deleted, e.edit.logIdx);
+    e.childLabels = now;                           // what a redo of this entry restores
+    redoTimeline.prepend(e);
+    return true;
+}
+
+bool KlustersDoc::redoOneEntry(KlustersView& activeView){
+    if (redoTimeline.isEmpty()) return false;
+    UndoEntry e = redoTimeline.takeFirst();
+    const QVector<dataType> now = childData ? childData->labelByFeatureRow() : QVector<dataType>();
+    if (!e.child) {
+        if (parentRedoCount() == 0) return false;
+        redo();
+    }
+    if (childData && !e.childLabels.isEmpty() && e.childLabels != now) {
+        childData->restoreClusterLabels(e.childLabels);
+        afterChildLabelsRestored(activeView);
+    } else if (childData && !e.child) {
+        afterChildLabelsRestored(activeView);
+    }
+    if (e.child) logChildUndoRedo(/*redo=*/true, e.edit.added, e.edit.modified, e.edit.deleted, e.edit.logIdx);
+    e.childLabels = now;
+    undoTimeline.prepend(e);
+    return true;
 }
 
 void KlustersDoc::undoDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
-    if (!v) return;
-    if (childScopeActive){                        // atom layer shown -> atom stack only
-        if (childUndoCount() > 0) undoChildEdit(*v);
-    } else {                                      // parent layer shown -> parent stack only
-        if (parentUndoCount() > 0) undo();
-    }
+    if (!v || undoTimeline.isEmpty()) return;
+    undoGroupDepth = 0; undoGroupCurrent = 0;      // no command can be open while the user undoes
+    // One step: the newest entry, and with it every entry of the same command.
+    const int g = undoTimeline.first().group;
+    do {
+        if (!undoOneEntry(*v)) break;
+    } while (g != 0 && !undoTimeline.isEmpty() && undoTimeline.first().group == g);
+    refreshUndoRedoEnable();
 }
 
 void KlustersDoc::redoDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
-    if (!v) return;
-    if (childScopeActive){
-        if (childRedoCount() > 0) redoChildEdit(*v);
-    } else {
-        if (parentRedoCount() > 0) redo();
-    }
+    if (!v || redoTimeline.isEmpty()) return;
+    undoGroupDepth = 0; undoGroupCurrent = 0;
+    const int g = redoTimeline.first().group;
+    do {
+        if (!redoOneEntry(*v)) break;
+    } while (g != 0 && !redoTimeline.isEmpty() && redoTimeline.first().group == g);
+    refreshUndoRedoEnable();
 }
 
+// The forced child undo / redo (Ctrl+Shift+Z / Y): the newest entry when it is a child
+// edit.  A newer parent edit is undone first, with Ctrl+Z -- stepping over it would put
+// the children back under parents that have since changed.
+bool KlustersDoc::undoChildEdit(KlustersView& activeView){
+    if (!childData || undoTimeline.isEmpty() || !undoTimeline.first().child) return false;
+    const bool ok = undoOneEntry(activeView);
+    refreshUndoRedoEnable();
+    return ok;
+}
+bool KlustersDoc::redoChildEdit(KlustersView& activeView){
+    if (!childData || redoTimeline.isEmpty() || !redoTimeline.first().child) return false;
+    const bool ok = redoOneEntry(activeView);
+    refreshUndoRedoEnable();
+    return ok;
+}
 bool KlustersDoc::undoChildEditDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
-    if (!v || childUndoCount() == 0) return false;
-    return undoChildEdit(*v);          // forced atom undo, regardless of active scope
+    return v ? undoChildEdit(*v) : false;
 }
-
 bool KlustersDoc::redoChildEditDispatch(){
     KlustersView* v = app() ? app()->activeView() : nullptr;
-    if (!v || childRedoCount() == 0) return false;
-    return redoChildEdit(*v);          // forced atom redo, regardless of active scope
+    return v ? redoChildEdit(*v) : false;
 }
 
 // ── promotion: flat .clu -> hierarchical triple ─────────────────────────────

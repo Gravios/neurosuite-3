@@ -114,9 +114,13 @@ void KlustersDoc::prepareClusterColorUndo(){
     qDeleteAll(clusterColorListRedoList);
     clusterColorListRedoList.clear();
 
-    //Signal to klusters the new number of undo and redo
-    emit updateUndoNb(clusterColorListUndoList.count());
-    emit updateRedoNb(0);
+    // The one history both layers share: this parent level, with the child labelling
+    // to restore when it is undone (as it stands now: before the edit's re-cut).
+    {
+        UndoEntry e;
+        if (childData) e.childLabels = childData->labelByFeatureRow();
+        pushUndoEntry(e);                          // signals the new undo / redo counts
+    }
 }
 
 void KlustersDoc::prepareUndo(ClusterEditUndo action){
@@ -197,9 +201,10 @@ void KlustersDoc::nbUndoChangedCleaning(int newNbUndo){
             view->nbUndoChangedCleaning(newNbUndo);
         }
 
-        //Signal to klusters the new number of undo and redo
-        emit updateUndoNb(clusterColorListUndoList.count());
-        emit updateRedoNb(clusterColorListRedoList.count());
+        // The shared history is as deep as the new depth; what it dropped cannot be redone.
+        while (undoTimeline.size() > qMax(1, newNbUndo)) undoTimeline.removeLast();
+        redoTimeline.clear();
+        refreshUndoRedoEnable();
     }
 }
 
@@ -389,10 +394,7 @@ void KlustersDoc::undo(){
         // select nothing.
         clusterPalette.updateClusterList();
         clusterPalette.selectItems(clustersToShow);
-
-        //Signal to klusters the new number of undo and redo
-        emit updateUndoNb(clusterColorListUndoList.count());
-        emit updateRedoNb(clusterColorListRedoList.count());
+        // (the undo / redo counts are signalled by the caller, undoDispatch)
     }
 
     NS3_DIAG()<<"in KlustersDoc::undo 2";
@@ -425,7 +427,7 @@ void KlustersDoc::undo(){
     // is a strict superset of what was here, and it commits nothing when nothing is
     // loose -- no undo level, no cache invalidation -- so an undo that leaves the
     // layers consistent still costs only one scan.
-    if (childData) recutChildrenAfterParentUndo();
+    // (The child layer is put back by the caller, undoOneEntry / redoOneEntry.)
 }
 
 
@@ -550,10 +552,6 @@ void KlustersDoc::redo(){
 
         NS3_DIAG() << "in KlustersDoc::redo, 4  : ";
 
-        //Signal to klusters the new number of undo and redo
-        emit updateUndoNb(clusterColorListUndoList.count());
-        emit updateRedoNb(clusterColorListRedoList.count());
-
         NS3_DIAG() << "in KlustersDoc::redo, end  : ";
     }
 
@@ -569,6 +567,6 @@ void KlustersDoc::redo(){
     // as harmless in the modelled scenarios, but it is the same asymmetry and the
     // no-op case is free, so repair symmetrically rather than rely on redo happening
     // to be safe.
-    if (childData) recutChildrenAfterParentUndo();
+    // (The child layer is put back by the caller, undoOneEntry / redoOneEntry.)
 }
 

@@ -95,6 +95,8 @@
 
 #include <neurosuite/core/custody.hpp>
 
+extern int nbUndo;      // the undo depth (main.cpp)
+
 namespace {
 constexpr int kTickMs       = 50;
 constexpr int kIdleTicks    = 4;        // idle this long before a step is taken as done
@@ -128,6 +130,10 @@ void KlustersApp::startSelfTest(const QString& specPath)
     if (spec.contains(QStringLiteral("realignThreshold")))
         configuration().setRealignThreshold(spec.value(QStringLiteral("realignThreshold")).toDouble());
     realignArgs = buildRealignArgs();
+    if (spec.contains(QStringLiteral("nbUndo"))) {                // the undo depth (Preferences > General)
+        configuration().setNbUndo(spec.value(QStringLiteral("nbUndo")).toInt());
+        nbUndo = configuration().getNbUndo();
+    }
     // The three automatic steps after a cluster edit (Preferences > Clustering).
     if (spec.contains(QStringLiteral("autoRealign")))
         configuration().setAutoRealignAfterMerge(spec.value(QStringLiteral("autoRealign")).toBool());
@@ -729,6 +735,11 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         slotUndo();
         return true;
     }
+    if (step.contains(QStringLiteral("redo"))) {
+        // {"redo": true}: Edit > Redo.
+        slotRedo();
+        return true;
+    }
     if (step.contains(QStringLiteral("labels"))) {
         // {"labels": true}: the parent cluster of every spike row, in row order.
         const QVector<dataType> labels = doc->parentData().labelByFeatureRow();
@@ -879,7 +890,10 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         if (o.value(QStringLiteral("renumber")).toBool())  doc->renumberClusters();
         if (o.contains(QStringLiteral("toEnd")))           doc->renumberClustersToEnd(ids("toEnd"));
         if (o.contains(QStringLiteral("order")))           result.insert(QStringLiteral("returned"), doc->reorderClustersByPermutation(ids("order"), QStringLiteral("self-test")));
-        if (o.value(QStringLiteral("undo")).toBool())      doc->undo();
+        if (o.value(QStringLiteral("undo")).toBool())      doc->undoDispatch();
+        if (o.value(QStringLiteral("redo")).toBool())      doc->redoDispatch();
+        result.insert(QStringLiteral("undoSteps"), doc->undoStepCount());
+        result.insert(QStringLiteral("redoSteps"), doc->redoStepCount());
         if (o.value(QStringLiteral("undoChild")).toBool()) result.insert(QStringLiteral("returned"), doc->undoChildEditDispatch());
         if (o.value(QStringLiteral("redoChild")).toBool()) result.insert(QStringLiteral("returned"), doc->redoChildEditDispatch());
         QJsonObject parents, sizes, parentSizes;

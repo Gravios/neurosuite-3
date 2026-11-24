@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: one undo history for both layers](#2026-11-24--klusters-one-undo-history-for-both-layers) |
 | 2026-11-24 | [Klusters: undo and redo, five faults from an audit](#2026-11-24--klusters-undo-and-redo-five-faults-from-an-audit) |
 | 2026-11-24 | [Klusters: the curation log covers the child layer](#2026-11-24--klusters-the-curation-log-covers-the-child-layer) |
 | 2026-11-24 | [Klusters: the curation log says what started an action, what it did, and what was looked at and left](#2026-11-24--klusters-the-curation-log-says-what-started-an-action-what-it-did-and-what-was-looked-at-and-left) |
@@ -244,6 +245,41 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: one undo history for both layers
+
+The gaps the undo audit left open, closed: the parent and the child layer kept separate undo
+stacks, and the default depth was 2.
+
+<details>
+<summary>Details</summary>
+
+- **One history.**  Every edit, on the parents or on the children, is one entry of one list;
+  Undo and Redo take the newest, whichever layer is shown.  Before, Ctrl+Z took from the layer
+  on screen, so the order of two edits on different layers was lost.
+- **A parent undo restores the children.**  Each parent entry holds the child labelling from
+  before the edit and the undo puts it back.  A parent split across children no longer leaves
+  the fragments behind after it is undone, and a parent split, delete, watershed or recluster
+  no longer drops the child history (nor do Repair Nesting and the id compaction).
+- **A hierarchy command is one step**: Promote, Drop to Noise, Dissolve, Break Up, Merge
+  Orphans, however many children moved.  So are a merge or an edit and the renumbering Klusters
+  runs after it.
+- **Ctrl+Shift+Z / Y** (child-layer undo / redo) acts only when the newest edit is a child
+  edit; it does not step over a newer parent edit.
+- **Default depth 20** (was 2).  A depth saved in the settings keeps its value: check
+  Preferences ▸ General ▸ Session.
+- The boxes of Break Up and Merge Orphans, and the manual, say what holds now: one Undo for the
+  command, and a command creating more parents than the depth is only partly undone.
+- Self-test: spec key `nbUndo`, step `redo`; the hierarchy `undo` / `redo` ops report
+  `undoSteps` / `redoSteps`.  `test_undo_pairing.py` is 23 checks over six scenarios.
+- Each level now also holds one child labelling (4 bytes a spike).
+- Left, in `doc/dev/ROADMAP.md`: a command larger than the depth; realign, nudge and the
+  annotations are not undoable; changes the history does not record (Repair Nesting run by
+  hand) are reverted with an older edit.  Tested with scripted synthetic sessions only.
+
+</details>
 
 ---
 

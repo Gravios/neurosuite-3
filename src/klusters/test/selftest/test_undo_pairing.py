@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-"""Undo / redo: what the data reverts, the stacks and the curation log must agree on.
+"""Undo / redo: what the data reverts, the history and the curation log must agree on.
 
-Three faults found by an audit of the undo paths (2026-11-24), each reproduced here:
+From an audit of the undo paths (2026-11-24).  One history for both layers; each entry holds the
+child labelling to restore.
 
-  1. the log held one undo fewer than the data.  A realign (Klusters' own, after every merge) is
-     begun like any action and only then marked not-undoable; while open it counted against the
-     undo depth and evicted the oldest merge, which was then written "good" although it was
-     undone.  Flat session, depth 2: merge, merge, undo, undo -> both GROUP entries are "bad".
-  2. the child undo stack was deeper than the child data's own history (the undo depth), so a
-     child undo past it popped nothing: it reported success, logged an UNDO and changed nothing.
-     Three child merges, three child undos at depth 2 -> the third is refused and not logged.
-     Each UNDO names the entry it reverts (reverts_action_idx).
-  3. a parent undo re-cuts the children it leaves across two parents, and that re-cut is a level
-     of the child history with no entry on the child stack: the next child undo popped the
-     re-cut itself and put the child back across two parents.  Merge parents 2 + 3, merge one
-     child of each, undo the parent merge, child undo -> refused; every child lies in one parent.
+  1. the log held one undo fewer than the data (a realign counted against the depth while it was
+     being logged): merge, merge, undo, undo at depth 2 -> both GROUP entries are "bad".
+  2. depth: three child merges at depth 2 -> two child undos, the third is refused and not
+     logged (it reported success and changed nothing).  Each UNDO names what it reverts.
+  3. order: merge parents, then merge a child of each; Undo takes the child merge first (it is
+     the newer edit), then the parent merge; the forced child undo does not step over a newer
+     parent edit.  It left a child across two parents.
+  4. a hierarchy command is one step: promoting three children is undone, and redone, by one
+     Undo / Redo (it was three steps; at depth 2 the first could not be undone).
+  5. a parent undo puts the children back: a parent split that cut across the children leaves
+     them as they were once undone (it left the fragments as extra children), and the child
+     merge made before the split is still undoable (the split dropped the child history).
+     Redo brings the split and its fragments back.
+  6. a merge and the renumbering Klusters runs after it are one step.
 Also: Ctrl+Z with nothing to undo flips no log entry.
 """
 import json
@@ -77,7 +80,7 @@ def main():
         rep = R.run(klusters, f"{base}.clu.{M}.1",
                     [{"group": [3, 4]}, {"palette": True}, {"group": [2, 5]}, {"palette": True},
                      {"undo": True}, {"undo": True}, {"palette": True}, {"undo": True}, {"save": True}],
-                    d, timeout=900, autoRenumber=False)
+                    d, timeout=900, autoRenumber=False, nbUndo=2)
         pal = [r for r in rep.get("results", []) if "palette" in r.get("step", {})]
         check(len(pal) == 3 and sorted(int(k) for k in pal[1]["counts"]) != [2, 3, 4]
               and sorted(int(k) for k in pal[2]["counts"]) == [2, 3, 4],
@@ -93,7 +96,7 @@ def main():
         base = hier(d, "c")
         rep = R.run(klusters, f"{base}.clu.{M}.1",
                     [H(), H(mergeChildren=[20000, 20001]), H(mergeChildren=[20004, 20005]), H(mergeChildren=[20006, 20007]),
-                     H(undoChild=True), H(undoChild=True), H(undoChild=True), {"save": True}], d, timeout=900, autoRenumber=False)
+                     H(undoChild=True), H(undoChild=True), H(undoChild=True), {"save": True}], d, timeout=900, autoRenumber=False, nbUndo=2)
         res = [r for r in rep.get("results", []) if r.get("step", {}).get("hierarchy", {}).get("undoChild")]
         check([r.get("returned") for r in res] == [True, True, False],
               "three child merges at depth 2: two child undos, the third is refused (it reported success)", [r.get("returned") for r in res])
@@ -107,25 +110,74 @@ def main():
               "each UNDO names the child edit it reverts (reverts_action_idx): the last two merges",
               ([o.get("reverts_action_idx") for o in undos.values()], edits))
 
-    # ---- 3. a child undo after a parent undo that re-cut the children
+    def kids(r):
+        return {int(c): (int(p), r["childSizes"][c]) for c, p in r["childParents"].items()}
+
+    def nested(r):
+        tot = {}
+        for c, p in r["childParents"].items():
+            tot[str(p)] = tot.get(str(p), 0) + r["childSizes"][c]
+        return tot == {str(k): v for k, v in r["parentSizes"].items()}
+
+    # ---- 3. order: the newest edit first, whatever its layer
     with tempfile.TemporaryDirectory() as d:
         base = hier(d, "p")
         rep = R.run(klusters, f"{base}.clu.{M}.1",
-                    [H(), H(mergeParents=[2, 3]), H(mergeChildren=[20000, 20004]), H(undo=True), H(undoChild=True), {"save": True}],
+                    [H(), H(mergeParents=[2, 3]), H(mergeChildren=[20000, 20004]), H(undo=True), H(undoChild=True),
+                     H(undo=True), {"save": True}], d, timeout=900, autoRenumber=False)
+        res = [r for r in rep.get("results", []) if "childParents" in r]
+        start, merged, u1, uc, u2 = res[0], res[1], res[3], res[4], res[5]
+        check(kids(u1) == kids(merged) and u1["parentSizes"] == merged["parentSizes"],
+              "Undo after a parent merge and then a child merge takes the child merge (the newer edit)", kids(u1))
+        check(uc.get("returned") is False and kids(uc) == kids(u1),
+              "the forced child undo does not step over the parent merge now on top", uc.get("returned"))
+        check(kids(u2) == kids(start) and u2["parentSizes"] == start["parentSizes"], "the next Undo takes the parent merge: the start again", kids(u2))
+        check(all(nested(r) for r in res) and "span more than one parent" not in (rep.get("stderr") or ""),
+              "every child lies in one parent at every step (one spanned parents 2 and 3)")
+
+    # ---- 4. a hierarchy command is one step
+    with tempfile.TemporaryDirectory() as d:
+        base = hier(d, "g")
+        rep = R.run(klusters, f"{base}.clu.{M}.1",
+                    [H(), H(promoteChildren=[20004, 20005, 20006]), H(undo=True), H(redo=True), H(undo=True), {"save": True}],
                     d, timeout=900, autoRenumber=False)
         res = [r for r in rep.get("results", []) if "childParents" in r]
-        after_undo, after_child = res[-2], res[-1]
-        check(after_child.get("returned") is False, "the child undo after the parent undo is refused (it popped the re-cut)", after_child.get("returned"))
+        start, prom, u, rd, u2 = res
+        check(prom.get("undoSteps") == 1 and kids(u) == kids(start) and u["parentSizes"] == start["parentSizes"] and u.get("undoSteps") == 0,
+              "promoting three children is ONE undo step, and one Undo takes all of it back", (prom.get("undoSteps"), kids(u)))
+        check(kids(rd) == kids(prom) and rd["parentSizes"] == prom["parentSizes"] and rd.get("redoSteps") == 0,
+              "one Redo makes it again, the children's names included", kids(rd))
+        check(kids(u2) == kids(start), "... and it undoes again")
+        st = status(T.log_lines(d, "g"))
+        check([v[1] for k, v in sorted(st.items()) if v[0] == "MOVE_SPIKES"] == ["bad"] * 3, "the log: its three moves are bad", st)
 
-        def nested(r):
-            tot = {}
-            for c, p in r["childParents"].items():
-                tot[str(p)] = tot.get(str(p), 0) + r["childSizes"][c]
-            return tot == {str(k): v for k, v in r["parentSizes"].items()}
-        check(nested(after_undo) and nested(after_child) and after_child["childParents"] == after_undo["childParents"],
-              "every child lies in one parent, before and after it (one child spanned parents 2 and 3)",
-              (after_child.get("parentSizes"), after_child.get("childParents"), after_child.get("childSizes")))
-        check("span more than one parent" not in (rep.get("stderr") or ""), "no nesting warning")
+    # ---- 5. a parent undo puts the children back; the child history survives a parent edit
+    with tempfile.TemporaryDirectory() as d:
+        base = hier(d, "s")
+        rep = R.run(klusters, f"{base}.clu.{M}.1",
+                    [H(), H(mergeChildren=[20000, 20001]), {"coreCut": [3]}, H(), H(undo=True), H(redo=True), H(undo=True),
+                     H(undoChild=True), {"save": True}], d, timeout=900, autoRenumber=False)
+        res = [r for r in rep.get("results", []) if "childParents" in r]
+        start, cm, cut, u, rd, u2, uc = res
+        check(len(kids(cut)) > len(kids(cm)) and len(cut["parentSizes"]) == 3, "(the parent split cut across the children of parent 3)", kids(cut))
+        check(kids(u) == kids(cm) and u["parentSizes"] == cm["parentSizes"],
+              "undoing the parent split puts the children back as they were (it left the fragments as extra children)", kids(u))
+        check(kids(rd) == kids(cut) and rd["parentSizes"] == cut["parentSizes"], "Redo brings the split and its fragments back", kids(rd))
+        check(kids(u2) == kids(cm) and uc.get("returned") is True and kids(uc) == kids(start),
+              "the child merge made BEFORE the split is still undoable after it (the split dropped the child history)", (uc.get("returned"), kids(uc)))
+        check(all(nested(r) for r in res), "every child lies in one parent at every step")
+
+    # ---- 6. a merge and Klusters' own renumbering after it: one step
+    with tempfile.TemporaryDirectory() as d:
+        base, clu = T.session(d, "r")
+        rep = R.run(klusters, f"{base}.clu.{M}.1",
+                    [{"palette": True}, {"group": [2, 3]}, {"palette": True}, {"undo": True}, {"palette": True}, {"redo": True}, {"palette": True}],
+                    d, timeout=900, autoRenumber=True)
+        pal = [r["counts"] for r in rep.get("results", []) if "palette" in r.get("step", {})]
+        check(len(pal) == 4 and sorted(map(int, pal[1])) == [2, 3] and sorted(pal[1].values()) == [134, 666],
+              "(merge 2 + 3 with renumbering on: clusters 2 and 3 afterwards)", pal[1] if len(pal) > 1 else pal)
+        check(len(pal) == 4 and pal[2] == pal[0], "ONE Undo takes back the merge and the renumbering (it took two)", pal[2] if len(pal) > 2 else pal)
+        check(len(pal) == 4 and pal[3] == pal[1], "one Redo makes both again")
 
     print(f"test_undo_pairing: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

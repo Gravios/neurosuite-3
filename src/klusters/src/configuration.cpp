@@ -51,7 +51,7 @@ const double Configuration::autoscaleMarginPercentDefault = 5.0;
 const int  Configuration::crashRecoveryIndexDefault = 0;
 const int  Configuration::gainDefault = 200;
 const int  Configuration::timeIntervalDefault = 60;
-const int  Configuration::nbUndoDefault = 2;
+const int  Configuration::nbUndoDefault = 20;
 const QColor Configuration::backgroundColorDefault = QColor(Qt::black);
 // KiloKlustaKwik's CPU build, which every neurosuite-3 build installs (the GPU
 // builds add KiloKlustaKwik); it reads the temporary <base>.fet.standard.N that
