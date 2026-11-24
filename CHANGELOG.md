@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: two commands shared the id hierarchy.dissolveParent](#2026-11-24--klusters-two-commands-shared-the-id-hierarchydissolveparent) |
 | 2026-11-24 | [ndmanager-plugins: ndm_alignspikes_pca removed](#2026-11-24--ndmanager-plugins-ndmalignspikespca-removed) |
 | 2026-11-24 | [Klusters: the realign threshold defaults to 0.10](#2026-11-24--klusters-the-realign-threshold-defaults-to-010) |
 | 2026-11-24 | [Klusters: the edit lock in the concurrency reference](#2026-11-24--klusters-the-edit-lock-in-the-concurrency-reference) |
@@ -268,6 +269,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: two commands shared the id hierarchy.dissolveParent
+
+The Hierarchy menu's Dissolve Parent into Children was missing from Preferences ▸ Input: a key command of the same id replaced it. Each now has its own id.
+
+<details>
+<summary>Details</summary>
+
+- **Found** while checking the input customization against the changes of 2026-11-24 (not
+  caused by them; present at 943e7d9). The child-view key command "Dissolve parent into
+  children" (Ctrl+Shift+Down) was registered under `hierarchy.dissolveParent`, the id of the
+  Hierarchy menu's *Dissolve Parent into Children*. The registry keeps one command per id, so
+  the key command replaced the menu command:
+  - the menu command was not listed in Preferences ▸ Input and could not be given a key;
+  - rebinding the key command also set that key as the menu action's shortcut, so one press
+    reached the command by two paths.
+- **Now** the key command is `hierarchy.dissolveParentKey`; the menu command keeps its id (the
+  radial menu's layout refers to it) and is listed under Hierarchy.
+- **Stored bindings.** A binding stored under the old id was made for the key command: once,
+  it moves to the new id, in the bindings and in the saved keymap layouts
+  (`dissolveParentKeySplit`). Test: `test_dissolve_key_binding_migration.py`.
+- **Guard.** `BindingRegistry::replacedIds()` lists ids registered twice;
+  `test_command_table.py` fails when it is not empty. No other id is.
+
+</details>
 
 ---
 

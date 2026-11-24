@@ -2569,7 +2569,9 @@ void KlustersApp::registerInputBindings()
                 input::Chord::key(Qt::Key_Up, Qt::ControlModifier), Qt::Key_Up, Qt::ControlModifier);
         hierCmd(QStringLiteral("hierarchy.groupParents"), tr("Group selected parents"),
                 input::Chord::key(Qt::Key_Down, Qt::ControlModifier), Qt::Key_Down, Qt::ControlModifier);
-        hierCmd(QStringLiteral("hierarchy.dissolveParent"), tr("Dissolve parent into children"),
+        // Not "hierarchy.dissolveParent": that id is the menu command's (klusters_commands.cpp),
+        // and a second command of one id replaces the first in the registry.
+        hierCmd(QStringLiteral("hierarchy.dissolveParentKey"), tr("Dissolve parent into children"),
                 input::Chord::key(Qt::Key_Down, Qt::ControlModifier | Qt::ShiftModifier),
                 Qt::Key_Down, Qt::ControlModifier | Qt::ShiftModifier);
         hierCmd(QStringLiteral("hierarchy.adaptiveMerge"), tr("Adaptive merge"),

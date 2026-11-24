@@ -80,6 +80,9 @@ public:
 
     // ── introspection (Preferences / cheat-sheet / conflict UI) ──
     const QList<Command>&    commands() const { return commands_; }
+    /// Ids registered more than once: the later command replaced the earlier, which is
+    /// then listed nowhere.  Empty in a correct application (a test asserts it).
+    const QStringList&       replacedIds() const { return replacedIds_; }
     const QList<InputScope>& scopes()   const { return scopes_; }
     const Command*    command(const QString& id) const;
     const InputScope* scope(const QString& id)   const;
@@ -94,6 +97,7 @@ public:
 private:
     QList<InputScope>   scopes_;
     QList<Command>      commands_;
+    QStringList         replacedIds_;
     QHash<QString, int> scopeIndex_;     // scope id   -> index in scopes_
     QHash<QString, int> commandIndex_;   // command id -> index in commands_
     QHash<QString, Chord> overrides_;    // command id -> override chord

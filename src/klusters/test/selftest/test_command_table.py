@@ -37,14 +37,14 @@ def dump(klusters):
         base, _ = T.session(d, "f")
         rep = R.run(klusters, f"{base}.clu.{T.METHOD}.1", [{"commandDump": True}], d, timeout=600, autoRealign=False, autoRenumber=False)
         r = next(x for x in rep["results"] if "commands" in x)
-        out["flat_open"] = {k: r[k] for k in KEYS}
+        out["flat_open"] = {k: r[k] for k in KEYS} | {"replacedIds": r.get("replacedIds", [])}
     with tempfile.TemporaryDirectory() as d:
         base = U.hier(d, "h")
         rep = R.run(klusters, f"{base}.clu.{U.M}.1",
                     [H(), {"select": [2]}, {"childPalette": {"show": True}}, {"childPalette": {"click": 20000}}, {"commandDump": True}],
                     d, timeout=600)
         r = next(x for x in rep["results"] if "commands" in x)
-        out["hier_child_view"] = {k: r[k] for k in KEYS}
+        out["hier_child_view"] = {k: r[k] for k in KEYS} | {"replacedIds": r.get("replacedIds", [])}
     return out
 
 
@@ -67,7 +67,9 @@ def installed(c):
 
 
 def differences(got, want):
-    diffs = []
+    diffs0 = [f"{state}: command id registered twice (the later replaced the earlier): {got[state]['replacedIds']}"
+              for state in got if got[state].get("replacedIds")]
+    diffs = diffs0
     for state in want:
         g, w = got.get(state, {}), want[state]
         gc = [c for c in g.get("commands", []) if not installed(c)]

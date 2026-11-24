@@ -875,6 +875,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             if (editLockDesired.contains(e.action)) locked.append(e.id);
         result.insert(QStringLiteral("commands"), cmds);
         result.insert(QStringLiteral("registry"), reg);
+        result.insert(QStringLiteral("replacedIds"), QJsonArray::fromStringList(input::registry().replacedIds()));
         result.insert(QStringLiteral("editLocked"), locked);
         return true;
     }
@@ -1312,6 +1313,12 @@ void KlustersApp::selfTestFinish(int code)
         rep.insert(QStringLiteral("results"), selfTestResults_);
         rep.insert(QStringLiteral("nbUndo"), nbUndo);                 // the undo depth the run ended with
         rep.insert(QStringLiteral("realignThreshold"), configuration().getRealignThreshold());
+        {   // the stored key bindings as read (after the migrations of Configuration::read)
+            QJsonObject ov;
+            const QMap<QString,QString> m = configuration().getInputBindingOverrides();
+            for (auto it = m.constBegin(); it != m.constEnd(); ++it) ov.insert(it.key(), it.value());
+            rep.insert(QStringLiteral("inputBindingOverrides"), ov);
+        }
         QFile out(selfTestReport_);
         if (out.open(QIODevice::WriteOnly | QIODevice::Truncate))
             out.write(QJsonDocument(rep).toJson());

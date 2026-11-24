@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <QRegularExpression>
 #include <QSettings>
 #include <QStandardPaths>
 
@@ -295,6 +296,14 @@ void Configuration::read() {
             inputBindingOverrides.insert(id, chord);
     }
     settings.endArray();
+    // Until 2026-11-24 the child-view key command "Dissolve parent into children" had the
+    // id of the Hierarchy menu's command, hierarchy.dissolveParent, and replaced it in the
+    // registry: a stored binding of that id was made for the key command.  Once, it moves
+    // to the key command's own id.
+    const bool dissolveKeySplit = settings.value("dissolveParentKeySplit", false).toBool();
+    if(!dissolveKeySplit && inputBindingOverrides.contains(QStringLiteral("hierarchy.dissolveParent")))
+        inputBindingOverrides.insert(QStringLiteral("hierarchy.dissolveParentKey"),
+                                     inputBindingOverrides.take(QStringLiteral("hierarchy.dissolveParent")));
     settings.endGroup();
 
     //read the saved keymap layouts (input-remapping plan "Keymap profiles"): a named set
@@ -309,7 +318,9 @@ void Configuration::read() {
         const QString name = settings.value("name").toString();
         const QString text = settings.value("text").toString();
         if(!name.isEmpty() && !text.isEmpty())
-            inputProfiles.insert(name, text);
+            inputProfiles.insert(name, dissolveKeySplit ? text : QString(text).replace(
+                QRegularExpression(QStringLiteral("\\bhierarchy\\.dissolveParent\\b")),
+                QStringLiteral("hierarchy.dissolveParentKey")));
     }
     settings.endArray();
     settings.endGroup();
@@ -474,6 +485,7 @@ void Configuration::write() const {
         settings.setValue("chord", it.value());
     }
     settings.endArray();
+    settings.setValue("dissolveParentKeySplit", true);
     settings.endGroup();
 
     //write the saved keymap layouts (input-remapping plan "Keymap profiles").  remove()

@@ -17,7 +17,7 @@ void BindingRegistry::addScope(const InputScope& s)
 void BindingRegistry::addCommand(const Command& c)
 {
     auto it = commandIndex_.constFind(c.id);
-    if (it != commandIndex_.constEnd()) { commands_[it.value()] = c; return; }
+    if (it != commandIndex_.constEnd()) { commands_[it.value()] = c; replacedIds_.append(c.id); return; }
     commandIndex_.insert(c.id, commands_.size());
     commands_.append(c);
 }
