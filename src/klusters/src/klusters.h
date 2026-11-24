@@ -2250,6 +2250,32 @@ private:
     QHash<QAction*, bool> featureSpaceDesiredEnabled;
     bool featureSpaceTracking = false;   ///< changed() connections made
     bool featureSpaceLocking  = false;   ///< inside applyFeatureSpaceLocks
+
+    // ── The edit lock: nothing edits the clustering while a job runs ──────────
+    /** A job is running that owns the clustering until it ends: a recluster or
+     *  drift program, a plugin, a realign in any of its lanes (worker thread,
+     *  batch, queue), a nudge, a save.  @p why: what to tell the curator. */
+    bool editingBlocked(QString* why = nullptr) const;
+    /** For the top of an editing slot: true, with @p what and the job named in
+     *  the status bar, when editingBlocked().  The lock disables the actions; this
+     *  is for what is reached otherwise, and for the instant before the lock. */
+    bool refuseWhileBlocked(const QString& what);
+    /** Close, Open and Quit: true, with a message, while a realign runs in any
+     *  lane.  Its worker thread holds the document; they waited for a save and
+     *  asked about a recluster, and closed under a realign. */
+    bool realignLaneBusy(const QString& what);
+    /** Engage or release the lock to match editingBlocked().  Engaged, every
+     *  editing action is disabled and stays so whatever re-enables it (the state
+     *  machine, the undo counts, the selection); released, each returns to what
+     *  was last asked of it.  Called after every state change, where a job flag
+     *  is raised, and by a timer, which is what sees a job END. */
+    void refreshEditLock();
+    void collectEditLockActions();
+    QList<QAction*>       editLockActions;
+    QHash<QAction*, bool> editLockDesired;      ///< what was last asked of each, lock aside
+    bool    editLockEngaged  = false;
+    bool    editLockApplying = false;           ///< inside the lock's own setEnabled calls
+    QTimer* editLockTimer    = nullptr;
     QAction *startLabelAction;
     QAction *startAction;
     QAction *durationLabelAction;

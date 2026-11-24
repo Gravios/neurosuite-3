@@ -513,7 +513,8 @@ void KlustersApp::applyFeatureSpaceLocks()
             if (!a) continue;
             featureSpaceDesiredEnabled.insert(a, a->isEnabled());
             connect(a, &QAction::changed, this, [this, a]() {
-                if (!featureSpaceLocking) featureSpaceDesiredEnabled[a] = a->isEnabled();
+                // (nor the edit lock's: it holds the action off over this lock, and puts it back)
+                if (!featureSpaceLocking && !editLockApplying) featureSpaceDesiredEnabled[a] = a->isEnabled();
             });
         }
     }

@@ -641,6 +641,7 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
     // (returnFromRealignSpace, scheduled below once the nudge is done).
     if (!enterClusterSpaceForRealign(tr("Nudge"))) return;
     nudgeInProgress = true;
+    refreshEditLock();
     nudgeMinusAction->setEnabled(false);
     nudgePlusAction->setEnabled(false);
     statusBar()->showMessage(tr("Nudging cluster %1… please wait").arg(clusterLabel(id)));

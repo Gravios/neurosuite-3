@@ -81,6 +81,19 @@ outstanding from the Qt 6.4–6.12 work: the per-release matrix covers
 
 ### 📋 planned
 
+#### Klusters: the edit lock, what is left (2026-11-24)
+
+While a job runs every editing action is disabled (CHANGELOG, 2026-11-24).  Left:
+
+- **A lock per cluster.**  The automatic realign after a merge holds every edit until it is done;
+  edits to clusters the realign does not touch could go on.  Needs the realign's cluster set
+  held by the lock and checked by each edit.
+- **Entry points that are not actions**: a mouse tool armed before the job started, the palettes'
+  context menus, the Recommended-merges panel, the template palette.  Each needs
+  `refuseWhileBlocked` at its commit.
+- The per-state lists in `slotStateChanged` (reclusterState, realignState) are now redundant
+  with the lock for the editing actions and can go once the lock has been used for a while.
+
 #### Klusters undo: what is left after the single history (2026-11-24)
 
 The audit fixed five faults and the single undo history closed the four behaviour gaps

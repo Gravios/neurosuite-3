@@ -45,6 +45,10 @@
  *                                        layer), "undoChild" / "redoChild": true; none: only
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
+ *        {"actionsEnabled": true}        the command ids that can be triggered now and those that
+ *                                        cannot, and which jobs run
+ *        "whileBusy": true on any step   it runs on the next tick, without waiting for the job the
+ *                                        step before it started
  *        {"annotate": {...}}             a cluster's information: "cluster", "quality", "notes"
  *                                        set it (one undo step), neither only reads it
  *        {"group": [ids]}                the palette's Group on those parents (the automatic
@@ -183,6 +187,11 @@ void KlustersApp::selfTestTick()
                    || (nudgeFollowTimer && nudgeFollowTimer->isActive());
     if (busy) { selfTestIdleTicks_ = 0; }
     else      { ++selfTestIdleTicks_; }
+    // {"whileBusy": true} on a step: it runs on the next tick, without waiting for the
+    // job the step before it started (what the curator can do while a job runs).
+    if (selfTestIndex_ < selfTestSteps_.size()
+        && selfTestSteps_.at(selfTestIndex_).toObject().value(QStringLiteral("whileBusy")).toBool())
+        selfTestIdleTicks_ = kIdleTicks;
     if (++selfTestWaitTicks_ > kStepTimeout) {
         QJsonObject r;
         r.insert(QStringLiteral("error"), QStringLiteral("timeout waiting for the app to be idle"));
@@ -741,6 +750,20 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("redo"))) {
         // {"redo": true}: Edit > Redo.
         slotRedo();
+        return true;
+    }
+    if (step.contains(QStringLiteral("actionsEnabled"))) {
+        // {"actionsEnabled": true}: which commands can be triggered now, and which jobs run.
+        QJsonArray on, off;
+        const QHash<QString, QAction*> acts = actionsById();
+        QStringList ids = acts.keys();
+        ids.sort();
+        for (const QString& id : ids) (acts.value(id)->isEnabled() ? on : off).append(id);
+        result.insert(QStringLiteral("enabled"), on);
+        result.insert(QStringLiteral("disabled"), off);
+        result.insert(QStringLiteral("realignRunning"), realignRunning || realignBatchActive || (realignQueue && realignQueue->isBusy()));
+        result.insert(QStringLiteral("processRunning"), !(processFinished && processOutputsFinished));
+        result.insert(QStringLiteral("saveRunning"), saveThread && saveThread->isRunning());
         return true;
     }
     if (step.contains(QStringLiteral("annotate"))) {

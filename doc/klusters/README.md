@@ -1570,6 +1570,29 @@ panel is saved in the clustering's `.cli` file, not in the log.
 
 ---
 
+## While a job runs
+
+A recluster (KlustaKwik, fiber-kit, a plugin, a drift job), a realignment (the
+one you start, the automatic one after a merge or an edit, Align All), a nudge
+and a save each own the clustering until they end.  While one runs, every
+command that edits it is disabled: the tools, Group and Delete, the Hierarchy
+menu, the split, strip and sort commands, Recluster and Realign, the
+feature-space switch, Undo and Redo, Save.  Looking stays possible: selecting
+clusters, the displays, the views, the trace navigation.
+
+- The commands come back when the job ends, as they were before it.
+- A command reached while one runs says so in the status bar ("Undo / Redo:
+  wait for the realignment to finish.").
+- Close, Open and Quit wait for a save, ask about a running recluster and are
+  refused while a realignment runs: its worker holds the session.
+- The automatic realignment after a merge therefore holds the next edit until
+  it is done.  It can be turned off in **Preferences → Clustering**.
+
+Before 2026-11-24 each kind of job disabled a list of its own, and the lists
+had gaps: the Hierarchy menu and Save stayed enabled during a recluster, the
+split and strip commands during a realignment, and Undo came back on with the
+next change of the undo history.
+
 ## Saving
 
 | Action | Shortcut | Description |

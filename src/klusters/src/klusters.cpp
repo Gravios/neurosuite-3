@@ -292,6 +292,13 @@ KlustersApp::KlustersApp()
 KlustersApp::~KlustersApp()
 {
     NS3_DIAG() << "[~KlustersApp] entering";
+    // The edit lock listens to its actions (changed, destroyed).  They are children:
+    // QObject deletes them after this class's members are gone, and their
+    // `destroyed` would then reach a list that no longer exists.
+    if (editLockTimer) editLockTimer->stop();
+    for (QAction* a : std::as_const(editLockActions))
+        if (a) disconnect(a, nullptr, this, nullptr);
+    editLockActions.clear();
     //Clear the memory by deleting all the pointers
     delete doc;
     delete saveThread;
@@ -4264,6 +4271,8 @@ bool KlustersApp::queryClose()
     //implement to ask the user to save if necessary before closing
     if(doc == nullptr) return true;
     else{
+        // A realign's worker thread holds the document: it is not closed under it.
+        if(realignLaneBusy(tr("Quit"))) return false;
         // A save in flight: wait for it ("Waiting for the save to finish…"),
         // then ask only if the clustering still differs from the files.
         waitForSaveToFinish();
@@ -4413,6 +4422,7 @@ void KlustersApp::customEvent (QEvent* event){
 
 void KlustersApp::slotFileOpen()
 {
+    if(doc && realignLaneBusy(tr("Open"))) return;
     slotStatusMsg(tr("Opening file…"));
 
     QSettings settings;
@@ -4430,6 +4440,7 @@ void KlustersApp::slotFileOpen()
 
 void KlustersApp::slotFileClose(){
     if(doc != nullptr){
+        if(realignLaneBusy(tr("Close"))) return;
         waitForSaveToFinish();
 
         if(doc->canCloseView()){
@@ -4527,6 +4538,10 @@ bool KlustersApp::startSave(const QString& url, bool saveAs)
         statusBar()->showMessage(tr("Wait for the realignment to finish before saving."), 5000);
         return false;
     }
+    // The other lanes of a realign (worker thread, batch) write the rows the save
+    // reads, and a recluster or plugin ending during the save changes the
+    // clustering after its snapshot: none of them was checked here.
+    if (refuseWhileBlocked(saveAs ? tr("Save As") : tr("Save"))) return false;
     if (!doc->prepareSave(url)) {
         QMessageBox::critical(this, saveAs ? tr("Save As") : tr("Save"), doc->lastSaveError());
         slotStatusMsg(tr("Ready."));
@@ -4540,6 +4555,7 @@ bool KlustersApp::startSave(const QString& url, bool saveAs)
     slotStateChanged("SavingState");
     beginSaveLock();
     saveThread->save(url, doc, saveAs);
+    refreshEditLock();
     return true;
 }
 
@@ -4845,6 +4861,8 @@ void KlustersApp::closeEvent(QCloseEvent *event)
 void KlustersApp::runUndoOrRedo(void (KlustersDoc::*op)(),
                                  const QString& busyMessage)
 {
+    // An undo rewrites both layers: never under a job that reads or writes them.
+    if (refuseWhileBlocked(tr("Undo / Redo"))) return;
     slotStatusMsg(busyMessage);
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     (doc->*op)();
@@ -9951,6 +9969,7 @@ bool KlustersApp::launchPlugin(const KlustersPlugin& plugin, const QMap<QString,
     mPluginRunBase = ctx.value(QStringLiteral("base"));
     mPluginStartMs = QDateTime::currentMSecsSinceEpoch() - 1500;   // small skew margin for 1-s mtimes
     mPluginRunning = true;
+    refreshEditLock();
     if (mPluginsMenu)
         mPluginsMenu->setEnabled(false);
 

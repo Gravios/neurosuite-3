@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: nothing edits the clustering while a job runs](#2026-11-24--klusters-nothing-edits-the-clustering-while-a-job-runs) |
 | 2026-11-24 | [Klusters: a move of spikes no longer wipes the cluster information](#2026-11-24--klusters-a-move-of-spikes-no-longer-wipes-the-cluster-information) |
 | 2026-11-24 | [Klusters: the children follow a palette merge of their parents](#2026-11-24--klusters-the-children-follow-a-palette-merge-of-their-parents) |
 | 2026-11-24 | [Klusters: realign stays not undoable, and the manual says so](#2026-11-24--klusters-realign-stays-not-undoable-and-the-manual-says-so) |
@@ -253,6 +254,43 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: nothing edits the clustering while a job runs
+
+Editing commands stayed enabled during a recluster and a realign.
+
+<details>
+<summary>Details</summary>
+
+- Audit (`claude/klusters-job-locks-audit-2026-11-24.md` in the project): each job state switched
+  off a hand-kept list of actions.  Measured while the job ran: during a **recluster** every
+  Hierarchy command, Save / Save As, Watershed, DipSplit, KNN split, the four Strip commands,
+  Split Off Spurious, Split Burst Followers, Partition by Time, Recluster Against References
+  and the reordering sorts stayed enabled; during a **realign** the same split / strip / sort
+  commands and the feature-space switch.  Anything that enabled an action afterwards undid
+  the lists: every change of the undo history re-enabled Undo, the selection re-enabled the
+  Hierarchy menu.
+- Seen: merging, or promoting from, the parent being reclustered applied the edit and threw the
+  recluster's result away on arrival ("The temporary file containing the new clusters contains
+  incorrect data").  The labels survived only because the spike count no longer fitted.
+- **One lock** (`KlustersApp::editingBlocked`, `refreshEditLock`): while a recluster, plugin or
+  drift job, a realign in any lane (worker thread, batch, queue), a nudge or a save runs, every
+  editing action is disabled and held off over whatever re-enables it; when the job ends each
+  returns to what was last asked of it.  The display, view and navigation commands stay.
+- Guards where an action's state is not what stands in the way: Undo / Redo and the child
+  undo refuse; Save refused only for a busy realign queue, now for every lane and for a
+  running recluster or plugin; Close, Open and Quit are refused while a realign runs (its
+  worker thread holds the document; they closed under it).
+- **Change of behaviour**: with the automatic realign after a merge on, the next edit waits for
+  it.  Edits to other clusters during a realign would need a lock per cluster: not done.
+- Self-test steps `actionsEnabled` and `"whileBusy": true`; `test_edit_lock.py` (6 checks).
+- Not covered: a mouse tool already armed when a job starts; the context menus; the
+  Recommended-merges panel; the template palette.  An edit under a realign was not reproduced
+  as a fault (a thread race), only closed off.
+
+</details>
 
 ---
 

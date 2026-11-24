@@ -649,4 +649,123 @@ void KlustersApp::slotStateChanged(const QString& state)
     // Whatever the transition re-enabled, the writers of the .clu space's own
     // files stay off while another method's feature space is loaded.
     applyFeatureSpaceLocks();
+    // ... and nothing edits while a job runs.
+    refreshEditLock();
+}
+
+// ---------------------------------------------------------------------------
+// The edit lock
+//
+// Each job state (reclusterState, realignState, SavingState) switched off a
+// hand-kept list of actions.  The lists were incomplete -- during a recluster
+// every Hierarchy command, Save and a dozen split / strip commands stayed on;
+// during a realign the same split / strip commands, the feature-space switch
+// and Close -- and anything that enables an action afterwards undid them: the
+// undo counts re-enabled Undo, the selection re-enabled the Hierarchy menu.
+// One predicate and one list now, held over every later enable.
+// ---------------------------------------------------------------------------
+bool KlustersApp::editingBlocked(QString* why) const
+{
+    auto because = [why](const QString& w) { if (why) *why = w; return true; };
+    if (saveThread && saveThread->isRunning())
+        return because(tr("the save"));
+    if (processWidget && !(processFinished && processOutputsFinished))
+        return because(tr("the running recluster job"));
+    if (mPluginRunning)
+        return because(tr("the running plugin"));
+    if (realignRunning || realignBatchActive || (realignQueue && realignQueue->isBusy())
+        || !realignReturnSpace.isEmpty())
+        return because(tr("the realignment"));
+    if (nudgeInProgress)
+        return because(tr("the nudge"));
+    return false;
+}
+
+bool KlustersApp::refuseWhileBlocked(const QString& what)
+{
+    QString why;
+    if (!editingBlocked(&why)) return false;
+    refreshEditLock();
+    statusBar()->showMessage(tr("%1: wait for %2 to finish.").arg(what, why), 5000);
+    return true;
+}
+
+bool KlustersApp::realignLaneBusy(const QString& what)
+{
+    if (!(realignRunning || realignBatchActive || nudgeInProgress || (realignQueue && realignQueue->isBusy())))
+        return false;
+    statusBar()->showMessage(tr("%1: wait for the realignment to finish.").arg(what), 5000);
+    return true;
+}
+
+void KlustersApp::collectEditLockActions()
+{
+    // Everything that changes the clustering, its files or the cluster ids, or
+    // starts a job that does.  By command id where there is one; the tools and
+    // the two file commands without an id by member.
+    auto locks = [](const QString& id) {
+        static const QStringList free{
+            QStringLiteral("action.nextChunk"), QStringLiteral("action.prevChunk"),
+            QStringLiteral("action.updateDisplay"), QStringLiteral("action.updateErrorMatrix"),
+            QStringLiteral("action.setObliqueBasis") };
+        if (id.startsWith(QLatin1String("recluster.engine."))) return false;      // a choice, not a run
+        if (free.contains(id)) return false;
+        return id.startsWith(QLatin1String("action.")) || id.startsWith(QLatin1String("hierarchy."))
+            || id.startsWith(QLatin1String("recluster.")) || id.startsWith(QLatin1String("sort."))
+            || id.startsWith(QLatin1String("space."))
+            || id == QLatin1String("edit.undo") || id == QLatin1String("edit.redo")
+            || id == QLatin1String("file.save") || id == QLatin1String("file.saveAs")
+            || id == QLatin1String("file.renumberAndSave") || id == QLatin1String("file.import");
+    };
+    QSet<QAction*> set;
+    const QHash<QString, QAction*> byId = actionsById();
+    for (auto it = byId.constBegin(); it != byId.constEnd(); ++it)
+        if (it.value() && locks(it.key())) set.insert(it.value());
+    for (QAction* a : { mNewCluster, mSplitClusters, mDeleteArtifactSpikes, mDeleteNoisySpikes,
+                        mMultiLasso, mApplyMultiLasso, mSortSpikesByTime, mSyncFeatureSpaces })
+        // (not the nudge keys: a held key queues its repeats while a nudge runs)
+        if (a) set.insert(a);
+    for (QAction* a : set) {
+        if (editLockDesired.contains(a)) continue;           // already tracked
+        editLockActions.append(a);
+        editLockDesired.insert(a, a->isEnabled());
+        connect(a, &QAction::changed, this, [this, a]() {
+            if (editLockApplying) return;
+            if (!editLockEngaged) { editLockDesired[a] = a->isEnabled(); return; }
+            if (a->isEnabled()) {                            // something re-enabled it: not yet
+                editLockDesired[a] = true;
+                editLockApplying = true;
+                a->setEnabled(false);
+                editLockApplying = false;
+            }
+        });
+        connect(a, &QObject::destroyed, this, [this, a]() { editLockActions.removeAll(a); editLockDesired.remove(a); });
+    }
+}
+
+void KlustersApp::refreshEditLock()
+{
+    if (!editLockTimer) {
+        // A job's end is not a state change everywhere (the queue, a batch, a
+        // plugin, the nudge's follow): the timer is what sees it.
+        editLockTimer = new QTimer(this);
+        editLockTimer->setInterval(150);
+        connect(editLockTimer, &QTimer::timeout, this, &KlustersApp::refreshEditLock);
+        editLockTimer->start();
+    }
+    const bool blocked = doc && editingBlocked();
+    if (blocked == editLockEngaged) return;
+    collectEditLockActions();                                // actions registered since (plugins)
+    editLockEngaged = blocked;
+    editLockApplying = true;
+    for (QAction* a : std::as_const(editLockActions))
+        a->setEnabled(blocked ? false : editLockDesired.value(a, true));
+    editLockApplying = false;
+    if (!blocked) {
+        // What was asked of an action while it was held off and asked "off" left
+        // no trace (no change, no signal): ask again.
+        updateUndoRedoDisplay();
+        updateHierarchyEditActions();
+        applyFeatureSpaceLocks();
+    }
 }

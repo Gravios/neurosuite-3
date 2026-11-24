@@ -242,6 +242,7 @@ void KlustersApp::slotFlattenHierarchyToClu(){
 
 void KlustersApp::slotUndoChildEdit(){
     if(!activeView()) return;
+    if(refuseWhileBlocked(tr("Undo Child-Layer Edit"))) return;
     if(doc->childUndoCount() == 0){
         statusBar()->showMessage(tr("No child-layer (atom) edit to undo."), 4000);
         return;
@@ -254,6 +255,7 @@ void KlustersApp::slotUndoChildEdit(){
 
 void KlustersApp::slotRedoChildEdit(){
     if(!activeView()) return;
+    if(refuseWhileBlocked(tr("Redo Child-Layer Edit"))) return;
     holdMatricesForGesture();
     doc->redoChildEditDispatch();
     if(mUndoChildEdit) mUndoChildEdit->setEnabled(doc->childUndoCount() > 0);
