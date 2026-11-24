@@ -1812,8 +1812,10 @@ session files. The session files are updated atomically on save:
   next to its target (`<file>.saving`), then all are installed together or
   none is (see [Saving](#saving-all-or-nothing)). A file that already holds
   what the save would write is not rewritten.
-- **Undo** (`Ctrl+Z`) of a realignment restores the working copies from
-  the saved files — no on-disk changes.
+- A realignment or a nudge is **not undoable**: `Ctrl+Z` steps over it to the
+  edit before.  The way back is **File → Close** without saving (this page said
+  `Ctrl+Z` restored the working copies; the application has not offered that
+  since the review dialog went).
 - On crash, the autosave-recovery path, the commit journal (an interrupted
   save is completed on the next open) and the `.bak` files written by
   upstream scripts (reextract, subcluster) give independent recovery

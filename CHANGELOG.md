@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: realign stays not undoable, and the manual says so](#2026-11-24--klusters-realign-stays-not-undoable-and-the-manual-says-so) |
 | 2026-11-24 | [Klusters: a change of cluster information is an undo step](#2026-11-24--klusters-a-change-of-cluster-information-is-an-undo-step) |
 | 2026-11-24 | [Klusters: the undo depth counts steps, not levels](#2026-11-24--klusters-the-undo-depth-counts-steps-not-levels) |
 | 2026-11-24 | [Klusters: an undone child edit is written bad in the curation log](#2026-11-24--klusters-an-undone-child-edit-is-written-bad-in-the-curation-log) |
@@ -250,6 +251,28 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: realign stays not undoable, and the manual says so
+
+The manual promised an undo of a realignment that the application does not have.
+
+<details>
+<summary>Details</summary>
+
+- Undoing a realign was looked at and **not done**.  `KlustersDoc::rejectLastRealign` exists
+  but is unused and untested, does not restore the child layer's rows, and re-seeds the working
+  `.spk` / `.res` / `.fet` from the saved files, which wipes the rows of every earlier unsaved
+  realign; the nudge writes no journal entry.  What a correct one needs is in
+  `doc/dev/ROADMAP.md`.  A wrong row written back is saved into the `.spk` and `.res`, so it
+  wants a raw recording and a real session before it goes near Ctrl+Z.
+- The manual said Ctrl+Z of a realignment restores the working copies.  It does not, and has
+  not since the review dialog went: corrected.
+- `test_child_recluster_undo.py` (6 checks): a child recluster is one step, undone and redone
+  whole.
+
+</details>
 
 ---
 
