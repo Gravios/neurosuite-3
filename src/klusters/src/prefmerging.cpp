@@ -57,11 +57,3 @@ void PrefMerging::updateMedianKEnabled() {
     medianKSpinBox->setEnabled(median);
 }
 
-void   PrefMerging::setMergeRecommendMax(int n) { mergeRecommendMaxSpinBox->setValue(n); }
-int    PrefMerging::getMergeRecommendMax() const { return mergeRecommendMaxSpinBox->value(); }
-void   PrefMerging::setMergeRecommendErrorFloor(double v) { mergeRecommendErrorFloorSpinBox->setValue(v); }
-double PrefMerging::getMergeRecommendErrorFloor() const { return mergeRecommendErrorFloorSpinBox->value(); }
-void   PrefMerging::setMergeRecommendQualityFloor(double v) { mergeRecommendQualityFloorSpinBox->setValue(v); }
-double PrefMerging::getMergeRecommendQualityFloor() const { return mergeRecommendQualityFloorSpinBox->value(); }
-void   PrefMerging::setShowMergeRecommendPanel(bool b) { showMergeRecommendPanelCheckBox->setChecked(b); }
-bool   PrefMerging::getShowMergeRecommendPanel() const { return showMergeRecommendPanelCheckBox->isChecked(); }

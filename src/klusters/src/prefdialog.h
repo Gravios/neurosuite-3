@@ -34,6 +34,7 @@ class PrefMatrices;
 class PrefWaveformView;
 class PrefClusterView;
 class PrefInput;
+class PrefBinder;
 class PrefRadialMenu;
 class PrefPluginPage;
 class PluginRegistry;
@@ -53,6 +54,8 @@ class PrefDialog : public QPageDialog {
     void updateConfiguration();
     /** Every page back to the defaults (what the Defaults button does once confirmed). */
     void restoreDefaults();
+    /** Rows of the preference table that name a control no page has (empty when all is well). */
+    QStringList unboundPreferenceRows() const;
     bool isApplyEnable() const { return applyEnable; }
 
     void resetChannelList(int nbChannels);
@@ -75,6 +78,7 @@ class PrefDialog : public QPageDialog {
     void settingsChanged();
 
   private:
+    PrefBinder*       prefBinder = nullptr;   ///< the settings bound to rows of the preference table
     // General
     PrefSession*      prefSession;
     // Views

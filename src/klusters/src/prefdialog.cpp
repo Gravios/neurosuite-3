@@ -39,6 +39,7 @@
 #include "config-klusters.h"
 #include <qhelpviewer.h>
 #include <pagekeynavigator.h>
+#include "prefbinder.h"
 #include <QScrollArea>
 
 #include <klustersshared/theme.h>
@@ -209,74 +210,22 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
     // Session
     connect(prefSession->crashRecoveryCheckBox,  &QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefSession->crashRecoveryComboBox,  &QComboBox::activated,     this, &PrefDialog::enableApply);
-    connect(prefSession->undoSpinBox,            &QSpinBox::valueChanged,   this, &PrefDialog::enableApply);
 
     // Reclustering
-    connect(prefReclustering->reclusteringExecutableLineEdit,  &QLineEdit::textChanged, this, &PrefDialog::enableApply);
     connect(prefReclustering->reclusteringArgsLineEdit,        &QLineEdit::textChanged, this, &PrefDialog::enableApply);
-    connect(prefReclustering->autoSelectFeaturesCheckBox,      &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefReclustering->autoSelectNFeaturesSpinBox,      &QSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefReclustering->reclusterMeanSubtractedSubdimCheckBox,
-            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefReclustering->reclusterChannelVarianceCheckBox,
-            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefReclustering->reclusterMedianWaveformResidualCheckBox,
-            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
-    connect(prefReclustering->suppressReclusterOutputTabCheckBox,
-            &QAbstractButton::clicked, this, &PrefDialog::enableApply);
 
     // Refinement (realign + dipsplit + knn)
-    connect(prefRealignment->realignThresholdSpinBox,    &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignIterationsSpinBox,   &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignMaxShiftSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignKernelCombo,         &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignKernelWidthSpinBox,  &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefRealignment->realignModeOffRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefSession->curationLoggingCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRealignment->syncFeatureSpaceOnSwitchCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignFromAnySpaceCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefRealignment->supersampleModeCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &PrefDialog::enableApply);
-    connect(prefRealignment->supersampleAdoptCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
-    connect(prefRealignment->supersampleInterpCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, &PrefDialog::enableApply);
-    connect(prefClusterOrder->reorderDisplayOnlyCheckBox,    &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRealignment->autoRealignAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
-    connect(prefClusterOrder->autoRenumberAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
-    connect(prefMatrices->autoUpdateMatricesAfterMergeCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
-    connect(prefMatrices->errorMatrixIncrementalCheckBox,  &QAbstractButton::toggled, this, &PrefDialog::enableApply);
-    connect(prefMatrices->errorMatrixLowPrecisionCheckBox, &QAbstractButton::toggled, this, &PrefDialog::enableApply);
     connect(prefRealignment->realignModePcaRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRealignment->realignModeRmsRadio,        &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
     connect(prefRealignment->realignModeCentroidRadio,   &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefRealignment->realignVerboseCheckBox,     &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefSession->reextractSpikesOnSaveCheckBox, &QAbstractButton::toggled,  this, &PrefDialog::enableApply);
-    connect(prefClusterOrder->reorderMethodComboBox,         &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
-    connect(prefClusterOrder->waveformSortStatisticComboBox, &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
-    connect(prefMerging->mergeRecommendMaxSpinBox,          &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefMerging->mergeRecommendErrorFloorSpinBox,   &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefMerging->mergeRecommendQualityFloorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefMerging->showMergeRecommendPanelCheckBox,   &QAbstractButton::toggled,     this, &PrefDialog::enableApply);
-    connect(prefMatrices->driftSliderMaxClustersSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefSplitting->dipSplitMinSizeSpinBox,     &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefSplitting->dipSplitBloatFactorSpinBox, &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefSplitting->dipSplitValleyThreshSpinBox,&QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefSplitting->knnKSpinBox,                &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefSplitting->knnThresholdSpinBox,        &QDoubleSpinBox::valueChanged, this, &PrefDialog::enableApply);
-    connect(prefSplitting->knnMinNewSpinBox,           &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
-    connect(prefSplitting->knnMinRefSpinBox,           &QSpinBox::valueChanged,       this, &PrefDialog::enableApply);
     connect(prefSplitting, &PrefSplitting::coreCutChanged, this, &PrefDialog::enableApply);
 
     // Display
     connect(prefDisplay->backgroundColorButton,        &QColorButton::colorChanged,    this, &PrefDialog::enableApply);
-    connect(prefDisplay->markerSizeSpinBox,            &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
-    connect(prefDisplay->selectionLineWidthSpinBox,    &QSpinBox::valueChanged,        this, &PrefDialog::enableApply);
-    connect(prefDisplay->autoscaleMarginSpinBox,       &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
     connect(prefDisplay->useWhiteColorPrinting,        &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
-    connect(prefMatrices->autoShowMatricesOnOpenCheckBox,&QAbstractButton::clicked,     this, &PrefDialog::enableApply);
-    connect(prefDisplay->autoShowTemplateLibraryOnOpenCheckBox,&QAbstractButton::clicked, this, &PrefDialog::enableApply);
     connect(prefDisplay->templatesModeCheckBox,        &QAbstractButton::clicked,      this, &PrefDialog::enableApply);
-    connect(prefMatrices->templateThresholdMinSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
-    connect(prefMatrices->templateThresholdMaxSpinBox,  &QDoubleSpinBox::valueChanged,  this, &PrefDialog::enableApply);
-    connect(prefMatrices->templateXcorrMetricComboBox,  &QComboBox::currentIndexChanged, this, &PrefDialog::enableApply);
 
     // Auto-Merge (patch 0068)
     connect(prefMerging->algoMeanRadio,             &QAbstractButton::toggled,      this, &PrefDialog::enableApply);
@@ -335,6 +284,11 @@ PrefDialog::PrefDialog(QWidget *parent, int nbChannels, const PluginRegistry* pl
 
     applyEnable = false;
 
+    // Every setting whose row of the preference table names a control of these pages
+    // (configuration_prefs.cpp): loaded, applied and reset by the binder, not by hand.
+    prefBinder = new PrefBinder(this, this);
+    connect(prefBinder, &PrefBinder::changed, this, &PrefDialog::enableApply);
+
     // The dialog from the keyboard: Enter into a page, Tab round its settings, Esc back.
     new PageKeyNavigator(this);
 }
@@ -354,77 +308,31 @@ void PrefDialog::setRadialCatalog(const QList<ActionCatalogEntry>& entries)
 
 void PrefDialog::updateDialog()
 {
+    prefBinder->load(configuration());
+
     // Radial menu: the stored layout (or the shipped one).
     prefRadialMenu->setLayout(radiallayout::fromSettings(configuration().getRadialMenuLayout()));
 
     // Session
     prefSession->setCrashRecovery(configuration().isCrashRecovery());
     prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndex());
-    prefSession->setNbUndo(configuration().getNbUndo());
 
     // Reclustering
     prefReclustering->setReclusterEngine(configuration().getReclusterEngine());
     prefReclustering->setFiberKitReclusterCommand(configuration().getFiberKitReclusterCommand());
-    prefReclustering->setReclusteringExecutable(configuration().getReclusteringExecutable());
     prefReclustering->setReclusteringArguments(configuration().getReclusteringArguments());
-    prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeatures());
-    prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeatures());
-    prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdim());
-    prefReclustering->setReclusterChannelVariance(configuration().getReclusterChannelVariance());
-    prefReclustering->setReclusterMedianWaveformResidual(configuration().getReclusterMedianWaveformResidual());
-    prefReclustering->setSuppressReclusterOutputTab(configuration().getSuppressReclusterOutputTab());
     prefReclustering->setReclusterChunking(configuration().getReclusterChunking());
     prefReclustering->setReclusterChunkMinutes(configuration().getReclusterChunkMinutes());
 
     // Refinement
-    prefRealignment->setRealignThreshold(configuration().getRealignThreshold());
-    prefRealignment->setRealignIterations(configuration().getRealignIterations());
-    prefRealignment->setRealignMaxShift(configuration().getRealignMaxShift());
-    prefRealignment->setRealignKernel(configuration().getRealignKernel());
-    prefRealignment->setRealignKernelWidth(configuration().getRealignKernelWidth());
     prefRealignment->setRealignMode(configuration().getRealignMode());
-    prefClusterOrder->setReorderMethod(configuration().getReorderMethod());
-    prefClusterOrder->setWaveformSortMean(configuration().getWaveformSortMean());
-    prefMerging->setMergeRecommendMax(configuration().getMergeRecommendMax());
-    prefMerging->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloor());
-    prefMerging->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloor());
-    prefMerging->setShowMergeRecommendPanel(configuration().getShowMergeRecommendPanel());
-    prefMatrices->setDriftSliderMaxClusters(configuration().getDriftSliderMaxClusters());
-    prefSession->setCurationLogging(configuration().getCurationLogging());
-    prefClusterOrder->setReorderDisplayOnly(configuration().getReorderDisplayOnly());
-    prefRealignment->setRealignVerbose(configuration().getRealignVerbose());
-    prefSession->setReextractSpikesOnSave(configuration().getReextractSpikesOnSave());
-    prefRealignment->setSyncFeatureSpaceOnSwitch(configuration().getSyncFeatureSpaceOnSwitch());
-    prefRealignment->setRealignFromAnySpace(configuration().getRealignFromAnySpace());
     prefRealignment->setSupersampleMode(configuration().getSupersampleMode());
-    prefRealignment->setSupersampleAdopt(configuration().getSupersampleAdopt());
-    prefRealignment->setSupersampleInterp(configuration().getSupersampleInterp());
-    prefRealignment->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMerge());
-    prefClusterOrder->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMerge());
-    prefMatrices->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMerge());
-    prefMatrices->setErrorMatrixIncremental(configuration().getErrorMatrixIncremental());
-    prefMatrices->setErrorMatrixLowPrecision(configuration().getErrorMatrixLowPrecision());
-    prefSplitting->setDipSplitMinSize(configuration().getDipSplitMinSize());
-    prefSplitting->setDipSplitBloatFactor(configuration().getDipSplitBloatFactor());
-    prefSplitting->setDipSplitValleyThresh(configuration().getDipSplitValleyThresh());
-    prefSplitting->setKnnK(configuration().getKnnK());
-    prefSplitting->setKnnThreshold(configuration().getKnnThreshold());
-    prefSplitting->setKnnMinNew(configuration().getKnnMinNew());
-    prefSplitting->setKnnMinRef(configuration().getKnnMinRef());
     prefSplitting->setCoreCut(configuration().getCoreCut());
 
     // Display
     prefDisplay->setBackgroundColor(configuration().getBackgroundColor());
-    prefDisplay->setMarkerSize(configuration().getMarkerSize());
-    prefDisplay->setSelectionLineWidth(configuration().getSelectionLineWidth());
-    prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercent());
     prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrinting());
-    prefMatrices->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpen());
-    prefDisplay->setAutoShowTemplateLibraryOnOpen(configuration().getAutoShowTemplateLibraryOnOpen());
     prefDisplay->setTemplatesMode(configuration().getTemplatesMode());
-    prefMatrices->setTemplateThresholdMin(configuration().getTemplateThresholdMin());
-    prefMatrices->setTemplateThresholdMax(configuration().getTemplateThresholdMax());
-    prefMatrices->setTemplateXcorrMetric(configuration().getTemplateXcorrMetric());
 
     // Auto-Merge (patch 0068)
     prefMerging->setAlgorithm(configuration().getAutoMergeAlgorithm());
@@ -480,74 +388,28 @@ void PrefDialog::updateDialog()
 
 void PrefDialog::updateConfiguration()
 {
+    prefBinder->apply(configuration());
+
     // Session
     configuration().setCrashRecovery(prefSession->isCrashRecovery());
     configuration().setCrashRecoveryIndex(prefSession->crashRecoveryIntervalIndex());
-    configuration().setNbUndo(prefSession->getNbUndo());
 
     // Reclustering
     configuration().setReclusterEngine(prefReclustering->getReclusterEngine());
     configuration().setFiberKitReclusterCommand(prefReclustering->getFiberKitReclusterCommand());
-    configuration().setReclusteringExecutable(prefReclustering->getReclusteringExecutable());
     configuration().setReclusteringArguments(prefReclustering->getReclusteringArguments());
-    configuration().setAutoSelectFeatures(prefReclustering->getAutoSelectFeatures());
-    configuration().setAutoSelectNFeatures(prefReclustering->getAutoSelectNFeatures());
-    configuration().setReclusterMeanSubtractedSubdim(prefReclustering->getReclusterMeanSubtractedSubdim());
-    configuration().setReclusterChannelVariance(prefReclustering->getReclusterChannelVariance());
-    configuration().setReclusterMedianWaveformResidual(prefReclustering->getReclusterMedianWaveformResidual());
-    configuration().setSuppressReclusterOutputTab(prefReclustering->getSuppressReclusterOutputTab());
     configuration().setReclusterChunking(prefReclustering->getReclusterChunking());
     configuration().setReclusterChunkMinutes(prefReclustering->getReclusterChunkMinutes());
 
     // Refinement
-    configuration().setRealignThreshold(prefRealignment->getRealignThreshold());
-    configuration().setRealignIterations(prefRealignment->getRealignIterations());
-    configuration().setRealignMaxShift(prefRealignment->getRealignMaxShift());
-    configuration().setRealignKernel(prefRealignment->getRealignKernel());
-    configuration().setRealignKernelWidth(prefRealignment->getRealignKernelWidth());
     configuration().setRealignMode(prefRealignment->getRealignMode());
-    configuration().setReorderMethod(prefClusterOrder->getReorderMethod());
-    configuration().setWaveformSortMean(prefClusterOrder->getWaveformSortMean());
-    configuration().setMergeRecommendMax(prefMerging->getMergeRecommendMax());
-    configuration().setMergeRecommendErrorFloor(prefMerging->getMergeRecommendErrorFloor());
-    configuration().setMergeRecommendQualityFloor(prefMerging->getMergeRecommendQualityFloor());
-    configuration().setShowMergeRecommendPanel(prefMerging->getShowMergeRecommendPanel());
-    configuration().setDriftSliderMaxClusters(prefMatrices->getDriftSliderMaxClusters());
-    configuration().setCurationLogging(prefSession->getCurationLogging());
-    configuration().setReorderDisplayOnly(prefClusterOrder->getReorderDisplayOnly());
-    configuration().setRealignVerbose(prefRealignment->getRealignVerbose());
-    configuration().setReextractSpikesOnSave(prefSession->getReextractSpikesOnSave());
-    configuration().setSyncFeatureSpaceOnSwitch(prefRealignment->getSyncFeatureSpaceOnSwitch());
-    configuration().setRealignFromAnySpace(prefRealignment->getRealignFromAnySpace());
     configuration().setSupersampleMode(prefRealignment->getSupersampleMode());
-    configuration().setSupersampleAdopt(prefRealignment->getSupersampleAdopt());
-    configuration().setSupersampleInterp(prefRealignment->getSupersampleInterp());
-    configuration().setAutoRealignAfterMerge(prefRealignment->getAutoRealignAfterMerge());
-    configuration().setAutoRenumberAfterMerge(prefClusterOrder->getAutoRenumberAfterMerge());
-    configuration().setAutoUpdateMatricesAfterMerge(prefMatrices->getAutoUpdateMatricesAfterMerge());
-    configuration().setErrorMatrixIncremental(prefMatrices->getErrorMatrixIncremental());
-    configuration().setErrorMatrixLowPrecision(prefMatrices->getErrorMatrixLowPrecision());
-    configuration().setDipSplitMinSize(prefSplitting->getDipSplitMinSize());
-    configuration().setDipSplitBloatFactor(prefSplitting->getDipSplitBloatFactor());
-    configuration().setDipSplitValleyThresh(prefSplitting->getDipSplitValleyThresh());
-    configuration().setKnnK(prefSplitting->getKnnK());
-    configuration().setKnnThreshold(prefSplitting->getKnnThreshold());
-    configuration().setKnnMinNew(prefSplitting->getKnnMinNew());
-    configuration().setKnnMinRef(prefSplitting->getKnnMinRef());
     configuration().setCoreCut(prefSplitting->getCoreCut());
 
     // Display
     configuration().setBackgroundColor(prefDisplay->getBackgroundColor());
-    configuration().setMarkerSize(prefDisplay->getMarkerSize());
-    configuration().setSelectionLineWidth(prefDisplay->getSelectionLineWidth());
-    configuration().setAutoscaleMarginPercent(prefDisplay->getAutoscaleMarginPercent());
     configuration().setUseWhiteColorDuringPrinting(prefDisplay->useWhiteColorDuringPrinting());
-    configuration().setAutoShowMatricesOnOpen(prefMatrices->getAutoShowMatricesOnOpen());
-    configuration().setAutoShowTemplateLibraryOnOpen(prefDisplay->getAutoShowTemplateLibraryOnOpen());
     configuration().setTemplatesMode(prefDisplay->getTemplatesMode());
-    configuration().setTemplateThresholdMin(prefMatrices->getTemplateThresholdMin());
-    configuration().setTemplateThresholdMax(prefMatrices->getTemplateThresholdMax());
-    configuration().setTemplateXcorrMetric(prefMatrices->getTemplateXcorrMetric());
 
     // Auto-Merge (patch 0068)
     configuration().setAutoMergeAlgorithm(prefMerging->getAlgorithm());
@@ -623,70 +485,24 @@ void PrefDialog::slotDefault()
 
 void PrefDialog::restoreDefaults()
 {
+    prefBinder->restoreDefaults();
+
     prefSession->setCrashRecovery(configuration().isCrashRecoveryDefault());
     prefSession->setCrashRecoveryIndex(configuration().crashRecoveryIntervalIndexDefault());
-    prefSession->setNbUndo(configuration().getNbUndoDefault());
 
     prefReclustering->setReclusterEngine(QStringLiteral("klustakwik"));
     prefReclustering->setFiberKitReclusterCommand(configuration().getFiberKitReclusterCommandDefault());
-    prefReclustering->setReclusteringExecutable(configuration().getReclusteringExecutableDefault());
     prefReclustering->setReclusteringArguments(configuration().getReclusteringArgumentsDefault());
     prefReclustering->setReclusterChunking(configuration().getReclusterChunkingDefault());
     prefReclustering->setReclusterChunkMinutes(configuration().getReclusterChunkMinutesDefault());
-    prefReclustering->setAutoSelectFeatures(configuration().getAutoSelectFeaturesDefault());
-    prefReclustering->setAutoSelectNFeatures(configuration().getAutoSelectNFeaturesDefault());
-    prefReclustering->setReclusterMeanSubtractedSubdim(configuration().getReclusterMeanSubtractedSubdimDefault());
-    prefReclustering->setReclusterChannelVariance(configuration().getReclusterChannelVarianceDefault());
-    prefReclustering->setReclusterMedianWaveformResidual(configuration().getReclusterMedianWaveformResidualDefault());
-    prefReclustering->setSuppressReclusterOutputTab(configuration().getSuppressReclusterOutputTabDefault());
 
-    prefRealignment->setRealignThreshold(configuration().getRealignThresholdDefault());
-    prefRealignment->setRealignIterations(configuration().getRealignIterationsDefault());
-    prefRealignment->setRealignMaxShift(configuration().getRealignMaxShiftDefault());
-    prefRealignment->setRealignKernel(configuration().getRealignKernelDefault());
-    prefRealignment->setRealignKernelWidth(configuration().getRealignKernelWidthDefault());
     prefRealignment->setRealignMode(configuration().getRealignModeDefault());
-    prefClusterOrder->setReorderMethod(configuration().getReorderMethodDefault());
-    prefClusterOrder->setWaveformSortMean(configuration().getWaveformSortMeanDefault());
-    prefMerging->setMergeRecommendMax(configuration().getMergeRecommendMaxDefault());
-    prefMerging->setMergeRecommendErrorFloor(configuration().getMergeRecommendErrorFloorDefault());
-    prefMerging->setMergeRecommendQualityFloor(configuration().getMergeRecommendQualityFloorDefault());
-    prefMerging->setShowMergeRecommendPanel(configuration().getShowMergeRecommendPanelDefault());
-    prefMatrices->setDriftSliderMaxClusters(configuration().getDriftSliderMaxClustersDefault());
-    prefSession->setCurationLogging(configuration().getCurationLoggingDefault());
-    prefClusterOrder->setReorderDisplayOnly(configuration().getReorderDisplayOnlyDefault());
-    prefRealignment->setRealignVerbose(configuration().getRealignVerboseDefault());
-    prefSession->setReextractSpikesOnSave(configuration().getReextractSpikesOnSaveDefault());
-    prefRealignment->setSyncFeatureSpaceOnSwitch(configuration().getSyncFeatureSpaceOnSwitchDefault());
-    prefRealignment->setRealignFromAnySpace(configuration().getRealignFromAnySpaceDefault());
     prefRealignment->setSupersampleMode(configuration().getSupersampleModeDefault());
-    prefRealignment->setSupersampleAdopt(configuration().getSupersampleAdoptDefault());
-    prefRealignment->setSupersampleInterp(configuration().getSupersampleInterpDefault());
-    prefRealignment->setAutoRealignAfterMerge(configuration().getAutoRealignAfterMergeDefault());
-    prefClusterOrder->setAutoRenumberAfterMerge(configuration().getAutoRenumberAfterMergeDefault());
-    prefMatrices->setAutoUpdateMatricesAfterMerge(configuration().getAutoUpdateMatricesAfterMergeDefault());
-    prefMatrices->setErrorMatrixIncremental(configuration().getErrorMatrixIncrementalDefault());
-    prefMatrices->setErrorMatrixLowPrecision(configuration().getErrorMatrixLowPrecisionDefault());
-    prefSplitting->setDipSplitMinSize(configuration().getDipSplitMinSizeDefault());
-    prefSplitting->setDipSplitBloatFactor(configuration().getDipSplitBloatFactorDefault());
-    prefSplitting->setDipSplitValleyThresh(configuration().getDipSplitValleyThreshDefault());
-    prefSplitting->setKnnK(configuration().getKnnKDefault());
-    prefSplitting->setKnnThreshold(configuration().getKnnThresholdDefault());
-    prefSplitting->setKnnMinNew(configuration().getKnnMinNewDefault());
-    prefSplitting->setKnnMinRef(configuration().getKnnMinRefDefault());
     prefSplitting->setCoreCut(configuration().getCoreCutDefault());
 
     prefDisplay->setBackgroundColor(configuration().getBackgroundColorDefault());
-    prefDisplay->setMarkerSize(configuration().getMarkerSizeDefault());
-    prefDisplay->setSelectionLineWidth(configuration().getSelectionLineWidthDefault());
-    prefDisplay->setAutoscaleMarginPercent(configuration().getAutoscaleMarginPercentDefault());
     prefDisplay->setUseWhiteColorDuringPrinting(configuration().getUseWhiteColorDuringPrintingDefault());
-    prefMatrices->setAutoShowMatricesOnOpen(configuration().getAutoShowMatricesOnOpenDefault());
-    prefDisplay->setAutoShowTemplateLibraryOnOpen(configuration().getAutoShowTemplateLibraryOnOpenDefault());
     prefDisplay->setTemplatesMode(configuration().getTemplatesModeDefault());
-    prefMatrices->setTemplateThresholdMin(configuration().getTemplateThresholdMinDefault());
-    prefMatrices->setTemplateThresholdMax(configuration().getTemplateThresholdMaxDefault());
-    prefMatrices->setTemplateXcorrMetric(configuration().getTemplateXcorrMetricDefault());
 
     // Auto-Merge (patch 0068) — defaults match KKE flag defaults.
     prefMerging->setAlgorithm(configuration().getAutoMergeAlgorithmDefault());
@@ -741,6 +557,8 @@ void PrefDialog::slotApply()
     enableButtonApply(false);
 }
 
+QStringList PrefDialog::unboundPreferenceRows() const { return prefBinder->unboundRows(); }
+
 void PrefDialog::enableApply()
 {
     enableButtonApply(true);
@@ -749,7 +567,7 @@ void PrefDialog::enableApply()
 
 void PrefDialog::syncAutoNFeatures(int n)
 {
-    prefReclustering->setAutoSelectNFeatures(n);
+    prefReclustering->autoSelectNFeaturesSpinBox->setValue(n);
 }
 
 void PrefDialog::resetChannelList(int nbChannels)

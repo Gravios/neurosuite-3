@@ -16,20 +16,6 @@ public:
     explicit PrefSplitting(QWidget* parent = nullptr);
     ~PrefSplitting() override = default;
 
-    void   setDipSplitMinSize(int n);
-    void   setDipSplitBloatFactor(double v);
-    void   setDipSplitValleyThresh(double v);
-    int    getDipSplitMinSize()       const;
-    double getDipSplitBloatFactor()   const;
-    double getDipSplitValleyThresh()  const;
-    void   setKnnK(int n);
-    void   setKnnThreshold(double v);
-    void   setKnnMinNew(int n);
-    void   setKnnMinRef(int n);
-    int    getKnnK()         const;
-    double getKnnThreshold() const;
-    int    getKnnMinNew()    const;
-    int    getKnnMinRef()    const;
 
     /** Split Off Spurious Spikes: the group built in the constructor. */
     void setCoreCut(const Configuration::CoreCut& c);

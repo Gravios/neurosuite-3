@@ -46,22 +46,8 @@ public:
     QString getFiberKitReclusterCommand() const;
 
     // KlustaKwik
-    void setReclusteringExecutable(const QString& executable);
     void setReclusteringArguments(const QString& arguments);
-    void setAutoSelectFeatures(bool checked);
-    void setAutoSelectNFeatures(int n);
-    void setReclusterMeanSubtractedSubdim(bool checked);
-    void setReclusterChannelVariance(bool checked);
-    void setReclusterMedianWaveformResidual(bool checked);
-    void setSuppressReclusterOutputTab(bool checked);
-    QString getReclusteringExecutable() const;
     QString getReclusteringArguments() const;
-    bool    getAutoSelectFeatures() const;
-    int     getAutoSelectNFeatures() const;
-    bool    getReclusterMeanSubtractedSubdim() const;
-    bool    getReclusterChannelVariance() const;
-    bool    getReclusterMedianWaveformResidual() const;
-    bool    getSuppressReclusterOutputTab() const;
     void   setReclusterChunking(int mode);              // Configuration::ReclusterChunking
     int    getReclusterChunking() const;
     void   setReclusterChunkMinutes(double minutes);

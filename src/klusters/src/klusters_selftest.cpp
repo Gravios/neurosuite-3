@@ -1016,13 +1016,15 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // {"configWrite": true}: store the configuration as read at start-up (Configuration::write),
         // for test_settings_file.py: what a settings file becomes by being read and written.
         // With "defaults": true, first Preferences > Defaults and OK: what that button stores.
-        if (step.value(QStringLiteral("defaults")).toBool()) {
+        // With "dialog": true, Preferences opened and OK pressed with nothing changed.
+        if (step.value(QStringLiteral("defaults")).toBool() || step.value(QStringLiteral("dialog")).toBool()) {
             if (mPluginRegistry.plugins().isEmpty()) mPluginRegistry.reload();
             PrefDialog dialog(this, (mainDock && doc) ? doc->nbOfchannels() : 0, &mPluginRegistry);
             dialog.setRadialCatalog(actionCatalog());
             dialog.updateDialog();
-            dialog.restoreDefaults();
+            if (step.value(QStringLiteral("defaults")).toBool()) dialog.restoreDefaults();
             dialog.updateConfiguration();
+            result.insert(QStringLiteral("unboundPreferenceRows"), QJsonArray::fromStringList(dialog.unboundPreferenceRows()));
         }
         configuration().write();
         QSettings().sync();

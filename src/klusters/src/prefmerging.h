@@ -54,14 +54,6 @@ public:
     void setPreviewBeforeApply(bool b);
 
     // Recommended merges (the panel under the child palette).
-    void   setMergeRecommendMax(int n);
-    int    getMergeRecommendMax()          const;
-    void   setMergeRecommendErrorFloor(double v);
-    double getMergeRecommendErrorFloor()   const;
-    void   setMergeRecommendQualityFloor(double v);
-    double getMergeRecommendQualityFloor() const;
-    void   setShowMergeRecommendPanel(bool b);
-    bool   getShowMergeRecommendPanel()    const;
 
 private slots:
     /// Enables medianKSpinBox only when algoMedianRadio is selected.

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: Preferences pages are filled from the preference table](#2026-11-24--klusters-preferences-pages-are-filled-from-the-preference-table) |
 | 2026-11-24 | [Klusters: a settings file is read within each preference's limits](#2026-11-24--klusters-a-settings-file-is-read-within-each-preferences-limits) |
 | 2026-11-24 | [Klusters: the preferences are described in one table](#2026-11-24--klusters-the-preferences-are-described-in-one-table) |
 | 2026-11-24 | [Klusters: Defaults gave the wrong super-sampling interpolation](#2026-11-24--klusters-defaults-gave-the-wrong-super-sampling-interpolation) |
@@ -276,6 +277,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: Preferences pages are filled from the preference table
+
+A setting on a Preferences page now needs its control and one row of the table: loading, applying, Defaults and enabling Apply are done from the row. 48 of 78 page settings are converted; the pages look the same.
+
+<details>
+<summary>Details</summary>
+
+- **Before.** A setting shown on a Preferences page was written by hand in the page (a
+  `set…` and a `get…`) and four times in the dialog: load, apply, Defaults, and the
+  connection that enables Apply.
+- **Now.** A row of the preference table names its control (`.on("undoSpinBox")`) and
+  `PrefBinder` does all four for a check box, a spin box, a combo box or a line edit. 48 of
+  the 78 settings the pages show are bound this way, on eight pages; `prefdialog.cpp` goes
+  from 771 lines to 589 and the pages lose 96 accessors. The pages look as they did: their
+  `.ui` files are untouched.
+- **Adding a setting** to a page is now the control in the `.ui` and one row
+  (RECIPES.md §2.8).
+- **No behaviour changes**: `test_settings_file.py` — now seven cases, with "Preferences
+  opened and OK pressed" — gives the same settings file in each, and fails if a row names a
+  control no page has.
+- **Still by hand (30 settings):** the Cluster view page (numbers typed into line edits),
+  colours, the realign mode's radio buttons, combo boxes that hold named values (the
+  recluster engine, the chunking), and two check boxes that also enable other controls.
+  They need a few more kinds of binding.
+
+</details>
 
 ---
 

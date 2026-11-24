@@ -12,15 +12,7 @@ public:
     explicit PrefClusterOrder(QWidget* parent = nullptr);
     ~PrefClusterOrder() override = default;
 
-    void setReorderMethod(int m);
-    int  getReorderMethod()      const;
-    void setReorderDisplayOnly(bool b);
-    bool getReorderDisplayOnly() const;
-    void setWaveformSortMean(bool b);
-    bool getWaveformSortMean()   const;
 
-    void   setAutoRenumberAfterMerge(bool b);
-    bool   getAutoRenumberAfterMerge() const;
 };
 
 #endif

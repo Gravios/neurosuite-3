@@ -26,6 +26,13 @@ struct PrefSpec {
     QVariant def;        ///< the value when the key is absent, and what Defaults restores
     std::function<QVariant(const Configuration&)>      get;   ///< the value write() stores
     std::function<void(Configuration&, const QVariant&)> set; ///< takes a stored value, within the preference's limits
+    /// The object name of the control that shows it in Preferences (a check box, a spin
+    /// box, a combo box, a line edit of a page's .ui).  PrefBinder loads, applies and
+    /// resets every row that names one; empty: the page does it by hand, or no page shows it.
+    QString  widget;
+
+    /// The row, shown by the control named @p objectName.
+    PrefSpec on(const char* objectName) const { PrefSpec s = *this; s.widget = QLatin1String(objectName); return s; }
 };
 
 #endif // PREFSPEC_H

@@ -24,6 +24,7 @@ set(klusters_SRCS
     clusterview.cpp
     configuration.cpp
     configuration_prefs.cpp     # Configuration::prefTable(): every preference of the settings file, one row each
+    prefbinder.cpp              # PrefBinder: page controls loaded / applied / reset from the preference table
     correlationthread.cpp
     correlationview.cpp
     curationlogger.cpp

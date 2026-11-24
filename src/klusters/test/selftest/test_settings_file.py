@@ -3,7 +3,7 @@
 
 Configuration::read() takes each preference from the settings file -- with its default when the
 key is absent, its limits, and the one-time changes of an old default -- and write() stores them
-all.  This runs six cases through read + write and compares the result, key by key, with
+all.  This runs seven cases through read + write and compares the result, key by key, with
 settings.golden.json:
 
   default   no settings file: every default
@@ -11,6 +11,9 @@ settings.golden.json:
   low       every number at -7: the lower limits
   high      every number at 100000: the upper limits
   legacy    the values of old defaults with none of the "already migrated" flags
+  dialog    the "changed" file, then Preferences opened and OK pressed with nothing touched:
+            the pages show and give back what was read (where a page's range is narrower
+            than the preference's, the value comes back inside the page's)
   defaults  the "changed" file, then Preferences > Defaults and OK: every setting a page shows
             is its default again (a key that is not is one no page shows -- or a default
             written twice with two values)
@@ -34,10 +37,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 GOLDEN = os.path.join(HERE, "settings.golden.json")
 GROUPS = ("%General", "clusterView", "waveformView")
 FLAGS = ("nbUndoRaisedFromOldDefault", "realignThresholdLoweredFromOldDefault", "settingsRevision")
+UNBOUND = []          # rows of the preference table that name a control no page has
 INT, NUM = re.compile(r"^-?\d+$"), re.compile(r"^-?\d+\.\d+(e-?\d+)?$")
 
 
-def through(klusters, text, defaults=False):
+def through(klusters, text, defaults=False, dialog=False):
     """The compared groups of the settings file after one read + write of @p text (None: no file)."""
     with tempfile.TemporaryDirectory() as d:
         base, _ = T.session(d, "f")
@@ -46,7 +50,9 @@ def through(klusters, text, defaults=False):
             os.makedirs(os.path.dirname(path))
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(text)
-        R.run(klusters, f"{base}.clu.{T.METHOD}.1", [{"configWrite": True, "defaults": defaults}], d, timeout=600)
+        rep = R.run(klusters, f"{base}.clu.{T.METHOD}.1", [{"configWrite": True, "defaults": defaults, "dialog": dialog}], d, timeout=600)
+        for r in rep.get("results", []):
+            UNBOUND.extend(r.get("unboundPreferenceRows", []))
         cp = configparser.RawConfigParser(interpolation=None, delimiters=("=",))
         cp.optionxform = str
         with open(path, encoding="utf-8") as fh:
@@ -81,6 +87,7 @@ def cases(klusters):
     out = {"default": default}
     for how in ("changed", "low", "high"):
         out[how] = through(klusters, as_text(moved(default, how)))
+    out["dialog"] = through(klusters, as_text(moved(default, "changed")), dialog=True)
     out["defaults"] = through(klusters, as_text(moved(default, "changed")), defaults=True)
     out["legacy"] = through(klusters, "[%General]\nnbUndo=2\nrealignThreshold=0.7\nautoShowMatricesOnOpen=false\n"
                                        "templateXcorrPearson=true\nreclusteringExecutable=KlustaKwik\n")
@@ -104,6 +111,7 @@ def main():
             w, h = want[case].get(g, {}), got.get(case, {}).get(g, {})
             diffs += [f"{case} [{g}] {k}: {w.get(k)!r} -> {h.get(k)!r}" for k in sorted(set(w) | set(h)) if w.get(k) != h.get(k)]
     n = sum(len(kv) for kv in want["default"].values())
+    diffs += [f"the preference table names a control no page has: {u}" for u in sorted(set(UNBOUND))]
     print(("  ok:   " if not diffs else "  FAIL: ") + f"the {n} keys of the settings file are the snapshot's in the {len(want)} cases")
     for x in diffs[:40]:
         print("        " + x)

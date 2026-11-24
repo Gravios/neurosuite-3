@@ -437,10 +437,15 @@ written.
    `prefVia` in place of `pref` when the setter holds the limits; `prefField`
    for a field of a settings struct. The key is permanent: settings files hold
    it.
-2. **The page** (until the pages are generated from the table too): the widget
-   in the page's `.ui`, the page's `get…` / `set…`, and four lines in
-   `prefdialog.cpp` — `updateDialog()` (load), `updateConfiguration()` (apply),
-   `restoreDefaults()` and the `enableApply` connection.
+2. **The page.** Put the control in the page's `.ui` — a check box, a spin
+   box, a combo box (the entry's index; for a flag, first entry off, second
+   on) or a line edit — and name it in the row:
+   `pref(…).on("frobThresholdSpinBox")`. `PrefBinder` loads, applies and
+   resets it and enables Apply; the page and the dialog need no code.
+   A control of another kind (a colour, radio buttons, a combo box of named
+   values, a number typed into a line edit) is still by hand: the page's
+   `get…` / `set…` and four lines in `prefdialog.cpp` — `updateDialog()`,
+   `updateConfiguration()`, `restoreDefaults()`, the `enableApply` connection.
 3. **A changed default** of an existing preference is a one-time change for the
    files that hold the old one: add it to `Configuration::applyOldDefaults()`
    with a flag that `write()` stores (see the undo depth there).

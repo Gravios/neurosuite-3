@@ -24,17 +24,9 @@ void PrefDisplay::setTemplateControlsEnabled(bool on)
 void   PrefDisplay::setBackgroundColor(const QColor& c) { backgroundColorButton->setColor(c); }
 QColor PrefDisplay::getBackgroundColor() const          { return backgroundColorButton->color(); }
 
-void PrefDisplay::setMarkerSize(int s)                  { markerSizeSpinBox->setValue(s); }
-int  PrefDisplay::getMarkerSize() const                 { return markerSizeSpinBox->value(); }
 
-void PrefDisplay::setSelectionLineWidth(int w)          { selectionLineWidthSpinBox->setValue(w); }
-int  PrefDisplay::getSelectionLineWidth() const         { return selectionLineWidthSpinBox->value(); }
 
-void   PrefDisplay::setAutoscaleMarginPercent(double p) { autoscaleMarginSpinBox->setValue(p); }
-double PrefDisplay::getAutoscaleMarginPercent() const   { return autoscaleMarginSpinBox->value(); }
 
 void PrefDisplay::setUseWhiteColorDuringPrinting(bool b){ useWhiteColorPrinting->setChecked(b); }
 bool PrefDisplay::useWhiteColorDuringPrinting() const   { return useWhiteColorPrinting->isChecked(); }
 
-void PrefDisplay::setAutoShowTemplateLibraryOnOpen(bool c) { autoShowTemplateLibraryOnOpenCheckBox->setChecked(c); }
-bool PrefDisplay::getAutoShowTemplateLibraryOnOpen() const { return autoShowTemplateLibraryOnOpenCheckBox->isChecked(); }

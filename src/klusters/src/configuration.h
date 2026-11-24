@@ -43,6 +43,9 @@ public:
     /** Reads the configuration data from the application config file.
     * If a property does not already exist in the config file it will be
     * set to a default value.*/
+    /// The preferences of the settings file, one row each (configuration_prefs.cpp).
+    static const QList<PrefSpec>& prefTable();
+
     void read();
     /** Writes the configuration data to the application config file.*/
     void write() const;
@@ -666,8 +669,6 @@ public:
     }
 
 private:
-    /// The preferences of the settings file, one row each (configuration_prefs.cpp).
-    static const QList<PrefSpec>& prefTable();
     /// The default of the preference @p key of the table.
     static QVariant prefDefault(const char* key);
     /// The one-time changes of an old default; @p settings is in the General group.
