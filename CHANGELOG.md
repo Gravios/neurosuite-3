@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: a click in a parent matrix leaves the child view](#2026-11-24--klusters-a-click-in-a-parent-matrix-leaves-the-child-view) |
 | 2026-11-24 | [Klusters: Cancel Running Job](#2026-11-24--klusters-cancel-running-job) |
 | 2026-11-24 | [Klusters: the cluster information dialog keeps its cluster](#2026-11-24--klusters-the-cluster-information-dialog-keeps-its-cluster) |
 | 2026-11-24 | [Klusters: nothing edits the clustering while a job runs](#2026-11-24--klusters-nothing-edits-the-clustering-while-a-job-runs) |
@@ -256,6 +257,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: a click in a parent matrix leaves the child view
+
+From the child view, a click in a matrix of parents could leave the child selected.
+
+<details>
+<summary>Details</summary>
+
+- In the child view (a child selected in the child palette, the views on the child layer) with
+  the matrices showing parents, a click on a cell selected the cell's parents in the parent
+  palette but, whenever the cell held the curated parent, **left the child selected and the
+  views on the child layer** -- showing the cell's parent ids as if they were children.  Only a
+  cell without the curated parent left the child view.
+- A click (or Ctrl-click) in a matrix of parents now drops the child selection, returns the
+  views to the parents and shows the cell's parents (`KlustersDoc::parentViewRequestedFromMatrix`,
+  emitted by `selectFromMatrix` / `addFromMatrix` when the matrices are not scoped).  A matrix
+  scoped to the children (V) selects children, as before.
+- Self-test steps `childPalette` (show it, click a child) and `matrixSelect` (a cell click);
+  `test_child_view_matrix_click.py` (8 checks).  The scoped matrices were not re-tested (their
+  branch returns before the new line).
+
+</details>
 
 ---
 

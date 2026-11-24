@@ -830,6 +830,7 @@ void KlustersDoc::selectFromMatrix(const QList<int>& ids, const QList<int>& prev
         emit hierarchyChildSelectionRequested(ids);
         return;
     }
+    if (childScopeActive) emit parentViewRequestedFromMatrix();   // a parent matrix: leave the child view
     QList<int> show = ids, prev = previous;
     if (prev.isEmpty()) shownClustersUpdate(show);
     else                shownClustersUpdate(show, prev);
@@ -862,6 +863,7 @@ void KlustersDoc::addFromMatrix(const QList<int>& ids)
         emit hierarchyChildSelectionExtendRequested(ids);
         return;
     }
+    if (childScopeActive) emit parentViewRequestedFromMatrix();   // as selectFromMatrix
     addClustersToActiveView(ids);
 }
 

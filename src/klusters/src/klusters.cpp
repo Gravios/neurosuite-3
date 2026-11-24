@@ -1615,6 +1615,14 @@ void KlustersApp::createMenus()
         if (childPanel && childPanel->isVisible())
             repopulateChildPalette(clusterPalette->selectedClusters());
     });
+    // A click in a matrix of parents, from the child view: the child selection goes and
+    // the views return to the parents (the empty child selection does both, as a click
+    // on empty space in the child palette does); the cell's parents are shown next.
+    connect(doc, &KlustersDoc::parentViewRequestedFromMatrix, this, [this]() {
+        if (childPaletteA && !childPaletteA->selectedClusters().isEmpty())
+            childPaletteA->selectItems(QList<int>());
+        if (doc->isChildClusteringActive()) doc->setActiveClustering(false);
+    });
     connect(doc, &KlustersDoc::hierarchyChildSelectionRequested, this,
             [this](const QList<int>& children){
         if (!childPanel || !childPanel->isVisible() || children.isEmpty()) return;

@@ -2488,6 +2488,14 @@ Q_SIGNALS:
      *  signal, which is how a shared policy drifts.  Same receiver, different cause.
      */
     void hierarchyChildSelectionRequested(const QList<int>& children);
+    /** A cell of a matrix of PARENTS was clicked while the views show children (the
+     *  child view, with the matrices not scoped to the children).  The application
+     *  drops the child selection and returns the views to the parents before the
+     *  cell's parents are shown: the click is a parent selection like one in the
+     *  parent palette.  Without it the child stayed selected and the views stayed
+     *  on the child layer whenever the cell held the curated parent -- showing the
+     *  cell's PARENT ids as if they were children. */
+    void parentViewRequestedFromMatrix();
 
     /** Extend the child palette's selection with @p children instead of replacing
      *  it -- the Ctrl-accumulate landing.  Distinct from

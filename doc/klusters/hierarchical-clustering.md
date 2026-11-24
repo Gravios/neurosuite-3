@@ -172,6 +172,13 @@ by the rebuild, and the clicked fiber holds the selection. With no atom
 selected, clicking the *same* fiber keeps the child view as before, and
 clicking another fiber drops it (`V` re-enters).
 
+**Leaving the children by clicking a fiber matrix.** The same holds for the
+curation matrices while they show fibers (not scoped to the atoms with `V`):
+a click on a cell, with atoms selected in the child palette, drops the atom
+selection, returns the views to the fibers and shows the cell's fibers,
+selected in the fiber palette; a Ctrl-click adds the cell's fibers to those
+selected. A click in a matrix scoped to the atoms selects atoms, as before.
+
 ## Hierarchy operations
 
 ### Keys (while a palette holds focus)

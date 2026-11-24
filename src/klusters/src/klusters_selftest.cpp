@@ -45,6 +45,10 @@
  *                                        layer), "undoChild" / "redoChild": true; none: only
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
+ *        {"childPalette": {...}}         "show": View > Show Child Cluster Palette; "click": a left
+ *                                        click on that child in it; reports what it lists and selects
+ *        {"matrixSelect": [ids]}         a click on a cell of a curation matrix ("add": true: Ctrl);
+ *                                        reports the layer shown and both palettes' selections
  *        {"cancelJob": true}             Edit > Cancel Running Job; reports whether there was one to cancel
  *        {"actionsEnabled": true}        the command ids that can be triggered now and those that
  *                                        cannot, and which jobs run
@@ -751,6 +755,47 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("redo"))) {
         // {"redo": true}: Edit > Redo.
         slotRedo();
+        return true;
+    }
+    if (step.contains(QStringLiteral("childPalette"))) {
+        // {"childPalette": {"show": bool, "click": id}}: View > Show Child Cluster Palette, and a
+        // left click on a child in it -- the curator's way into the child view.
+        const QJsonObject o = step.value(QStringLiteral("childPalette")).toObject();
+        if (o.contains(QStringLiteral("show")) && mShowChildPalette)
+            mShowChildPalette->setChecked(o.value(QStringLiteral("show")).toBool());
+        QCoreApplication::processEvents();
+        if (o.contains(QStringLiteral("click")))
+            result.insert(QStringLiteral("clicked"), childPalette && childPalette->clickItem(o.value(QStringLiteral("click")).toInt()));
+        QCoreApplication::processEvents();
+        QJsonArray listed, sel;
+        if (childPalette) {
+            for (int id : childPalette->listedClusters()) listed.append(id);
+            for (int id : childPalette->selectedClusters()) sel.append(id);
+        }
+        result.insert(QStringLiteral("visible"), childPanel && childPanel->isVisible());
+        result.insert(QStringLiteral("listed"), listed);
+        result.insert(QStringLiteral("childSelection"), sel);
+        result.insert(QStringLiteral("childScope"), doc->isChildClusteringActive());
+        return true;
+    }
+    if (step.contains(QStringLiteral("matrixSelect"))) {
+        // {"matrixSelect": [ids], "add": bool}: what a click (Ctrl-click) on a cell of a curation
+        // matrix does -- the document call every matrix view makes.  Reports the layer shown, what
+        // the view shows and both palettes' selections afterwards.
+        QList<int> ids;
+        for (const QJsonValue& v : step.value(QStringLiteral("matrixSelect")).toArray()) ids.append(v.toInt());
+        auto arr = [](const QList<int>& l) { QJsonArray a; for (int x : l) a.append(x); return a; };
+        result.insert(QStringLiteral("childScopeBefore"), doc->isChildClusteringActive());
+        result.insert(QStringLiteral("parentSelectionBefore"), arr(clusterPalette ? clusterPalette->selectedClusters() : QList<int>()));
+        result.insert(QStringLiteral("childSelectionBefore"), arr(childPalette ? childPalette->selectedClusters() : QList<int>()));
+        if (step.value(QStringLiteral("add")).toBool()) doc->addFromMatrix(ids);
+        else                                            doc->selectFromMatrix(ids);
+        QCoreApplication::processEvents();
+        result.insert(QStringLiteral("childScope"), doc->isChildClusteringActive());
+        result.insert(QStringLiteral("matrixScope"), doc->matrixScopeActive());
+        result.insert(QStringLiteral("shown"), arr(activeView() ? activeView()->clusters() : QList<int>()));
+        result.insert(QStringLiteral("parentSelection"), arr(clusterPalette ? clusterPalette->selectedClusters() : QList<int>()));
+        result.insert(QStringLiteral("childSelection"), arr(childPalette ? childPalette->selectedClusters() : QList<int>()));
         return true;
     }
     if (step.contains(QStringLiteral("cancelJob"))) {
