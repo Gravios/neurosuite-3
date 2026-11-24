@@ -136,7 +136,8 @@ standard shape:
   DocBook handbook lives under `doc/en/` (klusters, ndmanager, neuroscope).
   `docs/` holds developer code references in Markdown that live *next to the
   code* and are read on GitHub / in an editor, not built —
-  `klusters/docs/INPUT_SYSTEM.md` and `PLUGIN_API.md`,
+  `klusters/docs/` (`INPUT_SYSTEM.md`, `COMMANDS_AND_PREFERENCES.md`,
+  `DOCUMENT_MODEL.md`, `VIEW_SYSTEM.md`, `CONCURRENCY.md`, `PLUGIN_API.md`),
   `neuroscope/docs/INPUT_SYSTEM.md`. This is the "references live next to the
   code" split the [Developer Guide](DEVELOPER_GUIDE.md) uses; §2.8 covers the
   project-wide doc homes (`doc/design/`, `doc/workflows/`).
@@ -518,6 +519,29 @@ and the include path is `src/` (`CMAKE_CURRENT_SOURCE_DIR` inside
 duplicate touches no build wiring; moving a genuinely-flat subproject's
 sources does, and must be build-tested per backend.
 
+### 6.9 One thing written in several places
+
+A Klusters menu command used to be written in `createMenus`, in
+`registerInputBindings`, in the per-state lists and in the edit lock's list; a
+preference in `Configuration` (member, default, a line of `read()`, a line of
+`write()`), in its page (a `set…` and a `get…`) and four times in the dialog.
+The places drifted: commands left out of the lock's list stayed enabled during
+a recluster, and the default of the super-sampling interpolation was 2 in the
+reader and 0 for the Defaults button.
+
+Both are tables now (`klusters_commands.cpp`, `configuration_prefs.cpp`;
+[COMMANDS_AND_PREFERENCES.md](../../src/klusters/docs/COMMANDS_AND_PREFERENCES.md)).
+Add the row; do not add a second list of commands, repeat a default as a number
+somewhere else, or write a page accessor for a setting the binder can hold.
+
+### 6.10 Changing a default without the stored values
+
+Every save of the preferences stores every value. A changed default therefore
+reaches only new installations unless the stored old default is changed once
+too (`Configuration::applyOldDefaults()`, with a flag). The same holds for an
+id: a command id or a settings key that changes leaves every stored binding and
+value behind.
+
 ---
 
 ## 7. Tooling
@@ -545,6 +569,10 @@ the directory is a `ctest` test (`klusters_selftest_<name>`, label `selftest`).
 `ctest -L selftest` runs them alone in about three minutes.  A change to
 Klusters' curation, undo, realign, hierarchy or job handling runs them before
 it ships; a new behaviour gets a file there, which registers itself.
+Two of them are **snapshots**: `test_command_table.py` (every menu command) and
+`test_settings_file.py` (every key of the settings file).  A deliberate change
+to a command or a preference makes one fail: run it with `--update`, read the
+diff of its golden file, and commit that with the change.
 
 For terminal/TTY-related features (progressbar):
 - `script(1)` for PTY emulation in container — `script -q -c '<cmd>' /tmp/cap.log`.

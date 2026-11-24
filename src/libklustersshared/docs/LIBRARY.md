@@ -197,7 +197,7 @@ The regression test for the modifier is described in §8.
 |---|---|
 | `chord.h/.cpp` | `Chord`: key / button / wheel trigger plus modifiers; `QKeySequence` bridge |
 | `command.h`, `ctx.h`, `inputscope.h` | `Command` (unit of behaviour), `Ctx` (view + event), `InputScope` (context layer) |
-| `bindingregistry.h/.cpp` | the registry: defaults, override layer, resolver |
+| `bindingregistry.h/.cpp` | the registry: defaults, override layer, resolver. One command per id: a second `addCommand` of an id replaces the first, and `replacedIds()` lists such ids so that an application can test it has none |
 | `inputdispatcher.h/.cpp` | Qt glue: `registry()`, `chordFromEvent()`, `dispatch()` |
 | `keymapprofile.h/.cpp` | named, saveable binding layouts |
 | `prefinput.h/.cpp`, `buttonchordedit.*`, `wheelchordedit.*` | generated Preferences ▸ Input page and its row editors |
@@ -389,6 +389,7 @@ NeuroScope build their Preferences dialogs on it; ndmanager does not use it
 |---|---|---|
 | `QExtendDialog` | `QDialog` | dialog with a standard button row (`ButtonCode` flags `Help, Default, Ok, Apply, Try, Cancel, Close, No, Yes, Reset, Details, User1-3`), one `mainWidget`, an optional details widget, per-button signals (`okClicked`, `applyClicked`, `defaultClicked`, `helpClicked`, …), `buttonClicked(ButtonCode)`, and `restoreDialogSize()`/`saveDialogSize()` |
 | `QPageDialog` | `QExtendDialog` | owns a `QPageWidget` as its main widget and forwards the page API (`addPage`, `addSubPage`, `insertPage`, `removePage`, `setCurrentPage`, `setFaceType`) and the `currentPageChanged`/`pageRemoved` signals |
+| `PageKeyNavigator` | `QObject` | attached to a `QPageDialog` (`new PageKeyNavigator(dialog)`): the dialog worked from the keyboard in two levels — the page list (Enter into the page shown, Tab round the list and the buttons) and the page (Tab round its settings without leaving it, Enter acts on the setting and never presses OK, Esc back to the list). Klusters' Preferences uses it; `pagekeynavigator.h` lists the keys |
 | `QPageWidget` | `QPageView` | a `QPageView` that owns a `QPageWidgetModel`; adds `pageToggled` |
 | `QPageView` | `QWidget` | renders any page model with a `FaceType`: `Auto`, `Plain`, `List`, `Tree`, `Tabbed`; left/top navigator plus a stacked page area |
 | `QPageModel` | `QAbstractItemModel` | abstract model; roles `HeaderRole`, `WidgetRole` |

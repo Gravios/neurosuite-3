@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters developer docs: commands and preferences](#2026-11-24--klusters-developer-docs-commands-and-preferences) |
 | 2026-11-24 | [Klusters: the rest of the Preferences pages are filled from the table](#2026-11-24--klusters-the-rest-of-the-preferences-pages-are-filled-from-the-table) |
 | 2026-11-24 | [Klusters: Preferences pages are filled from the preference table](#2026-11-24--klusters-preferences-pages-are-filled-from-the-preference-table) |
 | 2026-11-24 | [Klusters: a settings file is read within each preference's limits](#2026-11-24--klusters-a-settings-file-is-read-within-each-preferences-limits) |
@@ -278,6 +279,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters developer docs: commands and preferences
+
+A new developer reference describes the command table and the preference table; the other developer documents point to it. Documentation only.
+
+<details>
+<summary>Details</summary>
+
+- New internal reference `src/klusters/docs/COMMANDS_AND_PREFERENCES.md`: the command
+  table and the preference table — what a row holds and what is built from it, the menu
+  layout, why ids and keys are permanent and how old ones still resolve, limits, changing a
+  default, the page binder and its kinds of control, what is still by hand and why, the
+  dialog's flow and keyboard levels, the tests, and the mistakes to avoid.
+- The Developer Guide lists it in place of the unwritten "Preferences & persistence".
+- `INPUT_SYSTEM.md`: a menu command is made rebindable by its row's category; a key
+  command that edits refuses while a job runs; one id, one command.
+- `STANDARDIZATION.md`: §6.9 (one thing written in several places) and §6.10 (a changed
+  default without the stored values) among the mistakes to avoid; the snapshot tests in
+  §7.2; the list of Klusters' references.
+- `RECIPES.md`, `CLAUDE.md`, the library reference (`PageKeyNavigator`,
+  `BindingRegistry::replacedIds`), `DOCUMENT_MODEL.md` §4.4 and the audit point to it.
+- The self-test README lists the 17 tests added since 2026-11-23 and their harness steps.
+
+</details>
 
 ---
 

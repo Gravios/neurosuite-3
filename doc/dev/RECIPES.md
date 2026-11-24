@@ -476,6 +476,7 @@ defaults, changed values, both limits, old defaults, and the Defaults button).
 | Add a Preferences page | LIBRARY.md §5.3 |
 | Add a realign (xcorr) back end | LIBRARY.md §4.7 |
 | Add a Klusters view | [VIEW_SYSTEM.md](../../src/klusters/docs/VIEW_SYSTEM.md) §7 |
+| Move a Klusters command to another menu; change a preference's default; add a kind of control to the Preferences binder | [COMMANDS_AND_PREFERENCES.md](../../src/klusters/docs/COMMANDS_AND_PREFERENCES.md) §3, §5, §6 |
 | Add a Klusters modal input mode | [klusters INPUT_SYSTEM.md](../../src/klusters/docs/INPUT_SYSTEM.md) §9 |
 | NeuroScope input bindings | [neuroscope INPUT_SYSTEM.md](../../src/neuroscope/docs/INPUT_SYSTEM.md) §7 |
 | Add a test anywhere else | [tests/README.md](../../tests/README.md), "Adding a test" |

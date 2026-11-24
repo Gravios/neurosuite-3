@@ -195,7 +195,7 @@ struct InputScope {
 A scope is **self-describing**: it is live when its `active(ctx)` predicate
 reports true (e.g. `return view.mode() == NEW_CLUSTER;`). The resolver never
 hard-codes knowledge of any specific view or mode — it composes whichever scopes
-report active and consults them in [layer order](#4-the-scope-stack).
+report active and consults them in [layer order](#4-the-scope-stack--tiered-view-modes).
 
 `Layer` and `Capture` are the two policy axes — the heart of the system — and
 get their own sections below.
@@ -469,7 +469,7 @@ the live watershed preview (`registerInputBindings()` in `klusters.cpp`).
 `active()` closes over it. Watershed uses the member `wsPreviewActive`, set true
 when the preview opens and false in `wsExit()`.
 
-**Step 2 — Register the scope.** Pick the [tier](#4-the-scope-stack) (a modal
+**Step 2 — Register the scope.** Pick the [tier](#4-the-scope-stack--tiered-view-modes) (a modal
 preview is `Transient`) and set `Capture::Exclusive`:
 
 ```cpp
@@ -565,9 +565,20 @@ starts under a held modifier (Ctrl-pan) or with any modifier (base zoom).
 **Add a wheel binding.** A `Command` with `Chord::wheel(dir, mods)`; `dir` is
 +1 (up) / −1 (down). Only vertical wheel is bound.
 
-**Mirror a menu action so it's rebindable.** Set `external = true`,
+**Mirror a menu action so it's rebindable.** Give its row of the command table
+a category (`klusters_commands.cpp`;
+[COMMANDS_AND_PREFERENCES.md](COMMANDS_AND_PREFERENCES.md) §2):
+`registerInputBindings()` mirrors every such row through
+`registerActionCommand`, which sets `external = true` and
 `defaultChord = chordFromKeySequence(action->shortcut())`. The resolver skips it;
 `applyInputOverridesToActions()` pushes any override back onto the `QAction`.
+The row's id is the command's id in the registry: it must differ from every
+other command's.
+
+**A key command that edits the clustering** begins its `invoke()` with
+`if (refuseWhileBlocked(tr("…"))) return;`. The edit lock disables the menu
+commands while a job runs ([CONCURRENCY.md](CONCURRENCY.md) §7.4); a command the
+resolver dispatches is not a menu command and would run.
 A chord is one key-combo: a multi-combo shortcut ("Ctrl+K, Ctrl+C") maps to an
 invalid chord (unbound), and the Preferences ▸ Input key editor records a single
 combo (`setMaximumSequenceLength(1)` on Qt ≥ 6.5; truncated to the first combo on
@@ -590,6 +601,11 @@ Build + run:
 cmake --build build --target klusters klusters_test_bindingregistry klusters_test_inputdispatcher -j$(nproc)
 ctest --test-dir build -R 'bindingregistry|inputdispatcher' --output-on-failure
 ```
+
+`klusters_selftest_command_table` (`test_command_table.py`) pins the registry's
+menu-command entries — id, category, label, default chord — against a stored
+snapshot, and fails when an id was registered twice. Run it with `--update`
+after a deliberate change and read the diff.
 
 When you add an `Exclusive` mode that shares keys with a co-active scope, add a
 precedence regression test (register the scopes, assert `resolveEx` returns the
@@ -621,6 +637,12 @@ smoke-tested in a headless build and need a live pass on the workstation.
   each command's `Repeat`. An `Exclusive` scope swallows the repeat regardless.
 - **Registration order matters only within a layer** (later shadows earlier) —
   and not at all against an `Exclusive` scope, which always sorts first.
+- **One id, one command.** `addCommand` with an id already registered *replaces*
+  the earlier command, silently: it is then listed nowhere and its key does
+  nothing (a child-view key command once took the id of a menu command this way).
+  `BindingRegistry::replacedIds()` records it; `test_command_table.py` fails on it.
+- **An id is permanent.** Stored overrides and keymap layouts name commands by id.
+  Renaming one needs the stored bindings moved once in `Configuration::read()`.
 - **Persisted overrides outlive code.** A stale override reads *exactly* like a
   code regression (a binding silently changed). When a binding "breaks" after a
   port, check Preferences ▸ Input / "Reset all to defaults" before suspecting the

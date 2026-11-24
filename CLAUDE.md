@@ -23,6 +23,11 @@ read [`RECIPES.md`](doc/dev/RECIPES.md): it names the canonical page for each
 subject and lists every file a common change touches, with the test that
 proves it.
 
+Before adding or moving a Klusters menu command, or adding a preference, read
+[`COMMANDS_AND_PREFERENCES.md`](src/klusters/docs/COMMANDS_AND_PREFERENCES.md):
+each is one row of a table, its id or key is permanent, and two snapshot tests
+record every command and every setting.
+
 Architecture and change history live in
 [`ARCHITECTURE.md`](doc/dev/ARCHITECTURE.md) and [`CHANGELOG.md`](CHANGELOG.md).
 

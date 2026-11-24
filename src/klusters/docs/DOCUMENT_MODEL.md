@@ -291,7 +291,9 @@ so one Ctrl+Z reverts both.
 
 The stack cap is a single global `int nbUndo;` (defined `main.cpp`,
 `extern`-declared in every doc TU), set from `configuration().getNbUndo()`
-(`klusters.cpp`; re-applied on preference change at `klusters.cpp`).
+(`klusters.cpp`; re-applied on preference change at `klusters.cpp`). The
+preference is the row `nbUndo` of the preference table, default 20, read within
+0-30 ([COMMANDS_AND_PREFERENCES.md](COMMANDS_AND_PREFERENCES.md) §5).
 It counts **steps** of the undo history (§5.3), not levels: a command that pushes
 several levels is one step. The level stacks — the `Data` snapshots, the colours,
 the edit descriptors, the views' — therefore trim to `Data::undoLevelCap()`: the

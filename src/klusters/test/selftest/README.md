@@ -95,6 +95,36 @@ column, and the overlay goes when the cursor leaves or `Shift+V` turns the track
 Preferences > Cluster view knobs -- on/off, ring radius and line width, trace width -- change what is
 painted, through the step's `prefs` key)).
 
+**Undo, the curation log and cluster information:** `test_undo_pairing.py` (what the data
+reverts, the one history of both layers and the curation log agree, step by step -- the `undo`,
+`redo` and `hierarchy` steps), `test_child_recluster_undo.py` (a child recluster is one step, undone
+and redone whole), `test_annotation_undo.py` (a change of a cluster's information is a step -- the
+`annotate` step), `test_annotation_survives_moves.py` (a move of spikes between clusters keeps every
+cluster's information), `test_palette_merge_children.py` (after the palette's Group -- the `group`
+step -- the children are filed under the merged parent), `test_curation_log.py` (what started an
+action, what it did, what was looked at and left -- the `curationLog` step),
+`test_undo_depth_migration.py` (a stored depth of 2, the old default, becomes 20 once).
+
+**Jobs:** `test_edit_lock.py` (no editing command is enabled during a recluster or a realign --
+`actionsEnabled`, and `"whileBusy": true` on a step to run it during the job; a key command that
+edits does nothing -- `keyCommand`; the same commands are enabled afterwards), `test_cancel_job.py`
+(Edit > Cancel Running Job -- `cancelJob`, with `{"when": job}` to wait for one).
+
+**The child view:** `test_child_view_matrix_click.py` (a click in a matrix of parents returns to the
+parents -- `matrixSelect`), `test_purge_child_view.py` (Purge Small Clusters follows the view it is
+run from -- `purge`, `childPalette`).
+
+**Commands and preferences** (the tables of
+[COMMANDS_AND_PREFERENCES.md](../../docs/COMMANDS_AND_PREFERENCES.md)): `test_command_table.py`
+(a snapshot of every menu command -- `commandDump`, `commands.golden.json`; `--update` rewrites it),
+`test_command_ids_stable.py` (every command id of before 2026-11-24 still resolves),
+`test_dissolve_key_binding_migration.py` (a stored key binding moves to the key command's own id,
+once), `test_settings_file.py` (a snapshot of every key of the settings file after read + write, in
+seven cases -- `configWrite`, with `"dialog"` / `"defaults"` to pass through Preferences;
+`settings.golden.json`; `--update` rewrites it), `test_realign_threshold_migration.py` (a stored
+0.70, the old default, becomes 0.10 once), `test_pref_keyboard.py` (Preferences from the keyboard,
+its two levels -- `prefKeys`, a list of key names sent to the dialog one by one).
+
 The tests here (`test_*.py`) build a synthetic session (`session.py`: a `.fil`/`.dat`, two
 units on four channels placed at sub-sample offsets with a jittered `.res`, and the
 `standard` space's `.res/.clu/.spk/.pca/.fet`), run the binary through `run.py` and check

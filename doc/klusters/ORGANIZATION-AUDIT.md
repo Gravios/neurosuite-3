@@ -272,3 +272,9 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
 
 Each is one concern and one patch series; none changes behaviour, so the existing tests are the
 check.
+
+**Also done, not on this list (2026-11-24):** the same single-table treatment for the
+preferences. `Configuration::prefTable()` has one row per value of the settings file, from
+which reading, writing and the defaults are built, and `PrefBinder` fills the Preferences pages
+from it (74 of the settings the pages show). Reference:
+`src/klusters/docs/COMMANDS_AND_PREFERENCES.md`.
