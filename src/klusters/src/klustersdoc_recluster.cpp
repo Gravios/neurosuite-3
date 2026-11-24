@@ -281,6 +281,30 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
         lastReclusterAgainstOnChild = onChild;
     }
 
+    // What the run was and what came back: the snapshots give the pieces, not how the
+    // source divided.
+    if (curationLogger && curationLogger->isOpen() && logActionOpen) {
+        QVariantList srcIds, outIds, outSizes;
+        for (int c : clustersToRecluster) srcIds << c;
+        qlonglong largest = 0, total = 0;
+        for (int c : reclusteredClusterList) {
+            const qlonglong n = static_cast<qlonglong>(rt->nbOfSpikes(c));
+            outIds << c; outSizes << n; total += n; largest = std::max(largest, n);
+        }
+        curationLogger->recordActionDetails({
+            { QStringLiteral("edit"),             QStringLiteral("recluster") },
+            { QStringLiteral("mode"),             against ? QStringLiteral("against_references") : QStringLiteral("plain") },
+            { QStringLiteral("layer"),            onChild ? QStringLiteral("child") : QStringLiteral("parent") },
+            { QStringLiteral("source_clusters"),  srcIds },
+            { QStringLiteral("n_source_clusters"), static_cast<int>(clustersToRecluster.size()) },
+            { QStringLiteral("result_clusters"),  outIds },
+            { QStringLiteral("result_sizes"),     outSizes },
+            { QStringLiteral("n_result_clusters"), static_cast<int>(reclusteredClusterList.size()) },
+            { QStringLiteral("largest_share"),    total > 0 ? static_cast<double>(largest) / static_cast<double>(total) : 0.0 },
+            { QStringLiteral("unchanged"),        reclusteredClusterList.size() <= clustersToRecluster.size() },
+        });
+    }
+
     // Log the newly created clusters — reclusteredClusterList is populated by
     // integrateReclusteredClusters() above and contains the KlustaKwik outputs.
     closeLog(reclusteredClusterList, true);

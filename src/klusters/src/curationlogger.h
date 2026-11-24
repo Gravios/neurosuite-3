@@ -248,6 +248,10 @@ public:
         HIERARCHY_EDIT  = 17, ///< A child-layer edit that is one atom-undo step but no parent primitive
                               ///< (mergeChildren, collapseToSelfChildren, flattenHierarchyToClu,
                               ///< compactAllClusterIds, promoteToHierarchy): snapshots carry layer=child.
+        CONSIDERED      = 18, ///< Two to four parents were shown together for a while and then left
+                              ///< WITHOUT being merged: the negative example a merge rule needs.  No
+                              ///< snapshots; one ACTION_DETAIL per pair (the GROUP pair evidence, plus
+                              ///< dwell_s).  Not undo-paired.
     };
 
     CurationLogger();
@@ -280,6 +284,19 @@ public:
      *  crash loses at most the actions since.  Entries without an after
      *  snapshot yet (mid begin/commit) are written as they are. */
     void checkpoint();
+
+    /** What started the actions that begin from now on, written as "trigger" on
+     *  every line of each: "manual" (the curator asked for it; the default),
+     *  "after_merge" / "after_edit" (the automatic realign that follows a merge
+     *  or another edit), "align_all" (the batch).  Without it an automatic
+     *  realign reads as a decision of the curator's. */
+    void setTrigger(const QString& t) { trigger = t.isEmpty() ? QStringLiteral("manual") : t; }
+    QString currentTrigger() const { return trigger; }
+
+    /** Write one SESSION_CONTEXT line now: facts about the session that are
+     *  only known after open() (the child layer is loaded later, a setting
+     *  changed).  A reader takes the LAST value of each key per session. */
+    void noteContext(const QMap<QString, QVariant>& context);
 
     /** Flush every remaining buffered entry to disk and close the file.
      *  Called at document-close (= save + quit).  Pending entries are
@@ -406,6 +423,8 @@ private:
         int                                  revokedEpoch = 0;
         /// The gesture this primitive ran inside (-1: none).
         int                                  gestureIdx  = -1;
+        /// What started it (setTrigger at beginAction time).
+        QString                              trigger     = QStringLiteral("manual");
     };
 
     /** Emit all of the entry's accumulated lines to the file.  Each line
@@ -434,7 +453,8 @@ private:
                    ActionType action,
                    const QString& status,
                    bool final,
-                   int gestureIdx);
+                   int gestureIdx,
+                   const QString& trigger);
 
     QString jsonEscape(const QString& s) const;
     /** Write one ACTION_DETAIL value as JSON (number, bool, string, or an
@@ -451,6 +471,9 @@ private:
     int     maxBuffer     = 50;    ///< capacity of pending; tracks Settings.MaxUndo
     int     revokeEpochCounter = 0;   ///< monotonic begin counter for redo revocation
     int     gestureIdx        = -1;   ///< the innermost open gesture's action index (-1: none)
+    QString trigger           = QStringLiteral("manual");   ///< see setTrigger
+    QMap<QString, int> actionCounts;  ///< begun actions by name, for SESSION_CLOSE
+    qint64  openedMs          = 0;    ///< open() time, for SESSION_CLOSE duration_s
     QList<int> gestureStack;          ///< open gestures, outermost first
     QList<PendingEntry> pending;
 };

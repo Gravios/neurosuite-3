@@ -45,6 +45,9 @@ void CurationLogger::open(const QString& logPath,
     revokeEpochCounter  = 0;
     gestureIdx = -1; gestureStack.clear();
     pending.clear();
+    trigger = QStringLiteral("manual");
+    actionCounts.clear();
+    openedMs = QDateTime::currentMSecsSinceEpoch();
 
     // Generate a short session token (first 8 hex chars of a UUID)
     sessionId = QUuid::createUuid().toString(QUuid::WithoutBraces).left(8);
@@ -70,6 +73,22 @@ void CurationLogger::open(const QString& logPath,
           << "\"n_pca_dims\":" << nPcaDims;
     // Which .clu this log records (stage, method), and which build wrote it:
     // without them a log cannot be tied to the pipeline output it curated.
+    for (auto it = context.constBegin(); it != context.constEnd(); ++it) {
+        out << ",\"" << jsonEscape(it.key()) << "\":";
+        writeJsonValue(it.value());
+    }
+    out << "}\n";
+    out.flush();
+}
+
+void CurationLogger::noteContext(const QMap<QString, QVariant>& context)
+{
+    if (!file.isOpen() || context.isEmpty())
+        return;
+    out << "{"
+          << "\"event\":\"SESSION_CONTEXT\","
+          << "\"session_id\":\"" << sessionId << "\","
+          << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\"";
     for (auto it = context.constBegin(); it != context.constEnd(); ++it) {
         out << ",\"" << jsonEscape(it.key()) << "\":";
         writeJsonValue(it.value());
@@ -109,8 +128,16 @@ void CurationLogger::close()
           << "\"event\":\"SESSION_CLOSE\","
           << "\"session_id\":\"" << sessionId << "\","
           << "\"ts\":\"" << QDateTime::currentDateTime().toString(Qt::ISODateWithMs) << "\","
-          << "\"n_actions\":" << nextActionIdx
-          << "}\n";
+          << "\"n_actions\":" << nextActionIdx << ","
+          << "\"duration_s\":" << (QDateTime::currentMSecsSinceEpoch() - openedMs) / 1000 << ","
+          << "\"n_by_action\":{";
+    // What the session consisted of, without replaying it (undone actions included).
+    bool first = true;
+    for (auto it = actionCounts.constBegin(); it != actionCounts.constEnd(); ++it) {
+        out << (first ? "" : ",") << "\"" << jsonEscape(it.key()) << "\":" << it.value();
+        first = false;
+    }
+    out << "}}\n";
     out.flush();
     file.close();
 }
@@ -186,6 +213,8 @@ int CurationLogger::beginAction(ActionType type,
     e.status    = QStringLiteral("good");
     e.tsBegin   = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
     e.gestureIdx = gestureIdx;
+    e.trigger   = trigger;
+    actionCounts[actionName(type)]++;
     pending.append(e);
 
     // Overflow: an entry pushed beyond the undo-paired capacity can no
@@ -205,6 +234,8 @@ int CurationLogger::beginGesture(const QString& kind, const QMap<QString, QVaria
     e.undoable    = false;                    // its primitives are the undo-paired entries
     e.tsBegin     = QDateTime::currentDateTime().toString(Qt::ISODateWithMs);
     e.gestureIdx  = gestureIdx;               // the enclosing gesture, -1 at top level
+    e.trigger     = trigger;
+    actionCounts[QStringLiteral("GESTURE:") + kind]++;
     QMap<QString, QVariant> d = plan;
     d.insert(QStringLiteral("gesture"), kind);
     e.details.append(d);
@@ -364,9 +395,9 @@ void CurationLogger::flushEntry(const PendingEntry& e, bool final)
     if (e.placeholder) return;   // hidden undo-stack twin: nothing to emit
 
     for (const ClusterSnapshot& s : e.before)
-        writeLine("before", "source", s, e.actionIdx, e.type, e.status, final, e.gestureIdx);
+        writeLine("before", "source", s, e.actionIdx, e.type, e.status, final, e.gestureIdx, e.trigger);
     for (const ClusterSnapshot& s : e.after)
-        writeLine("after",  "result", s, e.actionIdx, e.type, e.status, final, e.gestureIdx);
+        writeLine("after",  "result", s, e.actionIdx, e.type, e.status, final, e.gestureIdx, e.trigger);
 
     // Detail lines: ACTION_DETAIL records keyed by the same action_idx
     // and carrying the same status field.
@@ -380,7 +411,8 @@ void CurationLogger::flushEntry(const PendingEntry& e, bool final)
               << "\"action_idx\":" << e.actionIdx << ","
               << "\"status\":\"" << e.status << "\","
               << "\"final\":" << (final ? "true" : "false") << ","
-              << "\"gesture_idx\":" << e.gestureIdx;
+              << "\"gesture_idx\":" << e.gestureIdx << ","
+              << "\"trigger\":\"" << jsonEscape(e.trigger) << "\"";
 
         for (auto it = details.constBegin(); it != details.constEnd(); ++it) {
             out << ",\"" << jsonEscape(it.key()) << "\":";
@@ -399,7 +431,8 @@ void CurationLogger::writeLine(const QString& phase,
                                 ActionType action,
                                 const QString& status,
                                 bool final,
-                                int gestureIdx)
+                                int gestureIdx,
+                                const QString& trigger)
 {
     // JSON has no NaN/Infinity: QTextStream prints "nan"/"inf" for them,
     // which poisons the whole line for any strict parser (pandas included).
@@ -422,6 +455,7 @@ void CurationLogger::writeLine(const QString& phase,
           << "\"status\":\"" << status << "\","
           << "\"final\":" << (final ? "true" : "false") << ","
           << "\"gesture_idx\":" << gestureIdx << ","
+          << "\"trigger\":\"" << jsonEscape(trigger) << "\","
           << "\"phase\":\"" << phase << "\","
           << "\"role\":\"" << role << "\","
           << "\"layer\":\"" << s.layer << "\","
@@ -586,6 +620,7 @@ QString CurationLogger::actionName(ActionType t)
     case ActionType::SORT_ALL:               return QStringLiteral("SORT_ALL");
     case ActionType::GESTURE:                return QStringLiteral("GESTURE");
     case ActionType::HIERARCHY_EDIT:         return QStringLiteral("HIERARCHY_EDIT");
+    case ActionType::CONSIDERED:             return QStringLiteral("CONSIDERED");
     }
     return QStringLiteral("UNKNOWN");
 }

@@ -13,7 +13,11 @@
 //   * gestures: a GESTURE entry per hierarchy command, nested (Break Up runs
 //     promoteChildren), every primitive begun inside carries gesture_idx, the
 //     open gesture is not flushed by a trim, and an undo after the gesture flips
-//     the primitive (undo-paired), never the gesture; the layer field.
+//     the primitive (undo-paired), never the gesture; the layer field;
+//   * "trigger" on every action line (what started it), set at beginAction;
+//     SESSION_CONTEXT for what is known after open; CONSIDERED (a comparison
+//     left without a merge) as an action that an undo does not touch;
+//     SESSION_CLOSE with the count per action kind and the duration.
 // QtCore only, own main, run via ctest.
 
 #include "curationlogger.h"
@@ -197,6 +201,55 @@ int main(int argc, char** argv)
     bool lastMoveBad = false;
     for (const QJsonObject& o : prims) if (o["cluster"] == 13 && o["status"] == "bad") lastMoveBad = true;
     check(lastMoveBad, "the undo flipped the last undo-paired primitive, not the child entry or a gesture");
+
+    // ── trigger, SESSION_CONTEXT, CONSIDERED, the close summary ──
+    const QString path3 = dir.filePath("rat.cur.stderiv.6.trig");
+    {
+        CurationLogger log;
+        log.open(path3, "rat.clu.stderiv.6.trig", "6", 32552.0, 8, 32, {{"hierarchical", false}});
+        log.noteContext({{"hierarchical", true}, {"n_children", 12}});          // the child layer, loaded after open
+        log.beginAction(CurationLogger::ActionType::GROUP, QList<ClusterSnapshot>{snap(2), snap(3)});
+        log.recordActionDetails({{"detail", "pair"}, {"dwell_s", 4.5}, {"recommended", true}});
+        log.commitAction(snap(2));
+        log.setTrigger("after_merge");                                           // Klusters' own realign of the result
+        log.beginAction(CurationLogger::ActionType::REALIGN, snap(2));
+        log.recordActionDetails({{"edit", "realign"}, {"n_shifted", 7}});
+        log.commitAction(snap(2));
+        log.markCurrentActionNotUndoable();
+        log.setTrigger(QString());                                               // empty = back to manual
+        log.beginAction(CurationLogger::ActionType::CONSIDERED, QList<ClusterSnapshot>());
+        log.recordActionDetails({{"detail", "pair"}, {"cluster_a", 4}, {"cluster_b", 5}, {"dwell_s", 3.0}});
+        log.markCurrentActionNotUndoable();
+        log.notifyUndo();                                                        // undoes the GROUP, nothing else
+        log.close();
+    }
+    const QList<QJsonObject> T = readLines(path3);
+    bool allJson = true; for (const QJsonObject& o : T) if (o.contains("__bad__")) allJson = false;
+    check(allJson, "trigger / context / considered lines are valid JSON");
+    QJsonObject ctx, closeLine, considered; QMap<QString, QString> trig, stat; int realignLines = 0, noTrigger = 0;
+    for (const QJsonObject& o : T) {
+        if (o["event"] == "SESSION_CONTEXT") ctx = o;
+        if (o["event"] == "SESSION_CLOSE") closeLine = o;
+        if (o.contains("action")) {
+            if (!o.contains("trigger")) ++noTrigger;
+            trig[o["action"].toString()] = o["trigger"].toString(); stat[o["action"].toString()] = o["status"].toString();
+            if (o["action"] == "REALIGN") ++realignLines;
+            if (o["action"] == "CONSIDERED") considered = o;
+        }
+    }
+    check(ctx["hierarchical"] == true && ctx["n_children"] == 12 && ctx.contains("ts") && ctx.contains("session_id"),
+          "noteContext writes a SESSION_CONTEXT line (what was not known at open)");
+    check(noTrigger == 0, "every action line, snapshot or detail, carries a trigger");
+    check(trig["GROUP"] == "manual" && trig["REALIGN"] == "after_merge" && realignLines == 3,
+          "the trigger set when the action BEGAN is on all its lines (before, after, detail)");
+    check(trig["CONSIDERED"] == "manual", "an empty trigger means manual again");
+    check(considered["event"] == "ACTION_DETAIL" && considered["cluster_a"] == 4 && considered["dwell_s"].toDouble() == 3.0,
+          "CONSIDERED is an action of its own, carried by its pair details");
+    check(stat["GROUP"] == "bad" && stat["CONSIDERED"] == "good" && stat["REALIGN"] == "good",
+          "an undo flips the merge, not the comparison or the realign logged after it");
+    const QJsonObject by = closeLine["n_by_action"].toObject();
+    check(by["GROUP"] == 1 && by["REALIGN"] == 1 && by["CONSIDERED"] == 1 && closeLine["n_actions"] == 3
+          && closeLine.contains("duration_s"), "SESSION_CLOSE counts the actions by kind and gives the duration");
 
     std::printf("%s (%d checks, %d failed)\n", g_fail ? "FAILED" : "OK", g_ran, g_fail);
     return g_fail ? 1 : 0;

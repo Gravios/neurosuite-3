@@ -42,6 +42,12 @@
  *                                        layer), "undoChild" / "redoChild": true; none: only
  *                                        the report.  "upgraded": children the load renumbered
  *                                        from the old numbering
+ *        {"group": [ids]}                the palette's Group on those parents (the automatic
+ *                                        realign / renumber of the result run as configured)
+ *        {"wait": ms}                    let time pass with events running
+ *        {"curationLog": {...}}          "consideredDwell": seconds a comparison must be shown to
+ *                                        be logged as CONSIDERED; "recommend": [ids] the
+ *                                        Recommended-merges panel activating that pair
  *        {"save": true}                  File > Save
  *        {"reopen": true}                close the document and open it again (unsaved changes dropped);
  *                                        {"reopen": {"replace": {file: with}}} overwrites files in between
@@ -83,6 +89,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTimer>
+#include <QEventLoop>
 
 #include <neurosuite/core/custody.hpp>
 
@@ -286,6 +293,36 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         doc->setActiveClustering(false);
         clusterPalette->selectItems(ids);
         doc->shownClustersUpdate(ids, *activeView());
+        return true;
+    }
+    if (step.contains(QStringLiteral("group"))) {
+        // {"group": [ids]}: the palette's Group on those parents, as the curator's merge runs --
+        // with the automatic realign and renumber of the result when those preferences are on.
+        QList<int> ids;
+        for (const QJsonValue& v : step.value(QStringLiteral("group")).toArray()) ids.append(v.toInt());
+        slotGroupClusters(ids);
+        return true;                                  // the next step waits for what it started
+    }
+    if (step.contains(QStringLiteral("wait"))) {
+        // {"wait": ms}: let that much time pass, events running (a selection being looked at).
+        QEventLoop loop;
+        QTimer::singleShot(step.value(QStringLiteral("wait")).toInt(), &loop, &QEventLoop::quit);
+        loop.exec();
+        return true;
+    }
+    if (step.contains(QStringLiteral("curationLog"))) {
+        // {"curationLog": {"consideredDwell": s}}: the seconds a comparison must stay on screen
+        // to be logged as CONSIDERED; {"recommend": [ids]}: the Recommended-merges panel
+        // activating that pair.
+        const QJsonObject o = step.value(QStringLiteral("curationLog")).toObject();
+        if (o.contains(QStringLiteral("consideredDwell")))
+            doc->setConsideredMinDwell(o.value(QStringLiteral("consideredDwell")).toDouble());
+        if (o.contains(QStringLiteral("recommend"))) {
+            QList<int> ids;
+            for (const QJsonValue& v : o.value(QStringLiteral("recommend")).toArray()) ids.append(v.toInt());
+            slotRecommendationActivated(ids);
+        }
+        result.insert(QStringLiteral("consideredDwell"), doc->consideredMinDwell());
         return true;
     }
     if (step.contains(QStringLiteral("multiLasso"))) {

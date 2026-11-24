@@ -3339,6 +3339,38 @@ private:
     /// that keeps a lone logAfter() from committing onto a stale entry.
     bool logActionOpen = false;
 
+public:
+    /** What starts the logged actions from now on ("manual", "after_merge",
+     *  "after_edit", "align_all"); written as "trigger" on their lines.  The app
+     *  sets it around the realigns it starts by itself and resets it when they
+     *  are done.  No-op without an open logger. */
+    void setLogTrigger(const QString& trigger);
+    /** Close a REALIGN entry whose realign returned without changing anything:
+     *  a detail with outcome "not_applied", no after-snapshot, not undo-paired. */
+    void closeUnappliedRealignLog();
+    /** One SESSION_CONTEXT line: facts only known after the log was opened. */
+    void noteLogContext(const QMap<QString, QVariant>& context);
+    /** The clusters the Recommended-merges panel just selected: a GROUP or a
+     *  CONSIDERED record of exactly this set carries "recommended": true. */
+    void noteRecommendedSelection(const QList<int>& clusters) { recommendedSel = clusters; }
+    /** Seconds a comparison must have been on screen to be logged as CONSIDERED
+     *  (2 by default: shorter is the selection passing over clusters on its way). */
+    double consideredMinDwell() const { return consideredMinDwellS; }
+    void   setConsideredMinDwell(double s) { consideredMinDwellS = (s < 0.0) ? 0.0 : s; }
+    /** Close the comparison on screen, logging it as CONSIDERED when it was
+     *  2-4 parents shown for kConsideredMinDwellS and not merged, then start
+     *  timing @p shown.  Called on every parent selection change (and with an
+     *  empty list when the document closes). */
+    void noteShownParents(const QList<int>& shown);
+private:
+    /// The parents shown together since consideredSinceMs (see noteShownParents).
+    QList<int> consideredSel;
+    qint64     consideredSinceMs = 0;
+    /// Set when a GROUP took the comparison on screen: it is a positive, not a CONSIDERED.
+    bool       consideredActed = false;
+    QList<int> recommendedSel;
+    double     consideredMinDwellS = 2.0;
+
     /// Per-cluster action-touch count for the current session.
     /// Incremented in logBefore() so every cluster snapshot carries a depth.
     QMap<int, int> clusterActionCount;

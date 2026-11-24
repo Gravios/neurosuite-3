@@ -1,5 +1,7 @@
 #include "klusters.h"
 #include <algorithm>
+#include <cmath>
+#include <iterator>
 #include <neurosuite/core/custody.hpp>
 #include <neurosuite/core/fileio64.hpp>
 #include <functional>
@@ -2022,8 +2024,25 @@ QMap<QString, QVariant> Data::pairEvidence(int a, int b) const
     std::sort(ta.begin(), ta.end()); std::sort(tb.begin(), tb.end());
     out.insert(QStringLiteral("n_a"), static_cast<qlonglong>(ta.size()));
     out.insert(QStringLiteral("n_b"), static_cast<qlonglong>(tb.size()));
-    double ratio = nan, expected = 0.0, overlap = 0.0;
+    double ratio = nan, expected = 0.0, overlap = 0.0, coactive = 0.0;
+    qint64 observed = 0;
     if (!ta.empty() && !tb.empty()) {
+        // Share of the one-minute bins of the cluster occupying FEWER of them in which
+        // the other fires too.  time_overlap compares first-to-last extents, so two
+        // cells that alternate over the session read 1 there and near 0 here.
+        {
+            auto bins = [](const std::vector<double>& t) {
+                std::vector<qint64> b; b.reserve(t.size());
+                for (double x : t) b.push_back(static_cast<qint64>(std::floor(x / 60.0)));
+                b.erase(std::unique(b.begin(), b.end()), b.end());
+                return b;
+            };
+            const std::vector<qint64> ba = bins(ta), bb = bins(tb);
+            std::vector<qint64> both;
+            std::set_intersection(ba.begin(), ba.end(), bb.begin(), bb.end(), std::back_inserter(both));
+            const std::size_t fewer = std::min(ba.size(), bb.size());
+            coactive = fewer ? static_cast<double>(both.size()) / static_cast<double>(fewer) : 0.0;
+        }
         const double t0 = std::max(ta.front(), tb.front()), t1 = std::min(ta.back(), tb.back());
         const double shorter = std::min(ta.back() - ta.front(), tb.back() - tb.front());
         overlap = (shorter > 0.0) ? std::max(0.0, t1 - t0) / shorter : 0.0;
@@ -2040,13 +2059,19 @@ QMap<QString, QVariant> Data::pairEvidence(int a, int b) const
             }
             expected = static_cast<double>(na) * static_cast<double>(nb) * 2.0 * (hi - lo) / (t1 - t0);
             ratio = (expected >= 3.0) ? static_cast<double>(obs) / expected : nan;
+            observed = obs;
         }
     }
     out.insert(QStringLiteral("cross_refrac_ratio"), ratio);
     out.insert(QStringLiteral("cross_refrac_expected"), expected);
+    // The count the ratio is over: with it a reader can pool pairs, or judge a ratio
+    // that was withheld (null) for too few expected pairs.
+    out.insert(QStringLiteral("cross_refrac_observed"), observed);
     out.insert(QStringLiteral("time_overlap"), overlap);
+    out.insert(QStringLiteral("coactive_overlap"), coactive);
     // ── template cosine from the cached means (NaN when either is cold) ──
-    double cosv = nan;
+    double cosv = nan, cos0 = nan, profCos = nan, ampRatio = nan;
+    int bestLag = 0;
     {
         const std::shared_ptr<const ClusteringSnapshot> snap = currentSnapshot();
         std::shared_ptr<Waveforms> wa, wb;
@@ -2088,12 +2113,36 @@ QMap<QString, QVariant> Data::pairEvidence(int a, int b) const
                     }
                 }
                 const double den = nA * std::sqrt(nB);
-                if (den > 1e-12) best = std::max(best, dot / den);
+                if (den > 1e-12) {
+                    if (sh == 0) cos0 = dot / den;
+                    if (dot / den > best) { best = dot / den; bestLag = sh; }
+                }
             }
             if (best > -1.0) cosv = best;
+            // WHERE each is on the shank and how large: the per-channel peak-to-peak
+            // vectors.  template_cos mixes position, size-independent shape and lag;
+            // these separate them.
+            std::vector<double> pa(nC), pb(nC);
+            for (int c = 0; c < nC; ++c) {
+                double lo1 = A[c], hi1 = A[c], lo2 = B[c], hi2 = B[c];
+                for (int s = 1; s < nS; ++s) {
+                    lo1 = std::min(lo1, A[s * nC + c]); hi1 = std::max(hi1, A[s * nC + c]);
+                    lo2 = std::min(lo2, B[s * nC + c]); hi2 = std::max(hi2, B[s * nC + c]);
+                }
+                pa[c] = hi1 - lo1; pb[c] = hi2 - lo2;
+            }
+            double dab = 0, daa = 0, dbb = 0;
+            for (int c = 0; c < nC; ++c) { dab += pa[c] * pb[c]; daa += pa[c] * pa[c]; dbb += pb[c] * pb[c]; }
+            if (daa > 1e-12 && dbb > 1e-12) profCos = dab / std::sqrt(daa * dbb);
+            const double ma = *std::max_element(pa.begin(), pa.end()), mb = *std::max_element(pb.begin(), pb.end());
+            if (ma > 1e-12 && mb > 1e-12) ampRatio = std::min(ma, mb) / std::max(ma, mb);
         }
     }
     out.insert(QStringLiteral("template_cos"), cosv);
+    out.insert(QStringLiteral("template_cos_lag0"), cos0);     // before the lag search
+    out.insert(QStringLiteral("template_lag"), bestLag);       // samples; != 0: the two are misaligned
+    out.insert(QStringLiteral("profile_cos"), profCos);        // per-channel peak-to-peak vectors
+    out.insert(QStringLiteral("amp_ratio"), ampRatio);         // smaller / larger largest-channel peak-to-peak
     return out;
 }
 

@@ -486,6 +486,9 @@ void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow,KlustersV
 
     //update the TraceView if any
     activeView.updateTraceView(electrodeGroupID,colors,true);
+
+    // Curation log: the comparison that was on screen ends here.
+    noteShownParents(clustersToShow);
 }
 
 void KlustersDoc::shownClustersUpdate(const QList<int>& clustersToShow){
@@ -901,6 +904,65 @@ void KlustersDoc::logChildUndoRedo(bool redo, const QList<int>& added, const QLi
         { QStringLiteral("deleted"),  lst(deleted) },
     });
     curationLogger->markCurrentActionNotUndoable();
+}
+
+void KlustersDoc::setLogTrigger(const QString& trigger)
+{
+    if (curationLogger && curationLogger->isOpen())
+        curationLogger->setTrigger(trigger);
+}
+
+void KlustersDoc::noteLogContext(const QMap<QString, QVariant>& context)
+{
+    if (curationLogger && curationLogger->isOpen())
+        curationLogger->noteContext(context);
+}
+
+void KlustersDoc::closeUnappliedRealignLog()
+{
+    if (!curationLogger || !curationLogger->isOpen() || !logActionOpen)
+        return;
+    curationLogger->recordActionDetails({ { QStringLiteral("edit"),    QStringLiteral("realign") },
+                                          { QStringLiteral("outcome"), QStringLiteral("not_applied") } });
+    logActionOpen = false;                             // before-only: nothing changed
+    curationLogger->markCurrentActionNotUndoable();
+}
+
+void KlustersDoc::noteShownParents(const QList<int>& shown)
+{
+    QList<int> now = shown;
+    std::sort(now.begin(), now.end());
+    if (now == consideredSel)
+        return;                       // a redraw of the same comparison: the clock keeps running
+    const qint64 t = QDateTime::currentMSecsSinceEpoch();
+    const double dwell = (t - consideredSinceMs) / 1000.0;
+    // The comparison that just ended.  Logged when it was a real one: two to four
+    // parents (not the bins), on screen long enough to have been looked at, and not
+    // merged -- a merge is logged as the GROUP it is.  Skipped while another action's
+    // block is open (the selection moves during an edit) and in the child view.
+    QList<int> was;
+    for (int c : consideredSel)
+        if (c > 1 && clusteringData && clusteringData->clusterHasMembers(c)) was.append(c);
+    if (curationLogger && curationLogger->isOpen() && !logActionOpen && !consideredActed
+            && !childScopeActive && was.size() >= 2 && was.size() <= 4 && was.size() == consideredSel.size()
+            && dwell >= consideredMinDwellS) {
+        curationLogger->beginAction(CurationLogger::ActionType::CONSIDERED, QList<ClusterSnapshot>());
+        const bool recommended = (was == recommendedSel);
+        for (int i = 0; i < was.size(); ++i)
+            for (int j = i + 1; j < was.size(); ++j) {
+                QMap<QString, QVariant> d = parentData().pairEvidence(was[i], was[j]);
+                d.insert(QStringLiteral("detail"), QStringLiteral("pair"));
+                d.insert(QStringLiteral("dwell_s"), dwell);
+                d.insert(QStringLiteral("n_shown"), static_cast<int>(was.size()));
+                d.insert(QStringLiteral("recommended"), recommended);
+                curationLogger->recordActionDetails(d);
+            }
+        curationLogger->markCurrentActionNotUndoable();
+    }
+    consideredSel = now;
+    consideredSinceMs = t;
+    consideredActed = false;
+    if (now != recommendedSel) recommendedSel.clear();
 }
 
 void KlustersDoc::beginGesture(const QString& kind, const QMap<QString, QVariant>& plan)

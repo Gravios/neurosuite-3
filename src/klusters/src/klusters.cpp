@@ -6565,6 +6565,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
     if (configuration().getAutoRealignAfterMerge()
             && mergedClusterId > 1 && !realignRunning && !realignBatchActive
             && doc->clusterHasMembers(mergedClusterId)) {
+        doc->setLogTrigger(QStringLiteral("after_merge"));   // not the curator's realign: reset when the job is done
         startRealignForCluster(mergedClusterId);   // RealignJob on realignQueue
         realignQueue->enqueue(new LambdaJob(       // post-merge, strictly after it
             [this]() { autoPostMerge(); },
@@ -8134,6 +8135,10 @@ void KlustersApp::slotRefreshMergeRecommendations()
 void KlustersApp::slotRecommendationActivated(const QList<int>& clusters)
 {
     if (!clusterPalette || clusters.isEmpty()) return;
+    {   // curation log: what follows on this pair came from the panel
+        QList<int> sorted = clusters; std::sort(sorted.begin(), sorted.end());
+        if (doc) doc->noteRecommendedSelection(sorted);
+    }
     clusterPalette->selectItems(clusters);
     slotStatusMsg(tr("Selected clusters %1 and %2 \u2014 merge them from the palette.")
                       .arg(clusterLabel(clusters.first()), clusterLabel(clusters.last())));

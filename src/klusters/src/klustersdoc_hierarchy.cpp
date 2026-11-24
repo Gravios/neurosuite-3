@@ -356,6 +356,12 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
                                      .arg(renamed.size()).arg(hierarchyfiles::kSelfChildBase);
         }
     }
+    // Curation log: the session IS hierarchical from here (SESSION_OPEN was written
+    // before the child layer existed).
+    noteLogContext({ { QStringLiteral("hierarchical"), true },
+                     { QStringLiteral("n_parents"),  static_cast<int>(clusteringData->clusterIds().size()) },
+                     { QStringLiteral("n_children"), static_cast<int>(childData->clusterIds().size()) },
+                     { QStringLiteral("child_ids_upgraded"), childIdsUpgraded } });
     return true;
 }
 

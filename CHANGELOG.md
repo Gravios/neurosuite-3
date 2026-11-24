@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters: the curation log says what started an action, what it did, and what was looked at and left](#2026-11-24--klusters-the-curation-log-says-what-started-an-action-what-it-did-and-what-was-looked-at-and-left) |
 | 2026-11-23 | [Roadmap brought up to date](#2026-11-23--roadmap-brought-up-to-date) |
 | 2026-11-23 | [Klusters: Recluster Against References](#2026-11-23--klusters-recluster-against-references) |
 | 2026-11-23 | [Roadmap: what the collision-row work left open, and reclustering against references](#2026-11-23--roadmap-what-the-collision-row-work-left-open-and-reclustering-against-references) |
@@ -241,6 +242,45 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters: the curation log says what started an action, what it did, and what was looked at and left
+
+Reading the log of a real curation (0312 g8, 1,203 actions) gave three wrong or unanswerable
+readings; each is now in the log itself.
+
+<details>
+<summary>Details</summary>
+
+- **`trigger` on every action line**: `manual`, `after_merge`, `after_edit`, `align_all`.  660 of
+  that log's 1,203 actions were realigns -- one after each of 261 merges -- and nothing said they
+  were Klusters' own (Preferences > Realignment, on by default), so they read as the curator's.
+  `SESSION_OPEN` records the two automatic-after-merge settings as well.
+- **`CONSIDERED`**, a new action: two to four parents shown together for 2 s and then left
+  without a merge, with the same pair record a `GROUP` gets.  A merge rule needs the pairs that
+  were looked at and kept apart; the log held only the merges, and of 3,377 unit pairs alike
+  enough to be candidates it could not say which had ever been compared.
+- **`GROUP` pair record**: `template_lag` and `template_cos_lag0` (27 % of the merged pairs were
+  misaligned), `profile_cos` and `amp_ratio` (position and size apart from shape),
+  `coactive_overlap` (`time_overlap` compares extents and read 1 for 95 % of the merges),
+  `cross_refrac_observed`, `dwell_s`, `selection_matches`, and `recommended` (the
+  Recommended-merges panel had selected the pair).
+- **`REALIGN` detail**: outcome, spikes shifted, how far.  A realign that returned without
+  changing anything left a `before` line, nothing saying so, and the log block open for the next
+  action's `after` to land on; it now closes with `outcome: not_applied`.
+- **`RECLUSTER` detail**: mode (plain / against references), sources, the clusters returned and
+  their sizes.
+- **`SESSION_OPEN.hierarchical`** said `false` for every hierarchical session (the line is
+  written before the child layer is loaded).  It now says whether a `.clc` is there, and a
+  `SESSION_CONTEXT` line follows the load with the parent and child counts.
+- **`SESSION_CLOSE`**: `duration_s` and `n_by_action`.
+- Self-test steps `group`, `wait`, `curationLog`; `test_curation_log.py` (21 checks, with a
+  refused realign and a control at a one-hour dwell); `klusters_test_curationlogger` gains 7.
+- Not logged still: a comparison in the child view, one that includes cluster 0 or 1, and which
+  rank a recommended pair had in the panel.  `doc/klusters/README.md`, Curation logging.
+
+</details>
 
 ---
 

@@ -1317,7 +1317,8 @@ Consequences worth knowing:
 
 | Field | Description |
 |---|---|
-| `event` | `SESSION_OPEN`, `CHECKPOINT`, `SESSION_CLOSE`, `ACTION_DETAIL`, or empty for action snapshots |
+| `event` | `SESSION_OPEN`, `SESSION_CONTEXT`, `CHECKPOINT`, `SESSION_CLOSE`, `ACTION_DETAIL`, or empty for action snapshots |
+| `trigger` | What started the action, on every line of it: `manual` (the curator asked for it), `after_merge` (the realign Klusters runs on a merged cluster), `after_edit` (the realign of the parents another edit changed), `align_all` (the batch). An automatic realign is not a decision of the curator's; filter on this before counting actions |
 | `final` | `false` on a checkpoint copy (the action was still undoable), `true` once it left the ring |
 | `layer` | `parent` or `child`: which labelling the snapshot's `cluster` id belongs to |
 | `gesture_idx` | `action_idx` of the hierarchy command this primitive ran inside; -1 outside one |
@@ -1342,18 +1343,30 @@ Consequences worth knowing:
 
 `SESSION_OPEN` also records `method`, `stage`, `clu_file`, `n_spikes`,
 `n_clusters`, `hierarchical` and `klusters_version`, so a log can be tied to
-the pipeline output it curated.
+the pipeline output it curated; and `auto_realign_after_merge`,
+`auto_renumber_after_merge` (what Klusters does by itself after an edit) and
+`considered_min_dwell_s`.  `hierarchical` says whether a `.clc` is there to
+load: the line is written before the child layer exists (until 2026-11-24 it
+therefore said `false` for every hierarchical session).
+
+`SESSION_CONTEXT` holds what is only known after the open -- once the child
+layer is loaded: `hierarchical: true`, `n_parents`, `n_children`,
+`child_ids_upgraded`.  Take the last value of a key per `session_id`.
+
+`SESSION_CLOSE` gives `n_actions`, `duration_s` and `n_by_action` (begun
+actions per kind, undone ones included; gestures as `GESTURE:<name>`).
 
 ### Action types
 
 | `action` value | User-facing operation | Source clusters | Result clusters | Emits `ACTION_DETAIL`? |
 |---|---|---|---|---|
 | `GROUP` | Merge selected clusters (`G`) | N | 1 | Yes: one `pair` record per source pair |
+| `CONSIDERED` | Two to four parents shown together and then left **without** a merge | — | — | Yes: one `pair` record per pair, no snapshots |
 | `SPLIT` | Single new cluster from polygon, lasso, or DipSplit | 1 | 1 (new) + 1 (residual src) | DipSplit only |
 | `SPLIT_N` | Multiple new clusters from polygon (one per source) | N | N (new) + N (residual srcs) | No |
-| `RECLUSTER` | KiloKlustaKwik re-run on selected clusters (`Shift+R`) | M | K | No |
+| `RECLUSTER` | KiloKlustaKwik re-run on selected clusters (`Shift+R`) | M | K | Yes: mode, sources, the clusters returned and their sizes |
 | `WATERSHED` | 2D density watershed (`Shift+W`) | M | K (basins) + 1 (residual) | Yes |
-| `REALIGN` | Spike waveform realignment (`Shift+L`) | unchanged | unchanged | No |
+| `REALIGN` | Spike waveform realignment (`Shift+L`), also run by Klusters itself (see `trigger`) | unchanged | unchanged | Yes: outcome, spikes shifted, how far |
 | `NUDGE` | Timestamp ±1 sample shift (`Page Up` / `Page Down`) | 1 | 1 (same id) | No |
 | `DELETE_NOISE` | Move whole cluster → cluster 1 (`Delete`) | 1 | — | No |
 | `DELETE_ARTEFACT` | Move whole cluster → cluster 0 (`Shift+Delete`) | 1 | — | No |
@@ -1425,6 +1438,47 @@ sources, measured before the merge, with `cross_refrac_ratio` /
 chance: ~0 one cell, ~1 two cells; `null` without power), `template_cos`
 (cosine of the cached mean waveforms, max over ±4 samples; `null` when a mean
 was not cached) and `time_overlap` (of the two spans, over the shorter).
+Since 2026-11-24 the record also holds:
+
+| Field | |
+|---|---|
+| `template_lag`, `template_cos_lag0` | the lag (samples) at which `template_cos` was found, and the cosine without the search: a lag other than 0 says the two were misaligned |
+| `profile_cos`, `amp_ratio` | cosine of the per-channel peak-to-peak vectors (where on the shank), and smaller / larger largest-channel amplitude: `template_cos` mixes these with shape |
+| `coactive_overlap` | share of the one-minute bins of the cluster occupying fewer of them in which the other fires too. `time_overlap` compares first-to-last extents, so two cells that alternate read 1 there and near 0 here |
+| `cross_refrac_observed` | the coincidence count the ratio is over, so pairs can be pooled and a withheld (`null`) ratio judged |
+| `dwell_s` | seconds the selection had been on screen when the merge was made |
+| `selection_matches` | the merged set was exactly the selection shown |
+| `recommended` | the Recommended-merges panel had selected this set |
+
+**CONSIDERED** is the other half of the same decision: a comparison the
+curator made and did **not** act on.  When two to four parents (not the bins)
+have been shown together for at least `considered_min_dwell_s` (2 s) and the
+selection then moves on without a merge, one entry is logged with the same
+`pair` record per pair (`dwell_s`, `n_shown`, `recommended`), no snapshots,
+not undo-paired.  A merge is logged as the `GROUP` it is and not also as a
+`CONSIDERED`; a merge that is undone keeps `status: bad`.  Not logged: a
+selection in the child view, one that includes cluster 0 or 1, and one that
+changes while another action is running.  A pair that was never selected
+together leaves no record, so the absence of a `CONSIDERED` is not a
+rejection.
+
+```python
+d = df[(df.event == "ACTION_DETAIL") & (df.detail == "pair")]
+merged   = d[(d.action == "GROUP") & (d.status == "good")]
+rejected = d[d.action == "CONSIDERED"]            # looked at, left apart
+```
+
+**REALIGN** logs `{"edit": "realign"}` with `outcome` (`applied`, or
+`not_applied` for a realign that returned without changing anything -- a
+refusal, a failed raw-source verification; such an entry has no `after`
+line), `n_spikes`, `n_shifted`, `shifted_share`, `shift_abs_median`,
+`shift_abs_max`, `shift_mean` (signed, over the shifted spikes) and
+`not_recut`.
+
+**RECLUSTER** logs `{"edit": "recluster"}` with `mode` (`plain` or
+`against_references`), `layer`, `source_clusters`, `result_clusters`,
+`result_sizes`, `largest_share` (of the returned spikes in the largest
+piece) and `unchanged` (no more clusters came back than went in).
 
 **DipSplit** logs the inputs it was called with and the metrics that
 drove the accept/reject decision:

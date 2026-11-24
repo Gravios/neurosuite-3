@@ -102,9 +102,19 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
             for (int j = i + 1; j < clustersToGroup.size(); ++j) {
                 QMap<QString, QVariant> d = parentData().pairEvidence(clustersToGroup[i], clustersToGroup[j]);
                 d.insert(QStringLiteral("detail"), QStringLiteral("pair"));
+                // How long the pair was on screen before the merge, and whether the
+                // Recommended-merges panel had selected it.
+                d.insert(QStringLiteral("dwell_s"),
+                         (QDateTime::currentMSecsSinceEpoch() - consideredSinceMs) / 1000.0);
+                {
+                    QList<int> sorted = clustersToGroup; std::sort(sorted.begin(), sorted.end());
+                    d.insert(QStringLiteral("recommended"), sorted == recommendedSel);
+                    d.insert(QStringLiteral("selection_matches"), sorted == consideredSel);
+                }
                 curationLogger->recordActionDetails(d);
             }
     }
+    consideredActed = true;      // the comparison on screen became this merge
 
     // Supersede in-flight view jobs, without waiting (epoch-snapshot
     // step 6b).  Jobs read the epoch snapshot they captured, so the

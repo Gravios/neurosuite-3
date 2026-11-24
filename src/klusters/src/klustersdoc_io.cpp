@@ -135,6 +135,10 @@ bool KlustersDoc::canCloseDocument(KlustersApp* mainWindow,const QString& callin
 }
 
 void KlustersDoc::closeDocument(){
+    // Curation log: the comparison still on screen ends with the document (its
+    // evidence needs the data, which goes below).
+    if (clusteringData) noteShownParents(QList<int>());
+    consideredSel.clear(); recommendedSel.clear(); consideredActed = false;
     //If a document has been open reset the members
     viewList->clear();
     docUrl = QString();
@@ -693,7 +697,16 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
                     { QStringLiteral("clu_file"),    cluFileName },
                     { QStringLiteral("n_spikes"),    static_cast<qlonglong>(clusteringData->totalNbOfSpikes()) },
                     { QStringLiteral("n_clusters"),  static_cast<int>(clusteringData->clusterIds().size()) },
-                    { QStringLiteral("hierarchical"), childData != nullptr },
+                    // The child layer is loaded AFTER this (the app commits the hierarchical
+                    // session once the view exists), so childData is still null here: say
+                    // whether a .clc sibling is there to load.  loadChildClustering writes a
+                    // SESSION_CONTEXT line with the counts when it has.
+                    { QStringLiteral("hierarchical"), !clcSiblingPath.isEmpty() && QFile::exists(clcSiblingPath) },
+                    // What Klusters does by itself after an edit: a reader must not take
+                    // these for the curator's actions (they also carry "trigger").
+                    { QStringLiteral("auto_realign_after_merge"),  configuration().getAutoRealignAfterMerge() },
+                    { QStringLiteral("auto_renumber_after_merge"), configuration().getAutoRenumberAfterMerge() },
+                    { QStringLiteral("considered_min_dwell_s"),    consideredMinDwellS },
                     { QStringLiteral("klusters_version"), QApplication::applicationVersion() },
                 }
             );
@@ -701,6 +714,8 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
             // preference so every still-undoable action retains a tentative
             // log entry whose status flips on undo/redo.
             curationLogger->setMaxBufferEntries(nbUndo);
+            consideredSel.clear(); recommendedSel.clear(); consideredActed = false;
+            consideredSinceMs = QDateTime::currentMSecsSinceEpoch();
         } else {
             curationLogger.reset();
         }

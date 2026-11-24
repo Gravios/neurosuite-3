@@ -755,6 +755,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // batch-scoped cache (see beginRealignBatchLog), so per-cluster logging
     // stays cheap and the log streams cluster-by-cluster.
     logBefore(CurationLogger::ActionType::REALIGN, QList<int>{ clusterId });
+    // Every way out below that is not the commit at the end (a refusal, a failed
+    // verification, an empty cluster) used to leave this entry open: before-only
+    // lines with nothing saying the realign was not applied, and the block still
+    // open for the next action's logAfter to land on.  Close it with the outcome.
+    struct RealignLogClose {
+        KlustersDoc* doc; bool committed = false;
+        ~RealignLogClose() { if (!committed) doc->closeUnappliedRealignLog(); }
+    } realignLogClose{ this };
 
     // Helper: emit live if callback provided, otherwise buffer in logOut for later.
     auto emitLine = [&](const QString& line, bool isError = false) {
@@ -2702,11 +2710,36 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         }
     }
 
+    // What the realign did: the snapshots show the cluster before and after, not how
+    // many spikes moved or how far.
+    if (curationLogger && curationLogger->isOpen() && logActionOpen) {
+        std::vector<int> mag; mag.reserve(static_cast<size_t>(N));
+        double sum = 0.0; int mx = 0;
+        for (int64_t i = 0; i < N; ++i) {
+            const int s = cumShift[static_cast<size_t>(i)];
+            if (s == 0) continue;
+            mag.push_back(std::abs(s)); sum += s; mx = std::max(mx, std::abs(s));
+        }
+        std::sort(mag.begin(), mag.end());
+        curationLogger->recordActionDetails({
+            { QStringLiteral("edit"),             QStringLiteral("realign") },
+            { QStringLiteral("outcome"),          QStringLiteral("applied") },
+            { QStringLiteral("n_spikes"),         static_cast<qlonglong>(N) },
+            { QStringLiteral("n_shifted"),        nShifted },
+            { QStringLiteral("shifted_share"),    N > 0 ? static_cast<double>(mag.size()) / static_cast<double>(N) : 0.0 },
+            { QStringLiteral("shift_abs_median"), mag.empty() ? 0 : mag[mag.size() / 2] },
+            { QStringLiteral("shift_abs_max"),    mx },
+            { QStringLiteral("shift_mean"),       mag.empty() ? 0.0 : sum / static_cast<double>(mag.size()) },
+            { QStringLiteral("not_recut"),        static_cast<qlonglong>(notRecut) },
+        });
+    }
+
     // Log the cluster after realignment — features and timestamps have been
     // updated.  Served from the batch centroid cache during Align-All.
     // Not undoable: the realign rewrites features/waveforms in place and
     // pushes NO Data-undo entry, so the ring must not pair it with one.
     logAfterNotUndoable(QList<int>{ clusterId });
+    realignLogClose.committed = true;
 
     if (_timing) {
         const qint64 _tot = _rtmr.elapsed();
