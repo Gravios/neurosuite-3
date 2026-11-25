@@ -1050,7 +1050,17 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             o.insert(QStringLiteral("text"), a->text());
             o.insert(QStringLiteral("keys"), keys.join(QStringLiteral(" | ")));
             o.insert(QStringLiteral("statusTip"), a->statusTip());
-            o.insert(QStringLiteral("toolTip"), a->toolTip() == actionid::plainText(a->text()) ? QString() : a->toolTip());
+            // A tool tip nobody set is the text without its mnemonic; which trailing ellipsis Qt
+            // drops from it depends on the Qt version ("..." always, "…" from some release after
+            // 6.4 on), so both sides are compared without one.
+            const auto noEllipsis = [](QString s) {
+                s = s.trimmed();
+                if (s.endsWith(QChar(0x2026))) s.chop(1);
+                else if (s.endsWith(QStringLiteral("..."))) s.chop(3);
+                return s.trimmed();
+            };
+            const bool tipIsTheText = noEllipsis(a->toolTip()) == noEllipsis(actionid::plainText(a->text()));
+            o.insert(QStringLiteral("toolTip"), tipIsTheText ? QString() : a->toolTip());
             o.insert(QStringLiteral("checkable"), a->isCheckable());
             o.insert(QStringLiteral("checked"), a->isChecked());
             o.insert(QStringLiteral("enabled"), a->isEnabled());

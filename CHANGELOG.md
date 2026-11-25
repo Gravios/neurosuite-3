@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-25 | [Self-test: the command table does not depend on the Qt version](#2026-11-25--self-test-the-command-table-does-not-depend-on-the-qt-version) |
 | 2026-11-25 | [Windows build: pi from the standard library in supersample.hpp](#2026-11-25--windows-build-pi-from-the-standard-library-in-supersamplehpp) |
 | 2026-11-24 | [Klusters sources: eight subdirectories by layer](#2026-11-24--klusters-sources-eight-subdirectories-by-layer) |
 | 2026-11-24 | [Klusters texts: artifact, not artefact](#2026-11-24--klusters-texts-artifact-not-artefact) |
@@ -300,6 +301,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-25 — Self-test: the command table does not depend on the Qt version
+
+A tool tip Qt derives from the text differs between Qt 6.4 and newer; the dump no longer records it.
+
+<details>
+<summary>Details</summary>
+
+`klusters_selftest_command_table` failed on Ubuntu 26.04 and 26.10 (Qt 6.10, 6.12)
+and passed on 24.04 (Qt 6.4).
+
+A `QAction` nobody gave a tool tip returns its text without the mnemonic. Qt 6.4
+drops a trailing `...` from it; newer Qt also drops a trailing `…`. The dump writes
+an empty tool tip when the tip is only the text, and decided that by comparing with
+`actionid::plainText`, which drops both. So for the seven commands whose text ends
+in `…` and which have no tip of their own (Open, Save, Save As, Purge Small Clusters,
+Auto-Merge Similar Clusters, Strip Feature Outliers, Keyboard Shortcuts), Qt 6.4
+reported `"Open…"` — which is what the snapshot stored — and newer Qt reported `""`.
+
+The dump now compares both sides without a trailing ellipsis of either kind, so the
+tool tip of those seven is empty under every Qt. `commands.golden.json` changes in
+those 14 lines (seven commands, two states) and nowhere else.
+
+Checked: with Qt 6.4 the test fails on exactly those 14 lines before the snapshot is
+refreshed and passes after. With Qt 6.12 (PySide6, not the Klusters binary) the tool
+tip Qt derives for each of the 272 command texts of the snapshot is recognised as
+the text by the new rule. Not run: the Klusters self-test itself under Qt 6.10 or
+6.12 — if it still fails there, the lines the test prints name what differs.
+
+</details>
 
 ---
 
