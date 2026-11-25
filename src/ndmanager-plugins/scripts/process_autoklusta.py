@@ -226,7 +226,7 @@ def read_spk(path: str, n_sites: int, n_samp: int):
 
 def write_clu(path: str, labels: np.ndarray):
     """Write canonical binary .clu: int32 nDistinct header + int32 ids.
-    Matches Data::saveClusters (src/klusters/src/data.cpp)."""
+    Matches Data::saveClusters (src/klusters/src/data/data.cpp)."""
     labels = np.asarray(labels, dtype=np.int32)
     with open(path, "wb") as f:
         f.write(struct.pack("<i", int(np.unique(labels).size)))

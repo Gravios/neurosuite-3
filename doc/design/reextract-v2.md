@@ -719,11 +719,11 @@ paint pass, so no performance concern even at 10⁶-spike groups.
 
 ### Files touched
 
-- `../../src/klusters/src/klusters.cpp`      — arrow gate + `#include <QTabBar>`
+- `../../src/klusters/src/app/klusters.cpp`      — arrow gate + `#include <QTabBar>`
                                           + 6 `focusClusterView()` calls
-- `../../src/klusters/src/clusterview.h`     — `autoscaleEnabled` field +
+- `../../src/klusters/src/views/clusterview.h`     — `autoscaleEnabled` field +
                                           `autoscaleToVisibleClusters()` decl
-- `../../src/klusters/src/clusterview.cpp`   — F-key binding in `keyPressEvent`,
+- `../../src/klusters/src/views/clusterview.cpp`   — F-key binding in `keyPressEvent`,
                                           method implementation,
                                           REDRAW hook in `paintEvent`
 
@@ -782,11 +782,11 @@ for polygon-drawing room.
 Mirrors the existing preference pattern for markerSize /
 selectionLineWidth / templateThresholdMin etc.  Seven file touches:
 
-1. `../../src/klusters/src/configuration.h` — three public methods
+1. `../../src/klusters/src/prefs/configuration.h` — three public methods
    (`getAutoscaleMarginPercent`, `getAutoscaleMarginPercentDefault`,
    `setAutoscaleMarginPercent` with 0–50 clamp), one private field
    + static default.
-2. `../../src/klusters/src/configuration.cpp` — `const double
+2. `../../src/klusters/src/prefs/configuration.cpp` — `const double
    autoscaleMarginPercentDefault = 5.0`, one `settings.value()` entry
    in `read()`, one `settings.setValue()` entry in `write()`.
 3. `../../src/klusters/src/prefgenerallayout.ui` — new
@@ -796,10 +796,10 @@ selectionLineWidth / templateThresholdMin etc.  Seven file touches:
    `selectionLineWidthSpinBox`.
 4. `../../src/klusters/src/prefgeneral.h` / `prefgeneral.cpp` — two
    methods delegating to `autoscaleMarginSpinBox->{value,setValue}`.
-5. `../../src/klusters/src/prefdialog.cpp` — four additions: enableApply
+5. `../../src/klusters/src/prefs/prefdialog.cpp` — four additions: enableApply
    connection, `updateDialog()` push, `updateConfiguration()` pull,
    `slotDefault()` reset.
-6. `../../src/klusters/src/clusterview.cpp` — `#include "configuration.h"`
+6. `../../src/klusters/src/views/clusterview.cpp` — `#include "configuration.h"`
    + replace hard-coded `0.05` with
    `configuration().getAutoscaleMarginPercent() / 100.0` in
    `autoscaleToVisibleClusters()`.
@@ -837,13 +837,13 @@ Behavior test (once built):
 
 ### Files
 
-- `../../src/klusters/src/configuration.h`
-- `../../src/klusters/src/configuration.cpp`
+- `../../src/klusters/src/prefs/configuration.h`
+- `../../src/klusters/src/prefs/configuration.cpp`
 - `../../src/klusters/src/prefgenerallayout.ui`
 - `../../src/klusters/src/prefgeneral.h`
 - `../../src/klusters/src/prefgeneral.cpp`
-- `../../src/klusters/src/prefdialog.cpp`
-- `../../src/klusters/src/clusterview.cpp`
+- `../../src/klusters/src/prefs/prefdialog.cpp`
+- `../../src/klusters/src/views/clusterview.cpp`
 
 </details>
 

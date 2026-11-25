@@ -231,7 +231,7 @@ An action's icon is data, not a line at the action's creation site.
    painter is missing or ignores the palette. A build with `-DNS3_VERBOSE=1`
    logs rows whose action does not exist and toolbar buttons without an icon.
 
-Klusters follows this: `kTable` in `src/klusters/src/actionicons.cpp` (the table),
+Klusters follows this: `kTable` in `src/klusters/src/app/actionicons.cpp` (the table),
 `KlustersApp::applyActionIcons()` (the pass), `klusters_test_actionicons` (the
 test). NeuroScope and ndManager still set icons at their creation sites; move
 them to a table when you touch them. Recipe: [RECIPES.md](RECIPES.md) §2.6.

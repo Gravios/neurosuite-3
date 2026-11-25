@@ -17,7 +17,7 @@ Usage:
 
     # Single file:
     python tools/qt_connect_rewriter.py --db tools/clazy_db/compile_commands.json --apply \\
-        src/klusters/src/klusters.cpp
+        src/klusters/src/app/klusters.cpp
 
     # Also apply medium-confidence (overloads, unverified slots — review carefully):
     python tools/qt_connect_rewriter.py --db tools/clazy_db/compile_commands.json \\

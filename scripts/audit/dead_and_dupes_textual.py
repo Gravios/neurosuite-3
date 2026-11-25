@@ -10,7 +10,7 @@ import json, re, glob, sys, collections, hashlib
 if len(sys.argv) != 3: sys.exit('usage: dead_and_dupes_textual.py <repo>/src/ <functions.json from function_metrics.py>')
 R = sys.argv[1].rstrip('/') + '/'
 fns = json.load(open(sys.argv[2]))
-texts = {f: open(f, errors='replace').read() for f in glob.glob(R + 'klusters/src/*') + glob.glob(R + 'klusters/test/*.cpp') + glob.glob(R + 'libklustersshared/src/**/*', recursive=True) if f.endswith(('.cpp', '.h', '.ui', '.mm'))}
+texts = {f: open(f, errors='replace').read() for f in glob.glob(R + 'klusters/src/*/*') + glob.glob(R + 'klusters/test/*.cpp') + glob.glob(R + 'libklustersshared/src/**/*', recursive=True) if f.endswith(('.cpp', '.h', '.ui', '.mm'))}
 strip = lambda t: re.sub(r'//[^\n]*', '', re.sub(r'/\*.*?\*/', '', t, flags=re.S))
 blob = '\n'.join(strip(t) for t in texts.values()); words = collections.Counter(re.findall(r'[A-Za-z_]\w*', blob))
 defs = collections.Counter(f['name'].split('::')[-1] for f in fns)

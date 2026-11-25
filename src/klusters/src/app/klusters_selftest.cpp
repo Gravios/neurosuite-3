@@ -97,7 +97,7 @@
 #include <QElapsedTimer>
 #include "clusterview.h"
 #include "waveformview.h"
-#include "clusterPalette.h"
+#include "clusterpalette.h"
 #include "processwidget.h"
 #include "data.h"
 #include "savethread.h"

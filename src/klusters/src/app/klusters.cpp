@@ -45,9 +45,9 @@
 #include <neurosuite/core/decollide.hpp> // shared collision fit + grow engine (targeted decollide)
 #include <neurosuite/core/decollide_eap.hpp> // Decomp -> .eap membership bridge (annotate-in-place)
 #include <QDate>
-#include "clusterPalette.h"
+#include "clusterpalette.h"
 #include "templatepalette.h"
-#include "autoMerge.h"      // patch 0069
+#include "automerge.h"      // patch 0069
 #include "savethread.h"
 #include "saveinputblocker.h"
 #include <QProgressDialog>

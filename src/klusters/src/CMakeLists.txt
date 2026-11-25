@@ -12,163 +12,163 @@ project(klusters-src)
 set(_xcorr_dir "${CMAKE_CURRENT_SOURCE_DIR}/../../libklustersshared/src/xcorr")
 
 set(klusters_SRCS
-    baseframe.cpp
-    bufferedview.cpp
+    views/baseframe.cpp
+    views/bufferedview.cpp
     # input binding core moved to libklustersshared (src/libklustersshared/src/input)
     # in the neuroscope input-overhaul S0 — klusters now links it via
     # KlustersShared::klustersshared.  See claude/neuroscope-input-plan.md.
-    channellist.cpp
-    clusterPalette.cpp
-    clusterinformationdialog.cpp
-    clustersprovider.cpp
-    clusterview.cpp
-    configuration.cpp
-    configuration_prefs.cpp     # Configuration::prefTable(): every preference of the settings file, one row each
-    prefbinder.cpp              # PrefBinder: page controls loaded / applied / reset from the preference table
-    correlationthread.cpp
-    correlationview.cpp
-    curationlogger.cpp
-    data.cpp
-    spkreader.cpp               # shared positioned-read .spk access (worker-pool step 1)
-    spkmemory.cpp               # every .spk of the open group held in memory (SpkMemoryCache)
-    klustersjobpool.cpp         # shared worker pool for compute jobs (worker-pool step 2)
-    dataprovider.cpp
-    errormatrixthread.cpp
-    errormatrixview.cpp
-    templatematrixthread.cpp
-    templatematrixview.cpp
-    templateview.cpp
-    templatepalette.cpp        # left-column template-class palette (§11.5)
-    templateclassstore.cpp     # EAP template-class state model (.eap/.tcl over neurosuite-core)
-    templatelineagestore.cpp   # manual template-lineage model (.wtl over neurosuite-core)
-    filecommit.cpp             # all-or-nothing commit of the saved files; parity stamps
-    hierarchyfiles.cpp         # .clu/.clc/.clp triple on disk: nesting scan, promotion, staged writes
-    residualmatrixthread.cpp
-    matrixviewbase.cpp          # MatrixViewBase: grid geometry, pan / zoom, follow and id labels of the four matrices
-    residualmatrixview.cpp
-    pairxcorrthread.cpp
-    driftgeometry.cpp
-    driftmatrixthread.cpp
-    driftshiftthread.cpp
-    driftmatrixview.cpp
-    matrixtemplatestrip.cpp    # shared marked-node template region for the 4 curation matrices (§11.5)
-    rangeslider.cpp
-    mergerecommendview.cpp
-    mergerecommendthread.cpp
-    eventsprovider.cpp
-    groupingassistant.cpp
-    groupingassistant_gpu_dispatch.cpp
-    pca_refine_gpu_dispatch.cpp
-    corecut_gpu_dispatch.cpp
+    views/channellist.cpp
+    views/clusterpalette.cpp
+    dialogs/clusterinformationdialog.cpp
+    data/clustersprovider.cpp
+    views/clusterview.cpp
+    prefs/configuration.cpp
+    prefs/configuration_prefs.cpp     # Configuration::prefTable(): every preference of the settings file, one row each
+    prefs/prefbinder.cpp              # PrefBinder: page controls loaded / applied / reset from the preference table
+    jobs/correlationthread.cpp
+    views/correlationview.cpp
+    document/curationlogger.cpp
+    data/data.cpp
+    data/spkreader.cpp               # shared positioned-read .spk access (worker-pool step 1)
+    data/spkmemory.cpp               # every .spk of the open group held in memory (SpkMemoryCache)
+    jobs/klustersjobpool.cpp         # shared worker pool for compute jobs (worker-pool step 2)
+    data/dataprovider.cpp
+    jobs/errormatrixthread.cpp
+    views/errormatrixview.cpp
+    jobs/templatematrixthread.cpp
+    views/templatematrixview.cpp
+    views/templateview.cpp
+    views/templatepalette.cpp        # left-column template-class palette (§11.5)
+    data/templateclassstore.cpp     # EAP template-class state model (.eap/.tcl over neurosuite-core)
+    data/templatelineagestore.cpp   # manual template-lineage model (.wtl over neurosuite-core)
+    document/filecommit.cpp             # all-or-nothing commit of the saved files; parity stamps
+    document/hierarchyfiles.cpp         # .clu/.clc/.clp triple on disk: nesting scan, promotion, staged writes
+    jobs/residualmatrixthread.cpp
+    views/matrixviewbase.cpp          # MatrixViewBase: grid geometry, pan / zoom, follow and id labels of the four matrices
+    views/residualmatrixview.cpp
+    jobs/pairxcorrthread.cpp
+    compute/driftgeometry.cpp
+    jobs/driftmatrixthread.cpp
+    jobs/driftshiftthread.cpp
+    views/driftmatrixview.cpp
+    views/matrixtemplatestrip.cpp    # shared marked-node template region for the 4 curation matrices (§11.5)
+    views/rangeslider.cpp
+    views/mergerecommendview.cpp
+    jobs/mergerecommendthread.cpp
+    data/eventsprovider.cpp
+    compute/groupingassistant.cpp
+    compute/groupingassistant_gpu_dispatch.cpp
+    compute/pca_refine_gpu_dispatch.cpp
+    compute/corecut_gpu_dispatch.cpp
     ${_xcorr_dir}/realign_xcorr_omp.cpp
     ${_xcorr_dir}/realign_xcorr_dispatch.cpp
     ${_xcorr_dir}/realign_center.cpp
     ${_xcorr_dir}/realign_pass.cpp
-    realignworker.cpp
-    serialjobqueue.h   # header-only QObject — listed so AUTOMOC generates its moc
-    klusters.cpp
-    klusters_recluster.cpp      # KlustersApp reclustering / process execution (split from klusters.cpp)
-    klusters_state.cpp          # KlustersApp action-state machine slotStateChanged (split from klusters.cpp)
-    klusters_realign.cpp        # KlustersApp spike-realignment UI / batch driver (split from klusters.cpp)
-    klusters_hierarchy.cpp      # KlustersApp hierarchical (.clc child) view + child-palette slots (split from klusters.cpp)
-    klusters_dipdrift.cpp       # KlustersApp dip-split / probe-drift / timestamp-nudge (split from klusters.cpp)
-    klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)
-    klusters_selftest.cpp       # headless self-test driver (NS3_KLUSTERS_SELFTEST=<spec.json>)
-    klusters_radialmenu.cpp     # KlustersApp radial context menu (Right-click; proof of concept)
-    radialmenu.cpp              # hierarchical radial / marking menu widget over a QMenu tree
-    radiallayout.cpp            # the radial menu's layout as data (JSON in the settings)
-    actionid.cpp                # stable ids for menu actions (registry id, else menu path)
-    klusters_actionids.cpp      # KlustersApp::actionCatalog() / actionsById() / applyActionIcons()
-    klusters_commands.cpp       # KlustersApp::commandTable() / addCommand(): the menu commands, described once
-    actionicons.cpp             # the one table of action icons (keyed by action id)
-    prefradialmenu.cpp          # Preferences ▸ Radial menu: the wheel editor
-    klusters_timesort.cpp       # KlustersApp Sort Spikes by Time (confirm, rewrite, reopen)
-    klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)
-    klustersdoc.cpp
-    klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
-    klustersdoc_subsession.cpp  # KlustersDoc recluster sub-session (a fiber-kit plan on the selection)
-    subsessionfiles.cpp         # its file operations (QtCore only; klusters_test_subsessionfiles)
-    realignio.cpp               # realign_io: the rows of one cluster read from .spk / .res / .fet (no document)
-    undohistory.cpp             # UndoHistory: the entries, the steps and the depth of the one undo history
-    klustersdoc_undo.cpp        # KlustersDoc undo/redo subsystem (split from klustersdoc.cpp)
-    klustersdoc_hierarchy.cpp   # KlustersDoc hierarchical (.clc child) clustering (split from klustersdoc.cpp)
-    klustersdoc_edit.cpp        # KlustersDoc cluster-editing operations (split from klustersdoc.cpp)
-    klustersdoc_renumber.cpp    # KlustersDoc cluster renumber/reorder (split from klustersdoc.cpp)
-    klustersdoc_io.cpp          # KlustersDoc document lifecycle / file I/O (split from klustersdoc.cpp)
-    klustersdoc_realign.cpp     # KlustersDoc spike realignment / nudge (split from klustersdoc.cpp)
-    klustersdoc_featurespace.cpp # KlustersDoc feature-space switching (load another method's .fet/.spk)
-    klustersdoc_timesort.cpp    # KlustersDoc full time sort (one row permutation over .res/.spk/.fet/.clu/.clc)
-    klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
-    klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
-    klustersdoc_spkc.cpp        # KlustersDoc collision rows with the .eap partner subtracted
-    klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)
-    klustersview.cpp
-    klustersyamlreader.cpp
-    main.cpp
-    minmaxthread.cpp
-    pair.cpp
-    prefclusterview.cpp
-    autoMerge.cpp
-    prefdialog.cpp
+    jobs/realignworker.cpp
+    jobs/serialjobqueue.h   # header-only QObject — listed so AUTOMOC generates its moc
+    app/klusters.cpp
+    app/klusters_recluster.cpp      # KlustersApp reclustering / process execution (split from klusters.cpp)
+    app/klusters_state.cpp          # KlustersApp action-state machine slotStateChanged (split from klusters.cpp)
+    app/klusters_realign.cpp        # KlustersApp spike-realignment UI / batch driver (split from klusters.cpp)
+    app/klusters_hierarchy.cpp      # KlustersApp hierarchical (.clc child) view + child-palette slots (split from klusters.cpp)
+    app/klusters_dipdrift.cpp       # KlustersApp dip-split / probe-drift / timestamp-nudge (split from klusters.cpp)
+    app/klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)
+    app/klusters_selftest.cpp       # headless self-test driver (NS3_KLUSTERS_SELFTEST=<spec.json>)
+    app/klusters_radialmenu.cpp     # KlustersApp radial context menu (Right-click; proof of concept)
+    app/radialmenu.cpp              # hierarchical radial / marking menu widget over a QMenu tree
+    app/radiallayout.cpp            # the radial menu's layout as data (JSON in the settings)
+    app/actionid.cpp                # stable ids for menu actions (registry id, else menu path)
+    app/klusters_actionids.cpp      # KlustersApp::actionCatalog() / actionsById() / applyActionIcons()
+    app/klusters_commands.cpp       # KlustersApp::commandTable() / addCommand(): the menu commands, described once
+    app/actionicons.cpp             # the one table of action icons (keyed by action id)
+    prefs/prefradialmenu.cpp          # Preferences ▸ Radial menu: the wheel editor
+    app/klusters_timesort.cpp       # KlustersApp Sort Spikes by Time (confirm, rewrite, reopen)
+    app/klusters_sort.cpp           # KlustersApp cluster sorting / reordering + sort progress bar (split from klusters.cpp)
+    document/klustersdoc.cpp
+    document/klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
+    document/klustersdoc_subsession.cpp  # KlustersDoc recluster sub-session (a fiber-kit plan on the selection)
+    document/subsessionfiles.cpp         # its file operations (QtCore only; klusters_test_subsessionfiles)
+    data/realignio.cpp               # realign_io: the rows of one cluster read from .spk / .res / .fet (no document)
+    document/undohistory.cpp             # UndoHistory: the entries, the steps and the depth of the one undo history
+    document/klustersdoc_undo.cpp        # KlustersDoc undo/redo subsystem (split from klustersdoc.cpp)
+    document/klustersdoc_hierarchy.cpp   # KlustersDoc hierarchical (.clc child) clustering (split from klustersdoc.cpp)
+    document/klustersdoc_edit.cpp        # KlustersDoc cluster-editing operations (split from klustersdoc.cpp)
+    document/klustersdoc_renumber.cpp    # KlustersDoc cluster renumber/reorder (split from klustersdoc.cpp)
+    document/klustersdoc_io.cpp          # KlustersDoc document lifecycle / file I/O (split from klustersdoc.cpp)
+    document/klustersdoc_realign.cpp     # KlustersDoc spike realignment / nudge (split from klustersdoc.cpp)
+    document/klustersdoc_featurespace.cpp # KlustersDoc feature-space switching (load another method's .fet/.spk)
+    document/klustersdoc_timesort.cpp    # KlustersDoc full time sort (one row permutation over .res/.spk/.fet/.clu/.clc)
+    document/klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
+    document/klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
+    document/klustersdoc_spkc.cpp        # KlustersDoc collision rows with the .eap partner subtracted
+    document/klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)
+    views/klustersview.cpp
+    document/klustersyamlreader.cpp
+    app/main.cpp
+    jobs/minmaxthread.cpp
+    data/pair.cpp
+    prefs/prefclusterview.cpp
+    compute/automerge.cpp
+    prefs/prefdialog.cpp
     # prefinput.cpp / buttonchordedit.cpp / wheelchordedit.cpp relocated to libklustersshared
     # (input/) in neuroscope input-overhaul S6 — now shared with neuroscope.
-    prefdisplay.cpp
-    prefsession.cpp
-    prefreclustering.cpp
-    prefrealignment.cpp
-    prefsplitting.cpp
-    prefmerging.cpp
-    prefclusterorder.cpp
-    prefmatrices.cpp
-    prefwaveformview.cpp
-    processlinemaker.cpp
-    processwidget.cpp
-    pluginregistry.cpp
-    plugindialog.cpp
-    pluginsettings.cpp          # per-plugin parameter defaults (Preferences > Plugins)
-    pluginparamform.cpp         # typed parameter form generated from a descriptor
-    prefplugins.cpp             # Preferences > Plugins pages
-    spinbox.cpp
-    savethread.cpp
-    sortabletable.cpp
-    tags.cpp
-    tracesprovider.cpp
-    traceview.cpp
-    tracewidget.cpp
-    viewwidget.cpp
-    waveformthread.cpp
-    waveformview.cpp
-    prefdisplaylayout.cpp
-    prefsessionlayout.cpp
-    prefreclusteringlayout.cpp
-    prefrealignmentlayout.cpp
-    prefsplittinglayout.cpp
-    prefmerginglayout.cpp
-    prefclusterorderlayout.cpp
-    prefmatriceslayout.cpp
-    prefwaveformviewlayout.cpp
-    prefclusterviewlayout.cpp
+    prefs/prefdisplay.cpp
+    prefs/prefsession.cpp
+    prefs/prefreclustering.cpp
+    prefs/prefrealignment.cpp
+    prefs/prefsplitting.cpp
+    prefs/prefmerging.cpp
+    prefs/prefclusterorder.cpp
+    prefs/prefmatrices.cpp
+    prefs/prefwaveformview.cpp
+    jobs/processlinemaker.cpp
+    jobs/processwidget.cpp
+    app/pluginregistry.cpp
+    dialogs/plugindialog.cpp
+    prefs/pluginsettings.cpp          # per-plugin parameter defaults (Preferences > Plugins)
+    dialogs/pluginparamform.cpp         # typed parameter form generated from a descriptor
+    prefs/prefplugins.cpp             # Preferences > Plugins pages
+    views/spinbox.cpp
+    jobs/savethread.cpp
+    data/sortabletable.cpp
+    document/tags.cpp
+    data/tracesprovider.cpp
+    views/traceview.cpp
+    views/tracewidget.cpp
+    views/viewwidget.cpp
+    jobs/waveformthread.cpp
+    views/waveformview.cpp
+    prefs/prefdisplaylayout.cpp
+    prefs/prefsessionlayout.cpp
+    prefs/prefreclusteringlayout.cpp
+    prefs/prefrealignmentlayout.cpp
+    prefs/prefsplittinglayout.cpp
+    prefs/prefmerginglayout.cpp
+    prefs/prefclusterorderlayout.cpp
+    prefs/prefmatriceslayout.cpp
+    prefs/prefwaveformviewlayout.cpp
+    prefs/prefclusterviewlayout.cpp
 )
 
 # GPU backend source files — each compiled by its own toolchain.
 if(USE_CUDA)
-    list(APPEND klusters_SRCS groupingassistant_cuda.cu)
-    list(APPEND klusters_SRCS pca_refine_cuda.cu)
-    list(APPEND klusters_SRCS corecut_cuda.cu)
+    list(APPEND klusters_SRCS compute/groupingassistant_cuda.cu)
+    list(APPEND klusters_SRCS compute/pca_refine_cuda.cu)
+    list(APPEND klusters_SRCS compute/corecut_cuda.cu)
     list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_cuda.cu)
 endif()
 if(USE_HIP)
-    list(APPEND klusters_SRCS groupingassistant_hip.hip)
+    list(APPEND klusters_SRCS compute/groupingassistant_hip.hip)
     list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_hip.hip)
 endif()
 if(USE_SYCL)
-    list(APPEND klusters_SRCS groupingassistant_sycl.cpp)
+    list(APPEND klusters_SRCS compute/groupingassistant_sycl.cpp)
     list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_sycl.cpp)
 endif()
 
 qt_add_resources(klusters_SRCS klusters-cursors.qrc klusters-icons.qrc klusters-keymaps.qrc klusters-appicon.qrc)
 
-set(klusters_UI prefwaveformviewlayout.ui prefdisplaylayout.ui prefsessionlayout.ui prefreclusteringlayout.ui prefrealignmentlayout.ui prefsplittinglayout.ui prefmerginglayout.ui prefclusterorderlayout.ui prefmatriceslayout.ui prefclusterviewlayout.ui)
+set(klusters_UI prefs/prefwaveformviewlayout.ui prefs/prefdisplaylayout.ui prefs/prefsessionlayout.ui prefs/prefreclusteringlayout.ui prefs/prefrealignmentlayout.ui prefs/prefsplittinglayout.ui prefs/prefmerginglayout.ui prefs/prefclusterorderlayout.ui prefs/prefmatriceslayout.ui prefs/prefclusterviewlayout.ui)
 qt_wrap_ui(klusters_SRCS ${klusters_UI})
 
 add_executable(klusters WIN32 ${klusters_SRCS})
@@ -184,9 +184,9 @@ endif()
 # time: the dispatchers use the CPU.
 # ---------------------------------------------------------------------------
 if(TARGET Neurosuite::metal)
-    target_sources(klusters PRIVATE ${_xcorr_dir}/realign_xcorr_metal.cpp groupingassistant_metal.cpp)
+    target_sources(klusters PRIVATE ${_xcorr_dir}/realign_xcorr_metal.cpp compute/groupingassistant_metal.cpp)
     ns_metal_embed(klusters realign_xcorr_kernels ${_xcorr_dir}/realign_xcorr.metal)
-    ns_metal_embed(klusters groupingassistant_kernels groupingassistant.metal)
+    ns_metal_embed(klusters groupingassistant_kernels compute/groupingassistant.metal)
     target_compile_definitions(klusters PRIVATE USE_METAL)
     target_link_libraries(klusters PRIVATE Neurosuite::metal)
     message(STATUS "klusters: Metal backend (realign cross-correlation, FP32 error matrix)")
@@ -233,7 +233,7 @@ if(USE_HIP)
         HIP_ARCHITECTURES "gfx1100;gfx1030;gfx90a;gfx908"
     )
     # hipcc needs to know the target when compiling .hip files.
-    set_source_files_properties(groupingassistant_hip.hip
+    set_source_files_properties(compute/groupingassistant_hip.hip
         PROPERTIES LANGUAGE HIP)
     set_source_files_properties(${_xcorr_dir}/realign_xcorr_hip.hip
         PROPERTIES LANGUAGE HIP)
@@ -262,7 +262,7 @@ if(USE_SYCL)
         # icx 2025.1 and Qt 6.8.3.  The link below still takes -fsycl, and
         # with Ninja it runs through icx, which bundles the device code.
         set_source_files_properties(
-            groupingassistant_sycl.cpp
+            compute/groupingassistant_sycl.cpp
             "${_xcorr_dir}/realign_xcorr_sycl.cpp"
             PROPERTIES COMPILE_OPTIONS "${SYCL_FLAGS}")
     else()
@@ -310,6 +310,13 @@ target_link_libraries(klusters
     Qt6::PrintSupport
 )
 
+# The sources are in one subdirectory per layer and include one another by bare
+# file name ("data.h"): every subdirectory is on the include path.
+set(klusters_SOURCE_DIRS app document data views jobs compute dialogs prefs)
+foreach(_d IN LISTS klusters_SOURCE_DIRS)
+    target_include_directories(klusters PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/${_d}")
+endforeach()
+
 target_include_directories(klusters PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/../"   # for config-klusters.h and AUTOUIC output
     "${_xcorr_dir}"                     # for realign_xcorr.h from shared location
@@ -346,7 +353,7 @@ install(FILES klusters.desktop DESTINATION share/applications/)
 # ---------------------------------------------------------------------------
 # Standalone binary converter: text res/fet/clu → binary
 # ---------------------------------------------------------------------------
-add_executable(klusters_convert_binary convert_to_binary.cpp)
+add_executable(klusters_convert_binary compute/convert_to_binary.cpp)
 # header-only neurosuite/core/fileops.hpp (replaceFile for the .bak copies)
 target_include_directories(klusters_convert_binary PRIVATE "${CMAKE_SOURCE_DIR}/src/libneurosuite-core/src")
 install(TARGETS klusters_convert_binary DESTINATION bin)

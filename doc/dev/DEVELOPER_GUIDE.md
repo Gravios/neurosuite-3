@@ -33,6 +33,7 @@ reference.
 - **[Component & pipeline docs](../README.md)** — ✅ — user- and pipeline-facing documentation for every component (build, usage, the sorting pipeline, file formats).
 
 ### klusters internals
+- **[Source layout](../../src/klusters/docs/SOURCE_LAYOUT.md)** — ✅ — the eight subdirectories of `src/klusters/src/` (app, document, data, views, jobs, compute, dialogs, prefs), what goes where, and the include rule.
 - **[Input system](../../src/klusters/docs/INPUT_SYSTEM.md)** — ✅ — the keyboard + mouse binding architecture: the `input::` registry, scopes and the tiered scope stack, chords, the capture / focus / repeat policies, the seam, and recipes for adding bindings and modal modes. The engine lives in `libklustersshared` and is **shared with NeuroScope** (see below).
 - **[Plugin API](../../src/klusters/docs/PLUGIN_API.md)** — ✅ — the external plugin descriptor format, parameter dialog, and process runner.
 - **[View system](../../src/klusters/docs/VIEW_SYSTEM.md)** — ✅ — the `BaseFrame` → `BufferedView` → `ViewWidget` frame chain, the view types (cluster, waveform, trace, correlograms, the curation matrices), the `KlustersView` / `DockArea` container, the `setConnections` signal wiring, and a checklist for adding a view.

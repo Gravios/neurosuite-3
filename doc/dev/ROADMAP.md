@@ -287,11 +287,11 @@ document from its model, keeping keys it does not model), NeuroScope with
 reads. Both writers share `yamlformat::emitWithLayout`, so the output looks
 the same, but each section's encoding exists twice. Make one a mode of the
 other (e.g. `ParameterYamlWriter` with a "only these sections" set) so a
-section is written by one piece of code. Also: `klusters/src/driftgeometry.cpp`
+section is written by one piece of code. Also: `klusters/src/compute/driftgeometry.cpp`
 and `ndmanager/src/probepage.cpp` parse the session file with yaml-cpp
 themselves before handing the root to the shared `readProbesSection` (read
 only; could go through `ParameterYamlReader::getRawRoot()`), and
-`klusters/src/parameterxmlmodifier.cpp` is unbuilt dead code to delete.
+`klusters/src/document/parameterxmlmodifier.cpp` is unbuilt dead code to delete.
 
 **Klusters — events from spike annotation.**
 Let a user label stretches of the recording from the spiking itself and

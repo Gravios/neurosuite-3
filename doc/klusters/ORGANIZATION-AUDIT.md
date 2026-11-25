@@ -304,7 +304,12 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    `tools.deleteArtefact`, image file names). Not done: the two camelCase file names
    (`autoMerge.cpp`, `clusterPalette.cpp`), which go with the directories of step 8; the
    words of §10 (spelling list, boolean names).
-8. Directories (§9), last: it touches every include and is cheap once the rest is settled.
+8. ~~Directories (§9).~~ Done: `src/klusters/src/` has eight subdirectories by layer (`app`,
+   `document`, `data`, `views`, `jobs`, `compute`, `dialogs`, `prefs`); the two camelCase
+   files are `automerge.*` and `clusterpalette.*`. Includes stay by bare file name: every
+   subdirectory is on the include path, so no source line changed but the includes of the
+   two renamed headers. `src/klusters/docs/SOURCE_LAYOUT.md` says what goes where. Paths in
+   comments of other components (kiloklustakwik) still name the old place.
 
 Each is one concern and one patch series; none changes behaviour, so the existing tests are the
 check.

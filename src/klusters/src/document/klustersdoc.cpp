@@ -62,7 +62,7 @@
 #include "klustersview.h"
 #include "clusterview.h"
 #include "klustersdoc.h"
-#include "clusterPalette.h"
+#include "clusterpalette.h"
 #include "reservedclusters.h"
 #include "clusterlabel.h"
 #include "types.h"

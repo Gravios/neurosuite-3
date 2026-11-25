@@ -36,8 +36,8 @@ the CPU, either as it is or accelerated with Apple's **Accelerate** framework.
 | 2 | KK shift-probe projection | `kiloklustakwik/src/shiftprobe_cuda.cu` (445, 1) | HIP, SYCL | int16 waves, **double** eigvecs/means | — |
 | 3 | KK fiber mean-shift / assign | `kiloklustakwik/src/fiber_gpu_cuda.cu` (223, 2) | CUDA only | **double** | — |
 | 4 | Realign cross-correlation (KK + Klusters) | `libklustersshared/src/xcorr/realign_xcorr_cuda.cu` (238, 3) | HIP, SYCL, OMP | int16 in, **float** | — |
-| 5 | Klusters Grouping Assistant (Mahalanobis error matrix) | `klusters/src/groupingassistant_cuda.cu` (456, 5) | HIP, SYCL | **double**, or **float** when `errorMatrixLowPrecision` | — |
-| 6 | Klusters PCA refine | `klusters/src/pca_refine_cuda.cu` (343, 1) | CUDA only | **float** | — |
+| 5 | Klusters Grouping Assistant (Mahalanobis error matrix) | `klusters/src/compute/groupingassistant_cuda.cu` (456, 5) | HIP, SYCL | **double**, or **float** when `errorMatrixLowPrecision` | — |
+| 6 | Klusters PCA refine | `klusters/src/compute/pca_refine_cuda.cu` (343, 1) | CUDA only | **float** | — |
 | 7 | NeuroScope spectrogram | `libneurosuite-core/.../spectral/spectralgpu.cu` (214, 2) | CUDA only | **double** | cuFFT `D2Z` |
 | 8 | `process_butterworth` (ndm_hipass) | `process_butterworth_cuda.cu` (122, 1) | CUDA only | **float by default on GPU** (`useDouble = precision<0 ? !gpu : precision==1`) | — |
 | 9 | `process_medianfilter` | `process_medianfilter_cuda.cu` (398, 1) | CUDA only | int16 | — |

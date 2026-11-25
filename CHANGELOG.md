@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters sources: eight subdirectories by layer](#2026-11-24--klusters-sources-eight-subdirectories-by-layer) |
 | 2026-11-24 | [Klusters texts: artifact, not artefact](#2026-11-24--klusters-texts-artifact-not-artefact) |
 | 2026-11-24 | [Klusters code: parent and child, not fiber and atom](#2026-11-24--klusters-code-parent-and-child-not-fiber-and-atom) |
 | 2026-11-24 | [Klusters code: artifact, not artefact](#2026-11-24--klusters-code-artifact-not-artefact) |
@@ -298,6 +299,53 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters sources: eight subdirectories by layer
+
+The source files of Klusters moved from one directory into subdirectories by layer. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What moved.** The 279 source files of `src/klusters/src/` — they were all in that one
+directory — are in eight subdirectories by layer:
+
+| Directory | Files | For |
+|---|---|---|
+| `app/` | 27 | the window, menus, command table, slots, radial menu, self-test harness |
+| `document/` | 39 | `KlustersDoc`, undo, hierarchy, saving, feature spaces, realign, curation log |
+| `data/` | 28 | `Data`, providers, `.spk` readers, template stores |
+| `views/` | 53 | the views, the four matrices, the palettes |
+| `jobs/` | 33 | job pool, queues, threads, the process runner |
+| `compute/` | 29 | grouping assistant, PCA-refine and core-cut kernels, auto-merge |
+| `dialogs/` | 6 | dialogs that are not preference pages |
+| `prefs/` | 64 | configuration, preference table, the Preferences pages |
+
+`autoMerge.*` and `clusterPalette.*`, the two camelCase names, are `automerge.*` and
+`clusterpalette.*`.
+
+**What did not change.** Includes are still by bare file name: every subdirectory is on the
+include path of the application and of the tests, so no source line changed except the
+includes of the two renamed headers (20 files). The resources, the build file and the icons
+stay at the top of `src/klusters/src/`.
+
+**For anyone with work in progress.** A patch against the old paths no longer applies as it
+is; `git am -3` or a rebase follows the renames.
+
+`src/klusters/docs/SOURCE_LAYOUT.md` is the reference: what goes where, the rules (bare
+includes, unique lowercase file names, how to add a file), and a table of which directory
+includes which, counted now. That table shows the layers are names, not yet a rule: the
+document includes the application 11 times and the views 32 times.
+
+**Checked.** A configure from nothing, a complete rebuild and the whole suite. Paths in the
+documents and scripts are updated, except in the changelog, the history pages and the earlier
+audit, which describe the tree as it was, and in comments of kiloklustakwik's sources.
+
+The organization audit's last step is closed with this.
+
+</details>
 
 ---
 

@@ -19,7 +19,7 @@
 
 // application specific includes
 #include "klustersdoc.h"
-#include "clusterPalette.h"
+#include "clusterpalette.h"
 #include "itemcolors.h"
 #include "clusterinformationdialog.h"
 #include "unitannotation.h"

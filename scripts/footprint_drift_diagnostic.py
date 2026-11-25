@@ -192,7 +192,7 @@ def read_res(session_path: Path, group: int) -> np.ndarray:
 def read_clu(session_path: Path, group: int) -> np.ndarray:
     """Read .clu.<group>. Binary only — this fork uses no ASCII path.
 
-    Mirrors Data::loadClusters at src/klusters/src/data.cpp:241
+    Mirrors Data::loadClusters at src/klusters/src/data/data.cpp:241
     (reader) and Data::saveClusters at data.cpp:3490 (writer):
 
         int32_t  nClusters     # count of distinct cluster IDs in file;

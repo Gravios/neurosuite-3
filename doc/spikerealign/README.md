@@ -16,7 +16,7 @@ There is no standalone binary and no single realignment class. The pieces are:
   (namespace `XcorrDispatch`, `realign_xcorr_dispatch.cpp`) in
   `src/libklustersshared/src/xcorr/`;
 - the Klusters document side, `KlustersDoc` in
-  `src/klusters/src/klustersdoc_realign.cpp`;
+  `src/klusters/src/document/klustersdoc_realign.cpp`;
 - `RealignWorker` (`src/klusters/src/realignworker.*`), which runs it on a
   background thread.
 

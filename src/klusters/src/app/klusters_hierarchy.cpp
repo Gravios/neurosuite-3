@@ -28,8 +28,8 @@
 #include "clusterview.h"
 #include "klustersdoc.h"
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
-#include "clusterPalette.h"
-#include "autoMerge.h"      // patch 0069
+#include "clusterpalette.h"
+#include "automerge.h"      // patch 0069
 #include "savethread.h"
 #include "prefdialog.h"
 #include "configuration.h"  // class Configuration

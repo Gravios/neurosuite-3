@@ -6,6 +6,12 @@
 # `ctest`.  No Qt dependency — these exercise the Qt-free data structures.
 # =============================================================================
 set(_klu_src "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+# The sources are in one subdirectory per layer and include one another by bare file
+# name: a test that includes them needs every subdirectory on its include path.
+set(_klu_inc "${_klu_src}")
+foreach(_d app document data views jobs compute dialogs prefs)
+    list(APPEND _klu_inc "${_klu_src}/${_d}")
+endforeach()
 set(_shared  "${CMAKE_CURRENT_SOURCE_DIR}/../../libklustersshared/src/klustersshared")
 
 add_executable(klusters_test_selectiongrid2d selectiongrid2d_test.cpp)
@@ -28,7 +34,7 @@ foreach(_t klusters_test_selectiongrid2d klusters_test_spikeassignment
     target_compile_features(${_t} PRIVATE cxx_std_20)
     # _core carries the header-only PcaBasis the projection kernel reads; it is
     # an include path only, no library and no contract change.
-    target_include_directories(${_t} PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    target_include_directories(${_t} PRIVATE ${_klu_inc} "${_shared}" "${_core}")
     add_test(NAME ${_t} COMMAND ${_t})
 endforeach()
 
@@ -36,26 +42,26 @@ endforeach()
 # header-only suites above it compiles the store source and LINKS Neurosuite::core
 # (readWtl/writeWti/writeSpk + the renderLineage* engine live out of line there).
 add_executable(klusters_test_templatelineagestore
-    templatelineagestore_test.cpp "${_klu_src}/templatelineagestore.cpp")
+    templatelineagestore_test.cpp "${_klu_src}/data/templatelineagestore.cpp")
 target_compile_features(klusters_test_templatelineagestore PRIVATE cxx_std_20)
 target_include_directories(klusters_test_templatelineagestore
-    PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    PRIVATE ${_klu_inc} "${_shared}" "${_core}")
 target_link_libraries(klusters_test_templatelineagestore PRIVATE Neurosuite::core)
 add_test(NAME klusters_test_templatelineagestore COMMAND klusters_test_templatelineagestore)
 
 # hierarchyfiles -- the Qt-free .clu/.clc/.clp helpers shared by Save and
 # "Promote to Hierarchical Session" (nesting scan, promotion, staged writes).
 add_executable(klusters_test_hierarchyfiles
-    hierarchyfiles_test.cpp "${_klu_src}/hierarchyfiles.cpp")
+    hierarchyfiles_test.cpp "${_klu_src}/document/hierarchyfiles.cpp")
 target_compile_features(klusters_test_hierarchyfiles PRIVATE cxx_std_20)
-target_include_directories(klusters_test_hierarchyfiles PRIVATE "${_klu_src}" "${_shared}")
+target_include_directories(klusters_test_hierarchyfiles PRIVATE ${_klu_inc} "${_shared}")
 add_test(NAME klusters_test_hierarchyfiles COMMAND klusters_test_hierarchyfiles)
 
 # filecommit -- the save's all-or-nothing commit (journal, rollback, roll
 # forward) and the parity stamps that let it skip unchanged files.
-add_executable(klusters_test_filecommit filecommit_test.cpp "${_klu_src}/filecommit.cpp")
+add_executable(klusters_test_filecommit filecommit_test.cpp "${_klu_src}/document/filecommit.cpp")
 target_compile_features(klusters_test_filecommit PRIVATE cxx_std_20)
-target_include_directories(klusters_test_filecommit PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_filecommit PRIVATE ${_klu_inc})
 add_test(NAME klusters_test_filecommit COMMAND klusters_test_filecommit)
 
 # DirtyFlag -- the "modified" flag a background save clears only if no edit
@@ -63,28 +69,28 @@ add_test(NAME klusters_test_filecommit COMMAND klusters_test_filecommit)
 find_package(Threads)
 add_executable(klusters_test_dirtyflag dirtyflag_test.cpp)
 target_compile_features(klusters_test_dirtyflag PRIVATE cxx_std_20)
-target_include_directories(klusters_test_dirtyflag PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_dirtyflag PRIVATE ${_klu_inc})
 target_link_libraries(klusters_test_dirtyflag PRIVATE Threads::Threads)
 add_test(NAME klusters_test_dirtyflag COMMAND klusters_test_dirtyflag)
 
 # The undo history -- steps, commands, the depth (no session).
-add_executable(klusters_test_undohistory undohistory_test.cpp "${_klu_src}/undohistory.cpp")
+add_executable(klusters_test_undohistory undohistory_test.cpp "${_klu_src}/document/undohistory.cpp")
 target_compile_features(klusters_test_undohistory PRIVATE cxx_std_20)
-target_include_directories(klusters_test_undohistory PRIVATE "${_klu_src}" "${_shared}")
+target_include_directories(klusters_test_undohistory PRIVATE ${_klu_inc} "${_shared}")
 target_link_libraries(klusters_test_undohistory PRIVATE Qt6::Core)
 add_test(NAME klusters_test_undohistory COMMAND klusters_test_undohistory)
 
 # What a realign reads of one cluster from .spk / .res / .fet (no session, no Qt).
-add_executable(klusters_test_realignio realignio_test.cpp "${_klu_src}/realignio.cpp")
+add_executable(klusters_test_realignio realignio_test.cpp "${_klu_src}/data/realignio.cpp")
 target_compile_features(klusters_test_realignio PRIVATE cxx_std_20)
-target_include_directories(klusters_test_realignio PRIVATE "${_klu_src}" "${_core}")
+target_include_directories(klusters_test_realignio PRIVATE ${_klu_inc} "${_core}")
 add_test(NAME klusters_test_realignio COMMAND klusters_test_realignio)
 
 # Reserved clusters -- what an edit may do to the clusters a fiber-kit chunk
 # run reserved (header-only; types.h from libklustersshared).
 add_executable(klusters_test_reservedclusters reservedclusters_test.cpp)
 target_compile_features(klusters_test_reservedclusters PRIVATE cxx_std_20)
-target_include_directories(klusters_test_reservedclusters PRIVATE "${_klu_src}" "${_shared}")
+target_include_directories(klusters_test_reservedclusters PRIVATE ${_klu_inc} "${_shared}")
 add_test(NAME klusters_test_reservedclusters COMMAND klusters_test_reservedclusters)
 
 # TemplateClassStore — the Qt-free EAP template-class model (phase 4).  Same
@@ -92,10 +98,10 @@ add_test(NAME klusters_test_reservedclusters COMMAND klusters_test_reservedclust
 # Neurosuite::core (readEap/readTcl/writeEap/writeTcl + the templateclass engine
 # live out of line there).
 add_executable(klusters_test_templateclassstore
-    templateclassstore_test.cpp "${_klu_src}/templateclassstore.cpp")
+    templateclassstore_test.cpp "${_klu_src}/data/templateclassstore.cpp")
 target_compile_features(klusters_test_templateclassstore PRIVATE cxx_std_20)
 target_include_directories(klusters_test_templateclassstore
-    PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    PRIVATE ${_klu_inc} "${_shared}" "${_core}")
 target_link_libraries(klusters_test_templateclassstore PRIVATE Neurosuite::core)
 add_test(NAME klusters_test_templateclassstore COMMAND klusters_test_templateclassstore)
 
@@ -109,9 +115,9 @@ find_package(Qt6 COMPONENTS Core Gui QUIET)
 # on Save (final:false, ring kept) and the final rewrite at close; the JSON
 # writer (NaN -> null, lists); SESSION_OPEN's context.  QtCore only.
 if (Qt6_FOUND)
-add_executable(klusters_test_curationlogger curationlogger_test.cpp "${_klu_src}/curationlogger.cpp")
+add_executable(klusters_test_curationlogger curationlogger_test.cpp "${_klu_src}/document/curationlogger.cpp")
 target_compile_features(klusters_test_curationlogger PRIVATE cxx_std_20)
-target_include_directories(klusters_test_curationlogger PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_curationlogger PRIVATE ${_klu_inc})
 target_link_libraries(klusters_test_curationlogger PRIVATE Qt6::Core)
 add_test(NAME klusters_test_curationlogger COMMAND klusters_test_curationlogger)
 endif()
@@ -120,9 +126,9 @@ endif()
 # <command> template, buildArgv) and the per-plugin defaults store.  QtCore only.
 if (Qt6_FOUND)
 add_executable(klusters_test_pluginregistry pluginregistry_test.cpp
-    "${_klu_src}/pluginregistry.cpp" "${_klu_src}/pluginsettings.cpp")
+    "${_klu_src}/app/pluginregistry.cpp" "${_klu_src}/prefs/pluginsettings.cpp")
 target_compile_features(klusters_test_pluginregistry PRIVATE cxx_std_20)
-target_include_directories(klusters_test_pluginregistry PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_pluginregistry PRIVATE ${_klu_inc})
 target_link_libraries(klusters_test_pluginregistry PRIVATE Qt6::Core)
 add_test(NAME klusters_test_pluginregistry COMMAND klusters_test_pluginregistry)
 endif()
@@ -130,9 +136,9 @@ endif()
 # subsessionfiles -- the recluster sub-session's file operations (row subsets of the group's
 # .res/.spk/.fet, the seed .clu, names, removal).  QtCore only.
 if (Qt6_FOUND)
-add_executable(klusters_test_subsessionfiles subsessionfiles_test.cpp "${_klu_src}/subsessionfiles.cpp")
+add_executable(klusters_test_subsessionfiles subsessionfiles_test.cpp "${_klu_src}/document/subsessionfiles.cpp")
 target_compile_features(klusters_test_subsessionfiles PRIVATE cxx_std_20)
-target_include_directories(klusters_test_subsessionfiles PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_subsessionfiles PRIVATE ${_klu_inc})
 target_link_libraries(klusters_test_subsessionfiles PRIVATE Qt6::Core)
 add_test(NAME klusters_test_subsessionfiles COMMAND klusters_test_subsessionfiles)
 endif()
@@ -141,7 +147,7 @@ endif()
 # mode (centre on a diagonal cell) and the out-of-view check (back to the corner).
 add_executable(klusters_test_matrixviewport matrixviewport_test.cpp)
 target_compile_features(klusters_test_matrixviewport PRIVATE cxx_std_20)
-target_include_directories(klusters_test_matrixviewport PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_matrixviewport PRIVATE ${_klu_inc})
 target_link_libraries(klusters_test_matrixviewport PRIVATE Qt6::Core)
 add_test(NAME klusters_test_matrixviewport COMMAND klusters_test_matrixviewport)
 
@@ -150,7 +156,7 @@ add_test(NAME klusters_test_matrixviewport COMMAND klusters_test_matrixviewport)
 if (Qt6_FOUND)
 add_executable(klusters_test_matrixdisplayorder matrixdisplayorder_test.cpp)
 target_compile_features(klusters_test_matrixdisplayorder PRIVATE cxx_std_20)
-target_include_directories(klusters_test_matrixdisplayorder PRIVATE "${_klu_src}")
+target_include_directories(klusters_test_matrixdisplayorder PRIVATE ${_klu_inc})
 target_link_libraries(klusters_test_matrixdisplayorder PRIVATE Qt6::Core)
 add_test(NAME klusters_test_matrixdisplayorder COMMAND klusters_test_matrixdisplayorder)
 endif()
@@ -159,15 +165,15 @@ if(Qt6_FOUND)
     add_executable(klusters_test_matrixtemplatestrip matrixtemplatestrip_test.cpp)
     target_compile_features(klusters_test_matrixtemplatestrip PRIVATE cxx_std_20)
     target_include_directories(klusters_test_matrixtemplatestrip
-        PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+        PRIVATE ${_klu_inc} "${_shared}" "${_core}")
     target_link_libraries(klusters_test_matrixtemplatestrip PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_matrixtemplatestrip COMMAND klusters_test_matrixtemplatestrip)
 
     # MatrixViewBase: the grid geometry, pan / zoom and follow the four curation matrices
     # share, on a view that is not a widget (QPainter is linked, never used).
-    add_executable(klusters_test_matrixviewbase matrixviewbase_test.cpp "${_klu_src}/matrixviewbase.cpp")
+    add_executable(klusters_test_matrixviewbase matrixviewbase_test.cpp "${_klu_src}/views/matrixviewbase.cpp")
     target_compile_features(klusters_test_matrixviewbase PRIVATE cxx_std_20)
-    target_include_directories(klusters_test_matrixviewbase PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    target_include_directories(klusters_test_matrixviewbase PRIVATE ${_klu_inc} "${_shared}" "${_core}")
     target_link_libraries(klusters_test_matrixviewbase PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_matrixviewbase COMMAND klusters_test_matrixviewbase)
 
@@ -176,11 +182,11 @@ if(Qt6_FOUND)
     if(UNIX)
         add_executable(klusters_test_processlinemaker
             processlinemaker_test.cpp
-            "${_klu_src}/processlinemaker.cpp"
-            "${_klu_src}/processlinemaker.h")
+            "${_klu_src}/jobs/processlinemaker.cpp"
+            "${_klu_src}/jobs/processlinemaker.h")
         set_target_properties(klusters_test_processlinemaker PROPERTIES AUTOMOC ON)
         target_compile_features(klusters_test_processlinemaker PRIVATE cxx_std_20)
-        target_include_directories(klusters_test_processlinemaker PRIVATE "${_klu_src}")
+        target_include_directories(klusters_test_processlinemaker PRIVATE ${_klu_inc})
         target_link_libraries(klusters_test_processlinemaker PRIVATE Qt6::Core)
         add_test(NAME klusters_test_processlinemaker COMMAND klusters_test_processlinemaker)
     endif()
@@ -196,7 +202,7 @@ if(Qt6_FOUND)
     target_compile_features(klusters_test_bindingregistry PRIVATE cxx_std_20)
     target_compile_definitions(klusters_test_bindingregistry PRIVATE KLUSTERSSHARED_STATICLIB)
     target_include_directories(klusters_test_bindingregistry
-        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_core}")
+        PRIVATE ${_klu_inc} "${_shared}" "${_shared_root}" "${_core}")
     target_link_libraries(klusters_test_bindingregistry PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_bindingregistry COMMAND klusters_test_bindingregistry)
 
@@ -212,7 +218,7 @@ if(Qt6_FOUND)
     target_compile_features(klusters_test_inputdispatcher PRIVATE cxx_std_20)
     target_compile_definitions(klusters_test_inputdispatcher PRIVATE KLUSTERSSHARED_STATICLIB)
     target_include_directories(klusters_test_inputdispatcher
-        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_core}")
+        PRIVATE ${_klu_inc} "${_shared}" "${_shared_root}" "${_core}")
     target_link_libraries(klusters_test_inputdispatcher PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_inputdispatcher COMMAND klusters_test_inputdispatcher)
 
@@ -228,7 +234,7 @@ if(Qt6_FOUND)
     target_compile_features(klusters_test_keymapprofile PRIVATE cxx_std_20)
     target_compile_definitions(klusters_test_keymapprofile PRIVATE KLUSTERSSHARED_STATICLIB)
     target_include_directories(klusters_test_keymapprofile
-        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_core}")
+        PRIVATE ${_klu_inc} "${_shared}" "${_shared_root}" "${_core}")
     target_link_libraries(klusters_test_keymapprofile PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_keymapprofile COMMAND klusters_test_keymapprofile)
 
@@ -236,9 +242,9 @@ if(Qt6_FOUND)
     # trip, settings fallback, malformed / wrong-version rejection, ring counting,
     # and the action ids it stores (actionid.h).  Qt Core only (QJson); no widgets.
     add_executable(klusters_test_radiallayout
-        radiallayout_test.cpp "${_klu_src}/radiallayout.cpp" "${_klu_src}/actionid.cpp")
+        radiallayout_test.cpp "${_klu_src}/app/radiallayout.cpp" "${_klu_src}/app/actionid.cpp")
     target_compile_features(klusters_test_radiallayout PRIVATE cxx_std_20)
-    target_include_directories(klusters_test_radiallayout PRIVATE "${_klu_src}")
+    target_include_directories(klusters_test_radiallayout PRIVATE ${_klu_inc})
     target_link_libraries(klusters_test_radiallayout PRIVATE Qt6::Core)
     add_test(NAME klusters_test_radiallayout COMMAND klusters_test_radiallayout)
 
@@ -246,12 +252,12 @@ if(Qt6_FOUND)
     # icons the application ships -- both .qrc files are compiled in -- plus the
     # drawn icons' palette dependence.  Qt Gui on the offscreen platform.
     add_executable(klusters_test_actionicons
-        actionicons_test.cpp "${_klu_src}/actionicons.cpp"
+        actionicons_test.cpp "${_klu_src}/app/actionicons.cpp"
         "${_klu_src}/klusters-icons.qrc"
         "${_shared_root}/gui/libklustersshared-icons.qrc")
     set_target_properties(klusters_test_actionicons PROPERTIES AUTORCC ON)
     target_compile_features(klusters_test_actionicons PRIVATE cxx_std_20)
-    target_include_directories(klusters_test_actionicons PRIVATE "${_klu_src}")
+    target_include_directories(klusters_test_actionicons PRIVATE ${_klu_inc})
     target_link_libraries(klusters_test_actionicons PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_actionicons COMMAND klusters_test_actionicons)
 endif()
@@ -262,10 +268,10 @@ endif()
 find_package(Qt6 COMPONENTS Widgets QUIET)
 if(TARGET Qt6::Widgets)
     add_executable(klusters_test_radialmenu
-        radialmenu_test.cpp "${_klu_src}/radialmenu.cpp" "${_klu_src}/radialmenu.h")
+        radialmenu_test.cpp "${_klu_src}/app/radialmenu.cpp" "${_klu_src}/app/radialmenu.h")
     set_target_properties(klusters_test_radialmenu PROPERTIES AUTOMOC ON)
     target_compile_features(klusters_test_radialmenu PRIVATE cxx_std_20)
-    target_include_directories(klusters_test_radialmenu PRIVATE "${_klu_src}")
+    target_include_directories(klusters_test_radialmenu PRIVATE ${_klu_inc})
     target_link_libraries(klusters_test_radialmenu PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
     add_test(NAME klusters_test_radialmenu COMMAND klusters_test_radialmenu)
     set_tests_properties(klusters_test_radialmenu PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -287,7 +293,7 @@ if(TARGET Qt6::Widgets)
     target_compile_features(klusters_test_prefinput PRIVATE cxx_std_20)
     target_compile_definitions(klusters_test_prefinput PRIVATE KLUSTERSSHARED_STATICLIB)
     target_include_directories(klusters_test_prefinput
-        PRIVATE "${_klu_src}" "${_shared}" "${_shared_root}" "${_shared_root}/input" "${_core}")
+        PRIVATE ${_klu_inc} "${_shared}" "${_shared_root}" "${_shared_root}/input" "${_core}")
     target_link_libraries(klusters_test_prefinput PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets)
     add_test(NAME klusters_test_prefinput COMMAND klusters_test_prefinput)
     set_tests_properties(klusters_test_prefinput PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -297,11 +303,11 @@ endif()
 # (macOS with USE_METAL; SKIPPED without a Metal device).
 if(TARGET Neurosuite::metal)
     add_executable(klusters_test_groupingassistant_metal
-        groupingassistant_metal_test.cpp "${_klu_src}/groupingassistant_metal.cpp")
+        groupingassistant_metal_test.cpp "${_klu_src}/compute/groupingassistant_metal.cpp")
     ns_metal_embed(klusters_test_groupingassistant_metal groupingassistant_kernels
-                   "${_klu_src}/groupingassistant.metal")
+                   "${_klu_src}/compute/groupingassistant.metal")
     target_compile_definitions(klusters_test_groupingassistant_metal PRIVATE USE_METAL)
-    target_include_directories(klusters_test_groupingassistant_metal PRIVATE "${_klu_src}")
+    target_include_directories(klusters_test_groupingassistant_metal PRIVATE ${_klu_inc})
     target_link_libraries(klusters_test_groupingassistant_metal PRIVATE Neurosuite::metal)
     add_test(NAME klusters_test_groupingassistant_metal COMMAND klusters_test_groupingassistant_metal)
     set_tests_properties(klusters_test_groupingassistant_metal PROPERTIES

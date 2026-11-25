@@ -70,7 +70,7 @@
 #include <neurosuite/core/watershed2d.hpp>
 #include "clusterview.h"
 #include "klustersdoc.h"
-#include "clusterPalette.h"
+#include "clusterpalette.h"
 #include "types.h"
 #include "clusterlabel.h"
 #include "parameteryamlmodifier.h"

@@ -64,7 +64,7 @@ differ, fix the page.
 | Versions at the boundary with fiber-kit and ndm plugins: plugin protocol, session schema, format versions, shared-table hashes | `contract.yaml` at the repository root (one in each repository), stated in code by `core/version_contract.hpp`; §2.5 here |
 | Rules with one implementation and mirrors in other languages (stderiv transform, sdiff grammars, custody, PCAE `Method`, formats) | [STANDARDIZATION.md](STANDARDIZATION.md) §2.10 (the table of homes); the change procedure is CORE_API.md §4.3 |
 | Code conventions, directory layout, language standard | [STANDARDIZATION.md](STANDARDIZATION.md) §2 |
-| Action icons: one table keyed by action id, loading forms, checks | [STANDARDIZATION.md](STANDARDIZATION.md) §2.11; Klusters' table is `src/klusters/src/actionicons.h` |
+| Action icons: one table keyed by action id, loading forms, checks | [STANDARDIZATION.md](STANDARDIZATION.md) §2.11; Klusters' table is `src/klusters/src/app/actionicons.h` |
 | Running and adding tests | [tests/README.md](../../tests/README.md) |
 | Build options, GPU back ends, CI parity | [doc/BUILD.md](../BUILD.md) |
 | Layering and what may depend on what | [ARCHITECTURE.md](ARCHITECTURE.md) |
@@ -374,7 +374,7 @@ visible there too.
      the alias lower-case and hyphenated.
    - **Drawn**: add a painter to `actionicons::drawnIcon()` that takes its
      outline colour from the palette.
-3. Add the row to the table in `src/klusters/src/actionicons.cpp` (and raise the
+3. Add the row to the table in `src/klusters/src/app/actionicons.cpp` (and raise the
    array size). Do not add a `setIcon()` call where the action is created.
 
 **Test:** `ctest -R klusters_test_actionicons` (the row's icon is bundled and
@@ -384,7 +384,7 @@ prints any row whose id names no action when Klusters starts.
 ### 2.7 Add a Klusters menu command
 
 A menu command is described once, by its row in `KlustersApp::commandTable()`
-(`src/klusters/src/klusters_commands.cpp`):
+(`src/klusters/src/app/klusters_commands.cpp`):
 
 ```cpp
 t << CommandSpec("clusters.frobnicate", "Clusters", tr("&Frobnicate"), ON(triggered, slotFrobnicate))
@@ -419,7 +419,7 @@ text, keys, tips, flags and whether the edit lock holds it are the snapshot's).
 ### 2.8 Add a Klusters preference
 
 A preference is one row of `Configuration::prefTable()`
-(`src/klusters/src/configuration_prefs.cpp`): its group and key in the settings
+(`src/klusters/src/prefs/configuration_prefs.cpp`): its group and key in the settings
 file, the member that holds it, its default, and its limit.
 
 ```cpp

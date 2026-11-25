@@ -365,7 +365,7 @@ Threading:
 
 | Caller | Use |
 |---|---|
-| `src/klusters/src/klustersdoc_realign.cpp` | interactive per-cluster realign (`compute` at `:1049`), score-only pass with `maxShift = 0` (`:1663`), `circularRecenterShift` (`:295`), `perSpikeCentroidShifts` (`:922`); `backendName()` in the log |
+| `src/klusters/src/document/klustersdoc_realign.cpp` | interactive per-cluster realign (`compute` at `:1049`), score-only pass with `maxShift = 0` (`:1663`), `circularRecenterShift` (`:295`), `perSpikeCentroidShifts` (`:922`); `backendName()` in the log |
 | `src/klusters/src/spikerealigndialog.cpp` | shows `backendName()` in the dialog |
 | `src/kiloklustakwik/src/klusters_realign.cpp` | Klusters-style realign inside the sorter |
 | `src/kiloklustakwik/src/KK_chunked.cpp`, `KK_templatematch.cpp` | cross-chunk and pairwise template similarity (`nSpikes = 1` or batched partners, `minScore = 0`) |

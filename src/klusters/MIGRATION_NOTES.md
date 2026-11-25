@@ -163,7 +163,7 @@ sessions a `QThread` async variant mirroring `TemplateMatrixThread`
 would keep the UI more responsive (queued in the roadmap; see
 `SESSION_SUMMARY_phase8_klusters_automerge.md` §7.4).
 
-`normXcorr` in `autoMerge.cpp` is a verbatim copy of
+`normXcorr` in `automerge.cpp` is a verbatim copy of
 `templatematrixthread.cpp`'s `tmNormXcorr`; extraction to a shared
 header is a future cleanup (§7.3 of the same handoff document).
 

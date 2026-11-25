@@ -3,7 +3,7 @@
 > **Status (2026-10): lever 1 implemented; levers 2–3 open (largely moot).**
 > GPU-side aggregation ships: `cuda_compute_error_matrix` reduces the posteriors
 > into the cluster × cluster matrix on the device and only that matrix is copied
-> back (`src/klusters/src/groupingassistant_cuda.cu`, `groupingassistant.cpp`).
+> back (`src/klusters/src/compute/groupingassistant_cuda.cu`, `groupingassistant.cpp`).
 > FP32 is back as a user toggle, default on: Preferences ▸ Refinement
 > "Low-precision GPU compute (FP32, faster)" (setting `errorMatrixLowPrecision`;
 > the `NS3_ERRORMATRIX_LOWPRECISION` environment variable overrides it). The

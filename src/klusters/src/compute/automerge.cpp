@@ -23,7 +23,7 @@
     it to a shared header.
  ***************************************************************************/
 
-#include "autoMerge.h"
+#include "automerge.h"
 
 #include "klustersdoc.h"
 #include "data.h"
