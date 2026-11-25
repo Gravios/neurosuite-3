@@ -23,7 +23,7 @@ int UndoHistory::childEntriesOnTop(Direction d) const
 int UndoHistory::parentLevels() const
 {
     int n = 0;
-    for (const Entry& e : undoEntries) n += (!e.child && !e.annotation);
+    for (const Entry& e : undoEntries) n += (!e.child && !e.annotation && !e.realign);
     return n;
 }
 
@@ -45,6 +45,35 @@ void UndoHistory::push(Entry e, int depth, int entryCap)
     redoEntries.clear();                           // a new edit ends every redo, of either layer
 }
 
+qint64 UndoHistory::totalCost() const
+{
+    qint64 n = 0;
+    for (const Entry& e : undoEntries) n += e.cost;
+    for (const Entry& e : redoEntries) n += e.cost;
+    return n;
+}
+bool UndoHistory::dropOldestCostly()
+{
+    for (QList<Entry>* l : { &undoEntries, &redoEntries }) {
+        for (int i = static_cast<int>(l->size()) - 1; i >= 0; --i) {
+            if (l->at(i).cost <= 0) continue;
+            const int g = l->at(i).group;
+            if (g == 0) { l->removeAt(i); return true; }
+            for (int k = static_cast<int>(l->size()) - 1; k >= 0; --k)
+                if (l->at(k).group == g && l->at(k).cost > 0) l->removeAt(k);
+            return true;
+        }
+    }
+    return false;
+}
+int UndoHistory::removeRealignEntries()
+{
+    int n = 0;
+    for (QList<Entry>* l : { &undoEntries, &redoEntries })
+        for (int i = static_cast<int>(l->size()) - 1; i >= 0; --i)
+            if (l->at(i).realign) { l->removeAt(i); ++n; }
+    return n;
+}
 void UndoHistory::limitEntries(int n)
 {
     while (undoEntries.size() > qMax(1, n)) undoEntries.removeLast();

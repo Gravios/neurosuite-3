@@ -253,6 +253,11 @@ void KlustersApp::enqueueRealignJob(int clusterId, const QString& args)
                QString backupBase, int nChan, int nSamp) {
             realignRunning = false;
             if (doc) doc->setLogTrigger(QStringLiteral("manual"));   // an automatic realign is over
+            // The realign is an undo step; after a merge, a part of the merge's step
+            // (a failed one left no rows: nothing is recorded then).
+            if (doc) doc->recordRealignUndo(/*joinPrevious*/ realignFollowsEdit);
+            realignFollowsEdit = false;
+            updateUndoRedoDisplay();
             selfTestNoteRealign(ok, nShifted);           // the headless self-test's record
             applyRealignResult(ok, nShifted, meanBefore, meanAfter,
                                backupBase, nChan, nSamp);
@@ -337,6 +342,8 @@ void KlustersApp::slotRealignBatchFinished(bool /*ok*/, int /*nShifted*/,
     realignBatchActive = false;
 
     doc->endRealignBatchLog();    // commit the single batch "after" snapshot
+    // The batch is one undo step; after a merge, a part of the merge's step.
+    doc->recordRealignUndo(/*joinPrevious*/ realignPostOpRenumberMatrix);
     // End-of-cycle refeaturization: one extrema pass over every touched
     // cluster (parent + mirrored child layer), BEFORE the flush below whose
     // reprojected signals make the feature views re-derive their world from

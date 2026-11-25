@@ -286,8 +286,8 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    Still one function for the plan: choosing the space and the basis, the centering, the
    new times, the verification against the recording, re-cutting the windows and the
    feature rows; and after the application, the journal and the notifications. The plan is
-   not yet an object of its own (it is `pending.records` and the waveform buffer), and
-   neither cancel nor undo is built on the boundary. The plan /
+   not yet an object of its own. Built on the boundary since: the undo of a realign (the
+   record of the rows, applied either way by `realignApplyRows`). A cancel is not. The plan /
    application boundary is not drawn until the writing is separate from what precedes it.
 6. The matrix-view base (§8).
 7. The glossary and the renames (§6), one word per patch.

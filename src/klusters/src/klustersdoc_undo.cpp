@@ -667,6 +667,20 @@ bool KlustersDoc::stepOneEntry(UndoHistory::Direction d, KlustersView& activeVie
     if (undoHistory.isEmpty(d)) return false;
     UndoEntry e = undoHistory.take(d);
     if (e.annotation) { swapAnnotation(e); undoHistory.put(other, e); return true; }
+    if (e.realign) {
+        // The rows of a realign: back as they were, or again as it left them.
+        const auto batch = std::static_pointer_cast<const PendingRealign>(e.realign);
+        QString why;
+        if (!applyRealignBatch(*batch, /*forward*/ isRedo, &why)) {
+            undoHistory.put(d, e);                 // not applied: the step stays where it was
+            emit undoRefused(why);
+            return false;
+        }
+        pendingRealign.push_back(batch);           // unsaved rows, whichever way they went
+        logRealignUndoRedo(*batch, isRedo);
+        undoHistory.put(other, e);
+        return true;
+    }
     const QVector<dataType> now = childData ? childData->labelByFeatureRow() : QVector<dataType>();
     if (!e.child) {
         // No level left for it (the depth was lowered): the entry is dropped.

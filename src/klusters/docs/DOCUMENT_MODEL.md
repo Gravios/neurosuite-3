@@ -49,7 +49,7 @@ straight to `KlustersApp*`).
 | Connected views | `QList<KlustersView*>* viewList` | `klustersdoc.h` |
 | Cluster palette (back-reference) | `ClusterPalette& clusterPalette` | `klustersdoc.h` |
 | Curation log | `std::unique_ptr<CurationLogger> curationLogger` | `klustersdoc.h` |
-| Pending-file paths + deferred realign writes | `pendingSpkPath…`, `std::vector<PendingRealign> pendingRealign` | `klustersdoc.h` |
+| Pending-file paths + deferred realign writes | `pendingSpkPath…`, `std::vector<std::shared_ptr<const PendingRealign>> pendingRealign` | `klustersdoc.h` |
 | Hierarchy maps + atom-layer undo stacks | `parentToChildren`, `childToParent`, `childUndoStack`, `childRedoStack` | `klustersdoc.h` |
 
 **The cluster↔spike mapping itself is not a `KlustersDoc` member** — it lives
@@ -389,8 +389,22 @@ tested without a session (`undohistory_test.cpp`).
 - **The curation log.** `undo()` flips the parent action's status
   (`notifyUndo`); a child entry carries its log index (`ChildEdit::logIdx`) and
   `logChildUndoRedo` flips that entry.
-- **Not in the history:** a realign or nudge (they rewrite `.spk` / `.res`; see
-  §7.4) and a save.
+- **A realign** is an entry of a third kind (`Entry::realign`): no labelling and no
+  level, but a step that counts against the depth. It points at the realign's record
+  (`KlustersDoc::PendingRealign`: per row the time, the feature row and the waveform
+  row, as they were and as the realign left them); `stepOneEntry` hands it to
+  `applyRealignBatch`, which writes the rows either way through `realignApplyRows` —
+  the function the realign itself writes with — then records the moved rows for the
+  other spaces and refreshes what a realign job's end refreshes. The realign runs on
+  a worker thread, so its record becomes an entry when the job is over
+  (`recordRealignUndo`, called by the application's finish handlers; `joinPrevious`
+  for the automatic realign after a merge). An entry that cannot be applied (another
+  space shown) stays where it was and `undoRefused` carries the reason. The entries
+  keep `Entry::cost` bytes; `UndoHistory::dropOldestCostly` holds the total under
+  `realignUndoBudgetBytes`.
+- **Not in the history:** a nudge (it rewrites `.spk` / `.res` without a record, and
+  calls `dropRealignUndo`: the realign entries no longer describe the files; see §7.4)
+  and a save.
 
 ---
 

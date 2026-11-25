@@ -168,8 +168,8 @@ re-projects every other space's `.fet` through its own `.pca` basis (lag `_D`
 spaces included). To do this automatically, turn on **Preferences →
 Curation → Realignment → Sync a feature space to the current spike times when switching to
 it**; each switch then costs one `.fil` pass over the group. Synced files are
-working copies: **Save** writes them, closing without saving discards them,
-and undoing a realignment drops them (re-sync afterwards). A space that cannot
+working copies: **Save** writes them and closing without saving discards them.
+A space that cannot
 be synced — no `.pca` basis, a basis that does not fit the waveforms, or one
 trained in the other domain (standard vs stderiv) — is reported and keeps its
 existing files. Spaces that read the same `.spk` are synced together, and if
@@ -1864,10 +1864,24 @@ session files. The session files are updated atomically on save:
   next to its target (`<file>.saving`), then all are installed together or
   none is (see [Saving](#saving-all-or-nothing)). A file that already holds
   what the save would write is not rewritten.
-- A realignment or a nudge is **not undoable**: `Ctrl+Z` steps over it to the
-  edit before.  The way back is **File → Close** without saving (this page said
-  `Ctrl+Z` restored the working copies; the application has not offered that
-  since the review dialog went).
+- A realignment is an **undo step**: `Ctrl+Z` writes back every row it rewrote —
+  the spike time, the waveform and the features, exactly as they were — and
+  `Ctrl+Y` writes the realigned rows again. The other feature spaces follow, as
+  they do after the realign.
+  - **Align All** is one step. The automatic realign after a merge belongs to
+    the merge's step: undoing the merge also puts the spikes back.
+  - It works across a **Save**: undo after saving and save again to have the
+    old rows on disk.
+  - A realign done in another feature space is undone **in that space**: with a
+    different one shown, Undo stops there and the status bar names the space.
+  - The rows are kept in memory: for each spike of the cluster the old and the
+    new waveform. Realign steps count against the undo depth, and the oldest
+    are dropped once they hold more than 1 GB together (the edits of the same
+    step stay undoable).
+- A **nudge** is **not undoable**, and it ends the undo of the realigns before
+  it: their kept rows no longer describe the files. `Ctrl+Z` then goes to the
+  edit before. The way back from a nudge is the opposite nudge, or **File →
+  Close** without saving.
 - On crash, the autosave-recovery path, the commit journal (an interrupted
   save is completed on the next open) and the `.bak` files written by
   upstream scripts (reextract, subcluster) give independent recovery

@@ -106,24 +106,19 @@ The audit fixed five faults and the single undo history closed the four behaviou
   pushed (up to ten times the depth): a Break Up into 100 parents holds 100 labellings until
   it leaves the history.  Wanted: one level per command, which needs `Data` to open and close
   a level explicitly and one merged edit descriptor for the views.
-- **Realign and nudge are not undoable** (Sort Spikes by Time neither: it rewrites the files
-  and reopens).  Looked at on 2026-11-24 and not done; what it needs:
-  - `KlustersDoc::rejectLastRealign` (removed 2026-11-24 with its review dialog; in the history
-    before that) was not the way: unused and untested, it restored the parent layer's feature
-    rows and times but not the child layer's (`realignSpikes` mirrors every row into
-    `childData`); it re-seeded the working `.spk` / `.res` / `.fet` from the saved files, which
-    also wiped the rows of every EARLIER unsaved realign from them while their records stayed
-    in the journal; it refused a realign made in a borrowed space.  The nudge writes no journal
-    entry at all.  What it used is still there: the journal records hold the original times
-    and features, and `Data::revertLastSpkOverlayBatch` pops a realign's waveform batch.
-  - Wanted instead: a realign entry in the undo history that writes the batch's rows back
-    one by one (times and features from the journal record, waveform bytes from the overlay
-    generation before it or the saved file), in both layers and in the space it ran in, and
-    keeps the batch for the redo; the journal entry of a nudge; the entries dropped at Save,
-    which commits the journal.  The automatic realign after a merge then joins the merge's
-    step (`joinNextUndoLevel`), which is what makes an undone merge leave no trace.
-  - It has to be validated against a raw recording on a real session before it goes near
-    Ctrl+Z: a wrong row written back is saved into the `.spk` and `.res`.
+- **The nudge is not undoable** (Sort Spikes by Time neither: it rewrites the files and
+  reopens).  A realign is, since 2026-11-25: its record holds every row as it was and as it
+  left it, and Undo / Redo write them through the function the realign writes with
+  (`realignApplyRows`, `KlustersDoc::applyRealignBatch`).  Open:
+  - the nudge writes no record; it drops the realign steps instead (`dropRealignUndo`).
+    The same record would make it a step;
+  - the kept rows are in memory, capped at `realignUndoBudgetBytes` (1 GB, a constant);
+    a file beside the working copies would lift the cap;
+  - a realign made in another feature space is refused until that space is shown; the
+    application could show it, apply, and come back, as it does for a realign;
+  - **validated on generated sessions only** (`test_realign_undo.py`: the saved files byte
+    for byte).  `src/klusters/test/selftest/check_realign_undo_on_session.py` runs the
+    same comparison on a copy of a real group; it has not been run on one.
 - **Memory**: every level of the history holds one atom labelling (4 bytes a spike) next to the
   parent level: 20 levels of 2 M spikes are 160 MB.
 - Tested with scripted synthetic sessions only (`test_undo_pairing.py`).

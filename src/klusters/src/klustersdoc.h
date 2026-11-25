@@ -1961,6 +1961,8 @@ public:
     struct PendingRealign {
         QString method;              ///< the space the realign ran in (its working copies hold the rows)
         int     clusterId     = 0;   ///< the cluster realigned, on the layer that was active
+        bool    onChildLayer  = false;
+        int     logIdx        = -1;  ///< its entry in the curation log (-1: none)
         int     nChan         = 0;
         int     nSamp         = 0;
         int64_t bytesPerSpike = 0;
@@ -1969,6 +1971,18 @@ public:
         int     nFeatCols     = 0;
         std::vector<PendingSpkRecord> records;
     };
+
+    /** Make the realigns done since the last call undo steps (GUI thread, once the job
+     *  that ran them is over): one step for all of them, and with @p joinPrevious the
+     *  step of the edit before them (the automatic realign after a merge).  Returns how
+     *  many.  The oldest realign steps are dropped while they keep more than
+     *  realignUndoBudgetBytes. */
+    int recordRealignUndo(bool joinPrevious = false);
+    /** Forget how to undo the realigns so far: their rows no longer describe the files
+     *  (a nudge rewrote them).  Other steps stay. */
+    void dropRealignUndo();
+    /// What the kept rows of undoable realigns may take, old and new together.
+    static constexpr qint64 realignUndoBudgetBytes = qint64(1) << 30;
 
     /** True when realignment results are waiting to be written to disk. */
     bool hasPendingRealign() const { return !pendingRealign.empty(); }
@@ -2450,6 +2464,10 @@ Q_SIGNALS:
     void hierarchyChanged();
     /// An undo or redo changed a cluster's information: the palettes showing it re-read.
     void clusterAnnotationRestored(bool childLayer, int cluster);
+    /// Undo or Redo met a step it cannot apply now; @p why is for the status bar.
+    void undoRefused(const QString& why);
+    /// Undo or Redo wrote the rows of a realign: the other spaces have spikes to follow.
+    void realignStepApplied();
 
     /**Emitted when the waveform-view channel selection changes.  Empty list =
      * no restriction (all channels).*/
@@ -3067,6 +3085,10 @@ private:
     /// One step: the newest entry of side @p d and every entry of the same command.
     void stepDispatch(UndoHistory::Direction d);
     void swapAnnotation(UndoEntry& e);
+    /** Write the rows of a realign as it left them (@p forward) or as they were, in the
+     *  space it ran in, which must be the one shown.  False with @p error: nothing written. */
+    bool applyRealignBatch(const PendingRealign& batch, bool forward, QString* error);
+    void logRealignUndoRedo(const PendingRealign& batch, bool redo);
     /// The child layer was replaced wholesale: colours, maps, views.
     void afterChildLabelsRestored(KlustersView& activeView);
     // Record one atom-layer edit: push it on the undo history as a child entry
@@ -3304,7 +3326,8 @@ private:
     QMap<int, QList<int> > displayGroupsClusterFile;
 
     /** Realignment writes pending until saveDocument() is called. */
-    std::vector<PendingRealign> pendingRealign;
+    std::vector<std::shared_ptr<const PendingRealign>> pendingRealign;   // applied since the last save
+    std::vector<std::shared_ptr<const PendingRealign>> realignsToRecord; // done by a job, not yet undo steps
 
     // ── Curation logger ───────────────────────────────────────────────────
     std::unique_ptr<CurationLogger> curationLogger;

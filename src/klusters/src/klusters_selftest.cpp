@@ -54,6 +54,9 @@
  *                                        binding registry's commands, and the edit lock's set
  *        {"configWrite": true}           write the configuration as read; {"prefKeys": [keys]} work Preferences by keys
  *        {"keyCommand": "<id>"}          run a key command of the binding registry; reports blocked / idsChanged
+ *        {"undo": true} / {"redo": true} Edit > Undo / Redo; report the steps left each way and the status line
+ *        {"undoState": true}             the steps Undo and Redo can take now
+ *        {"alignAll": true}              Spikes > Align All Clusters, confirmed
  *        {"cancelJob": true}             Edit > Cancel Running Job; reports whether there was one to cancel
  *        {"actionsEnabled": true}        the command ids that can be triggered now and those that
  *                                        cannot, and which jobs run
@@ -762,11 +765,34 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("undo"))) {
         // {"undo": true}: Edit > Undo.
         slotUndo();
+        result.insert(QStringLiteral("undoSteps"), doc->undoStepCount());
+        result.insert(QStringLiteral("redoSteps"), doc->redoStepCount());
+        result.insert(QStringLiteral("status"), statusBar()->currentMessage());
         return true;
     }
     if (step.contains(QStringLiteral("redo"))) {
         // {"redo": true}: Edit > Redo.
         slotRedo();
+        result.insert(QStringLiteral("undoSteps"), doc->undoStepCount());
+        result.insert(QStringLiteral("redoSteps"), doc->redoStepCount());
+        result.insert(QStringLiteral("status"), statusBar()->currentMessage());
+        return true;
+    }
+    if (step.contains(QStringLiteral("undoState"))) {
+        // {"undoState": true}: how many steps Undo and Redo can take now, and the status line.
+        result.insert(QStringLiteral("undoSteps"), doc->undoStepCount());
+        result.insert(QStringLiteral("redoSteps"), doc->redoStepCount());
+        result.insert(QStringLiteral("status"), statusBar()->currentMessage());
+        return true;
+    }
+    if (step.contains(QStringLiteral("alignAll"))) {
+        // {"alignAll": true}: Spikes > Align All Clusters, its question answered yes.
+        QTimer::singleShot(0, this, []() {
+            if (auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget()))
+                if (QAbstractButton* yes = box->button(QMessageBox::Yes)) yes->click();
+        });
+        slotPcaAlignAllClusters();
+        result.insert(QStringLiteral("started"), realignRunning || realignBatchActive);
         return true;
     }
     if (step.contains(QStringLiteral("purge"))) {

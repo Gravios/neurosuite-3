@@ -1998,6 +1998,7 @@ private:
     void enqueueRealignJob(int clusterId, const QString& args);
     /**True while a realignment job is running.*/
     bool realignRunning;
+    bool realignFollowsEdit = false;   ///< the realign job queued is the automatic one after a merge: one undo step with it
     /**The cluster ID currently being realigned (valid while realignRunning).*/
     int realignClusterId;
     /** The single-cluster realign was started on an ATOM (the child view was showing

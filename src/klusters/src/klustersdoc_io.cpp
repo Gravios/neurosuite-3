@@ -163,6 +163,7 @@ void KlustersDoc::closeDocument(){
     //heap lists leaked across every close/reopen).
     editUndoList.clear();
     undoHistory.clear();
+    realignsToRecord.clear();        // rows of this document: never a step of the next one
     Data::setUndoLevelsNeeded(0);
     editRedoList.clear();
 

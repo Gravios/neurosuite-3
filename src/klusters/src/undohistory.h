@@ -12,6 +12,7 @@
 #define UNDOHISTORY_H
 
 #include <QList>
+#include <memory>
 #include <QVector>
 
 #include "types.h"            // dataType
@@ -43,6 +44,11 @@ public:
         bool annotation = false;
         int  annotatedCluster = 0;
         UnitAnnotation annotationToRestore;
+        /// A realign: the rows it rewrote, as they were and as it left them (the
+        /// document's record; this class does not look inside).  No labelling and no
+        /// level, but a step that counts against the depth, and `cost` bytes kept.
+        std::shared_ptr<const void> realign;
+        qint64 cost = 0;
     };
 
     enum Direction { Undo, Redo };
@@ -79,6 +85,15 @@ public:
     int parentLevels() const;
 
     // ── the depth changed, the document closed ──────────────────────────────
+    // ── realign entries ─────────────────────────────────
+    /// Bytes kept by the entries of both sides.
+    qint64 totalCost() const;
+    /** Drop the entries that keep bytes from the oldest step that has any (the undo side's
+     *  oldest first, then the redo side's): the step's other entries stay.  False: none. */
+    bool dropOldestCostly();
+    /// Drop every realign entry of both sides (their rows no longer describe the files).
+    int removeRealignEntries();
+
     /// Keep the newest @p n undo entries (at least one) and end every redo.
     void limitEntries(int n);
     void clear();

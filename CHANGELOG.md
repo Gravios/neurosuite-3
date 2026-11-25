@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign can be undone](#2026-11-24--realign-can-be-undone) |
 | 2026-11-24 | [Realign: each rewritten row keeps what was there](#2026-11-24--realign-each-rewritten-row-keeps-what-was-there) |
 | 2026-11-24 | [Realign: the rows are computed first, then written](#2026-11-24--realign-the-rows-are-computed-first-then-written) |
 | 2026-11-24 | [Realign: the PCA refinement is two functions](#2026-11-24--realign-the-pca-refinement-is-two-functions) |
@@ -287,6 +288,56 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign can be undone
+
+A realign is a step of the undo history: Undo writes back the rows it rewrote, Redo writes them again. Checked on generated sessions only.
+
+<details>
+<summary>Details</summary>
+
+**What changes for the curator.**
+
+- `Ctrl+Z` after a realign undoes the realign: every row it rewrote goes back as it was — the
+  spike time, the waveform, the features — and `Ctrl+Y` writes the realigned rows again. Until
+  now `Ctrl+Z` stepped over a realign to the edit before it.
+- **Align All** is one step. The automatic realign after a merge is part of the merge's step:
+  undoing the merge puts the spikes back as well as the labels.
+- It works across a Save (undo, then save again).
+- A realign done in another feature space is undone in that space. With a different space
+  shown, Undo stops at that step and the status bar says which space to show.
+- A **nudge** is still not undoable, and it ends the undo of the realigns before it.
+- The kept rows are in memory: the old and the new waveform of each spike of a realigned
+  cluster. Realign steps count against the undo depth, and the oldest are dropped once they
+  hold more than 1 GB together.
+
+**How it works.** The realign's record of its rows (`KlustersDoc::PendingRealign`, the patch
+before this one) becomes an entry of the undo history when the job is over
+(`recordRealignUndo`). Undo and Redo hand it to `applyRealignBatch`, which writes the rows
+through `realignApplyRows` — the function the realign writes with — to the working files, the
+tables of both layers and the waveform overlay, records the moved rows so that the other
+spaces follow, and refreshes what the end of a realign job refreshes. The curation log gets an
+UNDO / REDO entry that points at the realign's.
+
+**Checked** (`test_realign_undo.py`, 33 checks, each on the saved files byte for byte):
+realign, undo, save leaves the untouched session; undo, redo leaves the realign's files; two
+clusters and one cluster twice, newest first; across a save; the PCA, RMS and centroid modes;
+with a child layer, from the parent view and from the child view; in a super-sampled space
+shown over another `.clu` space, every space's files; the refusal with another space shown;
+Align All as one step; a merge with its automatic realign as one step, labels and spike times
+both back; a nudge ending the realign steps. `undohistory_test` covers the new bookkeeping.
+The whole suite passes.
+
+**Not checked.** No real session: `ROADMAP.md` said this had to be validated on one before it
+went near `Ctrl+Z`, and it has not been. `check_realign_undo_on_session.py` (beside the
+self-tests) makes the same byte comparison on a copy of a real group and writes nothing to
+the session. Also not exercised: a stderiv space, the 1 GB cap end to end, the views after an
+undo (the tables are written by the same code as the files; no test looks at the screen), and
+an undo while the collision rows wait for a rebuild.
+
+</details>
 
 ---
 

@@ -852,6 +852,14 @@ void KlustersApp::createMenus()
             slotUpdateShownClusters(clusterPalette->selectedClusters());
     });
     // An undo or redo of a cluster information change: the palette showing it re-reads.
+    connect(doc, &KlustersDoc::undoRefused, this, [this](const QString& why) {
+        // After the command that asked: it ends by writing its own line to the status bar.
+        QTimer::singleShot(0, this, [this, why]() { statusBar()->showMessage(why, 10000); });
+    });
+    connect(doc, &KlustersDoc::realignStepApplied, this, [this]() {
+        // As when a realign job ends: the other spaces follow the moved spikes.
+        QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);
+    });
     connect(doc, &KlustersDoc::clusterAnnotationRestored, this, [this](bool childLayer, int){
         ClusterPalette* p = childLayer ? childPalette : clusterPalette;
         if (p) p->refreshUserClusterInformation(doc->currentElectrodeGroupID().toInt());
@@ -5839,6 +5847,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
             && mergedClusterId > 1 && !realignRunning && !realignBatchActive
             && doc->clusterHasMembers(mergedClusterId)) {
         doc->setLogTrigger(QStringLiteral("after_merge"));   // not the curator's realign: reset when the job is done
+        realignFollowsEdit = true;                 // ... and undone with the merge, as one step
         startRealignForCluster(mergedClusterId);   // RealignJob on realignQueue
         realignQueue->enqueue(new LambdaJob(       // post-merge, strictly after it
             [this]() { autoPostMerge(); },

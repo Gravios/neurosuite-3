@@ -61,7 +61,10 @@ def judge(tag, rep, flag):
     view = ("display.", "view.", "waveforms.", "trace.", "help.", "edit.selectAll")
     gone = [i for i in idle["enabled"] if i.startswith(view) and i not in busy["enabled"]]
     check(not gone, f"{tag}: the display, view and navigation commands stay enabled", gone)
-    check(set(after["enabled"]) == set(idle["enabled"]), f"{tag}: afterwards the same commands are enabled as before",
+    # A realign is an undo step: Undo is on afterwards.  Nothing else differs.
+    undo = {"edit.undo", "menu:Edit/Undo"} if tag == "realign" else set()
+    check(set(after["enabled"]) - undo == set(idle["enabled"]) - undo and undo <= set(after["enabled"]),
+          f"{tag}: afterwards the same commands are enabled as before" + (", and Undo" if undo else ""),
           sorted(set(after["enabled"]) ^ set(idle["enabled"])))
 
 

@@ -323,7 +323,10 @@ on the atoms, and whichever layer is shown.
   value is kept.
 - A change of a cluster's information (the palette's dialog: structure, type,
   quality, notes) is a step too. It does not count against the depth.
-- Not undoable: realign (also the automatic ones), nudge, Sort Spikes by Time.
+- A realign is a step (Align All one step; the automatic realign after a merge a part of
+  the merge's step), in the child view as in the parent view. See the manual's notes on
+  saving for its limits.
+- Not undoable: nudge (which also ends the undo of earlier realigns), Sort Spikes by Time.
 
 ## Repair Nesting
 

@@ -10,6 +10,7 @@
 #include "undohistory.h"
 
 #include <cstdio>
+#include <memory>
 #include <string>
 
 static int g_fail = 0, g_ran = 0;
@@ -137,6 +138,36 @@ int main()
         h.clear();
         h.push(parent(), 20, cap); h.push(parent(), 20, cap);
         check(h.steps(H::Undo) == 2 && h.newest(H::Undo).group == 0, "clear closes the open command and the join");
+    }
+    {   // realign entries: steps that count against the depth, no parent level, bytes kept
+        H h;
+        const auto rows = std::make_shared<const int>(0);
+        auto realign = [&](qint64 cost) { H::Entry e; e.realign = rows; e.cost = cost; return e; };
+        h.push(parent(), 20, cap);
+        h.push(realign(100), 20, cap);
+        check(h.steps(H::Undo) == 2 && h.parentLevels() == 1, "a realign is a step and stands for no parent level");
+        check(h.childEntriesOnTop(H::Undo) == 0, "a realign on top is no child edit");
+        for (int i = 0; i < 3; ++i) h.push(realign(10), 2, cap);
+        check(h.steps(H::Undo) == 2 && h.totalCost() == 20, "realign steps count against the depth and leave with it");
+
+        H g;                                           // the oldest step that keeps bytes goes, whole
+        g.beginGroup(); g.push(realign(5), 20, cap); g.push(realign(6), 20, cap); g.endGroup();
+        g.push(parent(), 20, cap);
+        g.joinNext(); g.push(realign(7), 20, cap);     // a merge and its automatic realign
+        g.push(realign(8), 20, cap);
+        check(g.steps(H::Undo) == 3 && g.totalCost() == 26, "three steps keeping 26 bytes");
+        check(g.dropOldestCostly() && g.totalCost() == 15 && g.steps(H::Undo) == 2, "the oldest costly step is dropped with all its entries");
+        check(g.dropOldestCostly() && g.totalCost() == 8 && g.steps(H::Undo) == 2 && g.parentLevels() == 1,
+              "from a mixed step only the entries that keep bytes go: the merge stays a step");
+        g.put(H::Redo, g.take(H::Undo));
+        check(g.dropOldestCostly() && g.totalCost() == 0 && g.isEmpty(H::Redo), "then the redo side's");
+        check(!g.dropOldestCostly(), "nothing left to drop");
+
+        H r;                                           // a nudge: every realign entry goes, the rest stays
+        r.push(parent(), 20, cap); r.push(realign(1), 20, cap); r.push(note(), 20, cap); r.push(realign(1), 20, cap);
+        r.put(H::Redo, r.take(H::Undo));
+        check(r.removeRealignEntries() == 2 && r.entryCount(H::Undo) == 2 && r.isEmpty(H::Redo) && r.totalCost() == 0,
+              "removeRealignEntries drops them on both sides and nothing else");
     }
     std::printf("undohistory: %d checks, %d failed\n", g_ran, g_fail);
     return g_fail ? 1 : 0;

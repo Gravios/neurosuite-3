@@ -2077,6 +2077,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     PendingRealign pending;
     pending.method         = ws.method;
     pending.clusterId      = clusterId;
+    pending.onChildLayer   = (childData != nullptr && &data() == childData);
+    pending.logIdx         = logActionOpen ? lastLoggedActionIdx : -1;
     pending.nChan          = nChan;
     pending.nSamp          = nSamp;
     pending.bytesPerSpike  = bytesPerSpike;
@@ -2424,7 +2426,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
 
     // spkFileName already points to pendingSpkPath (set on open and kept
     // permanently) — no redirect needed here.
-    pendingRealign.push_back(std::move(pending));
+    {
+        const auto batch = std::make_shared<const PendingRealign>(std::move(pending));
+        pendingRealign.push_back(batch);
+        realignsToRecord.push_back(batch);       // an undo step once the job is over (recordRealignUndo)
+    }
     {
         // Rows whose time changed, for followMovedSpikes; recorded before the
         // generation bump, which marks the times they moved from.
@@ -2522,6 +2528,154 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             std::chrono::steady_clock::now().time_since_epoch()).count());
 
     return true;
+}
+
+// ---------------------------------------------------------------------------
+// Undo and redo of a realign.
+//
+// A realign leaves a record of every row it rewrote (PendingRealign: the time,
+// the feature row and the waveform row, as they were and as it left them).  When
+// the job is over the record becomes a step of the undo history
+// (recordRealignUndo); Undo writes the rows as they were and Redo as the realign
+// left them, both through realignApplyRows, the function the realign itself
+// writes with.  The other feature spaces follow the moved spikes as they do
+// after a realign.
+//
+// What it relies on: the rows in the files are the ones the record expects.  The
+// history's order gives that for realigns and edits; a nudge rewrites rows
+// without a record, so it drops the realign steps (dropRealignUndo).
+// ---------------------------------------------------------------------------
+bool KlustersDoc::applyRealignBatch(const PendingRealign& batch, bool forward, QString* error)
+{
+    const auto fail = [&](const QString& why) { if (error) *error = why; return false; };
+    if (!clusteringData) return fail(tr("No document is open."));
+    if (batch.method != activeMethod)
+        return fail(tr("This realign ran in the %1 feature space: show that space to %2 it.")
+                        .arg(batch.method.isEmpty() ? tr("untagged") : batch.method,
+                             forward ? tr("redo") : tr("undo")));
+    QString wsErr;
+    // A space other than the .clu's own: its working copies in place and loaded, as before a realign.
+    if (!prepareShownSpaceForRealign(&wsErr)) return fail(wsErr);
+    const SpaceFiles ws = workingSetOf(activeMethod, &wsErr, /*seed*/ false);
+    if (!ws.valid) return fail(tr("The %1 space has no working copies to write (%2).").arg(activeMethod, wsErr));
+    if (!ws.isOrigin && (activeSpkPath != ws.spkWork || activeFetPath != ws.fetWork))
+        return fail(tr("The %1 space is shown from its saved files, not its working copies.").arg(activeMethod));
+    const Data& d = data();
+    if (d.nbOfChannels() != batch.nChan || d.nbSamplesPerWaveform() != batch.nSamp
+        || d.timeDimension() != batch.timeDim)
+        return fail(tr("The %1 space no longer has the shape this realign was done in.").arg(activeMethod));
+
+    FILE* spkW = fopen(ws.spkWork.toLocal8Bit().constData(), "r+b");
+    FILE* resW = fopen(pendingResPath.toLocal8Bit().constData(), "r+b");
+    FILE* fetW = fopen(ws.fetWork.toLocal8Bit().constData(), "r+b");
+    if (!spkW || !resW || !fetW) {
+        if (spkW) fclose(spkW);
+        if (resW) fclose(resW);
+        if (fetW) fclose(fetW);
+        return fail(tr("Cannot open the working files of the %1 space for writing.").arg(activeMethod));
+    }
+
+    // No view computation may read rows half written.
+    for (int i = 0; i < viewList->count(); ++i) viewList->at(i)->supersedeAllViewThreads();
+
+    QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
+    realignApplyRows(batch.records, forward, batch.bytesPerSpike, batch.timeDim, batch.nFeatCols,
+                     spkW, resW, fetW, clusteringData, childData, overlayBatch);
+    fclose(spkW);
+    fclose(resW);
+    fclose(fetW);
+    SpkMemoryCache::instance().markWritten(ws.spkWork);
+
+    // The spikes whose time changed: the other spaces follow them, as after the realign.
+    std::vector<int64_t> moved;
+    for (const PendingSpkRecord& r : batch.records)
+        if (r.ts != r.origTs) moved.push_back(r.destPos);
+    recordMovedRows(moved);
+    ++spikeTimesGeneration;
+    if (!ws.isOrigin) syncedGeneration.insert(ws.fetCommitted, spikeTimesGeneration.load());
+
+    clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);
+    if (childData) childData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);
+    modified = true;
+
+    // What the application does when a realign job ends (applyRealignResult).
+    const int id = batch.clusterId;
+    const int parent = batch.onChildLayer ? parentOfChild(id) : id;
+    if (parent > 0) refeaturizeRealignedClusters(QList<int>{ parent });
+    invalidateWaveformCache(id);
+    invalidateCorrelogramCache(id);
+    refreshCollisionRows();
+    forceClusterRefresh(id);
+    notifyClusterFeaturesReprojected(id);
+    if (batch.onChildLayer && parent > 0) notifyClusterFeaturesReprojected(parent);
+    emit realignStepApplied();
+    return true;
+}
+
+void KlustersDoc::logRealignUndoRedo(const PendingRealign& batch, bool redo)
+{
+    if (!curationLogger || !curationLogger->isOpen())
+        return;
+    qlonglong moved = 0;
+    for (const PendingSpkRecord& r : batch.records) moved += (r.ts != r.origTs);
+    curationLogger->beginAction(redo ? CurationLogger::ActionType::REDO : CurationLogger::ActionType::UNDO,
+                                QList<ClusterSnapshot>());
+    curationLogger->recordActionDetails({
+        { QStringLiteral("edit"),    QStringLiteral("realign") },
+        { QStringLiteral("layer"),   batch.onChildLayer ? QStringLiteral("child") : QStringLiteral("parent") },
+        { QStringLiteral("cluster"), batch.clusterId },
+        { QStringLiteral("n_rows"),  static_cast<qlonglong>(batch.records.size()) },
+        { QStringLiteral("n_moved"), moved },
+        { QStringLiteral("reverts_action_idx"), batch.logIdx },
+    });
+    curationLogger->markCurrentActionNotUndoable();
+    curationLogger->setUndone(batch.logIdx, !redo);
+}
+
+int KlustersDoc::recordRealignUndo(bool joinPrevious)
+{
+    std::vector<std::shared_ptr<const PendingRealign>> batches;
+    batches.swap(realignsToRecord);
+    if (batches.empty()) return 0;
+    if (joinPrevious) undoHistory.joinNext();
+    const bool several = batches.size() > 1;
+    if (several && !joinPrevious) undoHistory.beginGroup();
+    for (const std::shared_ptr<const PendingRealign>& b : batches) {
+        UndoEntry u;
+        u.realign = b;
+        // The rows kept: the time and feature rows twice, the old waveform row where it
+        // is not also the new one (that one the overlay holds anyway until a save, and
+        // this entry after it).
+        qint64 cost = 0;
+        for (const PendingSpkRecord& r : b->records)
+            cost += static_cast<qint64>(2 * sizeof(int64_t)) * b->timeDim
+                  + (r.origSpk == r.spk ? 1 : 2) * b->bytesPerSpike;
+        u.cost = cost;
+        if (joinPrevious) undoHistory.joinNext();      // each joins the step before it
+        pushUndoEntry(u);
+    }
+    if (several && !joinPrevious) undoHistory.endGroup();
+    qint64 mine = 0;
+    for (const std::shared_ptr<const PendingRealign>& b : batches)
+        for (const PendingSpkRecord& r : b->records)
+            mine += static_cast<qint64>(2 * sizeof(int64_t)) * b->timeDim
+                  + (r.origSpk == r.spk ? 1 : 2) * b->bytesPerSpike;
+    while (undoHistory.totalCost() > realignUndoBudgetBytes && undoHistory.dropOldestCostly()) {}
+    if (mine > realignUndoBudgetBytes)
+        emit undoRefused(tr("This realign rewrote %1 MB of rows, more than is kept for an undo (%2 MB): "
+                            "it cannot be undone.  Close without saving to go back.")
+                             .arg(mine >> 20).arg(realignUndoBudgetBytes >> 20));
+    refreshUndoRedoEnable();
+    return static_cast<int>(batches.size());
+}
+
+void KlustersDoc::dropRealignUndo()
+{
+    realignsToRecord.clear();
+    if (undoHistory.removeRealignEntries() > 0) {
+        Data::setUndoLevelsNeeded(undoHistory.parentLevels() + 1);
+        refreshUndoRedoEnable();
+    }
 }
 
 void KlustersDoc::invalidateWaveformCache(int clusterId)
@@ -3841,6 +3995,9 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     //Publish the nudge's overlay batch (see the realign's twin above).
     clusteringData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);
     if (childData) childData->applySpkOverlayBatch(overlayBatch, /*revertible*/ false);
+    // These rows were rewritten without a record: the steps that would undo earlier
+    // realigns no longer describe the files.
+    dropRealignUndo();
 
     // ── Mean-waveform dump: AFTER pass + write file ────────────────────────
     if (dumpMean) {
