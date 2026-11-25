@@ -63,6 +63,24 @@ struct Result {
 bool clusterShifts(int16_t* waveforms, int64_t nSpikes, int nChan, int nSamp,
                    const Options& options, Result& result);
 
+/** Every spike's score against the cluster's mean as it stands, with no lag searched: what
+ *  the realign reports when the passes are over (they keep a score only for the spikes they
+ *  moved).  The mean is NOT rolled onto the alignment sample here; the channel mask and the
+ *  correlation window are those of @p options (its maxShift, minScore and iterations are not
+ *  used).  A spike or a mean without energy scores 0.  False when the xcorr back end failed;
+ *  the scores are then 0. */
+bool finalScores(const int16_t* waveforms, int64_t nSpikes, int nChan, int nSamp,
+                 const Options& options, std::vector<float>& scores);
+
+/// What the realign log says of a cluster's scores and shifts.
+struct Summary {
+    float scoreMin = 2.0f, scoreMax = -2.0f, scoreMean = 0.0f;
+    int   below = 0;                       ///< spikes scoring under the threshold
+    int   shiftMin = 0, shiftMax = 0;
+    float shiftMeanAbs = 0.0f;
+};
+Summary summarize(const std::vector<float>& scores, const std::vector<int>& shifts, float minScore);
+
 /** The per-sample weights of the correlation window, in the template's frame (its peak at
  *  @p peakSample): gauss = exp(-((s-p)/(w/2))^2 / 2), hann = the raised cosine over
  *  [p-w, p+w] and zero outside, template = the channel-summed energy of @p tmpl

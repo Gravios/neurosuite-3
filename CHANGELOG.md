@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: the final scores and their summary are library functions](#2026-11-24--realign-the-final-scores-and-their-summary-are-library-functions) |
 | 2026-11-24 | [Realign: reading a cluster's rows is three plain functions](#2026-11-24--realign-reading-a-clusters-rows-is-three-plain-functions) |
 | 2026-11-24 | [Realign: the pass loop is a library function](#2026-11-24--realign-the-pass-loop-is-a-library-function) |
 | 2026-11-24 | [Klusters developer docs: commands and preferences](#2026-11-24--klusters-developer-docs-commands-and-preferences) |
@@ -281,6 +282,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: the final scores and their summary are library functions
+
+The scoring that closes a realign's log moved out of `KlustersDoc::realignSpikes` into `realign_pass`, where it shares the mean template and the channel mask with the pass loop. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What moved.** When the passes are over, the realign scores every spike against the cluster's
+mean and writes the minimum, maximum and mean score, the number under the threshold and the
+range of the shifts to its log. That computation repeated the mean template and the
+channel mask of the passes inside `KlustersDoc::realignSpikes`. It is now
+`realign_pass::finalScores` and `realign_pass::summarize` beside the pass loop, which share
+the mean and the mask with it; `realignSpikes` is 90 lines shorter.
+
+**Checked.** `klustersshared_realign_pass_test` holds the old computation as well and requires
+the same scores and the same summary, value for value, in its 1,080 cases; three deliberate
+changes to the new functions fail it. The application before and after writes the same whole
+realign log and the same files for the eighteen realigns of the previous entry.
+
+</details>
 
 ---
 

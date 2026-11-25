@@ -5,6 +5,7 @@
 #include "realign_xcorr.h"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <utility>
@@ -13,6 +14,62 @@ namespace realign_pass {
 
 namespace {
 const double pi = 3.14159265358979323846;
+
+// The mean of the spikes, per element: the int64 sum divided by n, truncated toward zero.
+std::vector<int16_t> meanTemplate(const int16_t* waveforms, int64_t N, size_t spkElems)
+{
+    std::vector<int64_t> acc(spkElems, 0);
+    for (int64_t i = 0; i < N; ++i) {
+        const int16_t* w = waveforms + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+        for (size_t e = 0; e < spkElems; ++e) acc[e] += static_cast<int64_t>(w[e]);
+    }
+    std::vector<int16_t> tmpl(spkElems);
+    for (size_t e = 0; e < spkElems; ++e) tmpl[e] = static_cast<int16_t>(acc[e] / N);
+    return tmpl;
+}
+
+// 1 for the channels that count: the topChannels with the largest peak of the template, or all.
+std::vector<uint8_t> channelsThatCount(const int16_t* tmpl, int nChan, int nSamp, int topChannels)
+{
+    std::vector<uint8_t> chanUse(static_cast<size_t>(nChan), 1);
+    if (!(topChannels > 0 && topChannels < nChan)) return chanUse;
+    std::vector<std::pair<int64_t, int>> chanAmp(static_cast<size_t>(nChan));
+    for (int ch = 0; ch < nChan; ++ch) {
+        int64_t pk = 0;
+        for (int t = 0; t < nSamp; ++t) {
+            const int64_t v = std::abs(static_cast<int64_t>(tmpl[static_cast<size_t>(ch * nSamp + t)]));
+            if (v > pk) pk = v;
+        }
+        chanAmp[static_cast<size_t>(ch)] = { pk, ch };
+    }
+    std::partial_sort(chanAmp.begin(), chanAmp.begin() + topChannels, chanAmp.end(),
+                      [](const auto& a, const auto& b) { return a.first > b.first; });
+    std::fill(chanUse.begin(), chanUse.end(), 0);
+    for (int k = 0; k < topChannels; ++k)
+        chanUse[static_cast<size_t>(chanAmp[static_cast<size_t>(k)].second)] = 1;
+    return chanUse;
+}
+
+// Scratch copies of the spikes and the template with the channels that do not count zeroed:
+// such a channel is zero on both sides of the correlation and adds nothing at any lag.
+struct Masked {
+    std::vector<int16_t> waveforms, tmpl;
+    void apply(const int16_t* wav, int64_t N, const std::vector<int16_t>& t,
+               const std::vector<uint8_t>& chanUse, int nChan, int nSamp)
+    {
+        const size_t spkElems = t.size();
+        tmpl = t;
+        waveforms.assign(wav, wav + static_cast<size_t>(N) * spkElems);
+        for (int ch = 0; ch < nChan; ++ch) {
+            if (chanUse[static_cast<size_t>(ch)]) continue;
+            std::fill(tmpl.begin() + ch * nSamp, tmpl.begin() + (ch + 1) * nSamp, int16_t(0));
+            for (int64_t i = 0; i < N; ++i) {
+                int16_t* row = waveforms.data() + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+                std::fill(row + ch * nSamp, row + (ch + 1) * nSamp, int16_t(0));
+            }
+        }
+    }
+};
 }
 
 std::vector<float> kernelWeights(Kernel kernel, int kernelWidth, int peakSample,
@@ -82,32 +139,10 @@ bool clusterShifts(int16_t* waveforms, int64_t N, int nChan, int nSamp,
 
     for (int iter = 0; iter < o.iterations; ++iter) {
         // The mean template of the spikes as aligned so far.
-        std::vector<int64_t> acc(spkElems, 0);
-        for (int64_t i = 0; i < N; ++i) {
-            const int16_t* w = waveforms + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            for (size_t e = 0; e < spkElems; ++e) acc[e] += static_cast<int64_t>(w[e]);
-        }
-        std::vector<int16_t> tmpl(spkElems);
-        for (size_t e = 0; e < spkElems; ++e) tmpl[e] = static_cast<int16_t>(acc[e] / N);
+        std::vector<int16_t> tmpl = meanTemplate(waveforms, N, spkElems);
 
         // The channels that count: the topChannels largest of the template, or all.
-        std::vector<uint8_t> chanUse(static_cast<size_t>(nChan), 1);
-        if (masked) {
-            std::vector<std::pair<int64_t, int>> chanAmp(static_cast<size_t>(nChan));
-            for (int ch = 0; ch < nChan; ++ch) {
-                int64_t pk = 0;
-                for (int t = 0; t < nSamp; ++t) {
-                    const int64_t v = std::abs(static_cast<int64_t>(tmpl[static_cast<size_t>(ch * nSamp + t)]));
-                    if (v > pk) pk = v;
-                }
-                chanAmp[static_cast<size_t>(ch)] = { pk, ch };
-            }
-            std::partial_sort(chanAmp.begin(), chanAmp.begin() + o.topChannels, chanAmp.end(),
-                              [](const auto& a, const auto& b) { return a.first > b.first; });
-            std::fill(chanUse.begin(), chanUse.end(), 0);
-            for (int k = 0; k < o.topChannels; ++k)
-                chanUse[static_cast<size_t>(chanAmp[static_cast<size_t>(k)].second)] = 1;
-        }
+        const std::vector<uint8_t> chanUse = channelsThatCount(tmpl.data(), nChan, nSamp, o.topChannels);
 
         // Roll the template so that its peak is on peakSample.  Without this the
         // correlation would move every spike away from the true peak.
@@ -136,24 +171,10 @@ bool clusterShifts(int16_t* waveforms, int64_t N, int nChan, int nSamp,
         // The mask goes on scratch copies for the correlation only: the buffer itself is
         // needed whole for the next pass's template and by the caller afterwards.  A
         // masked channel is zero on both sides of the correlation and adds nothing at any lag.
-        const int16_t* xcorrWav  = waveforms;
-        const int16_t* xcorrTmpl = tmpl.data();
-        std::vector<int16_t> wavMasked;
-        std::vector<int16_t> tmplMasked;
-        if (masked) {
-            tmplMasked = tmpl;
-            wavMasked.assign(waveforms, waveforms + static_cast<size_t>(N) * spkElems);
-            for (int ch = 0; ch < nChan; ++ch) {
-                if (chanUse[static_cast<size_t>(ch)]) continue;
-                std::fill(tmplMasked.begin() + ch * nSamp, tmplMasked.begin() + (ch + 1) * nSamp, int16_t(0));
-                for (int64_t i = 0; i < N; ++i) {
-                    int16_t* row = wavMasked.data() + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-                    std::fill(row + ch * nSamp, row + (ch + 1) * nSamp, int16_t(0));
-                }
-            }
-            xcorrWav  = wavMasked.data();
-            xcorrTmpl = tmplMasked.data();
-        }
+        Masked m;
+        if (masked) m.apply(waveforms, N, tmpl, chanUse, nChan, nSamp);
+        const int16_t* xcorrWav  = masked ? m.waveforms.data() : waveforms;
+        const int16_t* xcorrTmpl = masked ? m.tmpl.data() : tmpl.data();
 
         // The correlation window for this pass, on the template as rolled and masked.
         std::vector<int>   sh(static_cast<size_t>(N), 0);
@@ -179,6 +200,47 @@ bool clusterShifts(int16_t* waveforms, int64_t N, int nChan, int nSamp,
         if (changed == 0) break;
     }
     return true;
+}
+
+bool finalScores(const int16_t* waveforms, int64_t N, int nChan, int nSamp,
+                 const Options& o, std::vector<float>& scores)
+{
+    scores.assign(static_cast<size_t>(std::max<int64_t>(N, 0)), 0.0f);
+    const size_t spkElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    if (N <= 0 || spkElems == 0) return true;
+    const std::vector<int16_t> tmpl = meanTemplate(waveforms, N, spkElems);
+    const bool masked = o.topChannels > 0 && o.topChannels < nChan;
+    Masked m;
+    if (masked) m.apply(waveforms, N, tmpl, channelsThatCount(tmpl.data(), nChan, nSamp, o.topChannels), nChan, nSamp);
+    const int16_t* wav = masked ? m.waveforms.data() : waveforms;
+    const int16_t* t   = masked ? m.tmpl.data() : tmpl.data();
+    const std::vector<float> kw = kernelWeights(o.kernel, o.kernelWidth, o.peakSample, nSamp, nChan, t);
+    std::vector<int> noShift(static_cast<size_t>(N), 0);
+    // No lag searched (maxShift 0); the kernel's own floor for a defined score.
+    return XcorrDispatch::computeWeighted(wav, t, kw.empty() ? nullptr : kw.data(), static_cast<int>(N),
+                                          nChan, nSamp, 0, 0.005f, noShift.data(), scores.data()) == 0;
+}
+
+Summary summarize(const std::vector<float>& scores, const std::vector<int>& shifts, float minScore)
+{
+    Summary r;
+    const size_t n = scores.size();
+    float scoreSum = 0.0f, shiftAbsSum = 0.0f;
+    r.shiftMin = INT_MAX; r.shiftMax = INT_MIN;
+    for (size_t i = 0; i < n; ++i) {
+        const float s  = scores[i];
+        const int   sh = shifts[i];
+        if (s < r.scoreMin) r.scoreMin = s;
+        if (s > r.scoreMax) r.scoreMax = s;
+        scoreSum += s;
+        if (s < minScore) ++r.below;
+        if (sh < r.shiftMin) r.shiftMin = sh;
+        if (sh > r.shiftMax) r.shiftMax = sh;
+        shiftAbsSum += static_cast<float>(sh < 0 ? -sh : sh);
+    }
+    r.scoreMean    = scoreSum / static_cast<float>(n);
+    r.shiftMeanAbs = shiftAbsSum / static_cast<float>(n);
+    return r;
 }
 
 } // namespace realign_pass

@@ -1,6 +1,7 @@
 // realign_pass_test.cpp -- realign_pass::clusterShifts against the code it was lifted from.
 //
-// The pass loop was a part of KlustersDoc::realignSpikes until 2026-11-24.  The copy of
+// The pass loop was a part of KlustersDoc::realignSpikes until 2026-11-24, and so were the
+// final scores and their summary (frozenStats, from the same file one commit later).  The copy of
 // that loop below (frozenLoop, realignKernelWeights) is the text of klustersdoc_realign.cpp
 // at commit 554a058, unchanged but for M_PI written out: the reference the shared function
 // must reproduce exactly -- every shift, every score, every rolled sample -- over the
@@ -15,6 +16,7 @@
 #include "realign_xcorr.h"
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -246,6 +248,115 @@ bool frozenLoop(std::vector<int16_t>& wavBuf, int64_t N, int nChan, int nSamp, i
     for (size_t k = 1; k < log.numbers.size(); k += 2) movedPerPass.push_back(log.numbers[k]);
     return true;
 }
+
+// The scores and their summary as realignSpikes computed them for its log (0fcbdce).
+struct FrozenStats { std::vector<float> scores; float scoreMin, scoreMax, scoreMean, shiftMean; int nBelow, shiftMin, shiftMax; };
+FrozenStats frozenStats(const std::vector<int16_t>& wavBuf, int64_t N, int nChan, int nSamp, int peakSamp0,
+                        int nTopChan, RealignKernel kernel, int kernelWidth,
+                        const std::vector<int>& cumShift, float minScore)
+{
+    const size_t spkElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+        // Scores: bestScore[i] > 0 only for shifted spikes.
+        // Collect all per-spike final scores (run one more xcorr pass
+        // on the final template to get scores for unshifted spikes too).
+        std::vector<int64_t> acc2(spkElems, 0);
+        for (int64_t i = 0; i < N; ++i) {
+            const int16_t* w = wavBuf.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            for (size_t e = 0; e < spkElems; ++e)
+                acc2[e] += static_cast<int64_t>(w[e]);
+        }
+        std::vector<int16_t> finalTmpl(spkElems);
+        for (size_t e = 0; e < spkElems; ++e)
+            finalTmpl[e] = static_cast<int16_t>(acc2[e] / N);
+
+        std::vector<int>   dummySh(static_cast<size_t>(N), 0);
+        std::vector<float> allScores(static_cast<size_t>(N), 0.0f);
+
+        // Apply top-K mask to scratch copies so the final score reflects the
+        // same channel subset that drove the alignment (consistent with the
+        // iteration-loop xcorr).  Non-destructive — wavBuf and finalTmpl are
+        // still needed below for the post-realign mean accumulation.
+        const int16_t* scoreWav  = wavBuf.data();
+        const int16_t* scoreTmpl = finalTmpl.data();
+        std::vector<int16_t> finalWavMasked;
+        std::vector<int16_t> finalTmplMasked;
+        if (nTopChan > 0 && nTopChan < nChan) {
+            // Recompute chanUse from the final template (cluster mean may
+            // have shifted channel dominance across iterations).
+            std::vector<std::pair<int64_t,int>> chanAmp(
+                static_cast<size_t>(nChan));
+            for (int ch = 0; ch < nChan; ++ch) {
+                int64_t pk = 0;
+                for (int t = 0; t < nSamp; ++t) {
+                    const int64_t v = std::abs(static_cast<int64_t>(
+                        finalTmpl[static_cast<size_t>(ch * nSamp + t)]));
+                    if (v > pk) pk = v;
+                }
+                chanAmp[static_cast<size_t>(ch)] = {pk, ch};
+            }
+            std::partial_sort(chanAmp.begin(),
+                              chanAmp.begin() + nTopChan,
+                              chanAmp.end(),
+                              [](const auto& a, const auto& b){
+                                  return a.first > b.first;
+                              });
+            std::vector<uint8_t> chanUseFinal(
+                static_cast<size_t>(nChan), 0);
+            for (int k = 0; k < nTopChan; ++k)
+                chanUseFinal[static_cast<size_t>(
+                    chanAmp[static_cast<size_t>(k)].second)] = 1;
+
+            finalTmplMasked = finalTmpl;
+            finalWavMasked  = wavBuf;
+            for (int ch = 0; ch < nChan; ++ch) {
+                if (chanUseFinal[static_cast<size_t>(ch)]) continue;
+                std::fill(finalTmplMasked.begin() + ch * nSamp,
+                          finalTmplMasked.begin() + (ch + 1) * nSamp,
+                          int16_t(0));
+                for (int64_t i = 0; i < N; ++i) {
+                    int16_t* row = finalWavMasked.data()
+                                 + static_cast<ptrdiff_t>(i)
+                                 * static_cast<ptrdiff_t>(spkElems);
+                    std::fill(row + ch * nSamp,
+                              row + (ch + 1) * nSamp,
+                              int16_t(0));
+                }
+            }
+            scoreWav  = finalWavMasked.data();
+            scoreTmpl = finalTmplMasked.data();
+        }
+
+        // Use maxShift=0 so no shifting occurs — we just want the scores, under
+        // the same window the passes aligned with.
+        const std::vector<float> kwFinal = realignKernelWeights(kernel, kernelWidth, peakSamp0,
+                                                                nSamp, nChan, scoreTmpl);
+        XcorrDispatch::computeWeighted(
+            scoreWav, scoreTmpl, kwFinal.empty() ? nullptr : kwFinal.data(),
+            static_cast<int>(N), nChan, nSamp,
+            0, 0.005f, dummySh.data(), allScores.data());
+
+        float scoreMin =  2.0f, scoreMax = -2.0f, scoreSum = 0.0f;
+        int   nBelow   = 0;
+        int   shiftMin = INT_MAX, shiftMax = INT_MIN;
+        float shiftAbsSum = 0.0f;
+
+        for (int64_t i = 0; i < N; ++i) {
+            const float s  = allScores[static_cast<size_t>(i)];
+            const int   sh = cumShift[static_cast<size_t>(i)];
+            if (s < scoreMin) scoreMin = s;
+            if (s > scoreMax) scoreMax = s;
+            scoreSum += s;
+            if (s < minScore) ++nBelow;
+            if (sh < shiftMin) shiftMin = sh;
+            if (sh > shiftMax) shiftMax = sh;
+            shiftAbsSum += static_cast<float>(sh < 0 ? -sh : sh);
+        }
+        const float scoreMean = scoreSum / static_cast<float>(N);
+        const float shiftMean = shiftAbsSum / static_cast<float>(N);
+
+        return { allScores, scoreMin, scoreMax, scoreMean, shiftMean, nBelow, shiftMin, shiftMax };
+}
 // ---- frozen copy: end -----------------------------------------------------------------
 
 // A small deterministic generator: the two implementations get the same buffers whatever
@@ -359,7 +470,7 @@ void sameAsBefore()
     const struct { Kernel kernel; int width; } windows[] = {
         { Kernel::None, 1 }, { Kernel::Gauss, 6 }, { Kernel::Hann, 8 }, { Kernel::Template, 1 } };
     const int maxShift = 8;
-    int cases = 0, moved = 0;
+    int cases = 0, moved = 0, scored = 0;
     for (const Cluster& c : clusters())
         for (float minScore : thresholds)
             for (int nIter : passes)
@@ -383,8 +494,24 @@ void sameAsBefore()
                               scoreA == res.score ? "same" : "DIFFER", a == b ? "same" : "DIFFER",
                               movedA == res.moved ? "same" : "DIFFER");
                         for (int v : res.shift) moved += (v != 0);
+
+                        // ... and what the log reports of the result
+                        const FrozenStats f = frozenStats(a, c.n, c.nChan, c.nSamp, c.peak, top,
+                                                          frozenKernel(w.kernel), w.width, shiftA, minScore);
+                        std::vector<float> scores;
+                        const bool okS = realign_pass::finalScores(b.data(), c.n, c.nChan, c.nSamp, o, scores);
+                        const realign_pass::Summary sm = realign_pass::summarize(scores, res.shift, minScore);
+                        CHECK(okS && scores == f.scores, "%s, top %d, window %s: the final scores differ from the old code's",
+                              c.name.c_str(), top, kernelName(w.kernel));
+                        CHECK(sm.scoreMin == f.scoreMin && sm.scoreMax == f.scoreMax && sm.scoreMean == f.scoreMean
+                              && sm.below == f.nBelow && sm.shiftMin == f.shiftMin && sm.shiftMax == f.shiftMax
+                              && sm.shiftMeanAbs == f.shiftMean,
+                              "%s, threshold %.2f, top %d, window %s: the summary differs from the old code's",
+                              c.name.c_str(), static_cast<double>(minScore), top, kernelName(w.kernel));
+                        for (float v : scores) scored += (v != 0.0f);
                     }
     std::printf("same as before: %d cases, %d moved spikes compared\n", cases, moved);
+    CHECK(scored > 250000, "only %d non-zero final scores compared", scored);
     CHECK(moved > 100000, "the comparison moved only %d spikes: it is not testing much", moved);
 }
 
@@ -418,6 +545,13 @@ void edges()
     CHECK(realign_pass::clusterShifts(w.data(), c.n, c.nChan, c.nSamp, o, res), "zero passes: failed");
     CHECK(w == c.wav && res.moved.empty() && std::all_of(res.shift.begin(), res.shift.end(), [](int v) { return v == 0; }),
           "zero passes: something moved");
+
+    std::vector<float> scores(3, 1.0f);
+    CHECK(realign_pass::finalScores(nullptr, 0, 4, 32, o, scores) && scores.empty(), "final scores of no spikes: not empty");
+    const realign_pass::Summary sm = realign_pass::summarize({ 0.5f, 0.05f, 0.9f }, { -2, 0, 3 }, 0.10f);
+    CHECK(sm.scoreMin == 0.05f && sm.scoreMax == 0.9f && sm.below == 1 && sm.shiftMin == -2 && sm.shiftMax == 3
+          && std::fabs(sm.shiftMeanAbs - 5.0f / 3.0f) < 1e-6f && std::fabs(sm.scoreMean - 1.45f / 3.0f) < 1e-6f,
+          "summarize: wrong on three spikes");
 
     // rollSpike: new[t] = old[(t + shift) mod nSamp]; the inverse shift restores the spike.
     std::vector<int16_t> spike = { 0, 1, 2, 3, 4,   10, 11, 12, 13, 14 };

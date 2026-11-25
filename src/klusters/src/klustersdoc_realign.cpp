@@ -1734,104 +1734,19 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // Score / shift statistics
     // -----------------------------------------------------------------------
     {
-        // Scores: bestScore[i] > 0 only for shifted spikes.
-        // Collect all per-spike final scores (run one more xcorr pass
-        // on the final template to get scores for unshifted spikes too).
-        std::vector<int64_t> acc2(spkElems, 0);
-        for (int64_t i = 0; i < N; ++i) {
-            const int16_t* w = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            for (size_t e = 0; e < spkElems; ++e)
-                acc2[e] += static_cast<int64_t>(w[e]);
-        }
-        std::vector<int16_t> finalTmpl(spkElems);
-        for (size_t e = 0; e < spkElems; ++e)
-            finalTmpl[e] = static_cast<int16_t>(acc2[e] / N);
-
-        std::vector<int>   dummySh(static_cast<size_t>(N), 0);
-        std::vector<float> allScores(static_cast<size_t>(N), 0.0f);
-
-        // Apply top-K mask to scratch copies so the final score reflects the
-        // same channel subset that drove the alignment (consistent with the
-        // iteration-loop xcorr).  Non-destructive — wavBuf and finalTmpl are
-        // still needed below for the post-realign mean accumulation.
-        const int16_t* scoreWav  = wavBuf.data();
-        const int16_t* scoreTmpl = finalTmpl.data();
-        std::vector<int16_t> finalWavMasked;
-        std::vector<int16_t> finalTmplMasked;
-        if (nTopChan > 0 && nTopChan < nChan) {
-            // Recompute chanUse from the final template (cluster mean may
-            // have shifted channel dominance across iterations).
-            std::vector<std::pair<int64_t,int>> chanAmp(
-                static_cast<size_t>(nChan));
-            for (int ch = 0; ch < nChan; ++ch) {
-                int64_t pk = 0;
-                for (int t = 0; t < nSamp; ++t) {
-                    const int64_t v = std::abs(static_cast<int64_t>(
-                        finalTmpl[static_cast<size_t>(ch * nSamp + t)]));
-                    if (v > pk) pk = v;
-                }
-                chanAmp[static_cast<size_t>(ch)] = {pk, ch};
-            }
-            std::partial_sort(chanAmp.begin(),
-                              chanAmp.begin() + nTopChan,
-                              chanAmp.end(),
-                              [](const auto& a, const auto& b){
-                                  return a.first > b.first;
-                              });
-            std::vector<uint8_t> chanUseFinal(
-                static_cast<size_t>(nChan), 0);
-            for (int k = 0; k < nTopChan; ++k)
-                chanUseFinal[static_cast<size_t>(
-                    chanAmp[static_cast<size_t>(k)].second)] = 1;
-
-            finalTmplMasked = finalTmpl;
-            finalWavMasked  = wavBuf;
-            for (int ch = 0; ch < nChan; ++ch) {
-                if (chanUseFinal[static_cast<size_t>(ch)]) continue;
-                std::fill(finalTmplMasked.begin() + ch * nSamp,
-                          finalTmplMasked.begin() + (ch + 1) * nSamp,
-                          int16_t(0));
-                for (int64_t i = 0; i < N; ++i) {
-                    int16_t* row = finalWavMasked.data()
-                                 + static_cast<ptrdiff_t>(i)
-                                 * static_cast<ptrdiff_t>(spkElems);
-                    std::fill(row + ch * nSamp,
-                              row + (ch + 1) * nSamp,
-                              int16_t(0));
-                }
-            }
-            scoreWav  = finalWavMasked.data();
-            scoreTmpl = finalTmplMasked.data();
-        }
-
-        // Use maxShift=0 so no shifting occurs — we just want the scores, under
-        // the same window the passes aligned with.
-        const std::vector<float> kwFinal = realign_pass::kernelWeights(kernel, kernelWidth, peakSamp0,
-                                                                nSamp, nChan, scoreTmpl);
-        XcorrDispatch::computeWeighted(
-            scoreWav, scoreTmpl, kwFinal.empty() ? nullptr : kwFinal.data(),
-            static_cast<int>(N), nChan, nSamp,
-            0, 0.005f, dummySh.data(), allScores.data());
-
-        float scoreMin =  2.0f, scoreMax = -2.0f, scoreSum = 0.0f;
-        int   nBelow   = 0;
-        int   shiftMin = INT_MAX, shiftMax = INT_MIN;
-        float shiftAbsSum = 0.0f;
-
-        for (int64_t i = 0; i < N; ++i) {
-            const float s  = allScores[static_cast<size_t>(i)];
-            const int   sh = cumShift[static_cast<size_t>(i)];
-            if (s < scoreMin) scoreMin = s;
-            if (s > scoreMax) scoreMax = s;
-            scoreSum += s;
-            if (s < minScore) ++nBelow;
-            if (sh < shiftMin) shiftMin = sh;
-            if (sh > shiftMax) shiftMax = sh;
-            shiftAbsSum += static_cast<float>(sh < 0 ? -sh : sh);
-        }
-        const float scoreMean = scoreSum / static_cast<float>(N);
-        const float shiftMean = shiftAbsSum / static_cast<float>(N);
+        // Every spike's score against the cluster's mean as it now stands (the passes
+        // keep a score only for the spikes they moved), and what the log says of them.
+        realign_pass::Options scoreOptions;
+        scoreOptions.peakSample  = peakSamp0;
+        scoreOptions.topChannels = nTopChan;
+        scoreOptions.kernel      = kernel;
+        scoreOptions.kernelWidth = kernelWidth;
+        std::vector<float> allScores;
+        realign_pass::finalScores(wavBuf.data(), N, nChan, nSamp, scoreOptions, allScores);
+        const realign_pass::Summary stats = realign_pass::summarize(allScores, cumShift, minScore);
+        const float scoreMin = stats.scoreMin, scoreMax = stats.scoreMax, scoreMean = stats.scoreMean;
+        const float shiftMean = stats.shiftMeanAbs;
+        const int   nBelow = stats.below, shiftMin = stats.shiftMin, shiftMax = stats.shiftMax;
 
         log << "\n--- Alignment statistics (" << N << " spikes) ---\n";
         log << "  xcorr score  min=" << QString::number(static_cast<double>(scoreMin), 'f', 3)

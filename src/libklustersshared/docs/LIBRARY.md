@@ -258,7 +258,7 @@ the mean, and it zero-fills where this rolls the template circularly).
 | `realign_xcorr_hip.hip` | `USE_HIP` | HIP port of the CUDA back end |
 | `realign_xcorr_sycl.cpp` | `USE_SYCL` | SYCL back end, two kernels (scores, then per-spike reduction) |
 | `realign_center.h/.cpp` | always | `circularRecenterShift`, `perSpikeCentroidShifts` |
-| `realign_pass.h/.cpp` | always (Klusters only so far) | `clusterShifts` (the pass loop), `kernelWeights` (the correlation window), `rollSpike` |
+| `realign_pass.h/.cpp` | always (Klusters only so far) | `clusterShifts` (the pass loop), `finalScores` and `summarize` (what the log reports when the passes are over), `kernelWeights` (the correlation window), `rollSpike` |
 
 None of these are in the `neurosuite-qt` target; see the comment at the top of
 `src/libklustersshared/src/CMakeLists.txt`. Each consumer adds the sources and
@@ -626,7 +626,7 @@ Registered in `src/libklustersshared/CMakeLists.txt` under `if(NS_BUILD_TESTS)`:
 | `klustersshared_unitsidecar_test` | `test/unitsidecar_test.cpp` | the per-clustering cluster-information file (`unitsidecar.h`) | none |
 | `klustersshared_xcorr_dispatch_test` | `test/xcorr_dispatch_test.cpp` + dispatcher and OpenMP kernel | `XcorrDispatch` under concurrent calls with a fake CUDA back end: one probe, atomic demotion, wide shifts on OpenMP | none (no GPU needed) |
 | `klustersshared_realign_kernels_test` | `test/realign_kernels_test.cpp` + OpenMP kernel and `realign_center.cpp` | zero-energy spikes and templates, lag ties, `perSpikeCentroidShifts` | none |
-| `klustersshared_realign_pass_test` | `test/realign_pass_test.cpp` + `realign_pass.cpp`, dispatcher and OpenMP kernel | `clusterShifts` gives the shifts, scores, rolled samples and pass counts of the loop it replaced (a frozen copy in the test), over 1,080 combinations of cluster, threshold, pass count, channel mask and window; it reduces the jitter of synthetic clusters; `rollSpike`, `kernelWeights`, no spikes, zero passes | none (the clusters are generated) |
+| `klustersshared_realign_pass_test` | `test/realign_pass_test.cpp` + `realign_pass.cpp`, dispatcher and OpenMP kernel | `clusterShifts` gives the shifts, scores, rolled samples and pass counts of the loop it replaced (a frozen copy in the test), over 1,080 combinations of cluster, threshold, pass count, channel mask and window; `finalScores` and `summarize` give the old code's scores and summary on the same; it reduces the jitter of synthetic clusters; `rollSpike`, `kernelWeights`, no spikes, zero passes | none (the clusters are generated) |
 
 Each is a standalone program with its own `main()` and a
 small check helper that reports failures and returns non-zero if any check
