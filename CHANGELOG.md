@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Self-test: the four matrix views under the mouse](#2026-11-24--self-test-the-four-matrix-views-under-the-mouse) |
 | 2026-11-24 | [Realign: realignSpikes reads as its stages](#2026-11-24--realign-realignspikes-reads-as-its-stages) |
 | 2026-11-24 | [Realign: the new times, the verification and the row plan are functions](#2026-11-24--realign-the-new-times-the-verification-and-the-row-plan-are-functions) |
 | 2026-11-24 | [Realign undo: from any feature space](#2026-11-24--realign-undo-from-any-feature-space) |
@@ -292,6 +293,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Self-test: the four matrix views under the mouse
+
+A harness step drives a curation matrix with wheel, drag and click events, and a snapshot test pins what the four views do with them. No change to the application's behaviour.
+
+<details>
+<summary>Details</summary>
+
+**Why.** The four curation matrices (error, template, residual, drift) were copied from one
+another and the audit's next step gives them a shared base. Nothing tested what they do under
+the mouse, so nothing would have shown a slip in that work.
+
+**What is new.** A step of the self-test harness, `{"matrixView": {...}}`, opens one of the
+four views at a fixed size, computes it, and sends it the events a curator sends: Ctrl+wheel,
+Ctrl+left drag, click, shift-click, a follow of a cluster, a restored view state. After each it
+reports the zoom and pan the view announced, the clusters the display shows, and a hash of the
+view's picture.
+
+`test_matrix_views.py` sends the same 18 events to each view and compares zoom, pan and shown
+clusters with `matrix_views.golden.json` (`--update` rewrites it). The picture's hash is not in
+the snapshot: fonts differ between machines.
+
+**Seen while writing it, not changed.** The views do not agree on the wheel: the error and
+template matrices zoom one step per wheel event whatever its size; the residual and drift
+matrices zoom in proportion to it (a fast flick of three notches is one step in the first two
+and three in the others).
+
+</details>
 
 ---
 

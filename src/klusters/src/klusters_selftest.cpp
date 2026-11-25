@@ -50,6 +50,12 @@
  *                                        click on that child in it; reports what it lists and selects
  *        {"matrixSelect": [ids]}         a click on a cell of a curation matrix ("add": true: Ctrl);
  *                                        reports the layer shown and both palettes' selections
+ *        {"matrixView": {...}}           one of the four curation matrices ("which"), opened if "open",
+ *                                        at "size": [w, h], computed if "update", then driven by "do":
+ *                                        {"wheel": [x, y, delta]} (Ctrl+wheel), {"drag": [x0, y0, x1, y1]}
+ *                                        (Ctrl+left), {"click": [x, y]}, {"follow": id}, {"state": [zoom,
+ *                                        panX, panY]}; after each: the zoom and pan last
+ *                                        announced, the clusters shown, a hash of the view's picture
  *        {"commandDump": true}           every menu command with its text, keys, tips and state, the
  *                                        binding registry's commands, and the edit lock's set
  *        {"configWrite": true}           write the configuration as read; {"prefKeys": [keys]} work Preferences by keys
@@ -119,6 +125,14 @@
 #include <QPushButton>
 #include <QTimer>
 #include <QEventLoop>
+#include <QCryptographicHash>
+#include <QDockWidget>
+#include <QMouseEvent>
+#include <QWheelEvent>
+#include "errormatrixview.h"
+#include "templatematrixview.h"
+#include "residualmatrixview.h"
+#include "driftmatrixview.h"
 
 #include <neurosuite/core/custody.hpp>
 
@@ -190,6 +204,102 @@ void KlustersApp::startSelfTest(const QString& specPath)
     connect(selfTestTimer_, &QTimer::timeout, this, &KlustersApp::selfTestTick);
     selfTestTimer_->start();
 }
+
+
+namespace {
+// {"matrixView": {...}} on one of the four curation matrices: drive it with the events a
+// curator sends and report what it shows.  The same for every kind of matrix: they have
+// these names in common.
+template <class View>
+void selfTestDriveMatrix(View* view, const QJsonObject& o, QJsonObject& result, KlustersView* display)
+{
+    const auto settle = []() { for (int i = 0; i < 4; ++i) QCoreApplication::processEvents(); };
+    double zoom = 0.0, panX = 0.0, panY = 0.0;
+    int changes = 0;
+    const QMetaObject::Connection c = QObject::connect(view, &View::viewChanged, view,
+        [&](double z, double x, double y) { zoom = z; panX = x; panY = y; ++changes; });
+
+    if (o.contains(QStringLiteral("size"))) {               // a known size: the dock floating
+        const QJsonArray sz = o.value(QStringLiteral("size")).toArray();
+        if (auto* dock = qobject_cast<QDockWidget*>(view->parentWidget())) {
+            dock->setFloating(true);
+            dock->show();
+        }
+        view->setFixedSize(sz.at(0).toInt(), sz.at(1).toInt());
+        settle();
+    }
+    if (o.value(QStringLiteral("update")).toBool()) {
+        view->updateMatrixContents();
+        QElapsedTimer t; t.start();
+        while ((view->isThreadsRunning() || !view->hasComputedData()) && t.elapsed() < 60000)
+            QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
+        settle();
+    }
+    const QPoint origin = view->mapToGlobal(QPoint(0, 0));
+    for (const QJsonValue& v : o.value(QStringLiteral("do")).toArray()) {
+        const QJsonObject a = v.toObject();
+        if (a.contains(QStringLiteral("wheel"))) {            // [x, y, delta]: Ctrl + wheel
+            const QJsonArray w = a.value(QStringLiteral("wheel")).toArray();
+            const QPointF pos(w.at(0).toDouble(), w.at(1).toDouble());
+            QWheelEvent ev(pos, pos + origin, QPoint(), QPoint(0, w.at(2).toInt()), Qt::NoButton,
+                           a.value(QStringLiteral("plain")).toBool() ? Qt::NoModifier : Qt::ControlModifier,
+                           Qt::NoScrollPhase, false);
+            QApplication::sendEvent(view, &ev);
+        } else if (a.contains(QStringLiteral("drag"))) {      // [x0, y0, x1, y1]: Ctrl + left drag
+            const QJsonArray d = a.value(QStringLiteral("drag")).toArray();
+            const QPointF p0(d.at(0).toDouble(), d.at(1).toDouble()), p1(d.at(2).toDouble(), d.at(3).toDouble());
+            QMouseEvent press(QEvent::MouseButtonPress, p0, p0 + origin, Qt::LeftButton, Qt::LeftButton, Qt::ControlModifier);
+            QApplication::sendEvent(view, &press);
+            const QPointF mid = (p0 + p1) / 2.0;
+            for (const QPointF& p : { mid, p1 }) {
+                QMouseEvent move(QEvent::MouseMove, p, p + origin, Qt::NoButton, Qt::LeftButton, Qt::ControlModifier);
+                QApplication::sendEvent(view, &move);
+            }
+            QMouseEvent release(QEvent::MouseButtonRelease, p1, p1 + origin, Qt::LeftButton, Qt::NoButton, Qt::ControlModifier);
+            QApplication::sendEvent(view, &release);
+        } else if (a.contains(QStringLiteral("click"))) {     // [x, y]: a left click ("shift": true)
+            const QJsonArray d = a.value(QStringLiteral("click")).toArray();
+            const QPointF p(d.at(0).toDouble(), d.at(1).toDouble());
+            const Qt::KeyboardModifiers mods = a.value(QStringLiteral("shift")).toBool() ? Qt::ShiftModifier : Qt::NoModifier;
+            QMouseEvent press(QEvent::MouseButtonPress, p, p + origin, Qt::LeftButton, Qt::LeftButton, mods);
+            QApplication::sendEvent(view, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, p, p + origin, Qt::LeftButton, Qt::NoButton, mods);
+            QApplication::sendEvent(view, &release);
+        } else if (a.contains(QStringLiteral("follow"))) {    // centre on that cluster
+            view->followCluster(a.value(QStringLiteral("follow")).toInt());
+        } else if (a.contains(QStringLiteral("state"))) {     // [zoom, panX, panY]
+            const QJsonArray d = a.value(QStringLiteral("state")).toArray();
+            view->setViewState(d.at(0).toDouble(), d.at(1).toDouble(), d.at(2).toDouble());
+        }
+        settle();
+        // What each action left: the view state last announced, what the display shows, the picture.
+        QJsonObject after;
+        after.insert(QStringLiteral("zoom"), zoom);
+        after.insert(QStringLiteral("panX"), panX);
+        after.insert(QStringLiteral("panY"), panY);
+        after.insert(QStringLiteral("changes"), changes);
+        QJsonArray shown;
+        if (display) for (int id : display->clusters()) shown.append(id);
+        after.insert(QStringLiteral("shown"), shown);
+        const QImage img = view->grab().toImage().convertToFormat(QImage::Format_RGB32);
+        after.insert(QStringLiteral("image"), QString::fromLatin1(
+            QCryptographicHash::hash(QByteArrayView(reinterpret_cast<const char*>(img.constBits()),   // the pixels, as bytes
+                                                    img.sizeInBytes()), QCryptographicHash::Sha1).toHex().left(16)));
+        QJsonArray steps = result.value(QStringLiteral("after")).toArray();
+        steps.append(after);
+        result.insert(QStringLiteral("after"), steps);
+    }
+    QObject::disconnect(c);
+    result.insert(QStringLiteral("computed"), view->hasComputedData());
+    QJsonArray ids;
+    for (int id : view->matrixClusterList()) ids.append(id);
+    result.insert(QStringLiteral("clusters"), ids);
+    result.insert(QStringLiteral("width"), view->width());
+    result.insert(QStringLiteral("height"), view->height());
+    if (o.contains(QStringLiteral("saveTo")))
+        result.insert(QStringLiteral("saved"), view->grab().save(o.value(QStringLiteral("saveTo")).toString()));
+}
+} // namespace
 
 void KlustersApp::selfTestTick()
 {
@@ -828,6 +938,33 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         result.insert(QStringLiteral("childSelection"), sel);
         result.insert(QStringLiteral("childScope"), doc->isChildClusteringActive());
         return true;
+    }
+    if (step.contains(QStringLiteral("matrixView"))) {
+        // {"matrixView": {"which": "error" | "template" | "residual" | "drift", "open": true,
+        //   "size": [w, h], "update": true, "do": [actions], "saveTo": path}}: see selfTestDriveMatrix.
+        const QJsonObject o = step.value(QStringLiteral("matrixView")).toObject();
+        const QString which = o.value(QStringLiteral("which")).toString();
+        if (o.value(QStringLiteral("open")).toBool()) {
+            if (which == QLatin1String("residual"))   slotNewResidualMatrix();
+            else if (which == QLatin1String("drift")) slotNewDriftMatrix();
+            else if (!activeView() || !activeView()->findChild<ErrorMatrixView*>()) slotWindowNewGroupingAssistantDisplay();
+            QCoreApplication::processEvents();
+        }
+        KlustersView* display = activeView();
+        bool found = false;
+        if (display) {
+            if (which == QLatin1String("error")) {
+                if (auto* v = display->findChild<ErrorMatrixView*>()) { found = true; selfTestDriveMatrix(v, o, result, display); }
+            } else if (which == QLatin1String("template")) {
+                if (auto* v = display->findChild<TemplateMatrixView*>()) { found = true; selfTestDriveMatrix(v, o, result, display); }
+            } else if (which == QLatin1String("residual")) {
+                if (auto* v = display->findChild<ResidualMatrixView*>()) { found = true; selfTestDriveMatrix(v, o, result, display); }
+            } else if (which == QLatin1String("drift")) {
+                if (auto* v = display->findChild<DriftMatrixView*>()) { found = true; selfTestDriveMatrix(v, o, result, display); }
+            }
+        }
+        result.insert(QStringLiteral("found"), found);
+        return found;
     }
     if (step.contains(QStringLiteral("matrixSelect"))) {
         // {"matrixSelect": [ids], "add": bool}: what a click (Ctrl-click) on a cell of a curation
