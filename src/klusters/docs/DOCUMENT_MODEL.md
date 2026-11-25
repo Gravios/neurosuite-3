@@ -398,8 +398,11 @@ tested without a session (`undohistory_test.cpp`).
   other spaces and refreshes what a realign job's end refreshes. The realign runs on
   a worker thread, so its record becomes an entry when the job is over
   (`recordRealignUndo`, called by the application's finish handlers; `joinPrevious`
-  for the automatic realign after a merge). An entry that cannot be applied (another
-  space shown) stays where it was and `undoRefused` carries the reason. The entries
+  for the automatic realign after a merge). The rows belong to the space the realign
+  ran in: `KlustersApp::runUndoOrRedo` asks `nextStepRealignSpace`, shows that space
+  for the step when another is shown, and comes back through
+  `returnFromRealignSpace`, as after a realign. An entry that still cannot be applied
+  stays where it was and `undoRefused` carries the reason. The entries
   keep `Entry::cost` bytes; `UndoHistory::dropOldestCostly` holds the total under
   the preference `realignUndoMemoryMB`.
 - **Not in the history:** a nudge (it rewrites `.spk` / `.res` without a record, and

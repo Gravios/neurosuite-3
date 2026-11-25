@@ -938,6 +938,9 @@ public:
     /** Undo / Redo (Ctrl+Z / Ctrl+Y): one step of the ONE history both layers
      *  share (see UndoHistory) -- the newest edit whatever its layer and whichever
      *  layer is shown, and with it every level of the same hierarchy command. */
+    /** True when the next Undo (@p redo: Redo) writes the rows of a realign; @p method is
+     *  then the feature space that realign ran in, which has to be the one shown. */
+    bool nextStepRealignSpace(bool redo, QString* method) const;
     void undoDispatch() { stepDispatch(UndoHistory::Undo); }
     void redoDispatch() { stepDispatch(UndoHistory::Redo); }
     int  parentUndoCount() const { return clusterColorListUndoList.count(); }

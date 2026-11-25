@@ -86,6 +86,8 @@ public:
 
     // ── the depth changed, the document closed ──────────────────────────────
     // ── realign entries ─────────────────────────────────
+    /// The entries the next Undo / Redo applies: the newest, and those of its command.
+    QList<Entry> newestStep(Direction d) const;
     /// Bytes kept by the entries of both sides.
     qint64 totalCost() const;
     /** Drop the entries that keep bytes from the oldest step that has any (the undo side's

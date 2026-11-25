@@ -4116,10 +4116,27 @@ void KlustersApp::runUndoOrRedo(void (KlustersDoc::*op)(),
 {
     // An undo rewrites both layers: never under a job that reads or writes them.
     if (refuseWhileBlocked(tr("Undo / Redo"))) return;
+    // A realign is undone in the feature space it ran in.  With another one shown: show
+    // that space for the step and come back (returnFromRealignSpace, as after a realign
+    // started from another space), at the spike times the step leaves.
+    const bool redo = (op == &KlustersDoc::redoDispatch);
+    QString realignSpace;
+    bool visited = false;
+    if (doc->nextStepRealignSpace(redo, &realignSpace) && realignSpace != doc->activeFeatureMethod()) {
+        const QString shown = doc->activeFeatureMethod();
+        if (!showFeatureSpace(realignSpace, /*syncFirst*/ false)) {
+            statusBar()->showMessage(tr("This realign ran in the %1 feature space, which cannot be shown now: not %2.")
+                                         .arg(realignSpace, redo ? tr("redone") : tr("undone")), 10000);
+            return;
+        }
+        realignReturnSpace = shown;
+        visited = true;
+    }
     slotStatusMsg(busyMessage);
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     (doc->*op)();
     QApplication::restoreOverrideCursor();
+    if (visited) QTimer::singleShot(0, this, &KlustersApp::returnFromRealignSpace);   // also when the step was refused
 
     // Update the browsing possibility of the traceView
     KlustersView* view = activeView();

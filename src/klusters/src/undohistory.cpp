@@ -45,6 +45,18 @@ void UndoHistory::push(Entry e, int depth, int entryCap)
     redoEntries.clear();                           // a new edit ends every redo, of either layer
 }
 
+QList<UndoHistory::Entry> UndoHistory::newestStep(Direction d) const
+{
+    QList<Entry> step;
+    const QList<Entry>& l = side(d);
+    if (l.isEmpty()) return step;
+    const int g = l.first().group;
+    for (const Entry& e : l) {
+        if (!step.isEmpty() && (g == 0 || e.group != g)) break;
+        step.append(e);
+    }
+    return step;
+}
 qint64 UndoHistory::totalCost() const
 {
     qint64 n = 0;

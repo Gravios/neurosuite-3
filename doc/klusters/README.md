@@ -1873,7 +1873,8 @@ session files. The session files are updated atomically on save:
   - It works across a **Save**: undo after saving and save again to have the
     old rows on disk.
   - A realign done in another feature space is undone **in that space**: with a
-    different one shown, Undo stops there and the status bar names the space.
+    different one shown, Undo shows the realign's space for the step and comes
+    back to the one you were looking at, which follows the moved spikes.
   - The rows are kept in memory: for each spike of the cluster the old and the
     new waveform. Realign steps count against the undo depth. What they may
     take together is **Preferences → General → Session → Undo → Memory for the

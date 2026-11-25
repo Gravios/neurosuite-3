@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign undo: from any feature space](#2026-11-24--realign-undo-from-any-feature-space) |
 | 2026-11-24 | [Realign undo: the memory it may use is a preference](#2026-11-24--realign-undo-the-memory-it-may-use-is-a-preference) |
 | 2026-11-24 | [Realign can be undone](#2026-11-24--realign-can-be-undone) |
 | 2026-11-24 | [Realign: each rewritten row keeps what was there](#2026-11-24--realign-each-rewritten-row-keeps-what-was-there) |
@@ -289,6 +290,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign undo: from any feature space
+
+Undo and Redo of a realign that ran in another feature space show that space for the step and come back.
+
+<details>
+<summary>Details</summary>
+
+**What changes for the curator.** `Ctrl+Z` on a realign that ran in another feature space no
+longer stops with a message. Klusters shows that space, undoes the realign there, and comes
+back to the space that was on screen, which follows the moved spikes; `Ctrl+Y` the same. If
+the realign's space cannot be shown, nothing is undone and the status bar says so.
+
+**In the code.** `KlustersApp::runUndoOrRedo` asks the document which space the next step's
+realign ran in (`nextStepRealignSpace`, over `UndoHistory::newestStep`) and uses the way a
+realign started from another space returns (`realignReturnSpace`, `returnFromRealignSpace`).
+
+**Checked.** `test_realign_undo.py` (38 checks): a realign in the super-sampled space, the
+base space shown, Undo: the step is undone, the base space is shown again, and every space's
+saved files are those of the session without the realign; Redo from there gives the realign's
+files. `undohistory_test` covers `newestStep`.
+
+**Not checked.** A step whose realigns ran in different spaces (the first one's space is
+visited; the others are refused as before) and a space that cannot be shown.
+
+</details>
 
 ---
 

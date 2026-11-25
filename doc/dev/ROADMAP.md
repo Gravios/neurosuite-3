@@ -114,8 +114,6 @@ The audit fixed five faults and the single undo history closed the four behaviou
     The same record would make it a step;
   - the kept rows are in memory, capped by a preference (`realignUndoMemoryMB`, 4 GB);
     a file beside the working copies would lift the cap;
-  - a realign made in another feature space is refused until that space is shown; the
-    application could show it, apply, and come back, as it does for a realign;
   - **validated on generated sessions only** (`test_realign_undo.py`: the saved files byte
     for byte).  `src/klusters/test/selftest/check_realign_undo_on_session.py` runs the
     same comparison on a copy of a real group; it has not been run on one.

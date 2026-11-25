@@ -699,6 +699,15 @@ bool KlustersDoc::stepOneEntry(UndoHistory::Direction d, KlustersView& activeVie
     return true;
 }
 
+bool KlustersDoc::nextStepRealignSpace(bool redo, QString* method) const{
+    for (const UndoEntry& e : undoHistory.newestStep(redo ? UndoHistory::Redo : UndoHistory::Undo)) {
+        if (!e.realign) continue;
+        if (method) *method = std::static_pointer_cast<const PendingRealign>(e.realign)->method;
+        return true;                               // the realigns of one step ran in one space
+    }
+    return false;
+}
+
 void KlustersDoc::stepDispatch(UndoHistory::Direction d){
     KlustersView* v = app() ? app()->activeView() : nullptr;
     if (!v || undoHistory.isEmpty(d)) return;

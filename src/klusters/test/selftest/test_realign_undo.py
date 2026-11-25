@@ -5,7 +5,7 @@ files, byte for byte: a sequence of steps ending in Save must leave the files an
 leaves ("realign, undo, save" the untouched session; "realign, undo, redo, save" what "realign, save"
 leaves; and so on).  Also: what a realign step is in the history (one step; Align All one step; the
 automatic realign after a merge part of the merge's step), that a nudge ends the undo of earlier
-realigns, and that a realign done in another feature space is refused until that space is shown.
+realigns, and that a realign done in another feature space is undone there, the shown space coming back.
 """
 import glob
 import hashlib
@@ -147,15 +147,20 @@ def main():
           differing(got, base_up))
     rep, got, _ = run(klusters, up + [{"realign": 2}, UNDO, {"wait": 300}, REDO, {"wait": 300}, SAVE], supersampleInterp=0)
     check(ran(rep) and got == real_up, "... and redone: every space's files as after the realign", differing(got, real_up))
-    rep, elsewhere, _ = run(klusters, up + [{"realign": 2}, {"show": "standard"}, SAVE], supersampleInterp=0)
-    rep, got, _ = run(klusters, up + [{"realign": 2}, {"show": "standard"}, UNDO, STATE, SAVE], supersampleInterp=0)
+    # With another space shown, Undo shows the realign's space for the step and comes back.
+    away = up + [{"realign": 2}, {"show": "standard"}]
+    rep, got, _ = run(klusters, away + [UNDO, {"wait": 500}, STATE, {"dump": True, "cluster": 2}, SAVE], supersampleInterp=0)
     st = results(rep, "undoSteps")[1:]
-    check(ran(rep) and st and st[0]["undoSteps"] == 1 and "standard_U4" in st[0].get("status", ""),
-          "with another space shown, Undo is refused and says which space to show", st)
-    check(got == elsewhere, "... and nothing was written", differing(got, elsewhere))
-    rep, got, _ = run(klusters, up + [{"realign": 2}, {"show": "standard"}, {"show": "standard_U4"}, UNDO, {"wait": 300}, SAVE],
+    dump = [r["dump"] for r in results(rep, "dump")]
+    check(ran(rep) and st and st[0]["undoSteps"] == 0 and st[0]["redoSteps"] == 1,
+          "with another space shown, Undo still undoes the realign", st[:1])
+    check(dump and dump[0]["active"] == "standard", "... and the space that was shown is shown again", [d.get("active") for d in dump])
+    check(got == base_up, "... every space's files as without the realign", differing(got, base_up))
+    rep, got, _ = run(klusters, away + [UNDO, {"wait": 500}, REDO, {"wait": 500}, {"dump": True, "cluster": 2}, SAVE],
                       supersampleInterp=0)
-    check(ran(rep) and got == base_up, "... back in the realign's space, Undo works", differing(got, base_up))
+    dump = [r["dump"] for r in results(rep, "dump")]
+    check(ran(rep) and got == real_up and dump and dump[0]["active"] == "standard",
+          "... and Redo from there: every space's files as after the realign, the same space shown", differing(got, real_up))
 
     # ── the memory kept for it is a preference ───────────────────
     rep, got, _ = run(klusters, [{"realign": 2}, {"wait": 50}, STATE, UNDO, SAVE], realignUndoMemoryMB=0)

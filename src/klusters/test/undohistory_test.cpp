@@ -163,6 +163,14 @@ int main()
         check(g.dropOldestCostly() && g.totalCost() == 0 && g.isEmpty(H::Redo), "then the redo side's");
         check(!g.dropOldestCostly(), "nothing left to drop");
 
+        H n;                                           // what the next Undo applies
+        check(n.newestStep(H::Undo).isEmpty(), "no entry, no next step");
+        n.push(parent(), 20, cap);
+        n.beginGroup(); n.push(realign(1), 20, cap); n.push(realign(1), 20, cap); n.endGroup();
+        check(n.newestStep(H::Undo).size() == 2 && n.newestStep(H::Undo).first().realign, "the next step is the whole command");
+        n.push(parent(), 20, cap);
+        check(n.newestStep(H::Undo).size() == 1 && !n.newestStep(H::Undo).first().realign, "a lone entry is a step of one");
+
         H r;                                           // a nudge: every realign entry goes, the rest stays
         r.push(parent(), 20, cap); r.push(realign(1), 20, cap); r.push(note(), 20, cap); r.push(realign(1), 20, cap);
         r.put(H::Redo, r.take(H::Undo));
