@@ -8,7 +8,7 @@
 2. **Standalone sorts** — renumber clusters by a single scalar per cluster
    (spike count, time, contamination, …).
 
-All of these preserve clusters `0` (artefact) and `1` (noise) at the
+All of these preserve clusters `0` (artifact) and `1` (noise) at the
 front. Except where noted, they **renumber** clusters (a single undoable
 step that rewrites the `.clu` IDs and updates every view and the palette,
 via `reorderClustersByPermutation`). The curation log gets one **Sort All
@@ -58,7 +58,7 @@ without a computed mean waveform sort last.
 ## Waveform sorts: local vs global
 
 The two waveform sorts share the same input — each cluster's per-sample
-**median** waveform (read from `.spk`, robust to the odd artefact spike
+**median** waveform (read from `.spk`, robust to the odd artifact spike
 in a way a mean is not) — and differ only in how they order it. Both are
 matrix-free (no error/template matrix required) and run under a wait
 cursor.
@@ -66,7 +66,7 @@ cursor.
 **Preferences → Curation → Cluster order → Waveform sorts** can switch
 both to the per-sample **mean** waveform. The median holds each
 cluster's spikes in memory and sorts every sample; the mean is a single
-running sum, so it is lighter on very large clusters. An artefact spike
+running sum, so it is lighter on very large clusters. An artifact spike
 pulls the mean, so the median stays the default.
 
 - **Nearest-Neighbour Waveform** walks a greedy chain: start at one

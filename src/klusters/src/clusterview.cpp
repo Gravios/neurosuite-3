@@ -2589,7 +2589,7 @@ bool ClusterView::setObliqueBasis(const QList<int>& ids, QString* message){
     for (int id : ids) {
         if (id <= 1) {                              // 0 artifact / 1 noise carry no template
             if (message) *message = tr("Oblique basis: cluster %1 is a reserve bin "
-                                       "(artefact/noise) and has no template.").arg(id);
+                                       "(artifact/noise) and has no template.").arg(id);
             return false;
         }
         if (!clean.contains(id)) clean.append(id);

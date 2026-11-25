@@ -6417,7 +6417,7 @@ void KlustersApp::slotStripFeatureOutliers()
     // defaulting to No.
     QMessageBox box(QMessageBox::Question, tr("Strip Feature Outliers"),
         tr("Move %1 spike(s) lying more than %2 sigma (in any feature dimension) "
-           "from their cluster centre into the artefact cluster (0)?\n\n"
+           "from their cluster centre into the artifact cluster (0)?\n\n"
            "%3 cluster(s) contribute outliers.  This can be undone.")
             .arg(totalOutliers).arg(kSigma).arg(outliersByCluster.size()),
         QMessageBox::Yes | QMessageBox::No, this);
@@ -6435,7 +6435,7 @@ void KlustersApp::slotStripFeatureOutliers()
         ++movedClusters;
     }
 
-    slotStatusMsg(tr("Stripped %1 outlier spike(s) from %2 cluster(s) into the artefact cluster.")
+    slotStatusMsg(tr("Stripped %1 outlier spike(s) from %2 cluster(s) into the artifact cluster.")
                       .arg(totalOutliers).arg(movedClusters));
 }
 
@@ -9469,7 +9469,7 @@ void KlustersApp::slotToggleTemplate()
     for (int id : sel)
         if (id > 1) targets.append(id);              // never the artifact(0)/noise(1) bins
     if (targets.isEmpty()) {
-        slotStatusMsg(tr("Mark as template: select one or more clusters (not noise/artefact)."));
+        slotStatusMsg(tr("Mark as template: select one or more clusters (not noise/artifact)."));
         return;
     }
     // Toggle as a group: unmark only if every target is already a template;
@@ -9747,7 +9747,7 @@ void KlustersApp::slotGenerateTemplateForSelection()
     for (int id : sel)
         if (id > 1) targets.append(id);                  // never noise(1)/artifact(0)
     if (targets.isEmpty()) {
-        slotStatusMsg(tr("Generate template: select one or more clusters (not noise/artefact)."));
+        slotStatusMsg(tr("Generate template: select one or more clusters (not noise/artifact)."));
         return;
     }
     // parent-template reads the clustering files ON DISK; unsaved edits would
@@ -9863,7 +9863,7 @@ void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList
     if (!doc || doc->url().isEmpty()) return;
     if (basis.size() != 2) { slotStatusMsg(tr("Decollide: need exactly two basis clusters.")); return; }
     const int A = basis[0], B = basis[1];
-    if (A <= 1 || B <= 1) { slotStatusMsg(tr("Decollide: basis clusters must be real units (not noise/artefact).")); return; }
+    if (A <= 1 || B <= 1) { slotStatusMsg(tr("Decollide: basis clusters must be real units (not noise/artifact).")); return; }
     if (isReservedClusterId(A) || isReservedClusterId(B)) {
         slotStatusMsg(tr("Decollide: a reserved chunk cluster is not a unit and gains no spikes; "
                          "choose two other basis clusters."));

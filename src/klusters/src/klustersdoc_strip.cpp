@@ -1474,7 +1474,7 @@ KlustersDoc::BurstFollowerResult KlustersDoc::detectBurstFollowers(int clusterA,
     if (clusterA == clusterB || (!children && (clusterA < 2 || clusterB < 2))) {
         R.reason = children
             ? tr("Burst followers: two different children are needed.")
-            : tr("Burst followers: two different clusters are needed (not the artefact or noise cluster).");
+            : tr("Burst followers: two different clusters are needed (not the artifact or noise cluster).");
         return R;
     }
     const Data& layer = children ? *childData : parentData();
@@ -1546,7 +1546,7 @@ KlustersDoc::CoreCutResult KlustersDoc::detectCoreCut(int cluster, bool onChildL
     Data& layer = onChildLayer ? *childData : parentData();
     const auto name = [onChildLayer](int id) { return onChildLayer ? tr("child %1").arg(id) : clusterLabel(id); };
     if (onChildLayer ? (parentOfChild(cluster) < 2) : (cluster < 2)) {
-        R.reason = tr("Split off spurious spikes: the artefact and noise clusters are left alone.");
+        R.reason = tr("Split off spurious spikes: the artifact and noise clusters are left alone.");
         return R;
     }
     const int nCh   = layer.nbOfChannels();

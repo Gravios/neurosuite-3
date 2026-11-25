@@ -449,7 +449,7 @@ The defaults for the most-used actions:
 | `Ctrl+A` / `Ctrl+Shift+A` | Select all clusters / all except 0 and 1 |
 | `S`, `Esc` `Esc` | Toggle a cluster in the palette selection; clear the selection |
 | `G` / `Shift+G` | Group the selected clusters / Auto-Merge |
-| `Delete` / `Shift+Delete` | Move the selected clusters to noise (1) / artefact (0) |
+| `Delete` / `Shift+Delete` | Move the selected clusters to noise (1) / artifact (0) |
 | `Ctrl+1` / `Ctrl+2` | New Cluster / Split Clusters lasso tool |
 | `Ctrl+3` / `Ctrl+4` / `Ctrl+5` | Delete Artifact Spikes / Delete Noisy Spikes / Multi-Lasso tool |
 | `R` / `T` | Renumber clusters / move the selected clusters to the end |
@@ -516,7 +516,7 @@ Double-click a cluster button (when the info panel is visible) to edit any field
 
 ### Focus handling after batch operations
 
-After any operation that auto-selects the next cluster in the palette (delete-to-noise, delete-to-artefact, recluster completion, realign completion), focus returns to the palette rather than to the 2-D scatter. This means arrow keys continue to step through clusters without requiring a Tab press to reach the palette.
+After any operation that auto-selects the next cluster in the palette (delete-to-noise, delete-to-artifact, recluster completion, realign completion), focus returns to the palette rather than to the 2-D scatter. This means arrow keys continue to step through clusters without requiring a Tab press to reach the palette.
 
 The one exception is the cluster-editing slots whose natural follow-up is 2-D inspection (undo, redo, group-merge, nudge): these leave focus on the scatter view.
 
@@ -745,15 +745,15 @@ All operations push onto the undo stack. The full session history is preserved u
 | Auto bimodal split (DipSplit) | `Shift+D` | Tests the active cluster for bimodality on its top PCs; if a clean valley is found, splits it into two new clusters |
 | Watershed split | `Shift+W` | Runs a 2D density watershed on the selected clusters in the active scatter view's X/Y dimensions, with a live preview; each density basin becomes one new cluster, leftover spikes (outside any peak) form a residual cluster |
 | New cluster from lasso | `Ctrl+1` (Tools → New Cluster) | Creates one new cluster from the lasso-enclosed spikes |
-| Delete selected spikes → artefact (0) | `Ctrl+3` (Tools → Delete Artifact Spikes) | Moves lasso-enclosed spikes to cluster 0 (artefact) |
+| Delete selected spikes → artifact (0) | `Ctrl+3` (Tools → Delete Artifact Spikes) | Moves lasso-enclosed spikes to cluster 0 (artifact) |
 | Delete selected spikes → noise (1) | `Ctrl+4` (Tools → Delete Noisy Spikes) | Moves lasso-enclosed spikes to cluster 1 (noise/MUA) |
-| Strip feature outliers (5σ) | menu only (Split → Strip Feature Outliers) | Across **all** clusters, moves every spike lying more than 5σ from its cluster's per-dimension feature mean (in any single feature dimension) into the artefact cluster (0). A non-mutating scan runs first and asks for confirmation with the exact spike/cluster count; undoable. Per-dimension (not Mahalanobis) is deliberate — a raw 5σ Mahalanobis cut in ~24-D would flag roughly half of every cluster |
-| Delete cluster(s) → artefact (0) | `Shift+Delete` | Moves all spikes of selected clusters to cluster 0 |
+| Strip feature outliers (5σ) | menu only (Split → Strip Feature Outliers) | Across **all** clusters, moves every spike lying more than 5σ from its cluster's per-dimension feature mean (in any single feature dimension) into the artifact cluster (0). A non-mutating scan runs first and asks for confirmation with the exact spike/cluster count; undoable. Per-dimension (not Mahalanobis) is deliberate — a raw 5σ Mahalanobis cut in ~24-D would flag roughly half of every cluster |
+| Delete cluster(s) → artifact (0) | `Shift+Delete` | Moves all spikes of selected clusters to cluster 0 |
 | Delete cluster(s) → noise (1) | `Delete` | Moves all spikes of selected clusters to cluster 1 |
 | Renumber selected to end | `T` | Reassigns the selected cluster IDs to be greater than the current maximum, moving them to the tail of the palette |
 | Undo | `Ctrl+Z` | Undoes the last editing operation |
 | Redo | `Ctrl+Y` | Redoes the last undone operation |
-| Renumber clusters | `R` | Reassigns cluster IDs to be contiguous starting from 2 (0 and 1 are always noise/artefact) |
+| Renumber clusters | `R` | Reassigns cluster IDs to be contiguous starting from 2 (0 and 1 are always noise/artifact) |
 | Renumber and Save | `Ctrl+Shift+S` | Renumbers then saves in one step |
 | Update Display | Actions toolbar | Forces all views to recompute from current cluster assignments |
 
@@ -761,7 +761,7 @@ The cutting tools (`Ctrl+1` … `Ctrl+4`, and Multi-Lasso `Ctrl+5`) are
 toggles: pressing the key, button or menu entry of the active tool again
 returns to the normal cursor.
 
-**Cluster 0** is the artefact pseudo-cluster (waveforms that are not spikes). **Cluster 1** is the noise/MUA pseudo-cluster. Both are always shown at the top of the palette. Spikes sent to these clusters are not deleted — they remain in the feature file and can be retrieved by undo.
+**Cluster 0** is the artifact pseudo-cluster (waveforms that are not spikes). **Cluster 1** is the noise/MUA pseudo-cluster. Both are always shown at the top of the palette. Spikes sent to these clusters are not deleted — they remain in the feature file and can be retrieved by undo.
 
 Operations that change cluster **order** rather than membership — Reorder
 by Similarity (`Shift+S`) and the standalone sorts (by spike count, time,
@@ -882,7 +882,7 @@ decisions on the same data** by design.
 
 Pipeline:
 
-1. Filter candidates (skip 0 = artefact, 1 = noise, anything below the
+1. Filter candidates (skip 0 = artifact, 1 = noise, anything below the
    configured min cluster size).
 2. Build per-cluster template — *mean* of all member waveforms, or
    *median* across up to K sampled waveforms (Median mode uses a fixed
@@ -1045,7 +1045,7 @@ Draw several, then **Tools → Split by Lassos** (`Enter`): each overlap
 pattern becomes a cluster, so two overlapping lassos give three. What the
 lassos leave behind in a source cluster is a new cluster as well, and the
 original id goes away with it, so every piece of the split is a new cluster
-and the selection lands on all of them (the noise and artefact bins and the
+and the selection lands on all of them (the noise and artifact bins and the
 reserved chunk clusters keep their ids). `Backspace` removes the last kept
 lasso and `Esc` discards them all.
 
@@ -1110,7 +1110,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 |---|---|---|
 | Split ▸ Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
 | Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
-| Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artefact (0), after a confirmation |
+| Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artifact (0), after a confirmation |
 | Split ▸ Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
 | Split ▸ Split Burst Followers | — | With two similarly shaped clusters selected, splits the spikes of each that fall in bursts led by the other into a new cluster; with three, two references sort the third; see [below](#split-burst-followers--two-similar-cells-told-apart-by-their-bursts) |
 | Split ▸ Split Off Spurious Spikes | Ctrl+Space | For each selected cluster, keeps its core and splits the spikes that are not it into a new cluster; see [below](#split-off-spurious-spikes--a-clusters-core-and-the-rest) |

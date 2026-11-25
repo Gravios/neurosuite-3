@@ -202,7 +202,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Renumber clusters so that similar clusters get adjacent IDs, using\n"
                      "single-linkage agglomerative clustering on the active similarity matrix.\n"
                      "When both error and template matrices exist, uses whichever was most\n"
-                     "recently created or clicked.  Clusters 0 (artefact) and 1 (noise) are\n"
+                     "recently created or clicked.  Clusters 0 (artifact) and 1 (noise) are\n"
                      "preserved at the start.  Undoable with Ctrl+Z.")).disabled().editing();
     // Sort by spike count: renumber clusters so IDs run by descending spike
     // count (largest cluster becomes 2).  Needs no matrix, just the cluster
@@ -210,7 +210,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     // mAutoMerge) rather than the matrix-availability gate above.  Undoable.
     t << CommandSpec("sort.bySpikeCount", "Sort", tr("Sort Clusters by Spike &Count"), ON(triggered, slotSortClustersBySpikeCount))
             .toolTip(tr("Renumber clusters so their IDs run from largest to smallest by spike\n"
-                     "count (the biggest cluster becomes 2).  Clusters 0 (artefact) and 1\n"
+                     "count (the biggest cluster becomes 2).  Clusters 0 (artifact) and 1\n"
                      "(noise) are preserved at the start.  Undoable with Ctrl+Z.")).editing();
     // Sort by starting-edge time: renumber clusters so IDs run by ascending time
     // of each cluster's earliest spike (the cluster that fires first becomes 2).
@@ -219,7 +219,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     t << CommandSpec("sort.byTime", "Sort", tr("Sort Clusters by &Time"), ON(triggered, slotSortClustersByTime))
             .toolTip(tr("Renumber clusters so their IDs run by ascending starting time — the\n"
                      "cluster whose earliest spike comes first becomes 2.  Clusters 0\n"
-                     "(artefact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z.")).editing();
+                     "(artifact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z.")).editing();
     // Sort by contamination: renumber clusters by descending refractory ISI-
     // violation fraction (2 ms window), so the most-contaminated cluster becomes
     // 2 and lands at the top of the palette for review.  Needs no matrix, just
@@ -228,7 +228,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Renumber clusters by descending refractory contamination — the\n"
                      "fraction of inter-spike intervals shorter than 2 ms.  The most\n"
                      "contaminated cluster becomes 2 (top of the palette).  Clusters 0\n"
-                     "(artefact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z.")).editing();
+                     "(artifact) and 1 (noise) are preserved at the start.  Undoable with Ctrl+Z.")).editing();
     // Sort by SNR: renumber clusters by descending mean-waveform SNR, so the
     // cleanest-waveform cluster becomes 2.  Reads the cached mean waveforms, so
     // it is only meaningful once waveforms are computed; it otherwise follows the
@@ -237,7 +237,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Renumber clusters by descending mean-waveform SNR (peak-to-trough on\n"
                      "the best channel over baseline noise).  Best-SNR cluster becomes 2.\n"
                      "Requires computed mean waveforms — clusters without one sort last.\n"
-                     "Clusters 0 (artefact) and 1 (noise) are preserved.  Undoable with Ctrl+Z.")).editing();
+                     "Clusters 0 (artifact) and 1 (noise) are preserved.  Undoable with Ctrl+Z.")).editing();
     // Sort by amplitude: renumber clusters by descending peak-to-trough of the
     // mean waveform, measured on whichever channel carries it largest, so the
     // biggest unit becomes 2.  Reads the same waveform cache as the SNR sort.
@@ -245,7 +245,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Renumber clusters by descending peak-to-trough amplitude of the mean\n"
                      "waveform, taken on the channel where it is largest.  The biggest unit\n"
                      "becomes 2.  Requires computed mean waveforms — clusters without one\n"
-                     "sort last.  Clusters 0 (artefact) and 1 (noise) are preserved.\n"
+                     "sort last.  Clusters 0 (artifact) and 1 (noise) are preserved.\n"
                      "Undoable with Ctrl+Z.")).editing();
     // Tiered version: block the clusters by which channel carries their largest
     // amplitude (channel order, so the blocks run down the probe), and order each
@@ -255,7 +255,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Renumber clusters in blocks: one block per channel, in channel order,\n"
                      "each holding the clusters whose largest peak-to-trough amplitude falls\n"
                      "on that channel, ordered biggest first.  Requires computed mean\n"
-                     "waveforms — clusters without one sort last.  Clusters 0 (artefact) and\n"
+                     "waveforms — clusters without one sort last.  Clusters 0 (artifact) and\n"
                      "1 (noise) are preserved.  Undoable with Ctrl+Z."));
     // Sort by error-matrix p-value: renumber clusters by descending merge
     // affinity read from the active error matrix, so each cluster's strongest
@@ -534,7 +534,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .disabled().editing();
     t << CommandSpec("hierarchy.compactIds", "Hierarchy", tr("Compact Cluster &IDs (parents and children)"), ON(triggered, slotCompactClusterIds))
             .toolTip(tr("Renumber both layers into the low integers with no gaps: parents become\n"
-                     "2, 3, 4 … and atoms likewise, with the noise and artefact bins left in\n"
+                     "2, 3, 4 … and atoms likewise, with the noise and artifact bins left in\n"
                      "place.  Occasional housekeeping after a long session of splitting.\n"
                      "The atom undo history is dropped, because it names ids that move.")).disabled().editing();
     t << CommandSpec("hierarchy.mergeOrphanChildren", "Hierarchy", tr("Merge &Orphan Children (by median waveform)…"), ON(triggered, slotMergeOrphanChildren))

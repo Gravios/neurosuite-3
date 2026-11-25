@@ -1483,7 +1483,7 @@ bool KlustersDoc::dropChildToNoise(int childCluster, KlustersView& activeView){
 
 bool KlustersDoc::dropChildrenToBin(const QList<int>& childrenIn, int binId, KlustersView& activeView){
     if (!childData || (binId != 0 && binId != 1)) return false;
-    const QString opName = (binId == 1) ? tr("Drop child to noise") : tr("Drop child to artefact");
+    const QString opName = (binId == 1) ? tr("Drop child to noise") : tr("Drop child to artifact");
 
     // Group the children by parent.  The reserve children (0, 1) are the self children
     // of the bins and never move; a child whose parent IS the bin is already there.

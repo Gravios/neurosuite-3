@@ -568,7 +568,7 @@ void ClusterPalette::updateClusterList(){
 
         if(isInUserClusterInfoMode){
             if(curId == 0){
-                clusterText.append(" - ").append("artefact");
+                clusterText.append(" - ").append("artifact");
             } else if(curId == 1){
                 clusterText.append(" - ").append("noise");
             } else{
@@ -1014,7 +1014,7 @@ void ClusterPalette::showUserClusterInformation(int electrodeGroupId){
         QString clusterText = iconView->item(i)->text();
 
         if(clusterId == 0){
-            clusterText.append(" - ").append("artefact");
+            clusterText.append(" - ").append("artifact");
         }
         else if(clusterId == 1){
             clusterText.append(" - ").append("noise");

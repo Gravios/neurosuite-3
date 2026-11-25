@@ -85,7 +85,7 @@
         <item>
          <widget class="QComboBox" name="waveformSortStatisticComboBox">
           <property name="toolTip">
-           <string>The waveform that stands for each cluster in Sort by Nearest-Neighbour Waveform and Sort by Waveform (Global / Spectral). Median: the per-sample median of the cluster's spikes; robust to the odd artefact spike, but it holds a cluster's spikes in memory and sorts each sample. Mean: the per-sample mean; one pass with nothing held, so lighter on large clusters, but an artefact spike pulls it. Default: Median.</string>
+           <string>The waveform that stands for each cluster in Sort by Nearest-Neighbour Waveform and Sort by Waveform (Global / Spectral). Median: the per-sample median of the cluster's spikes; robust to the odd artifact spike, but it holds a cluster's spikes in memory and sorts each sample. Mean: the per-sample mean; one pass with nothing held, so lighter on large clusters, but an artifact spike pulls it. Default: Median.</string>
           </property>
           <item>
            <property name="text"><string>Median waveform</string></property>

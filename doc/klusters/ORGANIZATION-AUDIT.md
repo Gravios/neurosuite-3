@@ -297,7 +297,13 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    thread types differ; `launchComputeThread` is the same text in two views), the info
    line of the residual and drift views, the wheel (the views do not zoom alike: see the
    changelog), the click.
-7. The glossary and the renames (§6), one word per patch.
+7. ~~The glossary and the renames (§6), one word per patch.~~ Done for the two words of §6:
+   `doc/GLOSSARY.md` has the decision, the code says **parent** / **child** (the manual and
+   the menus keep *fiber* / *atom*) and **artifact** everywhere, the texts and the manual
+   included. Stored names keep their spelling (the log's `DELETE_ARTEFACT`, the command id
+   `tools.deleteArtefact`, image file names). Not done: the two camelCase file names
+   (`autoMerge.cpp`, `clusterPalette.cpp`), which go with the directories of step 8; the
+   words of §10 (spelling list, boolean names).
 8. Directories (§9), last: it touches every include and is cheap once the rest is settled.
 
 Each is one concern and one patch series; none changes behaviour, so the existing tests are the

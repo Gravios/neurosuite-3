@@ -34,7 +34,7 @@ whichever palette, view or log line it appears:
 
 | Ids | What |
 |---|---|
-| `0`, `1` | The artefact and noise bins. Each bin's one atom carries the bin's id. |
+| `0`, `1` | The artifact and noise bins. Each bin's one atom carries the bin's id. |
 | `2` … `9999` | Fibers only. |
 | `10002` … `19999` | **Self children.** Fiber *p*'s self child is *p* + 10000 (fiber 153 → atom 10153). It is the atom a fiber has when it has only one, and the atom that takes the fiber's spikes no other atom covers. |
 | `20000` … | Every other atom, numbered upwards as it is made. |
@@ -189,7 +189,7 @@ selected. A click in a matrix scoped to the atoms selects atoms, as before.
 | `Ctrl+Up` | **New fiber** from the selected atoms (or from all atoms of 2+ selected fibers). |
 | `Ctrl+Down` | **Group** the selected fibers into one. |
 | `Ctrl+Shift+Down` | **Dissolve** the selected fiber into its atoms. |
-| `Delete` / `Shift+Delete` | With the **child palette** focused: the selected atoms go to noise / artefact (their spikes leave the fiber; the atoms keep their ids). The selection lands on the next atom of the fiber, or, when the last atom went, on the next fiber. With the main palette focused: the selected fibers go to noise / artefact, as in a flat session. |
+| `Delete` / `Shift+Delete` | With the **child palette** focused: the selected atoms go to noise / artifact (their spikes leave the fiber; the atoms keep their ids). The selection lands on the next atom of the fiber, or, when the last atom went, on the next fiber. With the main palette focused: the selected fibers go to noise / artifact, as in a flat session. |
 
 These keys can be rebound in **Preferences → Input**.
 
@@ -257,7 +257,7 @@ template; with none, every fiber below the spike count is an orphan and every
 fiber at or above it a template. A high threshold merges little. A fiber
 with few spikes has a noisy mean waveform, so its correlation with a template
 stays well below 1 even when it is the same unit: at 0.99 often no orphan
-matches at all. The noise and artefact clusters and the reserved chunk clusters
+matches at all. The noise and artifact clusters and the reserved chunk clusters
 take no part. **Edit → Undo** takes the whole command back in one step. Only a
 plan with more new fibers than ten times the undo depth (**Preferences → General
 → Session**; 200 at the default of 20) is partly undone, and the box says so.
@@ -271,7 +271,7 @@ it belongs to.
    count and a correlation (defaults 100 and 0.90).
 2. The **targets** are every other fiber with *more than* that many spikes,
    whose template is its mean waveform. The fibers being broken up are never
-   targets, nor are the noise, artefact and reserved chunk clusters.
+   targets, nor are the noise, artifact and reserved chunk clusters.
 3. Each atom is matched to the target its own mean waveform correlates with
    best (Pearson, as for the orphan commands). An atom whose best correlation
    reaches the threshold moves there whole. The other atoms become fibers of

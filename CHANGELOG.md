@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters texts: artifact, not artefact](#2026-11-24--klusters-texts-artifact-not-artefact) |
 | 2026-11-24 | [Klusters code: parent and child, not fiber and atom](#2026-11-24--klusters-code-parent-and-child-not-fiber-and-atom) |
 | 2026-11-24 | [Klusters code: artifact, not artefact](#2026-11-24--klusters-code-artifact-not-artefact) |
 | 2026-11-24 | [Glossary: one word per thing in Klusters](#2026-11-24--glossary-one-word-per-thing-in-klusters) |
@@ -300,6 +301,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 ---
 
+## 2026-11-24 — Klusters texts: artifact, not artefact
+
+The texts shown to the curator and the manual use the spelling the code now uses.
+
+<details>
+<summary>Details</summary>
+
+**What changes for the curator.** The texts of Klusters and its manual spell *artifact* one
+way: the tool tips of the sort and renumber commands, the palette's label of cluster 0, a
+handful of status-bar messages, two preference texts, and the manual's pages. They mixed
+*artefact* and *artifact*.
+
+Unchanged, because files and other programs hold them: the curation log's action names
+`DELETE_ARTEFACT` and `DELETE_REGION_ARTEFACT`, the command id `tools.deleteArtefact`, the
+image file names. Key bindings and settings are not affected.
+
+`commands.golden.json` is updated; its diff is the 16 tool tips' spelling and nothing else.
+The audit's step 7 is closed in `ORGANIZATION-AUDIT.md`.
+
+</details>
+
+---
+
 ## 2026-11-24 — Klusters code: parent and child, not fiber and atom
 
 Identifiers and comments in the Klusters source use one pair of words for the two cluster layers. No change in behaviour; no text shown to the curator changed.
@@ -311,7 +335,7 @@ In `src/klusters/` the identifiers that said *atom* or *fiber* say *child* or *p
 names in about 200 places (`atomIds` → `childIds`, `nextFreeAtom` → `nextFreeChild`,
 `fiberOfSelfChild` → `parentOfSelfChild`, `atomsOf` → `childrenOfParent`, the fields `atom` and
 `fiber` of the saved-hierarchy record → `child` and `parent`, ...). The comments follow: *atom*
-and *fiber* as common words became *child* and *parent* (about 840 places).
+and *fiber* as common words became *child* and *parent* (about 650 places).
 
 Kept: everything inside a string — the menus, tool tips, messages and log lines still say
 *fiber* and *atom*, the curator's words — and *fiber-kit*, the program's name, with the
