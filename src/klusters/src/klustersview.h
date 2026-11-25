@@ -210,7 +210,7 @@ public:
     void requestPinObliqueBasis(const QList<int>& ids);
 
     /** Forward TemplateView's request to (re)generate the template waveform
-     *  series (fiber-template) after a template-class membership edit. */
+     *  series (parent-template) after a template-class membership edit. */
     void requestTemplateRegen();
 
     /** Forward TemplateView's request to highlight template class @p col's .eap

@@ -389,7 +389,7 @@ void KlustersDoc::undo(){
         //Update the clusterPalette
         // FIBER palette, unconditionally: clustersToShow comes from
         // activeView->clusters(), i.e. FIBER ids.  undo()/redo() drive
-        // clusteringData -- the atom layer has its own undoChildEdit() timeline --
+        // clusteringData -- the child layer has its own undoChildEdit() timeline --
         // so routing by current scope would hand parent ids to the child palette and
         // select nothing.
         clusterPalette.updateClusterList();
@@ -409,15 +409,15 @@ void KlustersDoc::undo(){
         curationLogger->notifyUndo();
     }
     // Hierarchical view: this reverts clusteringData only.  The two layers keep
-    // INDEPENDENT undo stacks by design (hierarchical-clustering.md), so the atom
+    // INDEPENDENT undo stacks by design (hierarchical-clustering.md), so the child
     // re-cut that ran after the edit being undone is not reverted with it -- and
-    // that re-cut moved rows into atoms chosen for the post-edit parent layout.
-    // Restoring the old parent labels underneath them puts those atoms back in a
+    // that re-cut moved rows into children chosen for the post-edit parent layout.
+    // Restoring the old parent labels underneath them puts those children back in a
     // parent they no longer belong to.
     //
-    // Concretely: sending part of a parent to noise makes its clipped rows atom 1,
-    // the noise self child; undo returns them to their parent still carrying atom 1,
-    // which also covers the session's actual noise, so atom 1 now spans two parents.
+    // Concretely: sending part of a parent to noise makes its clipped rows child 1,
+    // the noise self child; undo returns them to their parent still carrying child 1,
+    // which also covers the session's actual noise, so child 1 now spans two parents.
     // Re-deriving the maps here only REPORTED that -- rebuildHierarchyFromData
     // warns and keeps the first-seen owner -- which made undo a silent source of
     // exactly the offender lists the user was seeing.
@@ -544,7 +544,7 @@ void KlustersDoc::redo(){
 
         // FIBER palette, unconditionally: clustersToShow comes from
         // activeView->clusters(), i.e. FIBER ids.  undo()/redo() drive
-        // clusteringData -- the atom layer has its own undoChildEdit() timeline --
+        // clusteringData -- the child layer has its own undoChildEdit() timeline --
         // so routing by current scope would hand parent ids to the child palette and
         // select nothing.
         clusterPalette.updateClusterList();
@@ -562,7 +562,7 @@ void KlustersDoc::redo(){
         curationLogger->notifyRedo();
     }
     // Hierarchical view: same reasoning as undo() -- a redo re-applies the parent
-    // edit without re-applying the atom re-cut that accompanied it, so the layers
+    // edit without re-applying the child re-cut that accompanied it, so the layers
     // can land inconsistent and re-deriving the maps would only report it.  Measured
     // as harmless in the modelled scenarios, but it is the same asymmetry and the
     // no-op case is free, so repair symmetrically rather than rely on redo happening

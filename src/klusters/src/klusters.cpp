@@ -41,7 +41,7 @@
 #include "klustersdoc_internal.h"   // featureMethod: the token of a .pending working copy
 #include <neurosuite/core/custody.hpp>   // shared chain-of-custody type policy (clu/clc/...)
 #include <neurosuite/core/neurofileio.h> // shared res/clu/spk/fet readers+writers (decollide stage)
-#include <neurosuite/core/template_generate.hpp> // native fiber-template port (standalone template gen)
+#include <neurosuite/core/template_generate.hpp> // native parent-template port (standalone template gen)
 #include <neurosuite/core/decollide.hpp> // shared collision fit + grow engine (targeted decollide)
 #include <neurosuite/core/decollide_eap.hpp> // Decomp -> .eap membership bridge (annotate-in-place)
 #include <QDate>
@@ -870,8 +870,8 @@ void KlustersApp::createMenus()
         if (childPanel && childPanel->isVisible())
             repopulateChildPalette(clusterPalette->selectedClusters());
     });
-    // After a child (atom) split, hierarchyChanged has already repopulated the
-    // child palette for the unchanged parent; land focus on the new sibling atoms.
+    // After a child (child) split, hierarchyChanged has already repopulated the
+    // child palette for the unchanged parent; land focus on the new sibling children.
     // Same landing behaviour as hierarchyChildrenCreated, different cause: a delete
     // asking the palette to land on a surviving sibling.  Kept as its own signal so
     // the two reasons stay separable.
@@ -1029,7 +1029,7 @@ void KlustersApp::createMenus()
     // is shared by both scopes, so a child split emits newClusterAdded too -- and
     // this handler then pulled focus to the FIBER palette, undoing the child
     // palette's own select-and-focus and landing the user on the parent instead of
-    // on the atoms the split had just produced.  When a child palette is live it
+    // on the children the split had just produced.  When a child palette is live it
     // owns the post-split landing (hierarchyChildrenCreated), so leave focus alone.
     connect(doc, &KlustersDoc::newClusterAdded, this,
         [this](QList<int>&, int, QList<int>&) {
@@ -4162,7 +4162,7 @@ void KlustersApp::slotRedo()
 
 void KlustersApp::slotUpdateUndoNb(int undoNb){
     currentNbUndo = undoNb;
-    // Layer-scoped undo: the count is already the shown layer's (parent or atom),
+    // Layer-scoped undo: the count is already the shown layer's (parent or child),
     // so the main Undo reflects that layer alone.
     if(currentNbUndo > 0) {
         slotStateChanged("undoState");
@@ -4581,9 +4581,9 @@ bool KlustersApp::wsEnter()
     // the parent palette while the spike lookup went through doc->data() --
     // the ACTIVE layer -- so in children view parent numerals were looked up
     // in the ATOM id space.  That coincidence held only while each parent
-    // kept a same-numeral core atom; on a curated session it collapses
+    // kept a same-numeral core child; on a curated session it collapses
     // (jg05-20120316 g6: 1 of 411 parents), and Shift+W either refused
-    // ("not enough spikes") or previewed ANOTHER parent's atom, entirely
+    // ("not enough spikes") or previewed ANOTHER parent's child, entirely
     // plausibly.  Children view now watersheds the SELECTED ATOMS from the
     // child palette against childClusterData(), and the parent path names
     // parentData() outright -- data() appears nowhere in this function.
@@ -4610,7 +4610,7 @@ bool KlustersApp::wsEnter()
     if (onChild) {
         // Same-parent guard, mergeChildren's reason turned around: basins know
         // nothing of parent boundaries, so a cross-parent input would come
-        // back as atoms straddling both parents.  Refused at preview entry so
+        // back as children straddling both parents.  Refused at preview entry so
         // the user is not tuning a partition that cannot commit (the doc
         // guards its commit independently).
         const int owner = doc->parentOfChild(sel.first());
@@ -4652,14 +4652,14 @@ bool KlustersApp::wsEnter()
         (activeClusterView() && activeClusterView()->isTsneShowing())
             ? activeClusterView() : nullptr;
 
-    // Embedding + atoms is allowed.  The embedding commit (wsExit) carves each
+    // Embedding + children is allowed.  The embedding commit (wsExit) carves each
     // basin through createNewCluster with its sources read from data(), which in
-    // children view is the atom layer: the rows are spike rows, Data::createNewCluster
+    // children view is the child layer: the rows are spike rows, Data::createNewCluster
     // tests them against its own clusters, and the doc's child branch makes the new
-    // atom a sibling under the same parent -- the path the embedding's own lasso
-    // already takes on atoms.  The commit keeps only the rows of the SELECTED atoms
+    // child a sibling under the same parent -- the path the embedding's own lasso
+    // already takes on children.  The commit keeps only the rows of the SELECTED children
     // (same-parent, checked above), so a basin cannot gather spikes of another
-    // parent's atom into one straddling atom.
+    // parent's child into one straddling child.
 
     // Locate the ClusterView widget.  It is the active KlustersView's
     // currentViewWidget when containsClusterView() is true; cast through
@@ -4833,10 +4833,10 @@ void KlustersApp::wsExit(bool commit)
         // must survive.
         QMap<int, QSet<dataType>> byBasin;
         const int n = qMin(static_cast<int>(result.pointLabels.size()), rows.size());
-        // In children view only the SELECTED atoms are split: the embedding
-        // holds the shown clustering, which is those atoms, but a point of any
-        // other atom that reached it must stay put -- a basin gathering spikes of
-        // two parents' atoms would make one atom straddling both.
+        // In children view only the SELECTED children are split: the embedding
+        // holds the shown clustering, which is those children, but a point of any
+        // other child that reached it must stay put -- a basin gathering spikes of
+        // two parents' children would make one child straddling both.
         const QVector<dataType> labelAtEntry = doc->data().labelByFeatureRow();
         for (int i = 0; i < n; ++i) {
             const int lab = result.pointLabels[static_cast<size_t>(i)];
@@ -4923,7 +4923,7 @@ void KlustersApp::wsExit(bool commit)
                           .arg(nNew).arg(sel.size()).arg(sel.size() == 1 ? "" : "s"),
             4000);
     }
-    // A committed atom split parks its landing and the child palette takes
+    // A committed child split parks its landing and the child palette takes
     // focus with it (hierarchyChildrenCreated now, the drained park after the
     // deferred rebuilds); stealing focus back to the parent palette here would
     // undo that landing.  Parent commits keep their focus return unchanged.
@@ -5131,7 +5131,7 @@ void KlustersApp::adoptCuratedParents(const QList<int>& selectedClusters){
         // matrices fall back to the parent view (all parent clusters), and
         // V has to be pressed again to re-enter child view.  Leaving the
         // mode armed would silently re-scope to whatever parent happened
-        // to be first, which is how a comparison of the wrong unit's atoms
+        // to be first, which is how a comparison of the wrong unit's children
         // reaches the screen looking entirely plausible.
         //
         // A reserved chunk cluster (a chunk a fiber-kit chunk run left unsorted)
@@ -5150,8 +5150,8 @@ void KlustersApp::adoptCuratedParents(const QList<int>& selectedClusters){
         // is dropped by the rebuild that follows (repopulateChildPalette would
         // otherwise restore it), and the clicked parent holds the selection.
         // Only a GESTURE does that: a selection the program makes in the parent
-        // palette while children are selected (the landing after an atom's
-        // realign selects the atom's parent silently, a rebuild restores the
+        // palette while children are selected (the landing after a child's
+        // realign selects the child's parent silently, a rebuild restores the
         // parent) is not the user leaving the children, and the child view stays.
         const bool childSelected = childPaletteA && !childPaletteA->selectedClusters().isEmpty()
                                    && !(clusterPalette && clusterPalette->selectionIsProgrammatic());
@@ -5259,12 +5259,12 @@ void KlustersApp::slotCompactClusterIds(){
         return;
 
     const int parentsBefore = doc->parentData().clusterIds().size();
-    const int atomsBefore   = doc->hasChildClustering()
+    const int childrenBefore   = doc->hasChildClustering()
                             ? doc->childClusterData().clusterIds().size() : 0;
 
-    // Dropping the atom undo history is the one irreversible part, so say so
+    // Dropping the child undo history is the one irreversible part, so say so
     // before doing it rather than in the status bar afterwards.
-    if(atomsBefore > 0 && doc->childUndoCount() > 0){
+    if(childrenBefore > 0 && doc->childUndoCount() > 0){
         const QMessageBox::StandardButton go = QMessageBox::question(
             this, tr("Compact Cluster IDs"),
             tr("Renumbering the atoms invalidates the %1 step(s) of atom undo "
@@ -5286,14 +5286,14 @@ void KlustersApp::slotCompactClusterIds(){
         return;
     }
     const int parentsAfter = doc->parentData().clusterIds().size();
-    const int atomsAfter   = doc->hasChildClustering()
+    const int childrenAfter   = doc->hasChildClustering()
                            ? doc->childClusterData().clusterIds().size() : 0;
     statusBar()->showMessage(
         tr("Compact cluster IDs: %1 parent(s) and %2 atom(s) renumbered into 2.. "
            "(counts unchanged: %3 → %4 parents, %5 → %6 atoms).")
-            .arg(parentsAfter).arg(atomsAfter)
+            .arg(parentsAfter).arg(childrenAfter)
             .arg(parentsBefore).arg(parentsAfter)
-            .arg(atomsBefore).arg(atomsAfter), 8000);
+            .arg(childrenBefore).arg(childrenAfter), 8000);
 }
 
 void KlustersApp::slotMergeOrphanChildren(){
@@ -5337,8 +5337,8 @@ void KlustersApp::slotMergeOrphanChildren(){
     const int consumed = doc->mergeOrphanChildren(parent, minSpikes, minCorr,
                                                   *activeView(), &matched, &stray);
     QApplication::restoreOverrideCursor();
-    // The merge is an atom-layer edit: Undo Child-Layer Edit must follow the
-    // atom stack now, as after Merge Selected Children.
+    // The merge is a child-layer edit: Undo Child-Layer Edit must follow the
+    // child stack now, as after Merge Selected Children.
     refreshChildUndoActions();
 
     const QString scope = tr("cluster %1, threshold %2 spikes, r ≥ %3")
@@ -5663,8 +5663,8 @@ void KlustersApp::slotPartitionClusterByTime(){
         return;
 
     // The cluster the user is on, in whichever layer is driving: in child view
-    // the shown list holds atom ids and doc.data() is the child clustering, so
-    // the same call partitions an atom.  Reserve bins are excluded -- cutting
+    // the shown list holds child ids and doc.data() is the child clustering, so
+    // the same call partitions a child.  Reserve bins are excluded -- cutting
     // noise or artifact into time blocks has no curation meaning.
     const QList<int>& shown = activeView()->clusters();
     int clusterId = -1;
@@ -5782,7 +5782,7 @@ void KlustersApp::slotGroupClusters(QList<int> selectedClusters){
 
     // Merge CHILDREN when the child palette is the one being worked in.
     //
-    // doc->groupClusters() merges parents.  Handed a child selection -- atom ids --
+    // doc->groupClusters() merges parents.  Handed a child selection -- child ids --
     // it either finds no such parents and does nothing, which is what G appeared to
     // do, or merges whichever parents carry the same numbers.  doc->mergeChildren()
     // already exists for this and was simply never reached from the G key.
@@ -5905,7 +5905,7 @@ void KlustersApp::slotAutoMerge()
     // candidates and the metric layer used to be data() -- the ACTIVE layer
     // -- while the application below was groupClusters, the PARENT merge.
     // With a child selected, "All active" therefore proposed over every ATOM
-    // in the session and fed atom ids to the parent merge, ids that mostly
+    // in the session and fed child ids to the parent merge, ids that mostly
     // exist as parent numerals after a compaction: the id-collision family
     // again, at the auto-merge funnel.  Under a CHILD scope the auto-merge
     // now works ON the scope; otherwise it is the parent-layer tool it
@@ -5914,10 +5914,10 @@ void KlustersApp::slotAutoMerge()
     Data& layer = scoped ? doc->childClusterData() : doc->parentData();
 
     // Resolve scope into a candidate list.  ScopeSelected (0): the selection
-    // in the palette being curated -- the child palette's atoms under a
+    // in the palette being curated -- the child palette's children under a
     // scope (the roster, or the joint working set the matrices built), the
     // parent palette's clusters otherwise.  ScopeAllActive (1): the whole
-    // CHILD SCOPE under a scope -- never the session's full atom list; the
+    // CHILD SCOPE under a scope -- never the session's full child list; the
     // scope is what bounds the tool to the curated parent or group of
     // parents -- else every parent id (computeProposals strips 0 and 1
     // internally).
@@ -5978,11 +5978,11 @@ void KlustersApp::slotAutoMerge()
             ++applied;
             continue;
         }
-        // Scoped application, decided PER GROUP: a group whose atoms all
+        // Scoped application, decided PER GROUP: a group whose children all
         // belong to one parent merges under that parent (mergeChildren, whose
         // own guard re-checks); a group spanning parents pools into a NEW
         // parent (promoteChildren) -- the cross-parent repair the joint scope
-        // exists to expose, and the only nesting-legal way to unite atoms of
+        // exists to expose, and the only nesting-legal way to unite children of
         // two parents.  parentOfChild is read per group, against the maps the
         // previous group's edit just rebuilt.
         const int owner = doc->parentOfChild(g.clusters.first());
@@ -6006,7 +6006,7 @@ void KlustersApp::slotAutoMerge()
     // Post-merge automation only for the parent-layer path: the child ops
     // above each emitted hierarchyChanged, whose coalesced automation already
     // recomputes the scoped matrices -- and the auto-renumber it would add is
-    // the PARENT compaction, the wrong layer's medicine after atom merges.
+    // the PARENT compaction, the wrong layer's medicine after child merges.
     if (applied > 0) autoPostMerge();
     // An edit made in the child palette keeps its own landing; pulling focus to
     // the parent palette here would undo it.  Tested on EDIT SCOPE rather than on
@@ -6106,7 +6106,7 @@ void KlustersApp::autoPostClusterEdit(bool clusterSetChanged)
         maybeLockEditsForConsolidation();
     }
     // Last step (mirrors the batch-finish path): land on the produced parents.  For
-    // atom-only ops the pending set is empty and selection was handled at op time
+    // child-only ops the pending set is empty and selection was handled at op time
     // via hierarchyChildrenCreated.
     applyPendingParentSelection();
 }
@@ -6159,9 +6159,9 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     // The ids come from the PARENT palette (ClusterPalette::moveClustersToNoise /
     // ToArtifact), so the delete runs on the parent layer whatever is shown.  With
-    // atoms selected in the child palette the child clustering is the active one,
+    // children selected in the child palette the child clustering is the active one,
     // and deleteClusters works on data(): left in that scope it looked these
-    // parent numerals up in the ATOM id space and reclassified whichever atoms
+    // parent numerals up in the ATOM id space and reclassified whichever children
     // happened to carry them.  Atom deletes have their own path (slotDeleteSelected
     // -> dropChildrenToBin).
     doc->setActiveClustering(false);
@@ -6189,9 +6189,9 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
 void KlustersApp::slotDeleteSelected(int reservedId)
 {
     if (!doc || !activeView()) return;
-    // Child palette focused: delete at the child level.  The atoms are
-    // reclassified onto the bin (their spikes leave the parent, their atom ids
-    // stay), the selection lands on the next sibling -- or, when the last atom
+    // Child palette focused: delete at the child level.  The children are
+    // reclassified onto the bin (their spikes leave the parent, their child ids
+    // stay), the selection lands on the next sibling -- or, when the last child
     // went and the parent emptied with it, on the next parent.
     if (focusedChildPalette() && childPanel && childPanel->isVisible()) {
         const QList<int> kids = childPalette ? childPalette->selectedClusters() : QList<int>();
@@ -6266,7 +6266,7 @@ QList<int> KlustersApp::purgeSmallClusters(int n, bool ask)
     if (!doc || !activeView()) return small;
     const bool childView = doc->isChildClusteringActive() && doc->hasChildClustering() && childPalette;
     // Skipping the reserved artifact(0)/noise(1) and the reserved chunk clusters of a
-    // fiber-kit chunk run (in the child view, their atoms), which only reclustering and
+    // fiber-kit chunk run (in the child view, their children), which only reclustering and
     // feature-space selections take spikes out of.
     if (childView) {
         Data& kids = doc->childClusterData();
@@ -6463,7 +6463,7 @@ void KlustersApp::slotStripFeatureOutliers()
 // the non-mutating doc scan detectWaveformOutliers; the user confirms the exact
 // count (default No) before the single undoable createNewCluster.  Parent scope
 // only: the scan reads parentData(), so the split must run on the parent too --
-// it refuses while a child (atom) layer is active rather than splitting an atom.
+// it refuses while a child (child) layer is active rather than splitting a child.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotStripWaveformOutliers()
 {
@@ -6472,8 +6472,8 @@ void KlustersApp::slotStripWaveformOutliers()
 
     // Parent scope: the scan reads parentData() and the split (createNewCluster)
     // runs on the ACTIVE layer, so the two agree only while the parent is active.
-    // Refuse in child (atom) view rather than scoring parent ids against atom
-    // spikes and then splitting an atom -- neither of which the gesture means.
+    // Refuse in child (child) view rather than scoring parent ids against child
+    // spikes and then splitting a child -- neither of which the gesture means.
     if (doc->isChildClusteringActive()) {
         slotStatusMsg(tr("Strip waveform outliers: switch to the parent clustering "
                          "first (the strip does not operate on atoms)."));
@@ -8445,9 +8445,9 @@ void KlustersApp::slotSplitClusterByKnn()
     }
     // Layer routing is EXPLICIT, mirroring the watershed: a non-empty child
     // selection IS the shown clustering, so it is what the split runs on --
-    // the ATOM layer, against the child scope's atoms as references.  The
+    // the ATOM layer, against the child scope's children as references.  The
     // parent path is unchanged.  (view->clusters() in child view already
-    // held atom ids; feeding those to the parent-layer split looked up atom
+    // held child ids; feeding those to the parent-layer split looked up child
     // numerals in the parent table -- the id-collision family again.)
     QList<int> selected = (childPanel && childPanel->isVisible())
                               ? selectedChildrenAB() : QList<int>();
@@ -8593,7 +8593,7 @@ void KlustersApp::slotSplitClusterByKnn()
 // KlustersApp::slotStripByTemplate
 // ---------------------------------------------------------------------------
 // Action handler for "Strip by Template…".  Both scopes: the child scope when
-// the child panel shows a non-empty selection (atom ids from selectedChildrenAB,
+// the child panel shows a non-empty selection (child ids from selectedChildrenAB,
 // never view->clusters() — the id-collision family), the parent scope
 // otherwise.  The FIRST selected cluster is offered as the default template;
 // the dialog's combo lets the user re-designate among the selection.  The
@@ -8630,7 +8630,7 @@ void KlustersApp::slotStripByTemplate()
     }
     // Single selection = whole-scope donors: the lone selection is the
     // template and every other cluster of the same scope donates -- the
-    // child scope's atoms (or the template's siblings with no matrix scope)
+    // child scope's children (or the template's siblings with no matrix scope)
     // in child view, every parent cluster otherwise.  The donor pool is the
     // KNN split's reference-pool rule with the roles reversed: there the
     // scope classifies the source, here it donates to the template.  An
@@ -9248,7 +9248,7 @@ bool KlustersApp::launchPlugin(const KlustersPlugin& plugin, const QMap<QString,
 
     const QMap<QString, QString> ctx = pluginContext();
     // The selection the descriptor asked for: <selection>children</selection> is the child palette's
-    // atoms (it was always the parent palette's clusters, so a `children` engine got parent ids).
+    // children (it was always the parent palette's clusters, so a `children` engine got parent ids).
     QList<int> sel;
     if (plugin.selection == QLatin1String("children") && childPanel && childPanel->isVisible() && childPalette)
         sel = childPalette->selectedClusters();
@@ -9455,7 +9455,7 @@ QStringList KlustersApp::pluginProducedFiles() const
 // in mTemplateUnits, is persisted next to the session as
 // <base>.templates[.<variant>].<group>[.<tag>] (one unit id per line) and, on a
 // successful save, is turned into linked .wtf templates by running the
-// fiber-template plugin (through launchPlugin) for exactly those units in every
+// parent-template plugin (through launchPlugin) for exactly those units in every
 // available spk variant.
 // ---------------------------------------------------------------------------
 void KlustersApp::slotToggleTemplate()
@@ -9598,7 +9598,7 @@ void KlustersApp::runTemplateGeneration()
 // Python plugin.  It reads the clustering files ON DISK (the save-first invariant
 // the callers enforce) and writes <base>.wtf.<variant>.<group>[.<tag>] per spk
 // variant + the shared, method-less <base>.wti.<group>[.<tag>].  The external
-// fiber-template plugin, if still installed, is kept only as a FALLBACK for a
+// parent-template plugin, if still installed, is kept only as a FALLBACK for a
 // session the native reader cannot satisfy — no behavioural regression.
 void KlustersApp::runTemplateGenerationForUnits(const QList<int>& idsIn)
 {
@@ -9691,7 +9691,7 @@ void KlustersApp::runTemplateGenerationForUnits(const QList<int>& idsIn)
         return;
     }
 
-    // ── Fallback: the external fiber-template plugin, if installed ────────────
+    // ── Fallback: the external parent-template plugin, if installed ────────────
     // Native generation could not read an input (reported in R.err).  Try the
     // Python plugin so an unusual session still produces templates; if it is not
     // present, surface the native error.
@@ -9733,7 +9733,7 @@ void KlustersApp::refreshTemplateLibraryDisplays()
         v->reloadFromDisk();
 }
 
-// On-demand: run fiber-template now for the selected cluster(s) only — the
+// On-demand: run parent-template now for the selected cluster(s) only — the
 // per-cluster "refine this unit" step of the curation workflow, distinct from
 // the on-save run over the whole marked set.
 void KlustersApp::slotGenerateTemplateForSelection()
@@ -9750,7 +9750,7 @@ void KlustersApp::slotGenerateTemplateForSelection()
         slotStatusMsg(tr("Generate template: select one or more clusters (not noise/artefact)."));
         return;
     }
-    // fiber-template reads the clustering files ON DISK; unsaved edits would
+    // parent-template reads the clustering files ON DISK; unsaved edits would
     // template a stale .clu.
     if (doc->isModified()) {
         slotStatusMsg(tr("Generate template: save first (File > Save) — fiber-template reads the files on disk."));

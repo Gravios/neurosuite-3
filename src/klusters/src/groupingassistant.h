@@ -231,9 +231,9 @@ public:
      * a result that was computed in full.
      *
      * Used for the scoped matrices, which compare one parent's children rather
-     * than every atom in the session.  Restricting here rather than afterwards is
+     * than every child in the session.  Restricting here rather than afterwards is
      * the point: the cost of these matrices is quadratic in the cluster count, and
-     * a session has thousands of atoms where a parent has tens.
+     * a session has thousands of children where a parent has tens.
      *
      * Must be set before computeMeanProbabilities* is called.*/
     void setActiveClusters(const QList<int>& ids) { activeClusters = ids; }
@@ -278,8 +278,8 @@ private:
      * three views do not have.  A reserved chunk cluster (the chunks a fiber-kit
      * chunk run left unsorted, isReservedClusterId) is never in scope on a layer
      * that protects them (excludeReserved): it is not a unit and takes no part in
-     * any matrix.  On the atom layer an id says nothing about that -- the scope
-     * there already leaves out a reserved parent's atoms.*/
+     * any matrix.  On the child layer an id says nothing about that -- the scope
+     * there already leaves out a reserved parent's children.*/
     inline bool clusterInScope(int id) const {
         if (excludeReserved && isReservedClusterId(id)) return false;
         return activeClusters.isEmpty() || id == ClusterId::Noise || activeClusters.contains(id);

@@ -180,7 +180,7 @@ struct ClusterSnapshot
     /// pyramidal on g5 (fiber_geometry.classify_celltype).
     double  waveformWidthMs    = 0.0;
     /// Per-channel peak-to-trough amplitude (ADC units), the position proxy
-    /// fiber-cpos localises from; joinable to its tables.
+    /// parent-cpos localises from; joinable to its tables.
     QVector<double> waveformChanAmp;
 
     // ── I. Session context ────────────────────────────────────────────────
@@ -210,7 +210,7 @@ struct ClusterSnapshot
     int     actionHistoryDepth = 0;
 
     // ── M. Layer ──────────────────────────────────────────────────────────
-    /// "parent" (the .clu units) or "child" (the .clc atoms).  Child ids collide
+    /// "parent" (the .clu units) or "child" (the .clc children).  Child ids collide
     /// with parent numerals, so without this field a child snapshot would read
     /// as a parent cluster; readers must key on (layer, cluster).
     QString layer = QStringLiteral("parent");
@@ -247,7 +247,7 @@ public:
                               ///< parents/children, dissolve, collapse, flatten, compact, promote to
                               ///< hierarchy): one entry per command, with the plan as details; the
                               ///< primitives it ran carry its index in gesture_idx.  Not undo-paired.
-        HIERARCHY_EDIT  = 17, ///< A child-layer edit that is one atom-undo step but no parent primitive
+        HIERARCHY_EDIT  = 17, ///< A child-layer edit that is one child-undo step but no parent primitive
                               ///< (mergeChildren, collapseToSelfChildren, flattenHierarchyToClu,
                               ///< compactAllClusterIds, promoteToHierarchy): snapshots carry layer=child.
         CONSIDERED      = 18, ///< Two to four parents -- or children, layer=child -- were shown
@@ -386,7 +386,7 @@ public:
 
     /** Open a GESTURE: a hierarchy command made of several primitives.  Every
      *  beginAction until endGesture() is stamped with this gesture's index
-     *  (written as gesture_idx on its lines), so a reader can fold the per-atom
+     *  (written as gesture_idx on its lines), so a reader can fold the per-child
      *  MOVE_SPIKES / GROUP entries back into the command that ran them.  The
      *  gesture entry itself takes no snapshots and is not undo-paired; its
      *  details hold the plan.  Returns the gesture's action index.  Gestures

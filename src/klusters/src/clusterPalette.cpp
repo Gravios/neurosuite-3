@@ -55,7 +55,7 @@ ClusterPaletteWidget::ClusterPaletteWidget(QWidget *parent)
 {
     setViewMode(QListView::IconMode);
     // Lay the icons out in batches off the event loop rather than in one
-    // synchronous pass.  A hierarchical session runs to several thousand atoms, and
+    // synchronous pass.  A hierarchical session runs to several thousand children, and
     // a single-pass IconMode relayout on every rebuild is the dominant cost of a
     // cluster edit -- it blocks the GUI thread, and a cluster edit rebuilds the list
     // several times (a split alone drives it via shownClustersUpdate and the post-op
@@ -513,7 +513,7 @@ void ClusterPalette::updateClusterList(){
     //
     // A CHILD palette follows the document's held child-scope sort order instead
     // (KlustersDoc::scopeSortOrderList, set by Sort Clusters / Shift+S under the
-    // child scope): the same atom ids the four curation matrices derive their
+    // child scope): the same child ids the four curation matrices derive their
     // display order from, so the palette and the matrices read in one order.
     // Display only -- ids are untouched -- and transient: the doc drops it at the
     // scope's exits, and this palette is rebuilt then and lists naturally again.
@@ -544,8 +544,8 @@ void ClusterPalette::updateClusterList(){
 
     // View ▸ Show Reserved Chunk Clusters unchecked: the palette of the layer that
     // holds them (the parent layer, see Data::protectsReservedClusters) leaves the
-    // reserved chunk clusters out.  An atom's id says nothing about that, so a
-    // child palette lists every atom.
+    // reserved chunk clusters out.  A child's id says nothing about that, so a
+    // child palette lists every child.
     const bool hideReserved = !doc->showsReservedClusters() && boundData().protectsReservedClusters();
 
     for(int i : visitOrder){
@@ -965,7 +965,7 @@ void ClusterPalette::selectItems(const QList<int>& selectedClusters){
         }
     }
     //Last item in selection gets focus if it exists -- and is scrolled into view:
-    //a landing at the end of a long list (a delete of the last atom lands on the
+    //a landing at the end of a long list (a delete of the last child lands on the
     //new last one) must be visible, not just current.
     if(item){
         iconView->setCurrentItem(item);

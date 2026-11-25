@@ -165,7 +165,7 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     thresholdSlider->setSpan(colourLow, currentThreshold);
     updateThresholdLabel();
 
-    // A scoped sort (or the scope's exit) changes the held atom order the
+    // A scoped sort (or the scope's exit) changes the held child order the
     // display permutation derives from.
     connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &TemplateMatrixView::applyScopeSortOrder);
 

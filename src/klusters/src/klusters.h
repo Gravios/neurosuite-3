@@ -154,7 +154,7 @@ public:
      *  on behalf of TemplateView. */
     void pinObliqueBasisFromTemplates(const QList<int>& ids);
 
-    /** (Re)generate the template waveform series with fiber-template for the
+    /** (Re)generate the template waveform series with parent-template for the
      *  marked units — also the refresh after a template-class membership edit.
      *  Public so KlustersView::requestTemplateRegen() can forward TemplateView's
      *  request (mirrors pinObliqueBasisFromTemplates). */
@@ -163,7 +163,7 @@ public:
     /** Build the linked-median template library (.wti/.wtf) for exactly @p ids —
      *  shared by the on-save marked-units run and the on-demand per-cluster
      *  action.  Native-primary (neurosuite::templategen, in-process); the external
-     *  fiber-template plugin is a fallback only.  The caller sets mPluginReportModal. */
+     *  parent-template plugin is a fallback only.  The caller sets mPluginReportModal. */
     void runTemplateGenerationForUnits(const QList<int>& ids);
 
     /** Reload every open Template Library display from disk, so a freshly written
@@ -380,7 +380,7 @@ private Q_SLOTS:
     /** Adopt the curated parent(s) from a parent selection -- the user's click or
      *  an operation's landing (see the definition). */
     void adoptCuratedParents(const QList<int>& selectedClusters);
-    /** Enables the Hierarchy menu's edits in a hierarchical session with its atom
+    /** Enables the Hierarchy menu's edits in a hierarchical session with its child
      *  layer loaded while the child palette is shown, disables them otherwise. */
     void updateHierarchyEditActions();
     /** Hierarchy edits driven from the palettes' current selection. */
@@ -395,7 +395,7 @@ private Q_SLOTS:
     void slotDropChildToNoise();
     void slotMergeChildren();
     /** Hierarchy > Flatten Hierarchy: collapse .clc to .clu -- every parent becomes a single
-     *  self atom (atom id == parent id + 10000).  Confirms first -- it discards the whole
+     *  self child (child id == parent id + 10000).  Confirms first -- it discards the whole
      *  sub-mode layer. */
     void slotFlattenHierarchyToClu();
     void slotUndoChildEdit();
@@ -418,7 +418,7 @@ private Q_SLOTS:
      *  child palette focused the selected ATOMS are dropped onto the bin
      *  (KlustersDoc::dropChildrenToBin -- their spikes leave the parent, the
      *  selection lands on the next sibling, or on the next parent when the last
-     *  atom went); otherwise the parent palette's selection is deleted as before.
+     *  child went); otherwise the parent palette's selection is deleted as before.
      *  @p reservedId is 1 (noise) or 0 (artifact). */
     void slotDeleteSelected(int reservedId);
     /** Move every cluster with fewer than N spikes into the noise cluster (1),
@@ -786,7 +786,7 @@ public:
     /** Recluster the selection forcing channel-level high-variance feature
      *  selection for this run only (Shift+C). */
     void slotReclusterChannelVariance();
-    /** Recluster with fiber-kit: the selected clusters (or atoms) are written as a SUB-SESSION
+    /** Recluster with fiber-kit: the selected clusters (or children) are written as a SUB-SESSION
      *  (KlustersDoc::createReclusterSubsession) and the fiber-kit command of the preferences (default
      *  `fk run ... --session ... --final-clu ...`: the plan of the session folder's fiber-kit.yaml) runs
      *  on it; the final .clu replaces the selection as a recluster does, one undo step. */
@@ -809,7 +809,7 @@ public:
      *  See KlustersDoc::splitClusterByKnnVsReferences for the algorithm. */
     void slotSplitClusterByKnn();
 
-    /** Designate one selected cluster (parent scope) or atom (child scope) as
+    /** Designate one selected cluster (parent scope) or child (child scope) as
      *  a waveform template, then strip spikes from the other selected
      *  clusters of the same scope whose normalized kernel-weighted residual
      *  against the template's median waveform — on the current channel
@@ -1068,7 +1068,7 @@ private:
 
     // ── Template library: "Mark as Template" + write .wtf on save ──────────────
     // The marked units are the template library for the open clustering: on save
-    // Klusters runs the fiber-template plugin (via launchPlugin) to (re)write their
+    // Klusters runs the parent-template plugin (via launchPlugin) to (re)write their
     // linked .wtf series in every available variant.  The set is persisted next to
     // the session as <base>.templates[.<variant>].<group>[.<tag>] (one unit id per
     // line) and reloaded on open.
@@ -1076,7 +1076,7 @@ private:
     /** Toggle the selected cluster(s) (ids > 1) in/out of the template set and mark
      *  the document modified so a save persists them and refreshes the .wtf. */
     void slotToggleTemplate();
-    /** On-demand: run fiber-template now for the selected cluster(s) only — the
+    /** On-demand: run parent-template now for the selected cluster(s) only — the
      *  per-cluster refinement step (one unit at a time, not only the marked set
      *  on save). */
     void slotGenerateTemplateForSelection();
@@ -1092,7 +1092,7 @@ private:
     void updateTemplatePanelVisibility();       ///< show with the child panel while Templates mode is on
     void loadTemplateMarks();                  ///< replace mTemplateUnits from the sidecar (no-op if none)
     void saveTemplateMarks() const;            ///< write mTemplateUnits to the sidecar (removes it when empty)
-    // runTemplateGeneration() — "After a successful save, run fiber-template for
+    // runTemplateGeneration() — "After a successful save, run parent-template for
     // the marked units (all available spk variants) so their .wtf is rewritten
     // from the saved files" — is now declared in the PUBLIC section (above), so
     // KlustersView::requestTemplateRegen() can forward TemplateView's class-edit
@@ -1287,7 +1287,7 @@ private:
     QVector<int>        wsRows;
     bool                wsOnEmbedding = false;
     /// True when the preview runs on the ATOM layer (children view: wsSel
-    /// holds atom ids from the child palette and the commit goes through
+    /// holds child ids from the child palette and the commit goes through
     /// watershedSelectedChildren).  Held at entry, like wsOnEmbedding, so the
     /// commit cannot re-derive the layer from state that moved meanwhile.
     bool                wsOnChild = false;
@@ -1448,7 +1448,7 @@ private:
      *  based on the current parent/child selection, while the child view is
      *  visible.  Returns true if the key was consumed. */
     bool dispatchHierarchyKey(int key, Qt::KeyboardModifiers mods);
-    /** Re-enable/disable the atom (child-layer) undo/redo menu items. */
+    /** Re-enable/disable the child (child-layer) undo/redo menu items. */
     void refreshChildUndoActions();
     /** Cycle keyboard focus across the palettes / toolbar fields: parent ->
      *  child (when shown) -> toolbar -> parent. */
@@ -1503,17 +1503,17 @@ private:
     QAction* mGroupChildren = nullptr;      // Hierarchy: group selected children into a new parent
     QAction* mDissolveParent = nullptr;      // Hierarchy: explode a parent into its children
     QAction* mDropChildNoise = nullptr;     // Hierarchy: drop child(ren) to noise
-    QAction* mRepairNesting = nullptr;         // Hierarchy: re-cut atoms onto the current parents
+    QAction* mRepairNesting = nullptr;         // Hierarchy: re-cut children onto the current parents
     QAction* mPromoteToHierarchy = nullptr;    // Hierarchy: flat .clu -> .clu/.clc/.clp triple
     bool     mPromoteAfterSave = false;        // a promotion is waiting for the save it started
     QAction* mMergeOrphanChildren = nullptr;   // Hierarchy: gather a parent's tiny children
     QAction* mMergeOrphanParents = nullptr;    // Hierarchy: gather the tiny parents by template
     QAction* mBreakUpParents = nullptr;        // Hierarchy: send a parent's children to the large parents they match
     QAction* mCompactIds = nullptr;            // Hierarchy: compact both layers' ids
-    QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (atom layer)
-    QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every parent to one self atom
-    QAction* mUndoChildEdit = nullptr;      // Hierarchy: undo last atom-layer edit
-    QAction* mRedoChildEdit = nullptr;      // Hierarchy: redo last atom-layer edit
+    QAction* mMergeChildren = nullptr;      // Hierarchy: merge children (child layer)
+    QAction* mMergeAllChildren = nullptr;   // Hierarchy: flatten every parent to one self child
+    QAction* mUndoChildEdit = nullptr;      // Hierarchy: undo last child-layer edit
+    QAction* mRedoChildEdit = nullptr;      // Hierarchy: redo last child-layer edit
     QAction* mChunkMode;
     QAction* mNextChunk;
     QAction* mPrevChunk;
@@ -1546,7 +1546,7 @@ private:
     QAction *mSplitBurstFollowers = nullptr;   // two similar cells: the other's burst followers, split off
     QAction *mSetObliqueBasis;       // pin the oblique projection's template axes (Set Oblique Basis…)
     QAction *mMarkAsTemplate = nullptr;  // toggle the selected cluster(s) as template units (.wtf on save)
-    QAction *mGenerateTemplate = nullptr;  // run fiber-template now for the selected cluster(s) only
+    QAction *mGenerateTemplate = nullptr;  // run parent-template now for the selected cluster(s) only
     QAction *mSortClustersBySpikeCount; // renumber clusters by descending spike count
     QAction *mSortClustersByTime;       // renumber clusters by ascending starting-edge time
     QAction *mSortClustersByContamination; // renumber clusters by descending refractory contamination
@@ -1612,8 +1612,8 @@ private:
      *  otherwise.  Everything `<base>.*` is removed when the run ends (removeReclusterTempFiles /
      *  slotProcessExited). */
     QString reclusterSubsessionBase;
-    /** True while a `refine` plugin runs (KlustersPlugin::refines): the recluster is on the atom layer,
-     *  the selected parents were converted to their atoms, and the finish path stages the engine's
+    /** True while a `refine` plugin runs (KlustersPlugin::refines): the recluster is on the child layer,
+     *  the selected parents were converted to their children, and the finish path stages the engine's
      *  final .clc as the .clu to integrate (KlustersDoc::stageRefinedChildren). */
     bool reclusterRefine = false;
 
@@ -2002,9 +2002,9 @@ private:
     /**The cluster ID currently being realigned (valid while realignRunning).*/
     int realignClusterId;
     /** The single-cluster realign was started on an ATOM (the child view was showing
-     *  it): its completion lands back in the child palette, on that atom, under its
+     *  it): its completion lands back in the child palette, on that child, under its
      *  parent (realignTargetParent) -- not in the parent palette on whichever parent
-     *  carries the atom's number. */
+     *  carries the child's number. */
     bool realignTargetIsChild = false;
     int  realignTargetParent  = -1;
 
@@ -2089,7 +2089,7 @@ private:
     /**Common epilogue: hand @p order to the doc layer, which owns the undo, log,
      * palette and view bookkeeping, and report the outcome.  @p detail is the
      * parenthetical ("largest first").  Under a CHILD scope the order names
-     * atoms and a renumber is the wrong layer entirely, so it becomes a
+     * children and a renumber is the wrong layer entirely, so it becomes a
      * display-only rearrangement of the error matrix instead
      * (applyScopedDisplayOrder).*/
     void applySortedOrder(const QList<int>& order, const QString& sortName,
@@ -2098,9 +2098,9 @@ private:
     /**The layer a sort's metric must read: the scoped ATOM layer while the
      * curation matrices are child-scoped, else the parent layer outright.
      * NOT data() -- data() follows the child SELECTION, which is neither of
-     * those facts: with a child selected but the scope off it is the atom
+     * those facts: with a child selected but the scope off it is the child
      * layer under a parent sort, and with the scope on but nothing selected
-     * it is the parent layer under an atom sort.  Both misroutes put one
+     * it is the parent layer under a child sort.  Both misroutes put one
      * layer's numerals into the other's tables, the id-collision family. */
     Data& sortMetricData() const;
 
@@ -2198,7 +2198,7 @@ private:
      * produced parents.  Called as the LAST step of the post-edit flow -- after the
      * async realign + renumber -- so it is authoritative regardless of what the
      * realign/refresh/tab-switch left selected.  No-op when nothing is pending
-     * (e.g. atom-only ops, which select via hierarchyChildrenCreated instead).*/
+     * (e.g. child-only ops, which select via hierarchyChildrenCreated instead).*/
     void applyPendingParentSelection();
 
     /**Flush the deferred view refresh accumulated in realignBatchTouched:

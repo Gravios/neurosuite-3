@@ -9,7 +9,7 @@
 // path (the lasso's), which already owns thread quiesce, undo on the right
 // timeline, the parent-scope curation log, hierarchy refresh and the parked
 // landing, and produces one new cluster per source so a joint child scope
-// never creates a parent-straddling atom.
+// never creates a parent-straddling child.
 //
 // Waveform access mirrors TemplateMatrixThread: layer spikePositions() names
 // the feature rows, row-1 is the .spk record index, and tmReadSpikeFloat
@@ -351,7 +351,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
         nProducts = products.size();
     } else {
         // Combined product(s): one per parent in scope, so a joint child
-        // scope cannot mint a parent-straddling atom; the parent scope is a
+        // scope cannot mint a parent-straddling child; the parent scope is a
         // single group.  Each group is one singular createNewCluster -- the
         // lasso's own path -- so undo, log and landing stay per-product.
         QMap<int, QPair<QSet<dataType>, QList<int>>> groups;

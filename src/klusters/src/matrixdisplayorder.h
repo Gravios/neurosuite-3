@@ -4,8 +4,8 @@
  *
  * A matrix view keeps its rows in the order its thread computed them
  * (clusterList[i] is the cluster of 0-based matrix row i).  A SORT under the
- * child scope must not renumber atoms, so it rearranges the DISPLAY instead:
- * the document holds the sorted atom ids (KlustersDoc::scopeSortOrderList) and
+ * child scope must not renumber children, so it rearranges the DISPLAY instead:
+ * the document holds the sorted child ids (KlustersDoc::scopeSortOrderList) and
  * every matrix derives, from those ids and its own clusterList, a permutation
  * "display position -> matrix row".  The four matrices therefore read in the
  * same order whatever each one's thread produced, and the permutation is
@@ -70,7 +70,7 @@ struct MatrixDisplayOrder {
     /** The permutation a HELD id order means for this clusterList: the
      *  specials (ids 0/1) keep the front in their own order, the held ids
      *  follow in the held order (ids absent from the rows simply do not
-     *  place -- an atom that died since the sort), and rows the order does
+     *  place -- a child that died since the sort), and rows the order does
      *  not name append in natural order, so the result is always complete.
      *  An empty held order yields the identity (an empty perm). */
     static QList<int> derive(const QList<int>& clusterList, const QList<int>& held) {

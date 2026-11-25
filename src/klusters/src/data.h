@@ -581,7 +581,7 @@ public:
      *  restoreClusterLabels() deliberately bypasses the undo stack because it IS
      *  the replay half of a parent-layer undo.  A user-initiated bulk relabel
      *  needs the opposite: one snapshot, so a single Ctrl+Z (or one ChildEdit on
-     *  the atom layer) puts the whole thing back.  Used by
+     *  the child layer) puts the whole thing back.  Used by
      *  KlustersDoc::flattenHierarchyToClu().
      *
      *  Clusters are written in ascending id order, which keeps
@@ -809,7 +809,7 @@ public:
     }
 
     /** The lowest id a newly made cluster of this layer may take (0: none).
-     *  The atom layer of a hierarchical session sets it, so that fresh atoms
+     *  The child layer of a hierarchical session sets it, so that fresh children
      *  are numbered above the block of ids kept for self children (see
      *  hierarchyfiles.h).  It has no effect on ids already present. */
     void setFreshIdFloor(dataType floor) { freshIdFloor = floor; }
@@ -818,8 +818,8 @@ public:
     /** Whether this layer protects the reserved chunk clusters (default: yes).
      *  A protected layer refuses an edit that adds a spike to a reserved cluster
      *  (prepareUndo), and its renumbering keeps reserved ids (renumber,
-     *  renumberPartial); see reservedclusters.h.  The atom layer of a
-     *  hierarchical session is not protected: its ids are atoms, an atom takes
+     *  renumberPartial); see reservedclusters.h.  The child layer of a
+     *  hierarchical session is not protected: its ids are children, a child takes
      *  its parent's id when it is the parent's only one (a reserved id
      *  included), and the parent layer carries the protection. */
     void setProtectsReservedClusters(bool on) { protectsReserved = on; }

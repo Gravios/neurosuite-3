@@ -105,7 +105,7 @@ ErrorMatrixView::ErrorMatrixView(KlustersDoc& kdoc,KlustersView& kview,const QCo
         update();
     });
 
-    // A scoped sort (or the scope's exit) changes the held atom order the
+    // A scoped sort (or the scope's exit) changes the held child order the
     // display permutation derives from; the other three matrices listen too.
     connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &ErrorMatrixView::applyScopeSortOrder);
 
@@ -706,11 +706,11 @@ void ErrorMatrixView::setDisplayOrder(const QList<int>& order)
 void ErrorMatrixView::applyScopeSortOrder()
 {
     // Derive the display permutation from the doc's HELD child-scope sort
-    // order (MatrixDisplayOrder::derive: specials keep the front, held atom
+    // order (MatrixDisplayOrder::derive: specials keep the front, held child
     // ids follow at their row indices, unnamed rows append in natural order,
     // so the permutation is always complete -- setDisplayOrder treats a
-    // wrong-sized one as identity).  Held atom ids absent from the rows (an
-    // atom that died since the sort) simply do not place; a scope edit
+    // wrong-sized one as identity).  Held child ids absent from the rows (an
+    // child that died since the sort) simply do not place; a scope edit
     // therefore keeps the survivors' order.  With no scope or nothing held,
     // any leftover permutation clears: the held order is the ONLY thing
     // allowed to survive a recompute -- the unscoped display reorder stays

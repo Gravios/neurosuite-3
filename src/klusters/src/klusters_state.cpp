@@ -609,7 +609,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mDecreaseAmplitudeCorrelation->setEnabled(true);
         // Restore the hierarchy-menu entries locked by realignState -- to what the
         // session allows, not unconditionally.  The mutators act on the child
-        // palette, so they need a hierarchical session with its atom layer loaded
+        // palette, so they need a hierarchical session with its child layer loaded
         // and the child palette shown (the gate updateHierarchyEditActions
         // applies); restoring them all to true enabled them in every flat session
         // after its first realign.  A flat session's one entry is Promote.

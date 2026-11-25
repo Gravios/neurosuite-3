@@ -129,7 +129,7 @@ int KlustersDoc::groupClusters(QList<int> clustersToGroup,KlustersView& activeVi
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
 
-    // PARENT-layer edit: group() merges parent clusters; the atom layer follows
+    // PARENT-layer edit: group() merges parent clusters; the child layer follows
     // through the hierarchy refresh below, it is not the thing being merged.
     idsBelongTo(parentData(), clustersToGroup, "groupClusters");
     // dataType, not float: a float is exact only to 2^24 (the reserved ids sit at its top).
@@ -211,7 +211,7 @@ void KlustersDoc::noteModifiedParent(int clusterId)
 {
     // The suspect line.  This set feeds the post-edit realign, which is a
     // PARENT-layer operation whose completion lands the selection in the parent
-    // palette -- so an atom id arriving here is how a child-layer edit could end
+    // palette -- so a child id arriving here is how a child-layer edit could end
     // up flipping the view to parent scope.  childScopeActive is logged beside
     // it because the guards on the callers test that flag, while the builders
     // branch on which layer they actually edited: if those two ever disagree,
@@ -243,7 +243,7 @@ QList<int> KlustersDoc::takeModifiedParents()
 // are never returned -- they are where deleted spikes go, so landing there is
 // the behaviour this exists to avoid.  Returns -1 when nothing real survives.
 //
-// Reads the ACTIVE layer, so it answers for atoms in child scope and parents
+// Reads the ACTIVE layer, so it answers for children in child scope and parents
 // otherwise; the caller decides which palette to apply it to.
 // ---------------------------------------------------------------------------
 int KlustersDoc::neighbourAfterRemoval(const QList<int>& removed) const
@@ -360,8 +360,8 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     // groupClusters; epoch-snapshot step 6b).
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
-    // PARENT-layer edit by design -- see the header: atoms are moved by
-    // re-cutting the child layer afterwards, never by naming atom ids here.
+    // PARENT-layer edit by design -- see the header: children are moved by
+    // re-cutting the child layer afterwards, never by naming child ids here.
     idsBelongTo(parentData(), QList<int>{ fromCluster }, "moveSpikeSubsetToCluster");
     parentData().moveSpikeSubset(fromCluster, featureRowSet,
                                      toCluster, fromClusters, emptiedClusters);
@@ -391,44 +391,44 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     // per-view removal, removeSpikesFromClusters, updateSimilarityMatrices,
     // showAllWidgets, the palette rebuild -- runs synchronously on direct
     // connections, so repairing afterwards means each of them sees a layer whose
-    // atoms straddle, and the repair's own childData mutation then invalidates the
+    // children straddle, and the repair's own childData mutation then invalidates the
     // caches they just rebuilt.
     // Guarded by an actual straddle rather than applied unconditionally, because
     // the hierarchy operations (promoteChildren / mergeChildren
-    // / dropChildToNoise) reach this same function to move WHOLE atoms: they break
+    // / dropChildToNoise) reach this same function to move WHOLE children: they break
     // nothing, they do their own rebuildHierarchyFromData(), and repairNesting() would
-    // additionally clear the atom undo/redo history out from under them.  Moving a
-    // whole atom leaves no remainder, so the check below is false for them and this
+    // additionally clear the child undo/redo history out from under them.  Moving a
+    // whole child leaves no remainder, so the check below is false for them and this
     // block is a no-op -- their behaviour is unchanged.
     //
     // The guard used to require BOTH ends to be real parents (`> 1`), which excluded
     // exactly the moves that produce the straddle class repairNesting could not repair
     // until this series fixed it: sending part of a parent to noise, or pulling part
     // of noise back into a parent.  Those are ordinary curation gestures, they clip
-    // atoms just as a parent-to-parent move does, and the reserve bins are parents like
-    // any other as far as the nesting invariant is concerned (an atom still has to
+    // children just as a parent-to-parent move does, and the reserve bins are parents like
+    // any other as far as the nesting invariant is concerned (a child still has to
     // have exactly one owner, and .clp can only record one).  The straddle probe
-    // below is what keeps the whole-atom hierarchy ops out, so the id test only has
+    // below is what keeps the whole-child hierarchy ops out, so the id test only has
     // to exclude the degenerate self-move.
     if (childData && fromCluster != toCluster) {
         const QVector<dataType> cluByRow   = clusteringData->labelByFeatureRow();
         const QVector<dataType> childByRow = childData->labelByFeatureRow();
         const int n = qMin(cluByRow.size(), childByRow.size());
-        // Atoms that contributed spikes to the move.  Atom 0 / atom 1 are the
-        // reserve atoms: they are the self children of the artifact and noise
+        // Atoms that contributed spikes to the move.  Atom 0 / child 1 are the
+        // reserve children: they are the self children of the artifact and noise
         // parents, so a spike carrying one is already correctly covered wherever it
         // lands in a reserve bin, and collapseToSelfChildren re-cuts them when it
         // does not.  Excluding them here keeps the probe cheap without missing a
-        // straddle: any atom that can straddle a REAL parent has id > 1.
-        QSet<int> movedAtoms;
+        // straddle: any child that can straddle a REAL parent has id > 1.
+        QSet<int> movedChildren;
         for (dataType r : featureRowSet)
             if (r >= 1 && static_cast<int>(r) < n && childByRow[static_cast<int>(r)] > 1)
-                movedAtoms.insert(static_cast<int>(childByRow[static_cast<int>(r)]));
+                movedChildren.insert(static_cast<int>(childByRow[static_cast<int>(r)]));
         bool straddles = false;
         for (int r = 1; r < n && !straddles; ++r)
             if (static_cast<int>(cluByRow[r]) == fromCluster
-                    && movedAtoms.contains(static_cast<int>(childByRow[r])))
-                straddles = true;      // a contributing atom still has spikes in the source
+                    && movedChildren.contains(static_cast<int>(childByRow[r])))
+                straddles = true;      // a contributing child still has spikes in the source
         if (straddles)
             repairNesting();              // plurality-home re-cut + maps + hierarchyChanged
     }
@@ -465,15 +465,15 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     if (!childScopeActive) setPendingParentSelection(clustersToShow);
     logAfter(clustersToShow);
 
-    // ── Hierarchical sessions: re-cut atoms this move left straddling ──────────
+    // ── Hierarchical sessions: re-cut children this move left straddling ──────────
     // This is the one parent-layer edit that moves an ARBITRARY SUBSET of a
-    // parent's spikes to another parent, and the .clc atom layer is not touched by
-    // it.  So an atom wholly inside `fromCluster` whose spikes were only PARTLY
+    // parent's spikes to another parent, and the .clc child layer is not touched by
+    // it.  So a child wholly inside `fromCluster` whose spikes were only PARTLY
     // selected now spans two real parents, breaking the nesting invariant (every
-    // atom owned by exactly one parent -- hierarchical-clustering.md).  The polygon
+    // child owned by exactly one parent -- hierarchical-clustering.md).  The polygon
     // split (createNewCluster/createNewClusters) and the parent recluster already
     // call repairNesting() for exactly this reason; this path was the gap, and it is
-    // how a curated g5 triple ended up with atoms spanning two parents on disk:
+    // how a curated g5 triple ended up with children spanning two parents on disk:
     // TemplateMatrixView::onApplyClicked() moves every spike scoring above the
     // similarity threshold into the target parent and leaves the sub-threshold
     // remainder -- a handful of spikes -- behind in the source.
@@ -483,12 +483,12 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
 
 void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activeView,int clusterId){
     // Child scope: the ids are ATOMS, and a delete is a RECLASSIFICATION -- the
-    // atoms' spikes leave their parent for the bin and keep their atom id
+    // children' spikes leave their parent for the bin and keep their child id
     // (hierarchical-clustering.md).  dropChildrenToBin is that operation, with its
     // gesture, its parent-layer undo and its sibling / next-parent landing.  This
     // function used to carry its own child branch, which ran
-    // childData->moveClustersToNoise on the atom ids: that relabelled the atoms to
-    // atom id 1 INSIDE their real parent -- an "atom 1" that is not the noise bin
+    // childData->moveClustersToNoise on the child ids: that relabelled the children to
+    // child id 1 INSIDE their real parent -- an "child 1" that is not the noise bin
     // -- and left every spike where it was in the parent layer, which is not a
     // delete in either layer.  The UI no longer reaches it (slotDeleteSelected
     // routes child deletes to dropChildrenToBin directly, and the parent delete
@@ -517,7 +517,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
 
 
     // Child-primary: a delete is a RECLASSIFICATION -- the parent goes to the bin
-    // and every atom of it goes with it (the child scope's form is dropChildrenToBin).
+    // and every child of it goes with it (the child scope's form is dropChildrenToBin).
     QList<int> modifiedcluster;
     modifiedcluster.append(clusterId);
 
@@ -640,13 +640,13 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
     logAfter(QList<int>{ clusterId });
 
     // Hierarchical mode: deleting WHOLE parents cannot break the nesting invariant --
-    // every atom inside a deleted parent moves with it, so each still has exactly one
+    // every child inside a deleted parent moves with it, so each still has exactly one
     // owner -- and that is why this path needs no repairNesting().  But the derived maps
     // still name the deleted parents as parents.  (The save used to write the .clp
-    // straight out of childToParent, so a stale map reached the disk, mapping atoms to
+    // straight out of childToParent, so a stale map reached the disk, mapping children to
     // parents that no longer exist; prepareSave now derives the .clp from the per-spike
     // layers, but the maps still drive the child palette and the scoped views.)
-    // Re-derive them (cheap, no re-cut, and it leaves the atom undo history alone,
+    // Re-derive them (cheap, no re-cut, and it leaves the child undo history alone,
     // which repairNesting would not).
     if (childData) {
         rebuildHierarchyFromData();
@@ -703,7 +703,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
     // ── Child scope: translate the request into the parent layer ──────────
     // This is a PARENT-layer edit by design -- the reserve bins, the colours,
     // the palette and the undo below are all the parent clustering's, and the
-    // atom layer follows through repairNesting().  But clustersOfOrigin holds
+    // child layer follows through repairNesting().  But clustersOfOrigin holds
     // ATOM ids while the child palette is driving, and they were handed
     // straight to a scan of clusteringData: the scan then walked whichever
     // PARENT clusters happened to carry those numbers.  Two id spaces, one
@@ -712,21 +712,21 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
     // routes through data() and has a child branch; this one never did.)
     //
     // Resolve the request into the exact spikes instead: rows that are in the
-    // shown atoms AND in the selection, named by row so the parent scan
-    // cannot over-capture.  Translating the atoms to their parents and
+    // shown children AND in the selection, named by row so the parent scan
+    // cannot over-capture.  Translating the children to their parents and
     // scanning those would ALSO cut spikes of the same parent that belong to
-    // atoms the user cannot see, which is not what was drawn.
+    // children the user cannot see, which is not what was drawn.
     QList<int> originClusters(clustersOfOrigin);
     SpikeSelection effectiveSelection(selection);
     if (childScopeActive && childData) {
-        const QVector<dataType> atomByRow   = childClusterData().labelByFeatureRow();
+        const QVector<dataType> childByRow   = childClusterData().labelByFeatureRow();
         const QVector<dataType> parentByRow = parentData().labelByFeatureRow();
-        const QSet<int> shownAtoms(clustersOfOrigin.begin(), clustersOfOrigin.end());
-        const int n = qMin(atomByRow.size(), parentByRow.size());
+        const QSet<int> shownChildren(clustersOfOrigin.begin(), clustersOfOrigin.end());
+        const int n = qMin(childByRow.size(), parentByRow.size());
         QSet<dataType> rows;
         QList<int> parents;
         for (dataType r = 1; r < n; ++r) {
-            if (!shownAtoms.contains(static_cast<int>(atomByRow.at(static_cast<int>(r)))))
+            if (!shownChildren.contains(static_cast<int>(childByRow.at(static_cast<int>(r)))))
                 continue;
             // Features are the same table in both layers; ask the parent
             // layer so the test matches the scan that follows.
@@ -738,7 +738,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
                 parents.append(p);
         }
         if (rows.isEmpty()) {
-            // Nothing of the shown atoms was inside the selection.  Report it
+            // Nothing of the shown children was inside the selection.  Report it
             // exactly as the parent path does, and still close the log action.
             if (KlustersView* av = app()->activeView()) {
                 av->selectionIsEmpty();
@@ -757,7 +757,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
     // PARENT-layer edit; in child scope originClusters was translated above
-    // from the shown atoms to the parents those spikes are actually in.
+    // from the shown children to the parents those spikes are actually in.
     idsBelongTo(parentData(), originClusters, "deleteSpikesFromClusters");
     parentData().deleteSpikesFromClusters(effectiveSelection,originClusters,destination,fromClusters,emptyClusters);
 
@@ -799,16 +799,16 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
             for (clustersToRemove = emptyClusters.begin(); clustersToRemove != emptyClusters.end(); ++clustersToRemove ){
                 clusterColorList->remove(*clustersToRemove);
                 // emptyClusters are PARENT ids.  In child scope clustersToShow
-                // holds atom ids, so removing by value there would drop
-                // whichever atom happens to share an emptied parent's number.
+                // holds child ids, so removing by value there would drop
+                // whichever child happens to share an emptied parent's number.
                 if (!childScopeActive)
                     clustersToShow.removeAll(*clustersToRemove);
             }
         }
 
         // Hierarchical mode: this moves an ARBITRARY SUBSET out of one or more source
-        // parents into a reserve bin, and never touches the .clc atom layer -- so any
-        // atom the region only partly covers is left spanning its source parent and the
+        // parents into a reserve bin, and never touches the .clc child layer -- so any
+        // child the region only partly covers is left spanning its source parent and the
         // reserve bin.  This is how ordinary curation -- lasso the bad spikes, send
         // them to noise -- accumulates straddlers.
         //
@@ -817,7 +817,7 @@ void KlustersDoc::deleteSpikesFromClusters(int destination, const SpikeSelection
         // removeSpikesFromClusters, updateSimilarityMatrices, showAllWidgets, the
         // palette rebuild, spikesDeleted -- and Qt delivers direct connections
         // synchronously, so repairing afterwards means each of them runs against a
-        // layer whose atoms straddle.  updateSimilarityMatrices in particular kicks
+        // layer whose children straddle.  updateSimilarityMatrices in particular kicks
         // off matrix recomputes, and the repair's own childData mutation then
         // invalidates the caches they were computed from.
         // childData-guarded, so flat sessions are untouched.
@@ -1085,11 +1085,11 @@ void KlustersDoc::commitTwoClusterCreation(int leftId,
 
 int KlustersDoc::partitionClusterByTime(int clusterId, double blockSeconds)
 {
-    Data& d = data();                       // active layer: a parent or an atom
+    Data& d = data();                       // active layer: a parent or a child
     const double fs = d.getSamplingRate();  // Hz
     if (blockSeconds <= 0.0 || fs <= 0.0)
         return 0;
-    // A reserved chunk cluster is not cut (an atom is: it stays in its parent).
+    // A reserved chunk cluster is not cut (a child is: it stays in its parent).
     QList<int> asked{ clusterId };
     if (d.protectsReservedClusters() && leaveOutReserved(asked, tr("Partition by time")) > 0)
         return 0;
@@ -1151,7 +1151,7 @@ int KlustersDoc::partitionClusterByTime(int clusterId, double blockSeconds)
 
 int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin){
     // ACTIVE-layer edit: this is the one builder that legitimately runs on
-    // either clustering -- on atoms it carries a full child branch below.  The
+    // either clustering -- on children it carries a full child branch below.  The
     // ids must therefore name the layer that is active right now.
     idsBelongTo(data(), clustersOfOrigin, "createNewCluster");
     //list which will contain the clusters really having spikes in the region of selection.
@@ -1163,7 +1163,7 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
 
     // Snapshot source clusters before the data mutation
     // Route through the ACTIVE clustering: childData when a child is selected (the
-    // split becomes a new sibling atom under the same parent), clusteringData
+    // split becomes a new sibling child under the same parent), clusteringData
     // otherwise -- data() == clusteringData then, so the parent path is unchanged.
     Data& targetData = data();
     const bool onChild = (&targetData == childData);
@@ -1172,11 +1172,11 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
     // ATOM timeline, which never notifies the logger; and child ids collide
     // with parent numerals, so snapshotClusters (which reads clusteringData)
     // would describe unrelated parent clusters.  The parent-stage log records
-    // parent mutations; the atom layer is out of its scope by design.
+    // parent mutations; the child layer is out of its scope by design.
     if (!onChild)
         logBefore(CurationLogger::ActionType::SPLIT,
                   QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
-    else   // atom layer: snapshots on childData with layer=child; not undo-paired (atom stack)
+    else   // child layer: snapshots on childData with layer=child; not undo-paired (child stack)
         logChildBefore(CurationLogger::ActionType::SPLIT,
                        QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
 
@@ -1200,21 +1200,21 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
             logChildAfter(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     }
     else if(onChild){
-        // Child split: the drawn spikes are a subset of one child atom, so the new
-        // atom is a sibling under the SAME parent.  Refresh the child layer and let
+        // Child split: the drawn spikes are a subset of one child, so the new
+        // child is a sibling under the SAME parent.  Refresh the child layer and let
         // the child palette select + focus the new sibling.
-        const int newAtom = static_cast<int>(newClusterId);
+        const int newChild = static_cast<int>(newClusterId);
         {
-            QList<int> res = fromClusters; res.append(newAtom);
+            QList<int> res = fromClusters; res.append(newChild);
             logChildAfter(res);
         }
         // Child split is one self-snapshotting childData edit (Data::createNewCluster
-        // calls prepareUndo once) -> one ChildEdit on the atom-undo timeline, so
+        // calls prepareUndo once) -> one ChildEdit on the child-undo timeline, so
         // Ctrl+Shift+Z reverts it: 'added' is removed and the sources restored.
-        ChildEdit e; e.added = { newAtom }; e.modified = fromClusters; e.deleted = emptyClusters;
+        ChildEdit e; e.added = { newChild }; e.modified = fromClusters; e.deleted = emptyClusters;
         recordChildEdit(e);
 
-        // Child-primary: a child split.  The new atom is a sibling under the SAME
+        // Child-primary: a child split.  The new child is a sibling under the SAME
         // parent -- a split within the child layer cannot move spikes between
         // parents -- so the map gains one entry and loses any source consumed
         // entirely.  This is the only class of operation that changes child
@@ -1222,22 +1222,22 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
         syncChildColors();
         rebuildHierarchyFromData();
         emit hierarchyChanged();
-        // Select ALL the atoms the split produced, not just the new one.  A split
+        // Select ALL the children the split produced, not just the new one.  A split
         // yields at least the surviving source and the new sibling, and since the
-        // per-source re-cut a cut crossing several atoms yields a descendant for
-        // each -- so landing on the new atom alone hides most of what just
+        // per-source re-cut a cut crossing several children yields a descendant for
+        // each -- so landing on the new child alone hides most of what just
         // happened, and the obvious next gesture (compare the halves, merge two
         // back) starts from an incomplete selection.  fromClusters is the set the
         // spikes were drawn out of and is exactly the surviving side; emptyClusters
         // are the sources the split consumed entirely and no longer exist, so they
         // are excluded.
         QList<int> resulting;
-        resulting.append(newAtom);
+        resulting.append(newChild);
         for (int src : fromClusters)
-            if (src > 1 && src != newAtom && !emptyClusters.contains(src)
+            if (src > 1 && src != newChild && !emptyClusters.contains(src)
                     && !resulting.contains(src))
                 resulting.append(src);
-        // PARK the landing as well as emitting it.  The emit selects these atoms
+        // PARK the landing as well as emitting it.  The emit selects these children
         // now, but the automation scheduled off hierarchyChanged repopulates the
         // child palette again afterwards and the last rebuild wins -- which is
         // why the n-way branch below already parks its landing, and why this one
@@ -1263,12 +1263,12 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
         // the realign (nothing else drains takeModifiedParents), so this is scope, not
         // correctness: the matrices/renumber on the batch finish still cover every
         // cluster, and the source keeps its already-aligned spikes.
-        // Hierarchical mode: the split leaves the child atoms where they were, so the new
-        // parent has no covering child and the source parent's atom now straddles both.
+        // Hierarchical mode: the split leaves the children where they were, so the new
+        // parent has no covering child and the source parent's child now straddles both.
         // Re-cut HERE, immediately after the parent mutation and before anything is
         // told about it.  Everything below is an observer, and Qt delivers direct
         // connections synchronously, so repairing afterwards means each of them runs
-        // against a layer whose atoms straddle -- and the repair's own childData
+        // against a layer whose children straddle -- and the repair's own childData
         // mutation then invalidates the caches they just rebuilt.
         // childData-guarded; flat sessions are untouched.
         if (childData) repairNesting();
@@ -1319,7 +1319,7 @@ int KlustersDoc::createNewCluster(const SpikeSelection& selection, const QList <
         logAfter(resultIds);
     }
     //One return for all three branches: 0 when nothing was created, the new
-    //atom's id on a child split, the new parent's id otherwise.
+    //child's id on a child split, the new parent's id otherwise.
     return static_cast<int>(newClusterId);
 }
 
@@ -1335,12 +1335,12 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
 
     QList <int> newClusters;
     // Route through the ACTIVE clustering (childData when a child is selected ->
-    // the new clusters are sibling atoms under the same parent; clusteringData
+    // the new clusters are sibling children under the same parent; clusteringData
     // otherwise, unchanged parent path).
     Data& targetData = data();
     const bool onChild = (&targetData == childData);
 
-    // Parent scope only -- see the SPLIT rationale above: the atom timeline
+    // Parent scope only -- see the SPLIT rationale above: the child timeline
     // never notifies the logger, and child ids collide with parent numerals.
     if (!onChild)
         logBefore(CurationLogger::ActionType::SPLIT_N,
@@ -1368,7 +1368,7 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
             logChildAfter(QList<int>(clustersOfOrigin.begin(), clustersOfOrigin.end()));
     }
     else if(onChild){
-        // Child split: the new atoms are siblings under the same parent(s).
+        // Child split: the new children are siblings under the same parent(s).
         // Refresh the child layer and let the child palette select + focus them.
         std::sort(newClusters.begin(), newClusters.end());
         {
@@ -1376,7 +1376,7 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
             logChildAfter(res);
         }
         // Child split: one self-snapshotting childData edit (Data::createNewClusters
-        // calls prepareUndo once, even for several new atoms) -> one ChildEdit, so
+        // calls prepareUndo once, even for several new children) -> one ChildEdit, so
         // Ctrl+Shift+Z reverts the whole split in a single step.
         ChildEdit e; e.added = newClusters; e.modified = fromClusters; e.deleted = emptyClusters;
         recordChildEdit(e);
@@ -1410,12 +1410,12 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
             }
         }
 
-        // Hierarchical mode: the split leaves the child atoms where they were, so each new
-        // parent has no covering child and the source parents' atoms now straddle.
+        // Hierarchical mode: the split leaves the children where they were, so each new
+        // parent has no covering child and the source parents' children now straddle.
         // Re-cut HERE, immediately after the parent mutation and before anything is
         // told about it.  Everything below is an observer, and Qt delivers direct
         // connections synchronously, so repairing afterwards means each of them runs
-        // against a layer whose atoms straddle -- and the repair's own childData
+        // against a layer whose children straddle -- and the repair's own childData
         // mutation then invalidates the caches they just rebuilt.
         // childData-guarded; flat sessions are untouched.
         if (childData) repairNesting();
@@ -1437,7 +1437,7 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
         // source cluster from .fil for negligible gain, the main cause of a manual
         // split locking editing for seconds.  noteModifiedParent feeds only the realign
         // (nothing else drains takeModifiedParents), so matrices/renumber on the batch
-        // finish still cover every cluster.  In child scope these are atoms, so guard.
+        // finish still cover every cluster.  In child scope these are children, so guard.
         if (!childScopeActive) {
             for (int nf : fromToNewClusterIds.values()) noteModifiedParent(nf);
             // Every piece of the split: the new clusters, then the sources that
@@ -1499,6 +1499,6 @@ QList<int> KlustersDoc::createNewClusters(const SpikeSelection& selection, const
         }
     }
     //One return for all three branches: empty when nothing was created, the
-    //new atom ids on a child split, the new parent ids otherwise.
+    //new child ids on a child split, the new parent ids otherwise.
     return newClusters;
 }

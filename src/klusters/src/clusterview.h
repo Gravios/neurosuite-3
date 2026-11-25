@@ -629,7 +629,7 @@ private:
     double               tsneMinX = 0, tsneMaxX = 0, tsneMinY = 0, tsneMaxY = 0;
     bool                 tsneApplyingLasso = false; ///< suppress our own drop
     /// Which layer the embedding names: false = parent clusters, true = child
-    /// atoms.  Recorded at gather time because the two id spaces are disjoint
+    /// children.  Recorded at gather time because the two id spaces are disjoint
     /// in meaning -- relabelling or cutting with the other layer's ids would
     /// silently address unrelated spikes.
     bool                 tsneChildLayer = false;

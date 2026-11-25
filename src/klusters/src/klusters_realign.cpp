@@ -172,7 +172,7 @@ void KlustersApp::slotRealignSpikes()
 // realignRunning == false.
 // ---------------------------------------------------------------------------
 // Traced: the realign is a PARENT-layer operation and its completion selects its
-// cluster in the parent palette, so an atom id reaching it is the shortest route
+// cluster in the parent palette, so a child id reaching it is the shortest route
 // from a child-layer edit to a parent-view flip.
 void KlustersApp::startRealignForCluster(int clusterId)
 {
@@ -181,7 +181,7 @@ void KlustersApp::startRealignForCluster(int clusterId)
     // space follows when it is done (returnFromRealignSpace).
     if (!enterClusterSpaceForRealign(tr("Realign"))) return;
     realignArgs = buildRealignArgs();   // saved mode + top-ch gate
-    // An atom (the child view is showing it): remember so the completion lands
+    // A child (the child view is showing it): remember so the completion lands
     // in the child palette and the extrema pass takes its PARENT (the doc's
     // refeaturize is parent-keyed).  The doc side resolves the id in the active
     // layer (data()), which is the child layer right now.
@@ -479,7 +479,7 @@ void KlustersApp::startPostOpRealign(const QList<int>& parents, bool setChanged)
 // renumber map and point at the final parents.  Mirrors the selection path
 // renumberClusters uses (palette selectItems + shownClustersUpdate).
 //
-// Atom-only ops leave the pending set empty and select their new atoms via the
+// Atom-only ops leave the pending set empty and select their new children via the
 // hierarchyChildrenCreated handler at op time instead.
 // ---------------------------------------------------------------------------
 void KlustersApp::applyPendingParentSelection()
@@ -524,7 +524,7 @@ void KlustersApp::applyPendingParentSelection()
     // An operation that landed in the CHILD palette (a child delete onto its
     // surviving sibling, a child-scope move) also parks the parent it stays under,
     // so the parent palette follows.  That parent selection must not then pull the
-    // shown clustering and the keyboard focus back up to the parent: the atoms the
+    // shown clustering and the keyboard focus back up to the parent: the children the
     // landing selected are what the curator is looking at, and taking focus here
     // was what broke arrow-key navigation in the child palette after every child
     // delete.  Keep the child scope when the drained landing is still selected
@@ -743,8 +743,8 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
         if (realignClusterId >= 0) {
             // Single job = a one-cluster mutation cycle: same end-of-cycle
             // extrema pass, before the notify below reads them.  The pass is
-            // parent-keyed (it translates parents to their atoms): an atom's
-            // realign hands it the atom's parent, not the atom's number.
+            // parent-keyed (it translates parents to their children): a child's
+            // realign hands it the child's parent, not the child's number.
             doc->refeaturizeRealignedClusters(QList<int>{ realignTargetIsChild ? realignTargetParent : realignClusterId });
             doc->invalidateWaveformCache(realignClusterId);
             doc->invalidateCorrelogramCache(realignClusterId);
@@ -754,7 +754,7 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
             // unchanged), so no group/split/renumber signal fires for it.  Tell
             // the error matrix so the incremental path treats it as changed and
             // refreshes its row instead of reusing stale probabilities -- the
-            // atom's row in a child-scoped matrix, its parent's in the parent one.
+            // child's row in a child-scoped matrix, its parent's in the parent one.
             doc->notifyClusterFeaturesReprojected(realignClusterId);
             if (realignTargetIsChild) doc->notifyClusterFeaturesReprojected(realignTargetParent);
         }
@@ -777,12 +777,12 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
         // from the palette and silently break arrow-key navigation.)
         //
         // An ATOM was realigned: the landing is the child palette, on that
-        // atom, with its parent selected in the parent palette (silently) and
-        // the child scope kept -- selecting the atom's NUMBER in the parent
+        // child, with its parent selected in the parent palette (silently) and
+        // the child scope kept -- selecting the child's NUMBER in the parent
         // palette picked whichever parent carried it and flipped the views and
         // the focus to the parent layer, which is where the curator was not.
         if (realignTargetIsChild && realignClusterId >= 0 && activeView()) {
-            const int atom = realignClusterId, parent = realignTargetParent;
+            const int child = realignClusterId, parent = realignTargetParent;
             if (clusterPalette && parent > 1 && doc->clusterHasMembers(parent))
                 clusterPalette->selectItems(QList<int>{parent});
             if (childPanel && childPanel->isVisible() && childPaletteA) {
@@ -790,9 +790,9 @@ void KlustersApp::applyRealignResult(bool ok, int nShifted,
                     doc->setCuratedParent(parent);
                     repopulateChildPalette(QList<int>{parent});
                 }
-                childPaletteA->selectItems(QList<int>{atom});
+                childPaletteA->selectItems(QList<int>{child});
                 doc->setActiveClustering(true);
-                doc->shownClustersUpdate(QList<int>{atom}, *activeView());
+                doc->shownClustersUpdate(QList<int>{child}, *activeView());
                 childPaletteA->setFocusToList();
             }
         } else if (clusterPalette && realignClusterId >= 0) {

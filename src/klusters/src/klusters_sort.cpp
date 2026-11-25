@@ -188,7 +188,7 @@ void KlustersApp::slotSortClustersBySpikeCount()
     QList<int> clusters = clustersToSort(mSortClustersBySpikeCount, tr("spike count"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
+    Data& d = sortMetricData();   // scoped child layer or parent layer, never data()
 
     // Snapshot the counts once (avoids re-locking Data in the comparator).
     QHash<int, qint64> spikeCount;
@@ -215,7 +215,7 @@ void KlustersApp::slotSortClustersByTime()
     QList<int> clusters = clustersToSort(mSortClustersByTime, tr("time"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
+    Data& d = sortMetricData();   // scoped child layer or parent layer, never data()
 
     // Snapshot each cluster's earliest spike time once (one pass over all spikes).
     const QHash<int,double> firstTs = d.firstSpikeTimes();
@@ -243,7 +243,7 @@ void KlustersApp::slotSortClustersByContamination()
     QList<int> clusters = clustersToSort(mSortClustersByContamination, tr("contamination"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
+    Data& d = sortMetricData();   // scoped child layer or parent layer, never data()
 
     // Refractory contamination at a 2 ms window, one pass over all spikes.
     const QHash<int,double> contam = d.refractoryViolationFractions(2.0);
@@ -272,7 +272,7 @@ void KlustersApp::slotSortClustersBySnr()
     QList<int> clusters = clustersToSort(mSortClustersBySnr, tr("SNR"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
+    Data& d = sortMetricData();   // scoped child layer or parent layer, never data()
 
     // Build templates for every cluster first.  Without this the metric only
     // covers clusters the waveform view happens to be showing, and the rest fall
@@ -309,7 +309,7 @@ void KlustersApp::slotSortClustersByAmplitude()
     QList<int> clusters = clustersToSort(mSortClustersByAmplitude, tr("amplitude"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
+    Data& d = sortMetricData();   // scoped child layer or parent layer, never data()
 
     // Build templates for every cluster first; see slotSortClustersBySnr.
     ensureClusterTemplates();
@@ -342,7 +342,7 @@ void KlustersApp::slotSortClustersByAmplitudeByChannel()
     QList<int> clusters = clustersToSort(mSortClustersByAmplitudeByChannel, tr("amplitude by channel"));
     if (clusters.isEmpty()) return;
     SortBusyCursor busy;   // after the prologue: nothing to wait for if it bailed
-    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
+    Data& d = sortMetricData();   // scoped child layer or parent layer, never data()
 
     // Build templates for every cluster first.  This is the sort that showed the
     // problem most plainly: the peak-channel blocks are only meaningful if EVERY
@@ -571,7 +571,7 @@ void KlustersApp::slotSortClustersByErrorPval()
         affinity.insert(cids[i], best);
     }
 
-    // Order every non-noise cluster of the sortable layer (the scope's atoms,
+    // Order every non-noise cluster of the sortable layer (the scope's children,
     // or the parents) by descending affinity; clusters absent from the matrix's
     // computed list sort last via a -1 sentinel.
     QList<int> clusters = clustersToSort(nullptr, tr("Error p-value"));
@@ -1071,9 +1071,9 @@ void KlustersApp::slotReorderClustersBySimilarity()
 
     // Child scope: the matrix rows are ATOMS, so the reorder is display-only
     // REGARDLESS of the preference -- the renumber below is the parent
-    // layer's, and an atom-derived permutation fed to it renames whichever
+    // layer's, and a child-derived permutation fed to it renames whichever
     // parents inherited the numerals (after a compaction, most of them).
-    // Display-only through the HELD order: the doc holds the atom ids in
+    // Display-only through the HELD order: the doc holds the child ids in
     // similarity order (whichever matrix was the source), and every curation
     // matrix -- error, template, residual, drift -- and the child palette
     // derive their display order from them, now and after every recompute,
@@ -1175,10 +1175,10 @@ void KlustersApp::slotReorderClustersBySimilarity()
 void KlustersApp::reorderClustersByFeatureSpace()
 {
     if (!activeView()) return;
-    Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
+    Data& d = sortMetricData();   // scoped child layer or parent layer, never data()
 
     // Non-special clusters (0 = artifact, 1 = noise stay pinned at the front).
-    // Under a child scope the set is the SCOPE's atoms, mirroring
+    // Under a child scope the set is the SCOPE's children, mirroring
     // clustersToSort -- the centroids must be of the things being ordered.
     QList<int> clusters;
     if (doc->matrixScopeActive()) {
@@ -1292,7 +1292,7 @@ void KlustersApp::reorderClustersByFeatureSpace()
     std::stable_sort(clusters.begin(), clusters.end(),
         [&proj](int a, int b){ return proj.value(a) < proj.value(b); });
 
-    // Child scope: atoms, so display-only -- same reason as applySortedOrder.
+    // Child scope: children, so display-only -- same reason as applySortedOrder.
     if (doc->matrixScopeActive()) {
         applyScopedDisplayOrder(clusters, tr("feature-space similarity"),
                                 tr("PC1 of fet centroids"));
@@ -1358,7 +1358,7 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
     if (!activeView()) return clusters;
 
     // The sortable set is a LAYER fact, named outright (see sortMetricData):
-    // under a child scope it is the scope's atoms; otherwise the parent
+    // under a child scope it is the scope's children; otherwise the parent
     // clusters.  It used to be data().clusterIds(), which follows the child
     // SELECTION -- so a sort issued with a child selected fed ATOM ids to the
     // parent renumber downstream, ids that mostly exist as parent numerals
@@ -1387,7 +1387,7 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
 
 Data& KlustersApp::sortMetricData() const
 {
-    // See the header: the scoped atom layer or the parent layer, never data().
+    // See the header: the scoped child layer or the parent layer, never data().
     return doc->matrixScopeActive() ? doc->childClusterData() : doc->parentData();
 }
 
@@ -1415,8 +1415,8 @@ void KlustersApp::applySortedOrder(const QList<int>& order, const QString& sortN
     // Child scope: the order names ATOMS, and reorderClustersByPermutation is
     // the PARENT renumber -- the wrong layer entirely.  The scoped sort is a
     // display-only rearrangement instead ("it doesn't have to be persistent"
-    // is the requested behaviour, and a persistent atom renumber would be the
-    // atom layer's own machinery, not this path).
+    // is the requested behaviour, and a persistent child renumber would be the
+    // child layer's own machinery, not this path).
     if (doc->matrixScopeActive()) {
         applyScopedDisplayOrder(order, sortName, detail);
         return;
@@ -1485,7 +1485,7 @@ bool KlustersApp::computeWaveformDistances(QList<int>& clustersOut,
 {
     if (!activeView()) return false;
     // Feeds the two waveform sorts: the parent renumber unscoped, the
-    // display-only atom order under the child scope.  The layer and its
+    // display-only child order under the child scope.  The layer and its
     // sortable clusters are the same facts the metric sorts use.
     Data& d = sortMetricData();
     QList<int> clusters = clustersToSort(nullptr, tr("waveform"));

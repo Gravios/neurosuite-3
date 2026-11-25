@@ -437,7 +437,7 @@ void KlustersApp::slotRecluster(){
     QString fileBaseName = doc->documentBaseName();
     fileBaseName.append("--");
 
-    // At most 12 ids in the name (a child-scope selection can be hundreds of atoms, and a file name
+    // At most 12 ids in the name (a child-scope selection can be hundreds of children, and a file name
     // is 255 bytes): the first 12, then "-and<N>more".
     const int shown = std::min(12, static_cast<int>(clustersToRecluster.size()));
     for (int i = 0; i < shown; ++i) {
@@ -453,9 +453,9 @@ void KlustersApp::slotRecluster(){
     fileBaseName.append(time);
 
     const bool fiberKit = (reclusterOnceMode == ReclusterOnce::Subsession);   // an engine on the sub-session
-    // A REFINE plugin (fiber-kit-manifold): the run is on the atom layer whatever the scope.  From the
-    // parent scope the selected parents become their atoms (the parents themselves are what the engine
-    // sees, through the seed .clu); the finish path installs the engine's .clc as the new atoms of those
+    // A REFINE plugin (fiber-kit-manifold): the run is on the child layer whatever the scope.  From the
+    // parent scope the selected parents become their children (the parents themselves are what the engine
+    // sees, through the seed .clu); the finish path installs the engine's .clc as the new children of those
     // parents.  Nothing is renumbered at the parent level.
     reclusterRefine = fiberKit && reclusterPluginSet && reclusterPlugin.refines();
     if (reclusterRefine) {
@@ -467,14 +467,14 @@ void KlustersApp::slotRecluster(){
             return;
         }
         if (!doc->isChildClusteringActive()) {
-            const QList<int> atoms = doc->childrenOf(clustersToRecluster);
-            if (atoms.isEmpty()) {
+            const QList<int> children = doc->childrenOf(clustersToRecluster);
+            if (children.isEmpty()) {
                 QMessageBox::information(this, tr("Refine"), tr("The selected cluster(s) have no atoms to refine."));
                 reclusterRefine = false;
                 return;
             }
-            NS3_DIAG() << "[recluster] refine: parents" << clustersToRecluster << "->" << atoms.size() << "atoms";
-            clustersToRecluster = atoms;
+            NS3_DIAG() << "[recluster] refine: parents" << clustersToRecluster << "->" << children.size() << "atoms";
+            clustersToRecluster = children;
         }
     }
 
@@ -1106,7 +1106,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         reclusterRetryTimer = nullptr;
     }
 
-    // A refine run: the engine's final .clc (its children) is what the atom-layer recluster integrates.
+    // A refine run: the engine's final .clc (its children) is what the child-layer recluster integrates.
     if (reclusterRefine && !reclusterSubsessionBase.isEmpty()) {
         QString why;
         if (!doc->stageRefinedChildren(reclusteringFetFileName, &why)) {
@@ -1130,11 +1130,11 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     doc->setReclusterAgainst(againstRun);       // only the mixed cluster changes; the list is narrowed to it
     int returnStatus = doc->integrateReclusteredClusters(clustersToRecluster,clustersFromReclustering,reclusteringFetFileName);
     reclusterRefine = false;
-    // A hierarchical plan's atoms: --final-clu copied the final .clc beside the .clu; in a hierarchical
-    // session's parent-scope recluster they become the new parents' atoms (child scope: the .clu's units
-    // are the atoms, the .clc is not used).
+    // A hierarchical plan's children: --final-clu copied the final .clc beside the .clu; in a hierarchical
+    // session's parent-scope recluster they become the new parents' children (child scope: the .clu's units
+    // are the children, the .clc is not used).
     if (returnStatus == KlustersDoc::OK && !reclusterSubsessionBase.isEmpty()) {
-        // Feature spaces the engine wrote in the sub-session (fiber-manifold's .fet.manifold.<g>, say)
+        // Feature spaces the engine wrote in the sub-session (parent-manifold's .fet.manifold.<g>, say)
         // become session-level spaces the Space selector lists.  Before the children: that call drops
         // the row map both use.
         {
@@ -1149,9 +1149,9 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
         QString clc = reclusteringFetFileName;
         clc.replace(QLatin1String(".fet."), QLatin1String(".clc."));
         QString why;
-        const int nAtoms = doc->integrateReclusteredChildren(clc, &why);
-        if (nAtoms > 0) { NS3_DIAG() << "[recluster] fiber-kit: installed" << nAtoms << "atoms from" << QFileInfo(clc).fileName(); }
-        else if (nAtoms < 0) { NS3_DIAG() << "[recluster] fiber-kit: the final .clc was not used:" << why; }
+        const int nChildren = doc->integrateReclusteredChildren(clc, &why);
+        if (nChildren > 0) { NS3_DIAG() << "[recluster] fiber-kit: installed" << nChildren << "atoms from" << QFileInfo(clc).fileName(); }
+        else if (nChildren < 0) { NS3_DIAG() << "[recluster] fiber-kit: the final .clc was not used:" << why; }
     }
     // integrateReclusteredClusters removed its three temp files (fet, clu, yaml); a fiber-kit run left
     // the rest of the sub-session and its stage outputs under the same base -- remove them whatever the
@@ -1216,7 +1216,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // The parent that owns the reclustered child, captured before reclusteringUpdate
     // rebuilds the hierarchy.  slotTabChange (below) clears the parent palette when
     // the recluster-output tab is active, so we re-select this afterward to keep the
-    // parent highlighted under the freshly split atoms.  (-1 for a parent recluster.)
+    // parent highlighted under the freshly split children.  (-1 for a parent recluster.)
     const int reclusteredParent = (childRecluster && !clustersToRecluster.isEmpty())
                                   ? doc->parentOfChild(clustersToRecluster.first()) : -1;
     doc->reclusteringUpdate(clustersToRecluster,clustersFromReclustering);
@@ -1229,7 +1229,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     if (childRecluster) {
         // Child recluster: parent selection is untouched (reclusteringUpdate's
         // child branch leaves it), so keep the parent selected and land focus on
-        // the freshly split atoms in the child palette — clustersFromReclustering
+        // the freshly split children in the child palette — clustersFromReclustering
         // are the new child ids, and hierarchyChanged already repopulated the
         // child palette for the parent.
         ClusterPalette* cp = focusedChildPalette() ? focusedChildPalette() : childPalette;
@@ -1249,7 +1249,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     slotTabChange(tabsParent->currentIndex());
     // slotTabChange's recluster-output branch deselects the parent palette; for a
     // child recluster restore the owning parent's highlight.  selectItems is silent
-    // (no scope switch), so the child scope and the new-atom selection in the child
+    // (no scope switch), so the child scope and the new-child selection in the child
     // palette are preserved.  For a case-3 child recluster (spans >= 2 parents) the
     // deferred applyPendingParentSelection later selects the synthesised parent, which
     // correctly overrides this.
@@ -1259,7 +1259,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // parent selected -> no children listed); the parked landing then had nothing
     // to land on.  Rebuild it for the restored parent: repopulateChildPalette
     // reads the curated parent from the doc and drains the parked landing, so the
-    // new atoms end up selected and focused however many rebuilds ran before.
+    // new children end up selected and focused however many rebuilds ran before.
     if (childRecluster && childPanel && childPanel->isVisible()) {
         repopulateChildPalette(clusterPalette ? clusterPalette->selectedClusters() : QList<int>());
         if (childPalette && !clustersFromReclustering.isEmpty()) {
@@ -1277,7 +1277,7 @@ void KlustersApp::slotProcessExited(int exitCode, QProcess::ExitStatus status){
     // so in hierarchical mode the dependent views (waveform / feature / ...) would
     // show the pre-recluster state until the next manual selection change.  The child
     // palette is already repopulated (via hierarchyChanged); re-drive the child-scope
-    // view refresh for the settled selection (the new atoms if any, else the parent).
+    // view refresh for the settled selection (the new children if any, else the parent).
     if (childPanel && childPanel->isVisible())
         slotChildSelectionChanged({});
     if (againstRun) {

@@ -3,7 +3,7 @@
 //
 //   * derive(): specials (0/1) keep the front in row order, the held ids follow in
 //     the held order, unnamed rows append naturally; the result is a complete
-//     permutation; held ids absent from the rows (dead atoms) do not place; an empty
+//     permutation; held ids absent from the rows (dead children) do not place; an empty
 //     held order is the identity (an empty permutation);
 //   * set(): a wrong-sized or non-permutation order clears to identity;
 //   * toMatrix / toDisplay round-trip, and fall back to identity when unset or out
@@ -32,7 +32,7 @@ static QList<int> shown(const MatrixDisplayOrder& o, const QList<int>& clusterLi
 
 int main()
 {
-    // rows as a thread computed them: 0, 1, then atoms 7, 3, 9, 5
+    // rows as a thread computed them: 0, 1, then children 7, 3, 9, 5
     const QList<int> rows{0, 1, 7, 3, 9, 5};
 
     // derive: held 5, 9, 3, 7 -> specials, then held, complete
@@ -49,7 +49,7 @@ int main()
         const QList<int> perm = MatrixDisplayOrder::derive(rows, {9, 7});
         check(perm == QList<int>({0, 1, 4, 2, 3, 5}), "unnamed rows append in natural order after the held ones");
     }
-    // dead atom in the held order: does not place, survivors keep their order
+    // dead child in the held order: does not place, survivors keep their order
     {
         const QList<int> perm = MatrixDisplayOrder::derive(rows, {42, 5, 3});
         check(perm == QList<int>({0, 1, 5, 3, 2, 4}), "a held id absent from the rows is skipped");

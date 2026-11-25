@@ -198,7 +198,7 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     // integrateBasinLabeling swaps the row table underneath any reader, and
     // the matrix threads read this layer (unscoped, or via matrixData() in
     // parent view).  Every other membership mutation quiesces first
-    // (createNewCluster, groupClusters, the atom watershed); this path
+    // (createNewCluster, groupClusters, the child watershed); this path
     // predated the convention.
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
@@ -234,15 +234,15 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
 
     // Hierarchical mode: the watershed relabels every spike of the selected parents
     // into basins found in a 2-D projection, a criterion with no knowledge of the
-    // .clc atom layer -- and it is multi-source, so one run can scatter the atoms of
-    // several parents across several new ones.  Every atom a basin boundary crosses is
+    // .clc child layer -- and it is multi-source, so one run can scatter the children of
+    // several parents across several new ones.  Every child a basin boundary crosses is
     // left straddling, and no new parent gets a covering child.
     //
     // Re-cut HERE, immediately after the parent mutation and before anything is
     // told about it.  Everything below -- addNewClustersToView, newClustersAdded,
     // showAllWidgets, the palette rebuild -- is an observer, and Qt delivers
     // direct connections synchronously, so repairing afterwards means every one of
-    // them runs against a layer whose atoms straddle.  It also means the repair's
+    // them runs against a layer whose children straddle.  It also means the repair's
     // own childData mutation invalidates the caches those observers just rebuilt,
     // so the refresh is done twice and the first one is wrong.
     // childData-guarded, so flat sessions are untouched.
@@ -373,12 +373,12 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
 // ---------------------------------------------------------------------------
 // KlustersDoc::watershedSelectedChildren
 //
-// The atom-layer counterpart of watershedSelectedClusters: split the selected
-// atoms of ONE parent into one new sibling atom per density basin.  See the
+// The child-layer counterpart of watershedSelectedClusters: split the selected
+// children of ONE parent into one new sibling child per density basin.  See the
 // header for the layer-naming and same-parent rationale.  The commit shape is
 // createNewClusters' child branch, not the parent tail above: the hierarchy
 // refresh + parked landing do the palette and view work, and the spikes keep
-// their .clu labels, so every basin atom lands under the same parent when the
+// their .clu labels, so every basin child lands under the same parent when the
 // maps re-derive -- nothing straddles and repairNesting has nothing to do.
 // ---------------------------------------------------------------------------
 int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
@@ -393,7 +393,7 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
     QList<int> inputs = selectedChildren;
     if (inputs.isEmpty()) return 0;
 
-    // 0 / 1 are the artifact / noise self atoms -- never reassigned, exactly
+    // 0 / 1 are the artifact / noise self children -- never reassigned, exactly
     // as the parent path never reassigns the reserved parents.
     inputs.removeAll(0);
     inputs.removeAll(1);
@@ -454,7 +454,7 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
     }
 
     // Quiesce background view threads before mutating childData: the scoped
-    // matrix threads read the atom layer, and integrateBasinLabeling swaps the
+    // matrix threads read the child layer, and integrateBasinLabeling swaps the
     // row table underneath any reader (same reason as createNewCluster; the
     // parent watershed above predates the quiesce convention and still runs
     // unquiesced -- observed, not changed here).
@@ -462,11 +462,11 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
         view->supersedeAllViewThreads();
 
     // Atom-layer log entry: snapshots on childData with layer=child, not
-    // undo-paired (the atom stack is invisible to the logger's status walk).
+    // undo-paired (the child stack is invisible to the logger's status walk).
     logChildBefore(CurationLogger::ActionType::WATERSHED, inputs);
-    QList<int> newAtomList;
-    if (!childData->integrateBasinLabeling(inputs, rowToBasin, newAtomList)
-            || newAtomList.isEmpty()) {
+    QList<int> newChildList;
+    if (!childData->integrateBasinLabeling(inputs, rowToBasin, newChildList)
+            || newChildList.isEmpty()) {
         // Nothing was mutated, but the threads are quiesced: relaunch them,
         // as createNewCluster's empty-selection path does.
         activeView->showAllWidgets();
@@ -477,14 +477,14 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
         curationLogger->recordActionDetails({{ QStringLiteral("n_basins"), res.numBasins },
                                              { QStringLiteral("n_points"), static_cast<int>(xs.size()) },
                                              { QStringLiteral("parent"), owner }});
-    logChildAfter(newAtomList);
+    logChildAfter(newChildList);
 
     // One self-snapshotting childData edit (integrateBasinLabeling calls
-    // prepareUndo internally) -> one ChildEdit on the atom-undo timeline, so
-    // Ctrl+Shift+Z reverts the whole split: the basin atoms are removed and
-    // the source atoms restored.  All sources dissolve, so they are the
+    // prepareUndo internally) -> one ChildEdit on the child-undo timeline, so
+    // Ctrl+Shift+Z reverts the whole split: the basin children are removed and
+    // the source children restored.  All sources dissolve, so they are the
     // deleted set; there is no surviving side to list as modified.
-    ChildEdit e; e.added = newAtomList; e.deleted = inputs;
+    ChildEdit e; e.added = newChildList; e.deleted = inputs;
     recordChildEdit(e);
 
     // Child-primary refresh + settled-point landing, mirroring
@@ -492,9 +492,9 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
     syncChildColors();
     rebuildHierarchyFromData();
     emit hierarchyChanged();
-    setPendingChildSelection(newAtomList);
-    emit hierarchyChildrenCreated(newAtomList);
+    setPendingChildSelection(newChildList);
+    emit hierarchyChildrenCreated(newChildList);
     modified = true;
 
-    return newAtomList.size();
+    return newChildList.size();
 }

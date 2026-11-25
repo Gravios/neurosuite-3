@@ -482,7 +482,7 @@ QPoint ClusterView::tsneViewportPos(int i) const {
 
 void ClusterView::tsneRelabelFromDoc(){
     // Only ever from the layer the embedding was computed on: parent ids and
-    // atom ids are different namespaces, and reading the wrong one would
+    // child ids are different namespaces, and reading the wrong one would
     // recolour every point with an unrelated cluster's colour.
     if (doc.isChildClusteringActive() != tsneChildLayer) {
         exitTsne(tr("t-SNE dropped: clustering scope changed"));
@@ -572,9 +572,9 @@ void ClusterView::applyTsneLasso(){
 
     // All four modes work on both layers now: the create modes route through
     // data() and carry their child branch, and the delete modes' child-scope
-    // translation (shown atoms -> the exact rows -> the parents those rows are
-    // in) lands the spikes in the parent reserve bins with the atom layer
-    // re-cut behind them, which is what sending an atom's spikes to noise has
+    // translation (shown children -> the exact rows -> the parents those rows are
+    // in) lands the spikes in the parent reserve bins with the child layer
+    // re-cut behind them, which is what sending a child's spikes to noise has
     // to mean.
 
     // Hit-test in viewport pixels through the SAME mapping paintTsne uses.

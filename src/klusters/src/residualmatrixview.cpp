@@ -76,7 +76,7 @@ ResidualMatrixView::ResidualMatrixView(KlustersDoc& doc_, KlustersView& view_,
                           "merge candidate), blue ≈ 1 (distinct); diagonal = A's within-cluster variance."));
     mainLayout->addWidget(infoLabel, 0);
 
-    // A scoped sort (or the scope's exit) changes the held atom order the
+    // A scoped sort (or the scope's exit) changes the held child order the
     // display permutation derives from.
     connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &ResidualMatrixView::applyScopeSortOrder);
 

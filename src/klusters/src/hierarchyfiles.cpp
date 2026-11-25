@@ -36,9 +36,9 @@ NestingScan scanNesting(const std::vector<int>& parent, const std::vector<int>& 
 
 std::vector<int32_t> clpFromMap(const std::map<int, int>& childToParent)
 {
-    int nAtoms = 0;
-    if (!childToParent.empty()) nAtoms = std::max(0, childToParent.rbegin()->first);
-    std::vector<int32_t> clp(static_cast<std::size_t>(nAtoms), 0);
+    int nChildren = 0;
+    if (!childToParent.empty()) nChildren = std::max(0, childToParent.rbegin()->first);
+    std::vector<int32_t> clp(static_cast<std::size_t>(nChildren), 0);
     for (const auto& [c, p] : childToParent)
         if (c >= 1) clp[static_cast<std::size_t>(c - 1)] = static_cast<int32_t>(p);
     return clp;
@@ -55,11 +55,11 @@ Promotion promoteFlat(const std::vector<int>& clu)
 {
     Promotion out;
     out.clc.reserve(clu.size());
-    std::map<int, int> self;                       // atom -> fiber
+    std::map<int, int> self;                       // child -> parent
     for (int id : clu) {
-        const int atom = static_cast<int>(selfChildOf(id));
-        out.clc.push_back(atom);
-        self.emplace(atom, id);
+        const int child = static_cast<int>(selfChildOf(id));
+        out.clc.push_back(child);
+        self.emplace(child, id);
     }
     out.clcCount = distinctCount(out.clc);
     out.clp = clpFromMap(self);
@@ -76,16 +76,16 @@ ChildIdUpgrade upgradeChildIds(const std::vector<int>& parent, const std::vector
         if (a >= 2 && a < kSelfChildBase) { old = true; break; }
     if (!old) return out;
 
-    std::map<int, int> firstFiber;                 // old atom -> the fiber of its first spike
+    std::map<int, int> firstParent;                 // old child -> the parent of its first spike
     for (std::size_t i = 0; i < child.size(); ++i)
-        if (renumbered(child[i])) firstFiber.emplace(child[i], parent[i]);
+        if (renumbered(child[i])) firstParent.emplace(child[i], parent[i]);
     int next = kFreeChildBase;
-    std::map<int, int> taken;                      // new id -> old atom, to keep the map one-to-one
-    for (const auto& [atom, fiber] : firstFiber) { // ascending old id
-        int to = (atom == fiber && hasOffsetSelfChild(fiber)) ? static_cast<int>(selfChildOf(fiber)) : -1;
+    std::map<int, int> taken;                      // new id -> old child, to keep the map one-to-one
+    for (const auto& [oldChild, itsParent] : firstParent) { // ascending old id
+        int to = (oldChild == itsParent && hasOffsetSelfChild(itsParent)) ? static_cast<int>(selfChildOf(itsParent)) : -1;
         if (to < 0 || taken.count(to)) to = next++;
-        taken.emplace(to, atom);
-        if (to != atom) out.oldToNew.emplace(atom, to);
+        taken.emplace(to, oldChild);
+        if (to != oldChild) out.oldToNew.emplace(oldChild, to);
     }
     out.needed = true;
     out.ids = child;

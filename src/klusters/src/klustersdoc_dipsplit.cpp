@@ -487,14 +487,14 @@ KlustersDoc::dipSplitApply(const DipSplitDecision& D,
                              activeView);
 
     // Hierarchical mode: this split partitions the source's spikes by an algorithmic
-    // criterion that knows nothing about the .clc atom layer, so every atom the cut
+    // criterion that knows nothing about the .clc child layer, so every child the cut
     // crosses is left spanning the resulting parents.
     //
     // Re-cut HERE, immediately after the parent mutation and before anything is told
     // about it.  Everything below is an observer -- view notification, the matrix
     // signal bus, showAllWidgets, the palette rebuild -- and Qt delivers direct
     // connections synchronously, so repairing afterwards means each of them runs
-    // against a layer whose atoms straddle.  It also means the repair's own childData
+    // against a layer whose children straddle.  It also means the repair's own childData
     // mutation invalidates the caches those observers just rebuilt, so the refresh is
     // done twice and the first one is wrong.
     // childData-guarded, so flat sessions are untouched.
@@ -612,14 +612,14 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
             if (!emptiedClusters.contains(c)) clustersToShow.append(c);
     }
     // Hierarchical mode: this split partitions the source's spikes by an algorithmic
-    // criterion that knows nothing about the .clc atom layer, so every atom the cut
+    // criterion that knows nothing about the .clc child layer, so every child the cut
     // crosses is left spanning the resulting parents.
     //
     // Re-cut HERE, immediately after the parent mutation and before anything is told
     // about it.  Everything below is an observer -- view notification, the matrix
     // signal bus, showAllWidgets, the palette rebuild -- and Qt delivers direct
     // connections synchronously, so repairing afterwards means each of them runs
-    // against a layer whose atoms straddle.  It also means the repair's own childData
+    // against a layer whose children straddle.  It also means the repair's own childData
     // mutation invalidates the caches those observers just rebuilt, so the refresh is
     // done twice and the first one is wrong.
     // childData-guarded, so flat sessions are untouched.
@@ -707,11 +707,11 @@ KlustersDoc::splitClusterByKnnVsReferences(int    sourceCluster,
 // ---------------------------------------------------------------------------
 // KlustersDoc::splitChildByKnnVsReferences
 //
-// The atom-layer counterpart of splitClusterByKnnVsReferences.  See the
+// The child-layer counterpart of splitClusterByKnnVsReferences.  See the
 // header for the layer-naming and reference-pool rationale.  The commit
-// shape is createNewClusters' child branch, exactly as the atom watershed:
+// shape is createNewClusters' child branch, exactly as the child watershed:
 // the hierarchy refresh + parked landing do the palette and view work, and
-// the spikes keep their .clu labels, so every new atom re-derives under the
+// the spikes keep their .clu labels, so every new child re-derives under the
 // source's parent.
 // ---------------------------------------------------------------------------
 KlustersDoc::KnnSplitResult
@@ -728,8 +728,8 @@ KlustersDoc::splitChildByKnnVsReferences(int    sourceChild,
         return R;
     }
 
-    // Reference pool: the scope's atoms under a child scope (the joint scope
-    // votes across all its parents' atoms -- classifiers only, no spike moves
+    // Reference pool: the scope's children under a child scope (the joint scope
+    // votes across all its parents' children -- classifiers only, no spike moves
     // into a reference), else the source's siblings.  The source itself is
     // skipped inside the algorithm.
     QList<int> refs = matrixScopeActive()
@@ -743,13 +743,13 @@ KlustersDoc::splitChildByKnnVsReferences(int    sourceChild,
     }
 
     // Quiesce background view threads before mutating childData: the scoped
-    // matrix threads read the atom layer, and the split swaps the row table
-    // underneath any reader (same as the atom watershed).
+    // matrix threads read the child layer, and the split swaps the row table
+    // underneath any reader (same as the child watershed).
     for (KlustersView* view : *viewList)
         view->supersedeAllViewThreads();
 
-    // NO curation log: the parent-stage logger's ids collide with atom
-    // numerals -- the atom layer is out of its scope by design (see
+    // NO curation log: the parent-stage logger's ids collide with child
+    // numerals -- the child layer is out of its scope by design (see
     // createNewCluster's child branch).
     QList<int> newClusters, matchedReferences, emptiedClusters;
     QString err;
@@ -759,7 +759,7 @@ KlustersDoc::splitChildByKnnVsReferences(int    sourceChild,
         err, &refs);
     if (!ok || newClusters.isEmpty()) {
         // Nothing was mutated, but the threads are quiesced: relaunch them,
-        // as the atom watershed's failure paths do.
+        // as the child watershed's failure paths do.
         if (KlustersView* activeView = app()->activeView())
             activeView->showAllWidgets();
         R.reason = ok ? tr("The vote produced no new atoms.") : err;
@@ -777,7 +777,7 @@ KlustersDoc::splitChildByKnnVsReferences(int    sourceChild,
                 static_cast<dataType>(newClusters[i])));
 
     // One self-snapshotting childData edit (the algorithm calls prepareUndo
-    // on success) -> one ChildEdit on the atom-undo timeline, so Ctrl+Shift+Z
+    // on success) -> one ChildEdit on the child-undo timeline, so Ctrl+Shift+Z
     // reverts the whole split.  The surviving source is modified, a consumed
     // source is deleted.
     ChildEdit e;
@@ -786,7 +786,7 @@ KlustersDoc::splitChildByKnnVsReferences(int    sourceChild,
     if (!emptiedClusters.contains(sourceChild)) e.modified = QList<int>{ sourceChild };
     recordChildEdit(e);
 
-    // Child-primary refresh + settled-point landing, mirroring the atom
+    // Child-primary refresh + settled-point landing, mirroring the child
     // watershed: land on everything the split produced, including the
     // surviving source, so the obvious next gesture (compare, merge back)
     // starts from a complete selection.

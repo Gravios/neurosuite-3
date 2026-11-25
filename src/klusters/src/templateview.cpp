@@ -775,7 +775,7 @@ void TemplateView::onRegenClicked()
 {
     if (!classesLoaded) return;
     showStatus(tr("Regenerating template waveforms (fiber-template)…"));
-    klView.requestTemplateRegen();      // reruns fiber-template for the marked units
+    klView.requestTemplateRegen();      // reruns parent-template for the marked units
 }
 
 // ── manual lineage (.wtl) + the session drift partition ─────────────────────

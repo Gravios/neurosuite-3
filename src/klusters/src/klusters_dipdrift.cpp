@@ -701,8 +701,8 @@ void KlustersApp::slotMoveSelectedClustersToEnd()
 
     // T follows the palette the user is actually in.  When a child palette holds
     // focus the selection is ATOM ids, and renumbering them through the parent path
-    // would rewrite parent shownClusters through an atom map -- so dispatch to the
-    // atom-layer path instead.  curationPalette() is the same test the child
+    // would rewrite parent shownClusters through a child map -- so dispatch to the
+    // child-layer path instead.  curationPalette() is the same test the child
     // hierarchy actions use, so T lands in the same place they do.
     if (ClusterPalette* cp = curationPalette()) {
         const QList<int> kids = cp->selectedClusters();

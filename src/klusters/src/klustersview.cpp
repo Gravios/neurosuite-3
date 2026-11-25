@@ -1384,7 +1384,7 @@ void KlustersView::requestPinObliqueBasis(const QList<int>& ids){
 
 void KlustersView::requestTemplateRegen(){
     // The template library view asks to refresh the template waveform series
-    // after a class-membership edit; the application reruns fiber-template for
+    // after a class-membership edit; the application reruns parent-template for
     // the marked units (all available spk variants).
     mainWindow.runTemplateGeneration();
 }

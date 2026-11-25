@@ -3296,8 +3296,8 @@ bool Data::splitClusterByKnnVsReferences(int sourceCluster,
         if (protectsReserved && isReservedClusterId(it.key())) continue;  // a reserved chunk cluster is no unit
         // Caller-restricted pool: a null list means every cluster of this
         // layer is eligible (the historical behaviour); a list restricts the
-        // classifiers to its members -- the child scope passes its atoms so
-        // an atom split votes against the scope, not the whole session.
+        // classifiers to its members -- the child scope passes its children so
+        // a child split votes against the scope, not the whole session.
         if (allowedReferences && !allowedReferences->contains(cid)) continue;
         const dataType nSpk = it.value().nbSpikes();
         if (nSpk < minRefClusterSize) continue;

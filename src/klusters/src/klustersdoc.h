@@ -150,8 +150,8 @@ public:
     /** Takes, on the GUI thread, the snapshot a save of @p url writes.
     *
     * saveDocument() runs on the SaveThread while the curator keeps editing, so
-    * everything an edit can change is captured here first: the fiber id of
-    * every spike and, for a hierarchical session, the atom id of every spike
+    * everything an edit can change is captured here first: the parent id of
+    * every spike and, for a hierarchical session, the child id of every spike
     * and the .clp map those two imply (after validating, and if need be
     * rebuilding, the in-memory hierarchy maps -- which only the GUI thread may
     * touch).  saveDocument() writes only this snapshot, so the three files
@@ -310,11 +310,11 @@ public:
 
     /**Diagnostic: do @p ids name clusters that exist in @p layer?
      *
-     * Parent ids and child (atom) ids are different NAMESPACES, not different
+     * Parent ids and child (child) ids are different NAMESPACES, not different
      * values of one.  An operation handed ids from one and pointed at the
      * other edits unrelated spikes and reports success -- there is no error
      * to catch, which is why the child-scope region delete went unnoticed for
-     * so long, and why matrixData()'s fallback silently compared every atom in
+     * so long, and why matrixData()'s fallback silently compared every child in
      * the session.  Reading the code cannot distinguish the two cases; asking
      * the layer can.
      *
@@ -336,9 +336,9 @@ public:
      * it works on (reservedclusters.h).  Returns how many were removed.*/
     int leaveOutReserved(QList<int>& ids, const QString& operation) const;
 
-    /**The child-layer form of leaveOutReserved: removes from @p children the atoms
+    /**The child-layer form of leaveOutReserved: removes from @p children the children
      * whose parent is a reserved chunk cluster, and names those parents in the
-     * status bar.  Returns how many atoms were removed.*/
+     * status bar.  Returns how many children were removed.*/
     int leaveOutChildrenOfReserved(QList<int>& children, const QString& operation) const;
 
     /**Manages the color change of a single cluster.
@@ -434,10 +434,10 @@ public:
     /** Makes the saved flat clustering hierarchical by writing its .clc and .clp
      *  siblings next to the .clu (Hierarchy > Promote to Hierarchical Session).
      *
-     *  With no .clc yet, every unit becomes one atom with the same id (the
-     *  artifact bin 0 gets atom 0): the atom layer starts as a copy of the unit
+     *  With no .clc yet, every unit becomes one child with the same id (the
+     *  artifact bin 0 gets child 0): the child layer starts as a copy of the unit
      *  layer, the state Flatten Hierarchy leaves, and the child palette then
-     *  splits real atoms.  An existing .clc that is nested in the .clu is kept
+     *  splits real children.  An existing .clc that is nested in the .clu is kept
      *  and only its .clp is written; one that is not nested is refused.
      *
      *  Works on the .clu ON DISK -- save first.  The new files are read only
@@ -521,13 +521,13 @@ public:
     void setCuratedParents(const QList<int>& parents);
     QList<int> curatedParentsList() const { return curatedParents; }
 
-    /** The JOINT working set: the atoms the curation matrices have brought into
+    /** The JOINT working set: the children the curation matrices have brought into
      *  the child palette while a joint selection is held.
      *
      *  Under a joint scope the child palette deliberately starts EMPTY -- the
      *  full rosters of several parents interleaved in one list is not a
-     *  browsable thing -- and the matrices are the only way atoms enter it: a
-     *  cell click REPLACES the set with that cell's atoms, a Ctrl-click ADDS,
+     *  browsable thing -- and the matrices are the only way children enter it: a
+     *  cell click REPLACES the set with that cell's children, a Ctrl-click ADDS,
      *  and a drained operation landing is adopted so the output is listable.
      *  The palette's own selection stays the one selection authority over
      *  whatever is listed; this set only decides what CAN be listed.
@@ -544,7 +544,7 @@ public:
      *  no landing of their own. */
     void adoptJointChildren(const QList<int>& ids);
 
-    /** The held CHILD-SCOPE sort order: the scope's atoms in the order the
+    /** The held CHILD-SCOPE sort order: the scope's children in the order the
      *  user last sorted them (Sort Clusters under a child scope).  Held so
      *  the sort SURVIVES matrix recomputes -- after every accepted compute
      *  each curation matrix (error, template, residual, drift) re-derives
@@ -553,7 +553,7 @@ public:
      *  cleared (clearScopeSortOrder, signal scopeSortOrderChanged) at the
      *  two exits from the child view: the V toggle turning the scope off,
      *  and the curated parent(s) changing.  Atom ids, not row indices: rows
-     *  move on every recompute, ids are what the sort meant.  The atom
+     *  move on every recompute, ids are what the sort meant.  The child
      *  layer's own renumber paths translate it, beside jointChildren --
      *  the parent maps are the wrong id space for it. */
     void setScopeSortOrder(const QList<int>& orderedIds);
@@ -569,7 +569,7 @@ public:
      *  lowered again, so at the moment a matrix thread is constructed it is false
      *  and data() is the FIBER layer.  Measured, not assumed: every [matrixscope]
      *  line in a full session reports childScopeActive=false with
-     *  data()==clusteringData, while the scope subset holds atom ids.  Feeding one
+     *  data()==clusteringData, while the scope subset holds child ids.  Feeding one
      *  to the other gave OVERLAP=0 -- and worse, for one parent, a partial overlap
      *  of 171 coincidental id collisions, which would have produced a matrix over
      *  an arbitrary set of parents that looked entirely plausible.
@@ -583,10 +583,10 @@ public:
      *
      *  A matrix cell names a PAIR, and clicking it is how the user says "these two
      *  are the ones I mean" before merging them.  When the matrix is scoped, those
-     *  ids are atoms and the selection belongs in the CHILD palette --
+     *  ids are children and the selection belongs in the CHILD palette --
      *  shownClustersUpdate() cannot deliver it, because its palette refresh is
      *  guarded on !childScopeActive, so a scoped click landed in the parent palette
-     *  and picked whichever parent happened to carry the atom's number.
+     *  and picked whichever parent happened to carry the child's number.
      *
      *  @p previous is the prior selection, passed through to shownClustersUpdate in
      *  the unscoped case only; the child palette has no equivalent notion.
@@ -615,7 +615,7 @@ public:
      *
      *  There is deliberately no minimum-children threshold.  One was tried -- skip
      *  parents with five or fewer -- and it is the wrong shape for this: the matrix
-     *  would silently fall back to comparing every atom in the session for exactly
+     *  would silently fall back to comparing every child in the session for exactly
      *  the parents where the user is looking at the fewest, which is a surprising
      *  jump in both content and cost.  A two-cell matrix conveys little, but it
      *  conveys it consistently.
@@ -690,20 +690,20 @@ public:
      *  left it and came back. */
     int layerSwitchCount() const { return layerSwitches; }
 
-    /// Record a parent parent whose spike membership an operation created or changed.
+    /// Record a parent whose spike membership an operation created or changed.
     /// Drained by takeModifiedParents() in the coalesced post-edit step to drive the
     /// per-parent auto-realign.  Ignores noise/artifact (id <= 1) and de-duplicates.
     /**Layer trace, enabled by setting NS3_TRACE_SCOPE in the environment.
      *
      * Exists to settle one question: does an id from the CHILD layer ever reach
-     * a parent-layer code path?  The two numberings used to overlap -- atom 7
+     * a parent-layer code path?  The two numberings used to overlap -- child 7
      * and parent 7 were unrelated units sharing a number, and a parent's only
-     * atom carried the parent's id on purpose -- so a wrong-layer id was accepted
+     * child carried the parent's id on purpose -- so a wrong-layer id was accepted
      * silently by any test that only asks "does this exist?".  Since 2026-11-21
      * the numberings are disjoint outside the bins (hierarchyfiles.h): PC can
      * now only be 0 or 1, or a reserved chunk id.  Every
      * line tags each id with where it actually lives: P = a parent only,
-     * C = an atom only, PC = BOTH (the case that hides the mistake), - = neither.
+     * C = a child only, PC = BOTH (the case that hides the mistake), - = neither.
      *
      * Off unless the variable is set; the check is read once into a static.*/
     static bool scopeTraceEnabled();
@@ -731,7 +731,7 @@ public:
      *  above the lowest removed id, or the nearest below when the removal was at
      *  the end of the id-ordered palette.  Never returns a reserve id (0/1) --
      *  those are where deleted spikes go.  -1 when nothing real survives.
-     *  Reads the ACTIVE layer, so it answers for atoms in child scope.
+     *  Reads the ACTIVE layer, so it answers for children in child scope.
      */
     int neighbourAfterRemoval(const QList<int>& removed) const;
     /// Return and clear the pending parent selection.
@@ -750,7 +750,7 @@ public:
     QList<int> takePendingChildSelection();
     /** True once per operation that parked a child landing: consumed by
      *  KlustersApp::applyPendingParentSelection, whose parent selection must then
-     *  not pull the views and the focus up to the parent -- the atoms the landing
+     *  not pull the views and the focus up to the parent -- the children the landing
      *  selected in the child palette stay the shown clustering. */
     bool takeChildLandingParked();
     /// Translate the pending parent selection through a renumber map (old->new), so a
@@ -764,7 +764,7 @@ public:
     /// INHERITED their numbers, and the child-scoped matrices would compare an
     /// arbitrary family that looks entirely plausible.  Deliberately does NOT
     /// touch jointChildren: those are ATOM ids and this map speaks the parent
-    /// layer -- the working set is translated at the two atom-layer renumber
+    /// layer -- the working set is translated at the two child-layer renumber
     /// sites (renumberChildrenToEnd, compactAllClusterIds), with their maps.
     void renumberHeldScopeParents(const QMap<int,int>& oldNew);
     /** Restrict the child palette to @p visibleChildren; the rest are hidden via
@@ -795,17 +795,17 @@ public:
     /** Eject child @p childCluster from its parent onto the noise cluster (1)
      *  without deleting its spikes.  Equivalent to dropChildrenToBin({child}, 1). */
     bool dropChildToNoise(int childCluster, KlustersView& activeView);
-    /** Delete at the child level: the atoms @p children are RECLASSIFIED onto the
+    /** Delete at the child level: the children @p children are RECLASSIFIED onto the
      *  reserve bin @p binId (1 = noise, 0 = artifact) -- their spikes leave their
-     *  parent in the parent layer and keep their atom id, as dropChildToNoise does
+     *  parent in the parent layer and keep their child id, as dropChildToNoise does
      *  -- in one gesture.  Then the selection lands where the curator works next:
      *  on the nearest surviving SIBLING (the one above the lowest dropped id, else
-     *  the one below) in the child palette; when the last atom went and the parent
+     *  the one below) in the child palette; when the last child went and the parent
      *  emptied with it, on the parent's neighbour in the parent palette, which the
-     *  curated parent follows.  Atoms of a reserved chunk cluster, and atoms already
+     *  curated parent follows.  Atoms of a reserved chunk cluster, and children already
      *  in the bin, are left out.  Returns false when nothing moved. */
     bool dropChildrenToBin(const QList<int>& children, int binId, KlustersView& activeView);
-    // ── atom-layer edit (rewrites .clc; separate child-undo timeline) ────────
+    // ── child-layer edit (rewrites .clc; separate child-undo timeline) ────────
     /** Collapse @p children (which MUST share a parent) into one microfiber.
      *  Mutates childData, pushes a child-undo entry.  Returns the new child id,
      *  or -1 (e.g. on a cross-parent selection, which is refused). */
@@ -819,7 +819,7 @@ public:
   * waveform correlates with the reference at least @p minCorrelation are
   * merged into one child; the others are not merged and stay as they are.
   * Nothing is deleted and nothing is promoted; the merged child is an
-  * ordinary atom of the same parent, so a bad call is one undo away.
+  * ordinary child of the same parent, so a bad call is one undo away.
   * @param matchedOut  the orphans that match (merged when there are two or more)
   * @param strayOut    the orphans that do not, left as they are
   * @return the number of orphans merged (0 when fewer than two match), or -1
@@ -900,16 +900,16 @@ public:
   * The selection lands on every parent that received or now holds a child.
   * @return those parents.*/
     QList<int> breakUpParents(const QList<BreakUpMove>& plan, KlustersView& activeView);
-    /** Session-wide flatten: merge every parent's atoms into a single self child
+    /** Session-wide flatten: merge every parent's children into a single self child
      *  (hierarchyfiles::selfChildOf: parent + 10000; a bin's own id), applied to all parents including the reserve bins so
-     *  the resulting .clc is exactly .clu and no atom can span two parents.
+     *  the resulting .clc is exactly .clu and no child can span two parents.
      *  Destructive -- it discards deliberate sub-structure, unlike the repair-only
      *  collapseToSelfChildren().  Costs one Data undo level plus one ChildEdit, so
      *  Ctrl+Shift+Z reverts the whole thing in one step.
-     *  @return the number of atoms removed, 0 if the layer was already flat, or
+     *  @return the number of children removed, 0 if the layer was already flat, or
      *          -1 if there is no child layer / the two layers disagree in size. */
     /** Collapse the hierarchy so .clc IS .clu: every parent ends up covered by one
-     *  atom carrying the parent's own id, and no sub-structure survives.
+     *  child carrying the parent's own id, and no sub-structure survives.
      *
      *  This is the FILE-LEVEL conversion from a hierarchical pair to a flat
      *  clustering -- the counterpart to the .clc == .clu lift at load -- not a
@@ -954,7 +954,7 @@ public:
     void rebuildHierarchyFromData();
 
     /**Compacts the ids of BOTH clusterings into the low integers with no gaps:
-  * parents become 2,3,4,... and atoms likewise, with the reserve bins 0 and 1
+  * parents become 2,3,4,... and children likewise, with the reserve bins 0 and 1
   * left where they are.  After a long session of splitting and merging, both
   * layers carry holes and ids far above the number of units that actually
   * exist; this is the occasional tidy-up.
@@ -964,14 +964,14 @@ public:
   * early-returns when a layer is already compact.  The parent pass reuses
   * renumberClusters() whole, so colours, undo, the curation-log placeholder,
   * the view relabelling and the palette rebuild are exactly the parent
-  * renumber's; the child pass adds the atom layer and then re-derives the
+  * renumber's; the child pass adds the child layer and then re-derives the
   * parent<->child maps from the data rather than trying to translate them.
   * @return true when either layer actually moved.*/
     bool compactAllClusterIds();
 
     /** Cross-check the derived child<->parent maps against the per-spike arrays.
      *
-     *  childToParent IS the atom->parent relation the .clp records; it is just
+     *  childToParent IS the child->parent relation the .clp records; it is just
      *  treated as derived rather than as owned state, and nothing verifies that
      *  it still matches the layers it was derived from.  It stops matching the
      *  moment an edit path mutates a layer without calling
@@ -984,14 +984,14 @@ public:
      */
     bool validateHierarchyMaps(const char* where) const;
     /** After a PARENT edit that moved spikes across parent boundaries (a manual
-     *  polygon split), carve only the child atoms that now straddle two or more
-     *  parents so every parent regains whole atoms; atoms wholly inside one
+     *  polygon split), carve only the children that now straddle two or more
+     *  parents so every parent regains whole children; children wholly inside one
      *  parent are left intact (a split must not collapse untouched children). */
-    /** Explicit parent/atom resync: re-cut any child atom whose spikes now span more
-     *  than one parent parent so the nesting invariant holds again, then re-derive
+    /** Explicit parent/child resync: re-cut any child whose spikes now span more
+     *  than one parent so the nesting invariant holds again, then re-derive
      *  the child<->parent maps (regenerated as .clp on Save).  Parent edits no
      *  longer do this implicitly; the user reassigns/consolidates parents and then
-     *  refiberizes.  Independent of the parent and atom undo stacks. */
+     *  refiberizes.  Independent of the parent and child undo stacks. */
     void repairNesting();
     /** After parents were merged: the folded parents' self children renamed, the
      *  child colours and the child<->parent maps re-derived.  mergeParents ends with
@@ -1003,18 +1003,18 @@ public:
      *  @return whether the child labelling changed. */
     bool repairNestingAsStep();
     /** Shared core of repairNesting: collapse "loose" spikes (in a real parent but covered only
-     *  by a reserve or straddling atom) into their parent's self child (hierarchyfiles::selfChildOf: parent + 10000),
+     *  by a reserve or straddling child) into their parent's self child (hierarchyfiles::selfChildOf: parent + 10000),
      *  preserving intact sub-structure, then rebuild child->parent and emit hierarchyChanged.
-     *  Does NOT touch the atom undo stack, so edit paths that record their own ChildEdit
+     *  Does NOT touch the child undo stack, so edit paths that record their own ChildEdit
      *  (e.g. a child recluster) call this directly; repairNesting wraps it with the undo reset. */
     void collapseToSelfChildren();
-    /** Brings the atoms' names to the numbering of hierarchyfiles.h: every real
-     *  parent's self child carries parent + 10000, and no other atom keeps an id
-     *  below 20000.  Renames only -- no spike changes atom -- and carries the
-     *  ids held outside the atom layer (joint palette, scope order, colours)
-     *  along.  Not an edit: nothing lands on the atom layer's undo stack.
+    /** Brings the children' names to the numbering of hierarchyfiles.h: every real
+     *  parent's self child carries parent + 10000, and no other child keeps an id
+     *  below 20000.  Renames only -- no spike changes child -- and carries the
+     *  ids held outside the child layer (joint palette, scope order, colours)
+     *  along.  Not an edit: nothing lands on the child layer's undo stack.
      *  Returns whether anything was renamed (the map in @p renamed, old -> new);
-     *  the caller re-derives the parent<-atom maps. */
+     *  the caller re-derives the parent<-child maps. */
     bool normaliseChildIds(QMap<int, int>* renamed = nullptr);
     /** How many children the load renumbered from the old numbering (0: none). */
     int childIdsUpgradedOnLoad() const { return childIdsUpgraded; }
@@ -1023,7 +1023,7 @@ public:
     bool stageIdTarget(const QString& path, int32_t header, const std::vector<int32_t>& ids,
                        bool force, std::vector<std::string>& targets, QString* error);
     /** Ensure childColorList has a deterministic (id-derived) colour for every
-     *  current child id, so atom edits/undo/redo never leave a child uncoloured. */
+     *  current child id, so child edits/undo/redo never leave a child uncoloured. */
     void syncChildColors();
     /**True iff any cluster is currently masked.*/
     bool hasMask() const {return !maskedClusters.isEmpty();}
@@ -1119,13 +1119,13 @@ public:
   * the same boundaries fall on every cluster and on every session recorded at
   * this sampling rate.  The cluster keeps its earliest occupied block and each
   * later occupied block becomes a new cluster; empty blocks produce nothing.
-  * Runs on the active layer, so it partitions a parent or an atom.
+  * Runs on the active layer, so it partitions a parent or a child.
   * @return the number of clusters created (0 when the cluster occupies one
   * block or fewer, which is not an error).*/
     int partitionClusterByTime(int clusterId, double blockSeconds);
 
     /**Row-named form.
-    * @return the new cluster's id (an atom id in child scope), or 0 when the
+    * @return the new cluster's id (a child id in child scope), or 0 when the
     * selection produced no new cluster.*/
     int createNewCluster(const SpikeSelection& selection, const QList <int>& clustersOfOrigin);
 
@@ -1266,17 +1266,17 @@ public:
 
     /** The ATOM-layer KNN split: partition @p sourceChild's spikes by KNN
      *  vote against reference ATOMS, each vote group becoming a new sibling
-     *  atom.  The atom layer is named outright -- childData end to end,
+     *  child.  The child layer is named outright -- childData end to end,
      *  never data() -- the same layer-costume family as the watershed and
-     *  the sorts.  The reference pool is the CHILD SCOPE's atoms when the
+     *  the sorts.  The reference pool is the CHILD SCOPE's children when the
      *  curation matrices are child-scoped (joint scopes vote across their
-     *  parents' atoms: references only classify, no spike moves into them),
-     *  else the source's siblings.  Every new atom lands under the source's
+     *  parents' children: references only classify, no spike moves into them),
+     *  else the source's siblings.  Every new child lands under the source's
      *  parent -- the spikes keep their .clu labels -- so nothing straddles
      *  and repairNesting has nothing to do.  One self-snapshotting childData
      *  edit + one ChildEdit; Ctrl+Shift+Z reverts it whole.  The parent-stage
-     *  curation logger stays out of the atom layer for its own stated reason
-     *  (its ids collide with atom numerals). */
+     *  curation logger stays out of the child layer for its own stated reason
+     *  (its ids collide with child numerals). */
     KnnSplitResult splitChildByKnnVsReferences(int    sourceChild,
                                                int    K,
                                                double majorityThreshold,
@@ -1710,7 +1710,7 @@ public:
     bool isSaving() const { return savePlan.valid; }
 
     /** Whether the open clustering differs from what is on disk: the unit and
-     *  atom ids against the .clu/.clc, each working copy (.spk/.res/.fet and the
+     *  child ids against the .clu/.clc, each working copy (.spk/.res/.fet and the
      *  synced feature spaces) against its file, uncommitted realign batches,
      *  and edited cluster information.  Cheap when nothing changed (see
      *  filecommit::atParity).  The close prompt asks only when this is true. */
@@ -1799,22 +1799,22 @@ public:
      *  the recluster table in the same (time) order, so integrateReclusteredClusters maps the engine's
      *  .clu back by position.  Returns OK / CREATION_ERROR (with @p error).
      *  @p refine (a `refine` plugin, KlustersPlugin::refines): @p clustersToRecluster are ATOMS (the
-     *  caller converted the selected parents with childrenOf); the recluster target is the atom layer
-     *  whatever the scope, the seed .clu carries the atoms' PARENT ids and a seed .clc/.clp the atoms, so
-     *  the engine sees the units whole and keeps the atoms it does not examine.  The finish path reads
-     *  the engine's final .clc as the new atoms (installRefinedChildren). */
+     *  caller converted the selected parents with childrenOf); the recluster target is the child layer
+     *  whatever the scope, the seed .clu carries the children' PARENT ids and a seed .clc/.clp the children, so
+     *  the engine sees the units whole and keeps the children it does not examine.  The finish path reads
+     *  the engine's final .clc as the new children (installRefinedChildren). */
     int createReclusterSubsession(QList<int>& clustersToRecluster, const QString& tmpBase, const QString& fetPath,
                                   const QString& variant, const QString& tag, QStringList* written = nullptr,
                                   QString* error = nullptr, bool refine = false);
     /** Removes every file / link `<tmpBase>.*` -- the sub-session and whatever the engine wrote under it.
      *  Returns how many. */
     static int removeReclusterSubsession(const QString& tmpBase);
-    /** A hierarchical plan's atoms, after integrateReclusteredClusters took its .clu as the new parents:
+    /** A hierarchical plan's children, after integrateReclusteredClusters took its .clu as the new parents:
      *  reads the final .clc at @p clcPath (one id per sub-session spike, the rows of the last
-     *  createReclusterSubsession) and writes them, renumbered above the atom layer's highest id, as the
-     *  atoms of those spikes -- each nests in the parent the .clu gave the same spike, so the maps the
+     *  createReclusterSubsession) and writes them, renumbered above the child layer's highest id, as the
+     *  children of those spikes -- each nests in the parent the .clu gave the same spike, so the maps the
      *  following reclusteringUpdate derives are consistent.  Parent-scope reclusters of a hierarchical
-     *  session only (a child-scope recluster takes the .clu as its atoms).  Returns the number of atoms
+     *  session only (a child-scope recluster takes the .clu as its children).  Returns the number of children
      *  installed, 0 when skipped, -1 on a bad file (with @p error). */
     int integrateReclusteredChildren(const QString& clcPath, QString* error = nullptr);
     /** Feature spaces an engine WROTE in the sub-session (`<tmpBase>.fet.<method>.<g>` whose method is
@@ -1824,7 +1824,7 @@ public:
      *  is removed; parent- and child-scope alike.  Returns the number carried back (-1: @p error). */
     int carryBackSubsessionFeatures(const QString& tmpBase, QStringList* created = nullptr, QString* error = nullptr);
     /** A `refine` run's result: the engine's final .clc (`<fetPath>` with .fet. -> .clc.) becomes the
-     *  .clu the recluster integrates (copied over `<fetPath>` with .fet. -> .clu.), so the atom-layer
+     *  .clu the recluster integrates (copied over `<fetPath>` with .fet. -> .clu.), so the child-layer
      *  recluster path installs its children under the parents they belong to.  False (with @p error)
      *  when the engine delivered no .clc or one of the wrong length. */
     bool stageRefinedChildren(const QString& fetPath, QString* error = nullptr);
@@ -1880,8 +1880,8 @@ public:
      *  memory (the save+reopen equivalent) so a partial-commit desync need not
      *  force a disk round-trip before reclustering. */
     void resyncActiveClusterInfoMap();
-    /** True while an in-flight recluster targets the child (atom) layer; lets the
-     *  exit handler land focus on the new atoms in the child palette instead of
+    /** True while an in-flight recluster targets the child (child) layer; lets the
+     *  exit handler land focus on the new children in the child palette instead of
      *  the parent list.  Valid until reclusteringUpdate consumes the pin. */
     bool reclusterTargetIsChild() const { return reclusterTarget && reclusterTarget == childData; }
 
@@ -2006,7 +2006,7 @@ public:
         /** The .fet is a projection of the waveforms through a readable basis
          *  (.pca.<method>): it is re-projected by a sync and a follow.  False for
          *  a DETACHED space -- a per-spike feature table with no basis, such as
-         *  fiber-manifold's .fet.manifold.<g> (snr, lag, position, ...): it can be
+         *  parent-manifold's .fet.manifold.<g> (snr, lag, position, ...): it can be
          *  shown and cut, its features stay as they are when spikes move and only
          *  its time (and phase) column follows the spike times; realign and nudge
          *  do not run in it. */
@@ -2473,11 +2473,11 @@ Q_SIGNALS:
     /**Emitted when the waveform-view channel selection changes.  Empty list =
      * no restriction (all channels).*/
     void selectedChannelsChanged(const QList<int>& channels);
-    /** Emitted after a child (atom) split mints new sibling atoms, carrying their
+    /** Emitted after a child (child) split mints new sibling children, carrying their
      *  ids so the child palette can select and focus them. */
     void hierarchyChildrenCreated(const QList<int>& newChildren);
 
-    /** Select these atoms in the child palette and focus the list.  Distinct from
+    /** Select these children in the child palette and focus the list.  Distinct from
      *  hierarchyChildrenCreated: that one means "these were just made", and reusing
      *  it to mean "land here after a delete" would tie two unrelated policies to one
      *  signal, which is how a shared policy drifts.  Same receiver, different cause.
@@ -2571,11 +2571,11 @@ public Q_SLOTS:
     void renumberClustersToEnd(QList<int> clustersToRenumber);
 
     /** Child-palette T: move the selected ATOMS to the end of the child palette by
-     *  giving them ids above the current atom maximum.  Separate from
-     *  renumberClustersToEnd because an atom rename shares little with a parent
+     *  giving them ids above the current child maximum.  Separate from
+     *  renumberClustersToEnd because a child rename shares little with a parent
      *  rename -- see the implementation comment.
      */
-    void renumberChildrenToEnd(QList<int> atomsToRenumber);
+    void renumberChildrenToEnd(QList<int> childrenToRenumber);
 
     /** Single primitive for "rename a set of clusters" doc-level updates.
      *  Drives Data::renumberPartial + colour-list rename + view rewrite +
@@ -2623,28 +2623,28 @@ public Q_SLOTS:
     int watershedSelectedClusters(const QList<int>& selectedClusters,
                                   const neurosuite::watershed2d::Config& cfg);
 
-    /** The ATOM-layer watershed: split the selected atoms (children) of ONE
-     *  parent into one new sibling atom per density basin, in the active
-     *  scatter's X/Y feature dimensions.  The atom layer is named outright --
+    /** The ATOM-layer watershed: split the selected children (children) of ONE
+     *  parent into one new sibling child per density basin, in the active
+     *  scatter's X/Y feature dimensions.  The child layer is named outright --
      *  childData end to end, never data() -- because this tool's children-view
      *  failure was exactly a parent-palette id looked up through data() in the
-     *  atom id space (right only while a parent kept a same-numeral core atom;
+     *  child id space (right only while a parent kept a same-numeral core child;
      *  1 of 411 parents on the reference session's curated g6).
      *
      *  Same-parent guard, for mergeChildren's reason turned around: the basins
      *  relabel the pooled spikes with no knowledge of parent boundaries, so a
-     *  cross-parent input would come back as basin atoms straddling both
+     *  cross-parent input would come back as basin children straddling both
      *  parents -- a nesting violation manufactured by the tool.  Returns -1 on
-     *  that guard, else the number of new atoms (0: no split -- too few
+     *  that guard, else the number of new children (0: no split -- too few
      *  spikes, one basin, or an integration refusal).  One self-snapshotting
      *  childData edit + one ChildEdit, so Ctrl+Shift+Z reverts it whole.  The
-     *  parent-stage curation log stays out of the atom layer by design (its
-     *  ids collide with atom numerals -- see createNewCluster's child branch). */
+     *  parent-stage curation log stays out of the child layer by design (its
+     *  ids collide with child numerals -- see createNewCluster's child branch). */
     int watershedSelectedChildren(const QList<int>& selectedChildren,
                                   const neurosuite::watershed2d::Config& cfg);
 
     /** One crash-recovery tick (GUI thread): writes the rescue copy of the unit
-     *  ids and, in a hierarchical session, of the atom ids.  Skipped while a save
+     *  ids and, in a hierarchical session, of the child ids.  Skipped while a save
      *  runs or nothing is modified. */
     void autoSaveTick();
     /** The rescue files of the open document: ".<clu name>.autosave" and, in a
@@ -2852,13 +2852,13 @@ private:
         bool                 valid = false;
         QString              url;             ///< the save target the snapshot is for
         std::uint64_t        dirtySerial = 0; ///< modified.serial() when it was taken
-        std::vector<int32_t> fiber;           ///< fiber id per spike, .res order
-        int32_t              fiberCount = 0;  ///< .clu count header
+        std::vector<int32_t> parent;           ///< parent id per spike, .res order
+        int32_t              parentCount = 0;  ///< .clu count header
         bool                 writeClc = false;
-        std::vector<int32_t> atom;            ///< atom id per spike (writeClc)
-        int32_t              atomCount = 0;
+        std::vector<int32_t> child;            ///< child id per spike (writeClc)
+        int32_t              childCount = 0;
         bool                 writeClp = false;
-        std::vector<int32_t> clp;             ///< fiber of atom c at c-1 (writeClp)
+        std::vector<int32_t> clp;             ///< parent of child c at c-1 (writeClp)
         QString              clcPath, clpPath;///< targets: the session's, or Save As's new names
         bool                 movesSiblings = false; ///< Save As: the session's siblings become clcPath/clpPath
         bool                 siblingsMoved = false; ///< set by saveDocument once docUrl moved; finishSave applies it
@@ -2902,7 +2902,7 @@ private:
     * hides, the added↔modified creation pairing, the cluster-0/1 policy), so
     * they are RECORDED rather than derived: a diff of the epoch snapshots
     * (Data::changedClustersBetween) reproduces the content change but not
-    * the provenance the dispatch encodes.  One value per action — the atom
+    * the provenance the dispatch encodes.  One value per action — the child
     * layer's ChildEdit, arrived at from the parent side.*/
     struct ClusterEditUndo {
         QList<int> added;
@@ -3092,12 +3092,12 @@ private:
     void logRealignUndoRedo(const PendingRealign& batch, bool redo);
     /// The child layer was replaced wholesale: colours, maps, views.
     void afterChildLabelsRestored(KlustersView& activeView);
-    // Record one atom-layer edit: push it on the undo history as a child entry
-    // (with the atom labels from before it), invalidate the redo, and refresh the
+    // Record one child-layer edit: push it on the undo history as a child entry
+    // (with the child labels from before it), invalidate the redo, and refresh the
     // Undo/Redo enable.  The single funnel for child edits.
     void recordChildEdit(const ChildEdit& e);
     /// A change to the children that is no edit of one (Repair Nesting run by hand, an
-    /// id compaction that moved only atoms): one step of the history when the labelling
+    /// id compaction that moved only children): one step of the history when the labelling
     /// differs from @p before.  Without it an undo of an OLDER edit took it along.
     bool recordChildChange(const QVector<dataType>& before);
     // Emit updateUndoNb/updateRedoNb with the steps of the undo history (the same
@@ -3122,7 +3122,7 @@ private:
      *  already clean.
      *
      *  The alternative is to store {child -> parent} and derive .clu, which is what
-     *  parent-kit's FiberHierarchy already does and what its .clu/.clc/.clp output
+     *  fiber-kit's FiberHierarchy already does and what its .clu/.clc/.clp output
      *  already satisfies -- verified on the same file: .clu reproduces from
      *  .clc + .clp for all 422,752 spikes with zero mismatches.
      *
@@ -3189,8 +3189,8 @@ private:
     int  layerSwitches = 0;      // see layerSwitchCount()
     int                  curatedParentId = -1;      // the parent being curated
     QList<int>           curatedParents;            // >=2 parents => joint matrix scope; else empty
-    QList<int>           jointChildren;             // atoms the matrices brought into the joint palette
-    QList<int>           scopeSortOrder;            // held child-scope sort order (atom ids)
+    QList<int>           jointChildren;             // children the matrices brought into the joint palette
+    QList<int>           scopeSortOrder;            // held child-scope sort order (child ids)
     bool                 matrixScopeOn = false;     // V toggles child-scoped matrices
     int                  matrixHoldDepth = 0;       // beginMatrixHold / endMatrixHold
     int                  matrixSelectionDepth = 0;  // selectFromMatrix / addFromMatrix in progress (selectingFromMatrix)
@@ -3338,13 +3338,13 @@ private:
     void logBefore(CurationLogger::ActionType action, const QList<int>& clusterIds);
 
     /** logBefore / logAfterNotUndoable for an ATOM-layer edit: snapshots are
-     *  taken on childData and carry layer=child.  Child edits live on the atom
+     *  taken on childData and carry layer=child.  Child edits live on the child
      *  undo stack, which the logger's status walk does not see, so the entry is
-     *  not undo-paired (status stays "good"; an atom undo is logged as its own
+     *  not undo-paired (status stays "good"; a child undo is logged as its own
      *  CHILD_UNDO detail by logChildUndo). */
-    void logChildBefore(CurationLogger::ActionType action, const QList<int>& atomIds);
-    void logChildAfter(const QList<int>& atomIds);
-    /** One not-undoable entry recording an atom-layer undo / redo (which the
+    void logChildBefore(CurationLogger::ActionType action, const QList<int>& childIds);
+    void logChildAfter(const QList<int>& childIds);
+    /** One not-undoable entry recording a child-layer undo / redo (which the
      *  parent walk cannot pair): the ChildEdit's added / modified / deleted. */
     void logChildUndoRedo(bool redo, const QList<int>& added, const QList<int>& modified, const QList<int>& deleted,
                           int revertsActionIdx = -1);

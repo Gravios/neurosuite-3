@@ -186,7 +186,7 @@ void KlustersDoc::renumberClusters(){
 
     //Update the palette of cluster
     // FIBER palette, unconditionally: this pipeline renames parents and knows nothing
-    // about atoms, so routing it by the current scope would hand parent ids to the
+    // about children, so routing it by the current scope would hand parent ids to the
     // child palette and match nothing.
     // NEVER activeView->clusters() here.  That is the FIBER selection only while
     // the views are showing parents; in child scope they show the selected CHILDREN,
@@ -213,7 +213,7 @@ void KlustersDoc::renumberClusters(){
     clusterPalette.selectItems(activeClusters);
     shownClustersUpdate(activeClusters,*activeView);
     // Hierarchical: the renumber compacts parent ids but leaves child->parent
-    // pointing at the old ids, orphaning every renamed parent's atoms.  Re-derive
+    // pointing at the old ids, orphaning every renamed parent's children.  Re-derive
     // the map from the (renumbered) parent spike labels.  No hierarchyChanged emit
     // here: renumberClusters runs inside the deferred post-edit flow and that signal
     // would re-enter it (see scheduleAutoPostClusterEdit, which deliberately hooks
@@ -342,7 +342,7 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
 
     // Refresh palette.
     // FIBER palette, unconditionally: this pipeline renames parents and knows nothing
-    // about atoms, so routing it by the current scope would hand parent ids to the
+    // about children, so routing it by the current scope would hand parent ids to the
     // child palette and match nothing.
     // NEVER activeView->clusters() here.  That is the FIBER selection only while
     // the views are showing parents; in child scope they show the selected CHILDREN,
@@ -369,7 +369,7 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
     clusterPalette.selectItems(activeClusters);
     // Hierarchical: a parent rename (T-key renumber-to-end, Shift+S reorder,
     // watershed) leaves child->parent pointing at the dead old id, so the renamed
-    // parent's atoms orphan and vanish from the child palette.  Re-derive the map
+    // parent's children orphan and vanish from the child palette.  Re-derive the map
     // from the renamed parent spike labels and refresh the child palette.  Unlike
     // renumberClusters, this path is a direct user action (not the deferred post-edit
     // flow), so emitting hierarchyChanged here cannot re-enter that flow.
@@ -456,42 +456,42 @@ void KlustersDoc::renumberClustersToEnd(QList<int> clustersToRenumber)
 // ---------------------------------------------------------------------------
 // KlustersDoc::renumberChildrenToEnd
 //
-// The child-palette T: give each selected atom an id above the current atom
+// The child-palette T: give each selected child an id above the current child
 // maximum so it sorts to the end of the id-ordered child palette.
 //
 // This is deliberately NOT applyClusterRename() with a different pointer.  That
-// pipeline shares only about three of its eight steps with an atom rename, and
+// pipeline shares only about three of its eight steps with a child rename, and
 // the rest would actively corrupt: it drives every view's renumberClusters()
 // (rewriting FIBER shownClusters through an ATOM map), renames entries in the
 // parent clusterColorList, and renumbers the parent palette's S-pins.  None of
-// those describe what happened when an atom changes id.  Parameterising the
+// those describe what happened when a child changes id.  Parameterising the
 // shared pipeline would have meant guarding most of its body -- a shared policy
 // re-expressed with exceptions, which is how this codebase's worst bugs start.
 //
-// What an atom rename actually needs is: the atom layer's own renumber, its own
-// colour list kept in step, the parent<-atom map re-derived because the rename
+// What a child rename actually needs is: the child layer's own renumber, its own
+// colour list kept in step, the parent<-child map re-derived because the rename
 // changes childToParent's KEYS, and the child palette told to refresh and land
-// on the moved atoms.
+// on the moved children.
 // ---------------------------------------------------------------------------
-void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
+void KlustersDoc::renumberChildrenToEnd(QList<int> childrenToRenumber)
 {
-    if (!childData || atomsToRenumber.isEmpty()) return;
+    if (!childData || childrenToRenumber.isEmpty()) return;
 
-    // Reserve atoms are the artifact/noise self children; renaming them would
+    // Reserve children are the artifact/noise self children; renaming them would
     // break the same special-cluster semantics the parent path protects.
-    atomsToRenumber.removeAll(0);
-    atomsToRenumber.removeAll(1);
-    if (atomsToRenumber.isEmpty()) return;
+    childrenToRenumber.removeAll(0);
+    childrenToRenumber.removeAll(1);
+    if (childrenToRenumber.isEmpty()) return;
 
     const QList<dataType> existing = childData->clusterIds();
     if (existing.isEmpty()) return;
 
-    // Ascending, so a multi-atom selection keeps its relative order at the end.
-    std::sort(atomsToRenumber.begin(), atomsToRenumber.end());
+    // Ascending, so a multi-child selection keeps its relative order at the end.
+    std::sort(childrenToRenumber.begin(), childrenToRenumber.end());
     int nextNewId = static_cast<int>(childData->nextFreeClusterId());
 
     QMap<int,int> partialOldToNew;
-    for (int oldId : atomsToRenumber) {
+    for (int oldId : childrenToRenumber) {
         if (!existing.contains(static_cast<dataType>(oldId))) continue;
         partialOldToNew.insert(oldId, nextNewId++);
     }
@@ -499,24 +499,24 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
 
     // renumberPartial refuses a non-injective map and one touching 0/1; the two
     // filters above and the strictly increasing nextNewId satisfy both, so a
-    // refusal here would mean the atom layer's map was already inconsistent.
+    // refusal here would mean the child layer's map was already inconsistent.
     // Child-primary: a child renumber changes the map's KEYS, not its values --
     // the parent of each renamed child is unchanged.
     childData->renumberPartial(partialOldToNew);
 
-    // The joint working set names ATOMS, and this is the atom layer's own
+    // The joint working set names ATOMS, and this is the child layer's own
     // rename, so its map is the right one to translate the held set through
     // (the parent-layer maps in renumberHeldScopeParents are the wrong id
-    // space for it).  Without this the moved atoms drop out of the joint
+    // space for it).  Without this the moved children drop out of the joint
     // palette at the landing below, which selects them at their NEW ids.
     for (int& c : jointChildren)
         if (partialOldToNew.contains(c)) c = partialOldToNew.value(c);
     for (int& c : scopeSortOrder)                     // same id space, same map
         if (partialOldToNew.contains(c)) c = partialOldToNew.value(c);
 
-    // Colours follow their atom, then re-sort: changeItemId mutates ids in place
+    // Colours follow their child, then re-sort: changeItemId mutates ids in place
     // without reordering, and the palette renders in storage order, so without the
-    // sort a renamed atom would still draw where its OLD id sat.
+    // sort a renamed child would still draw where its OLD id sat.
     ItemColors& colors = childClusterColors();
     for (auto it = partialOldToNew.constBegin(); it != partialOldToNew.constEnd(); ++it) {
         const int idx = colors.itemIndex(it.key());
@@ -530,7 +530,7 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
     rebuildHierarchyFromData();
     emit hierarchyChanged();
 
-    // Land on the atoms that just moved, at their new ids.
+    // Land on the children that just moved, at their new ids.
     QList<int> moved;
     for (auto it = partialOldToNew.constBegin(); it != partialOldToNew.constEnd(); ++it)
         moved.append(it.value());
@@ -565,8 +565,8 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& requestedOrder,
 
     // Backstop, the doc cannot assume its caller: this is the PARENT renumber,
     // and under a child scope every sort's order names ATOMS.  The existence
-    // check below cannot catch that -- after a compaction most atom numerals
-    // exist as parents too -- so an atom-derived permutation would rename
+    // check below cannot catch that -- after a compaction most child numerals
+    // exist as parents too -- so a child-derived permutation would rename
     // unrelated parents, entirely plausibly.  Every scoped caller routes to
     // the display-only path before reaching here; refusing is for the one
     // that forgets.

@@ -3,7 +3,7 @@
 
 // TemplateView — the template-library display (DisplayType TEMPLATE_LIBRARY).
 //
-// A marked unit's waveform is stored by fiber-template as a LINKED SERIES: a
+// A marked unit's waveform is stored by parent-template as a LINKED SERIES: a
 // median per drift chunk and a median per spike-energy bin, written as a .wtf
 // (a headerless .spk-layout int16 stack) with a companion .wti index naming
 // each row (unit, link, bin, coordinates).  This view loads those for the open
@@ -149,7 +149,7 @@ private:
     void onDeleteClass();                // tombstone the selected class
     void onRenameClass();                // relabel the selected class
     void onSetPrimary();                 // make the selected class the primary
-    void onRegenClicked();               // request a fiber-template waveform regen
+    void onRegenClicked();               // request a parent-template waveform regen
 
     // ── manual lineage (.wtl via TemplateLineageStore) + the session partition ─
     void loadLineage();                  // open the lineage store; seed the partition; tile active classes

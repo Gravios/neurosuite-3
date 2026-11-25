@@ -53,7 +53,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .shortcut(QKeySequence::Undo).editing();
     // explicit Ctrl+Y so the
     // Linux default Ctrl+Shift+Z
-    // is free for the atom layer
+    // is free for the child layer
     t << CommandSpec("edit.redo", "Edit", tr("Redo"), ON(triggered, slotRedo))
             .shortcut(Qt::CTRL | Qt::Key_Y).editing();
     // The one command that works WHILE a job runs (the edit lock leaves it alone).
@@ -175,12 +175,12 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "so a different cluster can be projected onto them with Shift+O."));
     // Mark/unmark the selected cluster(s) as template units.  Marked units are the
     // template library for this clustering; a save persists the set and (re)writes
-    // their .wtf via the fiber-template plugin.  A gesture on the selection, like
+    // their .wtf via the parent-template plugin.  A gesture on the selection, like
     // the move-to-noise/artifact actions, rather than a configuration dialog.
     t << CommandSpec("action.markAsTemplate", "Clusters", tr("Mark/Unmark as &Template"), ON(triggered, slotToggleTemplate))
             .toolTip(tr("Toggle the selected cluster(s) as template units.  On save their linked "
                      "template waveforms (.wtf) are written in every available method.")).editing();
-    // Run fiber-template on demand for the selected cluster(s) only — the
+    // Run parent-template on demand for the selected cluster(s) only — the
     // per-cluster "refine this unit now" step of the curation workflow, distinct
     // from the on-save run over the whole marked set.
     t << CommandSpec("action.generateTemplate", "Clusters", tr("&Generate Template for Selected Cluster(s)"), ON(triggered, slotGenerateTemplateForSelection))
@@ -326,7 +326,7 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Recluster runs the fiber-kit plan on the selection's sub-session "
                      "(the fiber-kit-recluster plugin's defaults, else the preferences' command)")).checkable();
     // The REFINE mode: fiber-kit's manifold plugin.  A refine engine (descriptor <integration>refine)
-    // runs on the atoms of the selected unit(s) and installs its children under the SAME parents --
+    // runs on the children of the selected unit(s) and installs its children under the SAME parents --
     // nothing moves between units and no id changes -- where a recluster engine replaces the selection
     // with new clusters.  Built in so the wheel's Plugin ring carries it; enabled when the descriptor is
     // installed (fk install klusters-plugin).

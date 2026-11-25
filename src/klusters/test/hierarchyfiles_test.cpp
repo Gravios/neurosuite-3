@@ -2,7 +2,7 @@
 // "Promote to Hierarchical Session".
 //
 // Checks: the nesting scan and its straddlers; the .clp payload; promotion of a
-// flat .clu (identity atoms, artifact bin 0 -> atom 0, gaps unmapped) and that
+// flat .clu (identity children, artifact bin 0 -> child 0, gaps unmapped) and that
 // the promoted pair scans back to the same map with no straddler; sibling names
 // keep method, group and suffix; a staged write leaves the target untouched
 // until it is installed, keeps a .bak, and the files read back with the layout
@@ -42,7 +42,7 @@ int main()
         check(s.ok && s.straddlers.empty(), "nested pair: no straddler");
         check(s.childToParent.size() == 4 && s.childToParent.at(5) == 2 && s.childToParent.at(6) == 2
               && s.childToParent.at(7) == 3 && s.childToParent.at(0) == 0, "nested pair: map");
-        const std::vector<int> moved = {2, 3, 3, 3, 0, 4};          // atom 5 now under 2 and 4
+        const std::vector<int> moved = {2, 3, 3, 3, 0, 4};          // child 5 now under 2 and 4
         const NestingScan t = scanNesting(moved, clc);
         check(t.ok && t.straddlers == std::vector<int>{5}, "straddler found");
         check(t.childToParent.at(5) == 2, "straddler keeps its first-seen fiber");
@@ -69,25 +69,25 @@ int main()
         check(clpFromMap(s.childToParent) == p.clp, "promoted .clp equals the map the pair implies");
     }
 
-    // ---- the numbering of atoms ----
+    // ---- the numbering of children ----
     {
         check(selfChildOf(0) == 0 && selfChildOf(1) == 1, "the bins are their own self child");
         check(selfChildOf(2) == 10002 && selfChildOf(153) == 10153 && selfChildOf(9999) == 19999, "fiber p -> atom p + 10000");
         check(selfChildOf(kReservedClusterLo) == kReservedClusterLo, "a reserved chunk cluster is its own");
         check(isSelfChildId(10002) && isSelfChildId(19999) && !isSelfChildId(10001) && !isSelfChildId(20000) && !isSelfChildId(153),
               "the self-child block is 10002 .. 19999");
-        check(fiberOfSelfChild(10153) == 153 && fiberOfSelfChild(1) == 1 && fiberOfSelfChild(0) == 0
-              && fiberOfSelfChild(20000) == -1 && fiberOfSelfChild(153) == -1 && fiberOfSelfChild(kReservedClusterLo) == kReservedClusterLo,
+        check(parentOfSelfChild(10153) == 153 && parentOfSelfChild(1) == 1 && parentOfSelfChild(0) == 0
+              && parentOfSelfChild(20000) == -1 && parentOfSelfChild(153) == -1 && parentOfSelfChild(kReservedClusterLo) == kReservedClusterLo,
               "the fiber an atom is the self child of, by id");
-        check(fiberIdFits(0) && fiberIdFits(9999) && !fiberIdFits(10000) && fiberIdFits(kReservedClusterLo), "fibers are 0 .. 9999 and the reserved ids");
+        check(parentIdFits(0) && parentIdFits(9999) && !parentIdFits(10000) && parentIdFits(kReservedClusterLo), "fibers are 0 .. 9999 and the reserved ids");
         bool roundTrip = true;
-        for (int p2 = 0; p2 < kSelfChildBase; ++p2) roundTrip = roundTrip && fiberOfSelfChild(selfChildOf(p2)) == p2;
+        for (int p2 = 0; p2 < kSelfChildBase; ++p2) roundTrip = roundTrip && parentOfSelfChild(selfChildOf(p2)) == p2;
         check(roundTrip, "fiberOfSelfChild undoes selfChildOf for every fiber");
     }
 
     // ---- upgradeChildIds: a .clc in the old numbering ----
     {
-        //                               fiber: 0  1  4      4      4      2      2   7   7
+        //                               parent: 0  1  4      4      4      2      2   7   7
         const std::vector<int> parent      = {0, 1, 4,     4,     4,     2,     2,  7,  7};
         const std::vector<int> oldChild    = {0, 1, 4,     9,     9,     2,     2,  3, 12};   // 4, 2: self; 9 under 4; 3, 12 under 7
         const ChildIdUpgrade u = upgradeChildIds(parent, oldChild);
@@ -99,7 +99,7 @@ int main()
         check(s.ok && s.straddlers.empty() && s.childToParent.at(20001) == 4 && s.childToParent.at(10002) == 2, "the upgraded pair nests as the old one did");
         const ChildIdUpgrade again = upgradeChildIds(parent, u.ids);
         check(!again.needed && again.ids.empty(), "a file in the new numbering is left alone");
-        // an old atom numbered like a fiber it does not sit under is not a self child
+        // an old child numbered like a parent it does not sit under is not a self child
         const ChildIdUpgrade other = upgradeChildIds({2, 2, 5}, {5, 5, 8});
         check(other.needed && other.ids == std::vector<int>({20000, 20000, 20001}), "atom 5 under fiber 2 is not fiber 5's self child");
         // reserved ids keep their number; a high old id is renumbered with the rest

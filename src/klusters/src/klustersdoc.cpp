@@ -165,7 +165,7 @@ bool KlustersDoc::idsBelongTo(const Data& layer, const QList<int>& ids,
         return true;
 
     // Name which layer was asked: "does not exist" reads very differently
-    // depending on whether the caller meant parents or atoms.
+    // depending on whether the caller meant parents or children.
     const char* layerName = (&layer == clusteringData) ? "parent"
                           : (childData && &layer == childData) ? "child"
                           : "unknown";
@@ -246,12 +246,12 @@ void KlustersDoc::forceClusterRefresh(int clusterId)
         viewList->at(i)->forceClusterRefresh(clusterId);
 
     // Hierarchical (.clc child layer): a parent-parent realign shifts spikes that
-    // also belong to the parent's child atoms.  A child-scoped view will NOT
+    // also belong to the parent's children.  A child-scoped view will NOT
     // refresh on the parent id -- KlustersView::forceClusterRefresh() only acts
     // when the id is in that view's shownClusters, which for a selected child is
     // the child ids -- so it keeps drawing pre-realign waveforms.  Mirror the
     // child propagation already done in invalidateWaveformCache(): refresh the
-    // parent's children, plus the parent parent when clusterId is itself a child.
+    // parent's children, plus the parent when clusterId is itself a child.
     // The per-view guard makes this a no-op for any view not showing the id, so
     // it costs nothing outside hierarchical mode.
     if (childData) {
@@ -412,7 +412,7 @@ void KlustersDoc::singleColorUpdate(int clusterId,KlustersView& activeView){
 // inline -- about twenty copies, each one deciding for itself which palette to
 // touch, and all but one of them naming the FIBER palette unconditionally.  In
 // child scope that is the wrong palette: it rebuilds the parent list and moves the
-// selection a level above the atoms the user just edited.  The same shape landed
+// selection a level above the children the user just edited.  The same shape landed
 // focus on the parent after a child split until it was guarded at the one handler
 // that showed it; the other copies are the same bug waiting for a path that
 // reaches them.
@@ -429,9 +429,9 @@ void KlustersDoc::refreshActivePalette(const QList<int>& toSelect)
         // Rebuild, THEN land.  The first version of this helper emitted only the
         // landing and assumed the caller had emitted hierarchyChanged to rebuild.
         // That holds for the hierarchy edits, which do, and not for the nine other
-        // converted paths, which do not -- so they selected atoms in a list that had
-        // never been repopulated: the merged-away atom still listed, a split's new
-        // atoms missing, the landing pointing at stale rows.  The parent branch below
+        // converted paths, which do not -- so they selected children in a list that had
+        // never been repopulated: the merged-away child still listed, a split's new
+        // children missing, the landing pointing at stale rows.  The parent branch below
         // rebuilds for itself; this one has to as well, and the asymmetry was the bug.
         emit childPaletteRefreshRequested();
         if (!toSelect.isEmpty())
@@ -548,7 +548,7 @@ int KlustersDoc::setReservedClustersShown(bool shown){
     clusterPalette.updateClusterList();
     clusterPalette.selectItems(shown ? selected : reservedclusters::withoutReserved(selected));
     // Nothing to take out of the displays when they come back, or while the
-    // displays show atoms (the child scope: an atom is not a reserved cluster).
+    // displays show children (the child scope: a child is not a reserved cluster).
     if(shown || childScopeActive)
         return count;
 
@@ -819,23 +819,23 @@ void KlustersDoc::logAfterNotUndoable(const QList<int>& clusterIds)
     curationLogger->markCurrentActionNotUndoable();
 }
 
-void KlustersDoc::logChildBefore(CurationLogger::ActionType action, const QList<int>& atomIds)
+void KlustersDoc::logChildBefore(CurationLogger::ActionType action, const QList<int>& childIds)
 {
-    if (!curationLogger || !curationLogger->isOpen() || atomIds.isEmpty() || !childData)
+    if (!curationLogger || !curationLogger->isOpen() || childIds.isEmpty() || !childData)
         return;
-    QList<ClusterSnapshot> snaps = snapshotClusters(atomIds, 3.0, /*childLayer=*/true);
+    QList<ClusterSnapshot> snaps = snapshotClusters(childIds, 3.0, /*childLayer=*/true);
     lastLoggedActionIdx = curationLogger->beginAction(action, snaps);
     childEditLogIdx = lastLoggedActionIdx;
     logActionOpen = true;
 }
 
-void KlustersDoc::logChildAfter(const QList<int>& atomIds)
+void KlustersDoc::logChildAfter(const QList<int>& childIds)
 {
     if (!curationLogger || !curationLogger->isOpen() || !logActionOpen)
         return;
     logActionOpen = false;
-    if (!atomIds.isEmpty() && childData)
-        curationLogger->commitAction(snapshotClusters(atomIds, 3.0, /*childLayer=*/true));
+    if (!childIds.isEmpty() && childData)
+        curationLogger->commitAction(snapshotClusters(childIds, 3.0, /*childLayer=*/true));
     // Its step of the undo history is a child entry, not a level of the parent Data:
     // the entry is flipped by index when that step is undone (logChildUndoRedo).
     curationLogger->markCurrentActionRevertedByIndex();

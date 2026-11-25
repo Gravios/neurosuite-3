@@ -65,9 +65,9 @@ struct KlustersPlugin {
         return input == QLatin1String("subsession") || (input.isEmpty() && kind == QLatin1String("recluster"));
     }
     /** <integration>refine</integration>: a sub-session engine that REFINES the selected unit(s) into
-     *  children and never moves a spike between units.  Klusters sends the atoms of the selection (the
-     *  seed .clu carries the PARENT ids, a seed .clc/.clp the atoms), and reads the final .clc back as
-     *  the new atoms of the same parents -- the parents keep their ids; a plain recluster would renumber
+     *  children and never moves a spike between units.  Klusters sends the children of the selection (the
+     *  seed .clu carries the PARENT ids, a seed .clc/.clp the children), and reads the final .clc back as
+     *  the new children of the same parents -- the parents keep their ids; a plain recluster would renumber
      *  them.  fiber-kit's fiber-kit-manifold is one. */
     bool refines() const { return runsOnSubsession() && integration == QLatin1String("refine"); }
 };

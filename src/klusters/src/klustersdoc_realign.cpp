@@ -1705,7 +1705,7 @@ static void realignMeanInto(const std::vector<int16_t>& wavBuf, int64_t N, size_
     }
 }
 
-// realignMode 3 (--align-centroid): reference-free per-spike centroid de-jitter -- the parent-kit
+// realignMode 3 (--align-centroid): reference-free per-spike centroid de-jitter -- the fiber-kit
 // fiber_realign method='centroid'.  No template, no xcorr: each spike is shifted so its OWN circular
 // energy centroid lands on the POPULATION's circular-mean centroid (perSpikeCentroidShifts, the shared
 // realign_center math).  Fills cumShift and rolls wavBuf exactly as the xcorr passes would.  This is the aligner for clusters whose mean is too noisy to
@@ -2180,8 +2180,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // -----------------------------------------------------------------------
     // Cluster spike indices
     // -----------------------------------------------------------------------
-    // Resolve the selected cluster from the ACTIVE layer: the parent parent normally, or a
-    // child atom when a child is shown (childScopeActive).  data() == clusteringData unless a
+    // Resolve the selected cluster from the ACTIVE layer: the parent normally, or a
+    // child when a child is shown (childScopeActive).  data() == clusteringData unless a
     // child is active, so the parent / Align-All paths are byte-for-byte unchanged; this lets
     // realign target a single microfiber whose spikes scatter relative to its parent's mean.
     SortableTable spkTable;
@@ -2851,9 +2851,9 @@ void KlustersDoc::dropRealignUndo()
 void KlustersDoc::invalidateWaveformCache(int clusterId)
 {
     clusteringData->invalidateWaveformCache(clusterId);
-    // Keep the child atom layer in step so child views re-read the realigned .spk instead
-    // of serving stale cached waveforms.  A parent-parent realign touches that parent's atoms;
-    // a child-atom realign (child scope) touches the atom itself and its parent parent.
+    // Keep the child layer in step so child views re-read the realigned .spk instead
+    // of serving stale cached waveforms.  A parent-parent realign touches that parent's children;
+    // a child realign (child scope) touches the child itself and its parent.
     if (childData) {
         childData->invalidateWaveformCache(clusterId);
         for (int kid : childrenOf(QList<int>{ clusterId }))
@@ -2882,14 +2882,14 @@ void KlustersDoc::refeaturizeRealignedClusters(const QList<int>& parents)
     if (childData) {
         // The commit mirrored the rows into the child layer (second Data over
         // the same spikes), so its extrema are equally stale.  Translate the
-        // parents to their atoms; an empty translation degrades to the empty
+        // parents to their children; an empty translation degrades to the empty
         // list, which is the established unconditional-full-rescan request.
-        QList<int> atoms;
+        QList<int> children;
         for (int p : parents)
             for (int c : parentToChildren.value(p))
-                if (!atoms.contains(c))
-                    atoms.append(c);
-        childData->minMaxDimensionCalculation(atoms,
+                if (!children.contains(c))
+                    children.append(c);
+        childData->minMaxDimensionCalculation(children,
                                               /*featureValuesChanged=*/ true);
     }
 }
@@ -2957,7 +2957,7 @@ bool KlustersDoc::initPendingFiles()
         // Redirect the waveform reader and clu writer to the pending files.
         // They will remain here for the entire document session.
         clusteringData->setSpkFileName(pendingSpkPath);
-        // The child atom layer reads the SAME spikes; point its waveform reader at the same
+        // The child layer reads the SAME spikes; point its waveform reader at the same
         // pending .spk so child views show the realigned waveforms.  Without this the parent
         // reads pending (aligned) while children keep reading the original (shifted/scattered).
         if (childData) childData->setSpkFileName(pendingSpkPath);

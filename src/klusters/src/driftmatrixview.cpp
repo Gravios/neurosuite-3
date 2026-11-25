@@ -131,7 +131,7 @@ DriftMatrixView::DriftMatrixView(KlustersDoc& doc_, KlustersView& view_,
     connect(maxUmSpin, qOverload<int>(&QSpinBox::valueChanged),
             this, &DriftMatrixView::driftRangeChanged);
 
-    // A scoped sort (or the scope's exit) changes the held atom order the
+    // A scoped sort (or the scope's exit) changes the held child order the
     // display permutation derives from.
     connect(&doc, &KlustersDoc::scopeSortOrderChanged, this, &DriftMatrixView::applyScopeSortOrder);
 

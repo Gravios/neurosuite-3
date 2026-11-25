@@ -98,7 +98,7 @@ int KlustersDoc::createFeatureFile(QList<int>& clustersToRecluster,const QString
     //Create the file
     // Route through the ACTIVE clustering and pin it for the async integrate.
     // data() == clusteringData when no child is active (parent path unchanged),
-    // == childData in hierarchical mode (recluster the selected atom).
+    // == childData in hierarchical mode (recluster the selected child).
     reclusterTarget = &data();
     reclusterTarget->createFeatureFile(clustersToRecluster,fetFile);
     fetFile.close();
@@ -211,7 +211,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     const bool onChild = reclusterTargetIsChild();
     if (!onChild)
         logBefore(CurationLogger::ActionType::RECLUSTER, clustersToRecluster);
-    else   // atom layer: snapshots on childData with layer=child, not undo-paired
+    else   // child layer: snapshots on childData with layer=child, not undo-paired
         logChildBefore(CurationLogger::ActionType::RECLUSTER, clustersToRecluster);
     // Close the entry by the scope it was opened in.
     auto closeLog = [&](const QList<int>& ids, bool mutated) {
@@ -254,7 +254,7 @@ int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QL
     // Use the Data pinned when the .fet was built (childData in hierarchical
     // mode), not the current active one -- selection may have changed during the
     // async KlustaKwik run.  integrateReclusteredClusters offsets the new ids by
-    // this Data's highestClusterId(), so child atoms land above the highest
+    // this Data's highestClusterId(), so children land above the highest
     // child id and cannot collide with parent (or existing child) ids.
     Data* rt = reclusterTarget ? reclusterTarget : clusteringData;
     if(!rt->integrateReclusteredClusters(clustersToRecluster,reclusteredClusterList,cluFile,against)){
@@ -322,12 +322,12 @@ int KlustersDoc::reclusterAgainstCurrentId(int piece) const{
 
 void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList){
     // Consume the pin set when the .fet was built.  If the recluster targeted the
-    // child (atom) layer, the new sub-atoms were already integrated into childData
+    // child (child) layer, the new sub-children were already integrated into childData
     // by integrateReclusteredClusters (ids offset above the highest child id ->
     // no parent/child collision; childData->prepareUndo captured the edit on its
     // own stack).  Refresh the child layer with the same known-good sequence the
     // other hierarchy edits use and return: rebuildHierarchyFromData re-derives
-    // each new atom's parent (their spikes still belong to the original parent),
+    // each new child's parent (their spikes still belong to the original parent),
     // and hierarchyChanged repopulates the child palette.  The parent-oriented
     // body below (undo, parent palette/colours/views) must NOT run for a child
     // recluster.
@@ -335,26 +335,26 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     reclusterTarget = nullptr;
     if (reclusterWasChild){
         // integrateReclusteredClusters self-snapshotted childData once -> one
-        // ChildEdit so Ctrl+Shift+Z reverts the child recluster: the new atoms are
-        // removed and the reclustered source atoms restored from the snapshot.
+        // ChildEdit so Ctrl+Shift+Z reverts the child recluster: the new children are
+        // removed and the reclustered source children restored from the snapshot.
         ChildEdit e; e.added = reclusteredClusterList; e.deleted = clustersToRecluster;
         recordChildEdit(e);
 
-        // The recluster pooled the selected atoms' spikes and re-split them, so a new atom can
+        // The recluster pooled the selected children' spikes and re-split them, so a new child can
         // span several parents.  Rather than invent a parent for it (which created spurious new
-        // parents), nest each new atom under the parent its spikes belong to: collapseToSelfChildren
-        // keeps an atom that lands wholly inside one parent and collapses any straddling portion
+        // parents), nest each new child under the parent its spikes belong to: collapseToSelfChildren
+        // keeps a child that lands wholly inside one parent and collapses any straddling portion
         // into that parent's self child.  No new parent, and every parent keeps a covering child.
         collapseToSelfChildren();
         // PARK the landing as well as emitting it (the same fix the child split
-        // needed): the emit selects the new atoms now, but the automation that
+        // needed): the emit selects the new children now, but the automation that
         // hierarchyChanged schedules repopulates the child palette again afterwards
         // and the last rebuild wins -- so the recluster's output was selected and
         // then dropped, and focus went nowhere.  repopulateChildPalette drains the
-        // park after whichever rebuild turns out to be last, keeping the atoms that
+        // park after whichever rebuild turns out to be last, keeping the children that
         // still exist (collapseToSelfChildren may have folded a straddler away).
         setPendingChildSelection(reclusteredClusterList);
-        emit hierarchyChildrenCreated(reclusteredClusterList);   // select the new atoms after the rebuild
+        emit hierarchyChildrenCreated(reclusteredClusterList);   // select the new children after the rebuild
         modified = true;
         return;
     }
@@ -362,7 +362,7 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     //Prepare the undo
     prepareReclusteringUndo(reclusteredClusterList,clustersToRecluster);
     // Parent-scope recluster: the freshly created parents need realign.  (The child branch
-    // returned above, nesting its new atoms under the existing parents via collapseToSelfChildren.)
+    // returned above, nesting its new children under the existing parents via collapseToSelfChildren.)
     for (int nf : reclusteredClusterList) noteModifiedParent(nf);
     setPendingParentSelection(reclusteredClusterList);   // land on the reclustered parents
 
@@ -444,11 +444,11 @@ void KlustersDoc::reclusteringUpdate(QList<int>& clustersToRecluster,QList<int>&
     }
 
     // Hierarchical mode: a PARENT recluster re-draws the parent's spikes across the new
-    // parents without touching the atom layer, so the source parent's atom(s) now straddle them
+    // parents without touching the child layer, so the source parent's child(s) now straddle them
     // -- and a recluster of the artifact bin leaves the new parents carrying only the reserve
-    // atom.  repairNesting re-cuts the straddlers AND mints a covering atom per new parent (incl.
+    // child.  repairNesting re-cuts the straddlers AND mints a covering child per new parent (incl.
     // the artifact-derived ones), so each new parent gets its own microfiber child instead of
-    // several parents sharing one atom (or none).  It also rebuilds child->parent and emits
+    // several parents sharing one child (or none).  It also rebuilds child->parent and emits
     // hierarchyChanged to repopulate the child palette.  childData-guarded; flat sessions are
     // untouched.
     if (childData)

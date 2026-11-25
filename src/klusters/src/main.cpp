@@ -41,7 +41,7 @@ int main(int argc, char* argv[])
     // Raise the soft file-descriptor limit to the hard limit before any Qt or
     // GLib machinery starts.  Every thread's event dispatcher costs a GWakeup
     // pipe (two descriptors), and a heavily over-clustered session (10k+
-    // atoms) drives enough per-cluster machinery that the default soft limit
+    // children) drives enough per-cluster machinery that the default soft limit
     // of 1024 is exhausted mid-load -- GLib then hard-aborts ("Creating pipes
     // for GWakeup: Too many open files") instead of failing an open.  The
     // hard limit on a systemd desktop is 2^19 or more, so this is free

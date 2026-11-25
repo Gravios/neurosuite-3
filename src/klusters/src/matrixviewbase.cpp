@@ -49,7 +49,7 @@ void MatrixViewBase::followCluster(int id)
     followPending_ = id >= 0;
     // A result on its way (or held back) will move the rows: centre on it when
     // it lands.  Otherwise the matrix shown is the one the selection refers to
-    // -- unless the cluster is not in it (a fiber picked while the atom matrix
+    // -- unless the cluster is not in it (a parent picked while the child matrix
     // is up): then the request waits for the next result, which may be the
     // parent matrix coming back, and lapses with it if it is not.
     if (matrixResultPending()) return;

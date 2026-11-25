@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters code: parent and child, not fiber and atom](#2026-11-24--klusters-code-parent-and-child-not-fiber-and-atom) |
 | 2026-11-24 | [Klusters code: artifact, not artefact](#2026-11-24--klusters-code-artifact-not-artefact) |
 | 2026-11-24 | [Glossary: one word per thing in Klusters](#2026-11-24--glossary-one-word-per-thing-in-klusters) |
 | 2026-11-24 | [Matrix views: one base for the grid, the pan and zoom, the follow](#2026-11-24--matrix-views-one-base-for-the-grid-the-pan-and-zoom-the-follow) |
@@ -296,6 +297,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters code: parent and child, not fiber and atom
+
+Identifiers and comments in the Klusters source use one pair of words for the two cluster layers. No change in behaviour; no text shown to the curator changed.
+
+<details>
+<summary>Details</summary>
+
+In `src/klusters/` the identifiers that said *atom* or *fiber* say *child* or *parent*: 30
+names in about 200 places (`atomIds` → `childIds`, `nextFreeAtom` → `nextFreeChild`,
+`fiberOfSelfChild` → `parentOfSelfChild`, `atomsOf` → `childrenOfParent`, the fields `atom` and
+`fiber` of the saved-hierarchy record → `child` and `parent`, ...). The comments follow: *atom*
+and *fiber* as common words became *child* and *parent* (about 840 places).
+
+Kept: everything inside a string — the menus, tool tips, messages and log lines still say
+*fiber* and *atom*, the curator's words — and *fiber-kit*, the program's name, with the
+identifiers named after it (`slotReclusterFiberKit`, `fiberKitReclusterCommand`). A
+capitalised *Atom* or *Fiber* in a comment was left: there it names a menu entry or a palette.
+
+**How it was done.** By a script, outside string literals; a check that no function held both
+the old and the new name (one did, `upgradeChildIds`, and was renamed by hand); a comparison
+of every string literal before and after (none changed). The build and the whole suite are the
+check. The comments were rewritten word for word and read in a sample, not all: a sentence may
+read awkwardly.
+
+</details>
 
 ---
 

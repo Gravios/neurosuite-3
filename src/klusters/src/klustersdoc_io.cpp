@@ -447,9 +447,9 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
                     QMessageBox::critical(nullptr, tr("I/O Error !"),tr(
                                               "It appears that the rescue file cannot be renamed (possibly because of insufficient file access permissions).\n"
                                               "The rescue file will thus not be used."));
-                // A hierarchical session's rescue also holds the atom ids, taken
+                // A hierarchical session's rescue also holds the child ids, taken
                 // with the unit ids from one snapshot.  Restore them together --
-                // but only if they belong together (same spike count, every atom
+                // but only if they belong together (same spike count, every child
                 // under one unit); otherwise keep the .clc and let the next save
                 // re-derive the map.
                 else if (cluName.contains(QStringLiteral(".clu."))) {
@@ -857,14 +857,14 @@ void KlustersDoc::autoSaveTick(){
                   hierarchyfiles::distinctCount(units), units, &e);
     if (ok) targets.push_back(localPath(files.at(0)));
     if (ok && files.size() > 1 && childData) {
-        const std::vector<int32_t> atoms = labelsInSpikeOrder(*childData);
+        const std::vector<int32_t> children = labelsInSpikeOrder(*childData);
         ok = hierarchyfiles::stageIdFile(localPath(files.at(1)),
-                                         hierarchyfiles::distinctCount(atoms), atoms, &e);
+                                         hierarchyfiles::distinctCount(children), children, &e);
         if (ok) targets.push_back(localPath(files.at(1)));
     }
     // Installed as one commit: a crash between the two renames is completed on
     // the next open (the journal sits beside the rescue copies), so a unit
-    // rescue never meets the atom rescue of an earlier tick.
+    // rescue never meets the child rescue of an earlier tick.
     if (ok) ok = filecommit::commitStaged(targets, localPath(files.at(0) + QStringLiteral(".commit")), &e);
     if (ok) return;
 
@@ -898,8 +898,8 @@ bool KlustersDoc::prepareSave(const QString& saveUrl){
     SavePlan plan;
     plan.url         = saveUrl;
     plan.dirtySerial = modified.serial();
-    plan.fiber       = labelsInSpikeOrder(*clusteringData);
-    plan.fiberCount  = hierarchyfiles::distinctCount(plan.fiber);
+    plan.parent       = labelsInSpikeOrder(*clusteringData);
+    plan.parentCount  = hierarchyfiles::distinctCount(plan.parent);
 
     // The cluster information goes to the clustering's .cli file, never to the
     // session YAML: the units table there is the record of FINISHED curation,
@@ -962,23 +962,23 @@ bool KlustersDoc::prepareSave(const QString& saveUrl){
                 if (!validateHierarchyMaps("prepareSave/after-rebuild"))
                     qWarning() << "[hierarchy] the rebuild did not settle the maps";
             }
-            plan.atom      = labelsInSpikeOrder(*childData);
-            plan.atomCount = hierarchyfiles::distinctCount(plan.atom);
+            plan.child      = labelsInSpikeOrder(*childData);
+            plan.childCount = hierarchyfiles::distinctCount(plan.child);
             plan.writeClc  = true;
         } else {
-            // A hierarchical session whose atom layer did not load: the atoms on
-            // disk are the session's atoms (nothing edited them), so a plain Save
+            // A hierarchical session whose child layer did not load: the children on
+            // disk are the session's children (nothing edited them), so a plain Save
             // leaves the .clc alone and Save As copies it.
             const neurofileio::CluFile clc = neurofileio::readCluBinary(
-                localPath(clcSiblingPath), static_cast<int64_t>(plan.fiber.size()));
+                localPath(clcSiblingPath), static_cast<int64_t>(plan.parent.size()));
             if (clc.ok) {
-                plan.atom.assign(clc.ids.begin(), clc.ids.end());
-                plan.atomCount = clc.nClusters;
+                plan.child.assign(clc.ids.begin(), clc.ids.end());
+                plan.childCount = clc.nClusters;
                 plan.writeClc  = isSaveAs;
             }
         }
 
-        if (plan.atom.size() != plan.fiber.size() || plan.fiber.empty()) {
+        if (plan.child.size() != plan.parent.size() || plan.parent.empty()) {
             lastSaveWarningMessage = tr(
                 "The child layer %1 could not be read for this clustering, so its parent map "
                 "(.clp) was not rewritten%2.")
@@ -991,9 +991,9 @@ bool KlustersDoc::prepareSave(const QString& saveUrl){
             // The .clp is the map the per-spike layers imply, taken from this one
             // snapshot -- not childToParent, which the GUI keeps editing while the
             // SaveThread writes.
-            const hierarchyfiles::NestingScan scan = hierarchyfiles::scanNesting(plan.fiber, plan.atom);
+            const hierarchyfiles::NestingScan scan = hierarchyfiles::scanNesting(plan.parent, plan.child);
             if (!scan.straddlers.empty() && !childData) {
-                // Nothing has re-cut the straddling atoms (the re-cut needs the atom
+                // Nothing has re-cut the straddling children (the re-cut needs the child
                 // layer loaded), so a .clp written now would record an arbitrary
                 // owner for each.  Keep the previous map, and carry it on Save As.
                 lastSaveWarningMessage = tr(
@@ -1256,7 +1256,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
     QString err;
 
     // .clu.  Save As always writes the new name.
-    if (!stageIdTarget(cluTarget, savePlan.fiberCount, savePlan.fiber, isSaveAs, targets, &err))
+    if (!stageIdTarget(cluTarget, savePlan.parentCount, savePlan.parent, isSaveAs, targets, &err))
         return abandon(QString(
             "Cannot write the cluster file:\n%1\n\n%2\n\n"
             "Likely causes:\n"
@@ -1269,7 +1269,7 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
 
     // .clc / .clp.
     if (savePlan.writeClc
-        && !stageIdTarget(savePlan.clcPath, savePlan.atomCount, savePlan.atom, isSaveAs, targets, &err))
+        && !stageIdTarget(savePlan.clcPath, savePlan.childCount, savePlan.child, isSaveAs, targets, &err))
         return abandon(tr("Could not write the child layer (.clc); nothing was saved:\n%1").arg(err),
                        SAVE_ERROR);
     if (savePlan.writeClp
@@ -1390,11 +1390,11 @@ int KlustersDoc::saveDocument(const QString& saveUrl, const char *format /*=0*/)
         savePlan.adoptedSpace  = adoptsSpace;
     }
     // The pending .clu is the session's scratch copy of the ids (read when the
-    // atom layer loads); keep it equal to what was just saved.
+    // child layer loads); keep it equal to what was just saved.
     if (!pendingCluPath.isEmpty() && !isSaveAs) {
         std::vector<std::string> scratch;
         QString ignored;
-        if (stageIdTarget(pendingCluPath, savePlan.fiberCount, savePlan.fiber, false, scratch, &ignored)
+        if (stageIdTarget(pendingCluPath, savePlan.parentCount, savePlan.parent, false, scratch, &ignored)
             && !scratch.empty()) {
             std::string e;
             hierarchyfiles::installStaged(scratch.front(), false, &e);

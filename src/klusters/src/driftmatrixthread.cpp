@@ -102,7 +102,7 @@ void DriftMatrixThread::process()
         } else {
             // Reserved chunk clusters (the chunks a fiber-kit chunk run left unsorted)
             // are not units: they take no part in any matrix.  (The scoped list above
-            // holds atoms; resolveMatrixScope already left out a reserved parent's.)
+            // holds children; resolveMatrixScope already left out a reserved parent's.)
             for (dataType id : allIds)
                 if (id >= 1 && !isReservedClusterId(id) && snapshot->nbOfSpikes(id) > 0)
                     clusterList.append(static_cast<int>(id));

@@ -160,7 +160,7 @@ void KlustersApp::slotHierarchicalViewToggled(bool on){
 }
 
 void KlustersApp::updateHierarchyEditActions(){
-    // The Hierarchy menu's edits need a hierarchical session with its atom layer
+    // The Hierarchy menu's edits need a hierarchical session with its child layer
     // loaded, and the child palette they act on shown (View ▸ Show Child Cluster
     // Palette).  The open path checks mHierarchicalView before it gets here.
     const bool editable = mHierarchicalView && mHierarchicalView->isChecked()
@@ -286,7 +286,7 @@ void KlustersApp::slotDissolveParent(){
 
 void KlustersApp::slotRepairNesting(){
     if(!activeView()) return;
-    // re-cut straddling atoms + rebuild the child<->parent maps (.clp on Save)
+    // re-cut straddling children + rebuild the child<->parent maps (.clp on Save)
     const bool changed = doc->repairNestingAsStep();
     statusBar()->showMessage(changed ? tr("Nesting repaired: atoms re-cut onto the current parents (one undo step).")
                                      : tr("Nesting checked: every atom already lies in one parent."), 4000);
@@ -300,7 +300,7 @@ void KlustersApp::slotDropChildToNoise(){
         return;
     }
     // One call, one gesture, one landing (and one undo step per parent): the
-    // per-atom calls each parked a landing and recomputed it between drops.
+    // per-child calls each parked a landing and recomputed it between drops.
     holdMatricesForGesture();
     doc->dropChildrenToBin(kids, 1, *activeView());
 }
@@ -440,8 +440,8 @@ void KlustersApp::cycleHierarchyFocus(bool forward){
                                 : (forward ? (cur + 1) % n : (cur - 1 + n) % n);
 
     // Child palette -> parent palette (Shift+Tab, or Tab wrapping round): the
-    // curator is done with the atoms and wants the PARENT whole.  Leaving the
-    // child selection standing kept the views on the selected atoms (a child
+    // curator is done with the children and wants the PARENT whole.  Leaving the
+    // child selection standing kept the views on the selected children (a child
     // selection IS the shown clustering, slotChildSelectionChanged), kept the
     // matrices child-scoped, and made the parent palette's arrow keys drive a
     // palette whose selection the views were not showing.  So: drop the child
@@ -688,7 +688,7 @@ void KlustersApp::slotChildSelectionChanged(const QList<int>&){
 // A session is hierarchical iff its .clu has both a .clc and a .clp beside it,
 // decided once at open.  Promotion writes the two missing files from the saved
 // .clu (KlustersDoc::promoteToHierarchy) and reopens the session through the
-// same path a hierarchy-reload plugin uses, so the atom layer is loaded exactly
+// same path a hierarchy-reload plugin uses, so the child layer is loaded exactly
 // as for a triple written by fiber-kit.  The document works on the file on
 // disk, so a clustering with edits is saved first; the save is asynchronous, and
 // the save-done event calls promoteSavedClustering().
