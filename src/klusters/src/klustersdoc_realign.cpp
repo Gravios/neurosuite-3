@@ -1221,6 +1221,478 @@ static void realignApplyRows(const std::vector<KlustersDoc::PendingSpkRecord>& r
     }
 }
 
+// ---------------------------------------------------------------------------
+// The last stages of a realign before anything is written: where each spike
+// goes (realignNewTimes), whether the stored rows are what the recording holds
+// at their times (realignVerifyStoredRows), and the new row of each spike
+// (realignPlanRows).  They share how a window is cut (RealignCut).
+// ---------------------------------------------------------------------------
+
+// How a window of the shown space is cut from the recording.
+struct RealignCut {
+    FILE*    fil = nullptr;              // the recording, open
+    QString  path;
+    int64_t  totalSamples = 0;
+    int      totalNbChan  = 0;
+    QList<int> groupChannels;            // the group's channels in it
+    int      nChan = 0, nSamp = 0;       // of the space (a super-sampled space: ticks)
+    int      peakSamp0 = 0;              // 0-based, of the space
+    int      basePeak0 = 0;              // 0-based, at the recording's rate
+    int      upFactor  = 1;
+    neurosuite::core::SpikeWindowSpec upCut;                // the super-sampled cut (recutWindowCM)
+    bool     spkIsTransformed = false;   // the .spk holds stderiv waveforms
+    bool     stderivSeeded = true;
+    neurosuite::core::SdiffOrder stderivOrder = neurosuite::core::SdiffOrder::AllPairs;
+    const int* stderivPartner = nullptr;
+    const int* stderivSetOff  = nullptr;
+    const int* stderivSetMem  = nullptr;
+    const neurosuite::core::ChannelExprSet* stderivExpr = nullptr;
+};
+
+// The group's window starting at `startSample`, read from the raw file and
+// put in the .spk's space (channel-major, stderiv transform when the .spk
+// has one), as the verification below and its diagnosis compare it.
+// With `allPairs`, the transform is all-pairs and unseeded instead: what
+// KiloKlustaKwik's checkpoint and Phase-2b re-cuts write (ApplySdiffAllpairs-
+// TemporalDiff), whatever the group's pattern.
+// A super-sampled .spk: the window is the recording's nSamp raw samples
+// interpolated to factor ticks at the spike's phase (recutWindowCM with the
+// kernel spec above), not nSamp raw frames.
+static bool realignCutStored(const RealignCut& c, int64_t startSample, std::vector<int16_t>& out,
+                             bool allPairs = false, int phase = 0)
+{
+    FILE* const filF = c.fil;
+    const int64_t totalSamples = c.totalSamples;
+    const int totalNbChan = c.totalNbChan, nChan = c.nChan, nSamp = c.nSamp, upFactor = c.upFactor;
+    const QList<int>& groupChannels = c.groupChannels;
+    const neurosuite::core::SpikeWindowSpec& upCut = c.upCut;
+    const bool spkIsTransformed = c.spkIsTransformed, stderivSeeded = c.stderivSeeded;
+    const neurosuite::core::SdiffOrder stderivOrder = c.stderivOrder;
+    const int* stderivPartnerPtr = c.stderivPartner;
+    const int* stderivSetOffPtr  = c.stderivSetOff;
+    const int* stderivSetMemPtr  = c.stderivSetMem;
+    const neurosuite::core::ChannelExprSet* stderivExprPtr = c.stderivExpr;
+    if (upFactor > 1) {
+        out.assign(static_cast<size_t>(nChan * nSamp), 0);
+        return recutWindowCM(filF, totalSamples, startSample, phase, upCut, out.data());
+    }
+    if (startSample < 0 || startSample + nSamp > totalSamples) return false;
+    const std::int64_t off = static_cast<std::int64_t>(startSample)
+                           * static_cast<std::int64_t>(totalNbChan)
+                           * static_cast<std::int64_t>(sizeof(short));
+    std::vector<int16_t> frame(static_cast<size_t>(nSamp * totalNbChan));
+    if (neurosuite::core::fseek64(filF, off, SEEK_SET) != 0
+        || fread(frame.data(), sizeof(short), frame.size(), filF) != frame.size())
+        return false;
+    out.assign(static_cast<size_t>(nChan * nSamp), 0);
+    for (int sm = 0; sm < nSamp; ++sm)
+        for (int ci = 0; ci < nChan; ++ci)
+            out[static_cast<size_t>(ci * nSamp + sm)] =
+                frame[static_cast<size_t>(sm * totalNbChan + groupChannels[ci])];
+    if (spkIsTransformed && allPairs) {
+        neurosuite::core::applyStderivTransform(neurosuite::core::SdiffOrder::AllPairs,
+            out.data(), nChan, nSamp, out.data());
+    } else if (spkIsTransformed) {
+        std::vector<int16_t> seedBuf;
+        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, off, totalNbChan, groupChannels,
+            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
+        neurosuite::core::applyStderivTransform(stderivOrder, out.data(), nChan, nSamp, out.data(), stderivPartnerPtr,
+            seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
+    }
+    return true;
+}
+
+// -----------------------------------------------------------------------
+// Compute new timestamps and sort cluster spikes by new timestamp
+// -----------------------------------------------------------------------
+// Two timestamp values are computed per spike:
+//
+//   extTs   — the realigned window position: extTs = oldTs + cumShift.
+//             The .spk waveform is re-extracted from .fil/.dat at this
+//             position (window [extTs - peakSamp0 ...]), which captures the
+//             content that lands at peakSamp0 after the shift and avoids the
+//             wrap-around artifact a circular shift produces at the edges.
+//             extTs is ALSO what gets written to .res, to the .fet timestamp
+//             column, and to the in-memory timestamp — so all four stay in
+//             lock-step and the pipeline-wide invariant
+//                 .spk[i] peak  ≡  .fil at .res[i]
+//             holds.  nudge (and any other tool that re-reads .fil at the
+//             .res offset) depends on this.  Writing the pre-shift detection
+//             sample to .res instead — as an earlier revision did — left
+//             .res pointing cumShift samples away from where the .spk window
+//             actually sits, so the next nudge jumped by cumShift rather
+//             than by the requested single sample.
+//
+//   resTs   — the spike's CURRENT .res value (i.e. where its .spk window
+//             sits going into this pass).  Used only to seed extTs and for
+//             the raw-source .spk-match verification below; it is NOT a
+//             separate value persisted to .res.
+//
+// No reordering: each spike is written back to its own row (gidx), so row
+// i of .res, of every method's .spk/.fet and of the .clu/.clc stays the
+// same spike.  A timestamp may pass another cluster's neighbour; that is
+// harmless.  Per-cluster code (correlograms, ISI, the spike table) reads a
+// cluster's rows in file order as time order, which normally still holds:
+// two spikes of one cluster are a refractory period apart, far beyond
+// maxShift.  A contaminated cluster or a raised shift cap can break that,
+// so it is checked below and reported (Sort Spikes by Time repairs it).
+static void realignNewTimes(const std::vector<int64_t>& clusterTs, const std::vector<int>& cumShift,
+                            const std::vector<int64_t>& gidx, int upFactor, int phaseCol, Data* clusteringData,
+                            std::vector<int64_t>& newTs, std::vector<int64_t>& resTs,
+                            std::vector<int>& oldPhase, std::vector<int>& newPhase,
+                            QTextStream& log, const std::function<void()>& emitFlush)
+{
+    const int64_t N = static_cast<int64_t>(clusterTs.size());
+    newTs.assign(static_cast<size_t>(N), 0);     // = extTs (re-extract window + timestamp)
+    resTs.assign(static_cast<size_t>(N), 0);     // current .res value (seeds extTs + verification)
+    oldPhase.assign(static_cast<size_t>(N), 0);
+    newPhase.assign(static_cast<size_t>(N), 0);
+    for (int64_t i = 0; i < N; ++i) {
+        resTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)];
+        if (upFactor > 1 && phaseCol >= 0) {
+            // ticks -> whole samples for the .res, the rest the spike's phase
+            const int ph = static_cast<int>(clusteringData->featureValue(
+                static_cast<dataType>(gidx[static_cast<size_t>(i)] + 1), phaseCol + 1));
+            int whole = 0, phase = 0;
+            neurosuite::core::splitTicks(ph + cumShift[static_cast<size_t>(i)], upFactor, whole, phase);
+            oldPhase[static_cast<size_t>(i)] = ph;
+            newPhase[static_cast<size_t>(i)] = phase;
+            newTs[static_cast<size_t>(i)] = clusterTs[static_cast<size_t>(i)] + whole;
+        } else {
+            newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
+                + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+        }
+    }
+    {
+        // This cluster's spikes in file order: does any now precede the one
+        // before it in time?
+        std::vector<int64_t> byRow(static_cast<size_t>(N));
+        std::iota(byRow.begin(), byRow.end(), int64_t{0});
+        std::sort(byRow.begin(), byRow.end(), [&](int64_t a, int64_t b) {
+            return gidx[static_cast<size_t>(a)] < gidx[static_cast<size_t>(b)];
+        });
+        int64_t nCrossed = 0;
+        for (size_t k = 1; k < byRow.size(); ++k)
+            if (newTs[static_cast<size_t>(byRow[k])] < newTs[static_cast<size_t>(byRow[k - 1])])
+                ++nCrossed;
+        if (nCrossed > 0) {
+            log << "WARNING: " << nCrossed << " spike(s) of this cluster now come before the "
+                   "previous spike of the same cluster in time.  Correlograms and ISI\n"
+                   "         assume each cluster's rows are in time order: run Spikes > "
+                   "Sort Spikes by Time after saving.\n";
+            emitFlush();
+        }
+    }
+}
+
+// -----------------------------------------------------------------------
+// Verify the stored .spk against the raw file before writing anything.
+// Every spike this run moves is re-cut from the raw file; every other
+// spike keeps its stored row.  Both are right only if the stored rows are
+// the windows at their .res in this raw file (and this .spk's transform).
+//
+// Up to 64 of the cluster's spikes, spread over it, are classified (a row
+// "is" a window when every element is within 1 of it, bar a stderiv
+// window's first sample, which depends on the seed convention):
+//   intact     the window at .res;
+//   rolled     the window at .res - s rolled circularly by s,
+//              row[t] = W(res - s)[(t + s) mod nSamp], |s| <= 3 nSamp:
+//              what Klusters realign wrote before 2026-10-21, cumulated
+//              over runs (CHANGELOG);
+//   stale      the window at .res - s: .res moved, the row was not re-cut;
+//   all-pairs  (stderiv only) the window at .res with the all-pairs,
+//              unseeded derivative: KiloKlustaKwik's re-cuts;
+//   unexplained none of these (another raw source or transform).
+// Any explained mismatch, or more unexplained rows than intact ones,
+// stops the run with the diagnosis; nothing is written.
+//
+// (filF is always open here: realign stops earlier without a raw file.)
+// -----------------------------------------------------------------------
+static bool realignVerifyStoredRows(const RealignCut& c, const std::vector<int16_t>& storedWav,
+                                    const std::vector<int64_t>& resTs, const std::vector<int>& oldPhase,
+                                    QTextStream& log, const std::function<void()>& emitFlush)
+{
+    const int nChan = c.nChan, nSamp = c.nSamp, peakSamp0 = c.peakSamp0, upFactor = c.upFactor;
+    const size_t spkElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    const int64_t N = static_cast<int64_t>(resTs.size());
+    const bool spkIsTransformed = c.spkIsTransformed;
+    const QString& filPath = c.path;
+    const auto cutStoredSpace = [&](int64_t startSample, std::vector<int16_t>& out, bool allPairs = false, int phase = 0) {
+        return realignCutStored(c, startSample, out, allPairs, phase);
+    };
+    // Whether two channel-major rows are the same window: every element within
+    // 1 of the other, except, in a stderiv .spk, sample `seedAt` of each channel
+    // (the window's first sample, which depends on the seed convention; -1 for
+    // none).
+    auto sameRow = [&](const int16_t* a, const int16_t* b, int seedAt) {
+        if (!spkIsTransformed) seedAt = -1;
+        for (int ci = 0; ci < nChan; ++ci)
+            for (int t = 0; t < nSamp; ++t) {
+                const int e = ci * nSamp + t;
+                if (t != seedAt && std::abs(static_cast<int>(a[e]) - static_cast<int>(b[e])) > 1)
+                    return false;
+            }
+        return true;
+    };
+    // RMS of (a - b) relative to the RMS of b, over one spike's elements.
+    auto rmsRatioOf = [&](const int16_t* a, const int16_t* b) {
+        double d2 = 0.0, b2 = 0.0;
+        for (int e = 0; e < spkElems; ++e) {
+            const double dv = static_cast<double>(a[e]) - static_cast<double>(b[e]);
+            d2 += dv * dv;
+            b2 += static_cast<double>(b[e]) * static_cast<double>(b[e]);
+        }
+        return b2 > 0.0 ? std::sqrt(d2 / b2) : 0.0;
+    };
+
+    const int maxRoll = 3 * nSamp;
+    const int64_t nCheck = std::min<int64_t>(N, 64);
+    int nIntact = 0, nRolled = 0, nStale = 0, nAllPairs = 0, nOther = 0, nOut = 0;
+    int64_t firstBad = -1;
+    double worstOther = 0.0;
+    QMap<int, int> rolls, stales;
+    std::vector<int16_t> cut, rolled(static_cast<size_t>(spkElems));
+    for (int64_t k = 0; k < nCheck; ++k) {
+        const int64_t i = (nCheck == N) ? k : k * N / nCheck;
+        const int16_t* stored = storedWav.data()
+            + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+        // The window's first RAW sample (a super-sampled space's peak is in ticks).
+        const int64_t start = resTs[static_cast<size_t>(i)]
+            - static_cast<int64_t>(upFactor > 1 ? c.basePeak0 : peakSamp0);
+        const int phase = oldPhase[static_cast<size_t>(i)];
+        if (!cutStoredSpace(start, cut, false, phase)) { ++nOut; continue; }
+        if (sameRow(cut.data(), stored, 0)) { ++nIntact; continue; }
+        if (firstBad < 0) firstBad = i;
+        const double rmsAtRes = rmsRatioOf(cut.data(), stored);
+        bool found = false;
+        // .res moved, row not rewritten: the window at .res - s itself.
+        for (int sh = -maxRoll; sh <= maxRoll && !found; ++sh) {
+            if (sh == 0 || !cutStoredSpace(start - sh, cut, false, phase)) continue;
+            if (sameRow(cut.data(), stored, 0)) { ++nStale; ++stales[sh]; found = true; break; }
+            // Older Klusters realign: that window rolled circularly by s.
+            for (int ci = 0; ci < nChan; ++ci)
+                for (int t = 0; t < nSamp; ++t)
+                    rolled[static_cast<size_t>(ci * nSamp + t)] =
+                        cut[static_cast<size_t>(ci * nSamp + (((t + sh) % nSamp) + nSamp) % nSamp)];
+            // (the cut's first sample lands where (t + s) mod nSamp == 0)
+            if (sameRow(rolled.data(), stored, ((-sh % nSamp) + nSamp) % nSamp)) {
+                ++nRolled;
+                ++rolls[sh];
+                found = true;
+            }
+        }
+        // KiloKlustaKwik's all-pairs re-cut, at .res.
+        if (!found && spkIsTransformed && cutStoredSpace(start, cut, true)
+            && sameRow(cut.data(), stored, 0)) {
+            ++nAllPairs;
+            found = true;
+        }
+        if (!found) {
+            ++nOther;
+            worstOther = std::max(worstOther, rmsAtRes);
+        }
+    }
+    const int nChecked = static_cast<int>(nCheck) - nOut;
+    const int nExplained = nRolled + nStale + nAllPairs;
+    auto listOf = [](const QMap<int, int>& m) {
+        QStringList l;
+        for (auto it = m.cbegin(); it != m.cend(); ++it)
+            l << QStringLiteral("%1 (x%2)").arg(it.key()).arg(it.value());
+        return l.join(QStringLiteral(", "));
+    };
+    if (nChecked == 0) {
+        log << "WARNING: could not verify raw source — no spike's extraction\n"
+            << "  window fit within the raw file (all near boundaries).\n"
+            << "  Proceeding without verification.\n";
+        emitFlush();
+    } else if (nExplained > 0 || nOther > nIntact) {
+        log << "ERROR: raw source verification FAILED\n"
+            << "  raw file: " << filPath << "\n"
+            << "  checked " << nChecked << " of the cluster's " << N
+            << " stored .spk rows against it (first mismatch: spike " << firstBad
+            << ", ts=" << (firstBad >= 0 ? resTs[static_cast<size_t>(firstBad)] : 0) << "):\n"
+            << "    the window at .res (intact):                  " << nIntact << "\n"
+            << "    the window at .res - s, rolled by s:          " << nRolled << "\n"
+            << "    the window at .res - s (.res moved, row not): " << nStale << "\n";
+        if (spkIsTransformed)
+            log << "    the window at .res, all-pairs stderiv:        " << nAllPairs << "\n";
+        log << "    unexplained:                                  " << nOther;
+        if (nOther > 0)
+            log << "  (RMS difference up to " << QString::number(worstOther * 100.0, 'f', 1) << "%)";
+        log << "\n";
+        if (nRolled > 0)
+            log << "  rolled by s = " << listOf(rolls) << "\n"
+                << "  Rolled rows are what Klusters realign wrote before 2026-10-21\n"
+                << "  (CHANGELOG).\n";
+        if (nStale > 0)
+            log << "  stale by s = " << listOf(stales) << "\n"
+                << "  Stale rows: a step moved .res without re-cutting the .spk\n"
+                << "  (KiloKlustaKwik's Phase-1.5 checkpoint does so without a .fil).\n";
+        if (nAllPairs > 0)
+            log << "  All-pairs rows: KiloKlustaKwik re-cut them with the all-pairs\n"
+                << "  derivative, not this group's pattern (checkpoint / Phase 2b).\n";
+        if (nExplained > 0)
+            log << "  The .res times are kept; the stored waveforms are wrong.  Repair\n"
+                << "  first: back up the .spk and the .fet files projected from it, turn\n"
+                << "  on Preferences > Refinement > \"Re-extract spike waveforms from\n"
+                << "  .fil on save\", Save, then re-project those .fet files from the\n"
+                << "  rebuilt .spk.\n";
+        else
+            log << "  Likely cause: .spk was extracted from a different raw source\n"
+                << "  than the one on disk (e.g. .fil deleted and .dat used, or the\n"
+                << "  raw file overwritten by a later stage), or with a different\n"
+                << "  transform than this group's current pattern (was the session's\n"
+                << "  sdiffPairs changed after extraction?).  Re-extract the\n"
+                << "  waveforms (ndm_extractspikes) before retrying.\n";
+        log << "  Aborting realignment; nothing was changed.\n";
+        emitFlush();
+        return false;
+    } else {
+        log << "Raw source verified: " << filPath << " — " << nIntact << " of "
+            << nChecked << " sampled .spk rows are the windows at their .res";
+        if (nOther > 0) log << " (" << nOther << " unexplained)";
+        log << "\n";
+        emitFlush();
+    }
+    return true;
+}
+
+// The new row of every spike of the cluster: the window re-cut from the recording
+// at its new time when it moved (the stored window otherwise, and when the re-cut
+// is not possible: the spike then stays where it was), the time, the feature
+// row.  Reads only; returns how many moved spikes could not be re-cut.
+static int64_t realignPlanRows(const RealignCut& c, Data* clusteringData,
+                               const std::vector<int64_t>& gidx, const std::vector<int16_t>& storedWav,
+                               const std::vector<int64_t>& resTs, const std::vector<int>& oldPhase,
+                               int timeDim, int nFeatCols, int phaseCol,
+                               const std::function<std::vector<int64_t>(int64_t, const int16_t*, int64_t)>& makeFetRow,
+                               std::vector<int16_t>& wavBuf, std::vector<int>& cumShift,
+                               std::vector<int64_t>& newTs, std::vector<int>& newPhase,
+                               std::vector<KlustersDoc::PendingSpkRecord>& records)
+{
+    FILE* const filF = c.fil;
+    const int64_t totalSamples = c.totalSamples;
+    const int totalNbChan = c.totalNbChan, nChan = c.nChan, nSamp = c.nSamp, upFactor = c.upFactor;
+    const QList<int>& groupChannels = c.groupChannels;
+    const neurosuite::core::SpikeWindowSpec& upCut = c.upCut;
+    const bool spkIsTransformed = c.spkIsTransformed, stderivSeeded = c.stderivSeeded;
+    const neurosuite::core::SdiffOrder stderivOrder = c.stderivOrder;
+    const int* stderivPartnerPtr = c.stderivPartner;
+    const int* stderivSetOffPtr  = c.stderivSetOff;
+    const int* stderivSetMemPtr  = c.stderivSetMem;
+    const neurosuite::core::ChannelExprSet* stderivExprPtr = c.stderivExpr;
+    const int peakSamp0 = c.peakSamp0;
+    const size_t  spkElems      = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    const int64_t bytesPerSpike = static_cast<int64_t>(spkElems) * 2;
+    const int64_t N = static_cast<int64_t>(gidx.size());
+    using PendingSpkRecord = KlustersDoc::PendingSpkRecord;
+    int64_t notRecut = 0;   // moved spikes whose window could not be re-cut: left in place
+    for (int64_t j = 0; j < N; ++j) {
+        const int64_t csIdx = j;                              // no reorder: each spike keeps its row
+        const int64_t dest  = gidx[static_cast<size_t>(j)];
+        int16_t* w = wavBuf.data()
+            + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
+        const int16_t* stored = storedWav.data()
+            + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
+
+        // A moved spike's window is cut afresh from the raw file at its new
+        // time (extTs).  The rolled working copy in w is never written: if the
+        // cut is impossible (window outside the file, seek or read failure)
+        // the spike stays where it was, with its stored window and time.
+        bool recut = false;
+        if (cumShift[static_cast<size_t>(csIdx)] != 0 && upFactor > 1) {
+            // Super-sampled: through the extraction kernel at the new whole-sample
+            // start and the new phase (margins, interpolation, transform in the
+            // super-sampled domain), so the window is what a sync would cut.
+            const int64_t startSample = newTs[static_cast<size_t>(csIdx)]
+                                      - static_cast<int64_t>(upCut.peakSample);
+            recut = recutWindowCM(filF, totalSamples, startSample, newPhase[static_cast<size_t>(csIdx)],
+                                  upCut, w);
+            if (!recut) {
+                cumShift[static_cast<size_t>(csIdx)] = 0;
+                newTs[static_cast<size_t>(csIdx)] = resTs[static_cast<size_t>(csIdx)];
+                newPhase[static_cast<size_t>(csIdx)] = oldPhase[static_cast<size_t>(csIdx)];
+                ++notRecut;
+            }
+        } else if (cumShift[static_cast<size_t>(csIdx)] != 0) {
+            const int64_t startSample = newTs[static_cast<size_t>(csIdx)]
+                                      - static_cast<int64_t>(peakSamp0);
+            if (startSample >= 0 && startSample + nSamp <= totalSamples) {
+                const std::int64_t rawOff = static_cast<std::int64_t>(startSample)
+                                   * static_cast<std::int64_t>(totalNbChan)
+                                   * static_cast<std::int64_t>(sizeof(short));
+                std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
+                if (neurosuite::core::fseek64(filF, rawOff, SEEK_SET) == 0
+                    && fread(rawFrame.data(), sizeof(short), rawFrame.size(), filF)
+                           == rawFrame.size()) {
+                    // Channel-major raw window of the group's channels.
+                    std::vector<int16_t> rawCM(static_cast<size_t>(nChan * nSamp));
+                    for (int s = 0; s < nSamp; ++s)
+                        for (int ci = 0; ci < nChan; ++ci)
+                            rawCM[static_cast<size_t>(ci * nSamp + s)] =
+                                rawFrame[static_cast<size_t>(s * totalNbChan + groupChannels[ci])];
+                    // Into w in the .spk's own space: the stderiv transform when
+                    // the .spk stores stderiv waveforms (Pipeline D), raw otherwise.
+                    if (spkIsTransformed) {
+                        std::vector<int16_t> seedBuf;
+                        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, rawOff, totalNbChan, groupChannels,
+                            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
+                        neurosuite::core::applyStderivTransform(stderivOrder, rawCM.data(), nChan, nSamp, w, stderivPartnerPtr,
+                            seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
+                    } else {
+                        std::copy(rawCM.begin(), rawCM.end(), w);
+                    }
+                    recut = true;
+                }
+            }
+            if (!recut) {
+                cumShift[static_cast<size_t>(csIdx)] = 0;
+                newTs[static_cast<size_t>(csIdx)] = resTs[static_cast<size_t>(csIdx)];
+                ++notRecut;
+            }
+        }
+        if (!recut) std::copy(stored, stored + spkElems, w);   // unmoved: the stored window
+
+        const int64_t ts = newTs[static_cast<size_t>(csIdx)]; // extTs: re-extraction window AND .res/.fet/in-memory timestamp (kept consistent)
+
+        // Capture original in-memory values before any update (needed for reject)
+        PendingSpkRecord rec;
+        rec.destPos = dest;
+        rec.ts      = ts;
+        rec.origTs  = static_cast<int64_t>(
+            clusteringData->featureValue(
+                static_cast<dataType>(dest + 1),
+                static_cast<int>(timeDim)));  // timestamp is last dim
+        rec.origFet.reserve(nFeatCols);
+        for (int col = 0; col < nFeatCols; ++col)
+            rec.origFet.append(
+                clusteringData->featureValue(
+                    static_cast<dataType>(dest + 1), col + 1));
+
+        // .spk rows are sample-major on disk.
+
+        // The .spk rows, as stored (sample-major): the new one, and the one it replaces.
+        const auto recordOf = [&](const int16_t* channelMajor) {
+            QByteArray bytes(static_cast<qsizetype>(bytesPerSpike), Qt::Uninitialized);
+            // reinterpret_cast: the record's bytes are the .spk's int16 samples.
+            int16_t* out = reinterpret_cast<int16_t*>(bytes.data());
+            for (int s = 0; s < nSamp; ++s)
+                for (int ch = 0; ch < nChan; ++ch)
+                    out[s * nChan + ch] = channelMajor[ch * nSamp + s];
+            return std::make_shared<const QByteArray>(std::move(bytes));
+        };
+        rec.spk     = recordOf(w);
+        rec.origSpk = recut ? recordOf(stored) : rec.spk;
+
+        rec.fetRow = makeFetRow(csIdx, w, ts);
+        if (upFactor > 1 && phaseCol >= 0 && phaseCol < static_cast<int>(rec.fetRow.size()))
+            rec.fetRow[static_cast<size_t>(phaseCol)] = newPhase[static_cast<size_t>(csIdx)];   // the phase column follows the move
+
+        records.push_back(std::move(rec));
+    }
+    return notRecut;
+}
+
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
@@ -1895,79 +2367,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         emitFlush();
     }
 
-    // -----------------------------------------------------------------------
-    // Compute new timestamps and sort cluster spikes by new timestamp
-    // -----------------------------------------------------------------------
-    // Two timestamp values are computed per spike:
-    //
-    //   extTs   — the realigned window position: extTs = oldTs + cumShift.
-    //             The .spk waveform is re-extracted from .fil/.dat at this
-    //             position (window [extTs - peakSamp0 ...]), which captures the
-    //             content that lands at peakSamp0 after the shift and avoids the
-    //             wrap-around artifact a circular shift produces at the edges.
-    //             extTs is ALSO what gets written to .res, to the .fet timestamp
-    //             column, and to the in-memory timestamp — so all four stay in
-    //             lock-step and the pipeline-wide invariant
-    //                 .spk[i] peak  ≡  .fil at .res[i]
-    //             holds.  nudge (and any other tool that re-reads .fil at the
-    //             .res offset) depends on this.  Writing the pre-shift detection
-    //             sample to .res instead — as an earlier revision did — left
-    //             .res pointing cumShift samples away from where the .spk window
-    //             actually sits, so the next nudge jumped by cumShift rather
-    //             than by the requested single sample.
-    //
-    //   resTs   — the spike's CURRENT .res value (i.e. where its .spk window
-    //             sits going into this pass).  Used only to seed extTs and for
-    //             the raw-source .spk-match verification below; it is NOT a
-    //             separate value persisted to .res.
-    //
-    // No reordering: each spike is written back to its own row (gidx), so row
-    // i of .res, of every method's .spk/.fet and of the .clu/.clc stays the
-    // same spike.  A timestamp may pass another cluster's neighbour; that is
-    // harmless.  Per-cluster code (correlograms, ISI, the spike table) reads a
-    // cluster's rows in file order as time order, which normally still holds:
-    // two spikes of one cluster are a refractory period apart, far beyond
-    // maxShift.  A contaminated cluster or a raised shift cap can break that,
-    // so it is checked below and reported (Sort Spikes by Time repairs it).
-    std::vector<int64_t> newTs(static_cast<size_t>(N));   // = extTs (re-extract window + timestamp)
-    std::vector<int64_t> resTs(static_cast<size_t>(N));   // current .res value (seeds extTs + verification)
-    std::vector<int>     oldPhase(static_cast<size_t>(N), 0), newPhase(static_cast<size_t>(N), 0);
-    for (int64_t i = 0; i < N; ++i) {
-        resTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)];
-        if (upFactor > 1 && phaseCol >= 0) {
-            // ticks -> whole samples for the .res, the rest the spike's phase
-            const int ph = static_cast<int>(clusteringData->featureValue(
-                static_cast<dataType>(gidx[static_cast<size_t>(i)] + 1), phaseCol + 1));
-            int whole = 0, phase = 0;
-            neurosuite::core::splitTicks(ph + cumShift[static_cast<size_t>(i)], upFactor, whole, phase);
-            oldPhase[static_cast<size_t>(i)] = ph;
-            newPhase[static_cast<size_t>(i)] = phase;
-            newTs[static_cast<size_t>(i)] = clusterTs[static_cast<size_t>(i)] + whole;
-        } else {
-            newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
-                + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
-        }
-    }
-    {
-        // This cluster's spikes in file order: does any now precede the one
-        // before it in time?
-        std::vector<int64_t> byRow(static_cast<size_t>(N));
-        std::iota(byRow.begin(), byRow.end(), int64_t{0});
-        std::sort(byRow.begin(), byRow.end(), [&](int64_t a, int64_t b) {
-            return gidx[static_cast<size_t>(a)] < gidx[static_cast<size_t>(b)];
-        });
-        int64_t nCrossed = 0;
-        for (size_t k = 1; k < byRow.size(); ++k)
-            if (newTs[static_cast<size_t>(byRow[k])] < newTs[static_cast<size_t>(byRow[k - 1])])
-                ++nCrossed;
-        if (nCrossed > 0) {
-            log << "WARNING: " << nCrossed << " spike(s) of this cluster now come before the "
-                   "previous spike of the same cluster in time.  Correlograms and ISI\n"
-                   "         assume each cluster's rows are in time order: run Spikes > "
-                   "Sort Spikes by Time after saving.\n";
-            emitFlush();
-        }
-    }
+    // Where each spike goes: its new time (and phase, in a super-sampled space).
+    std::vector<int64_t> newTs, resTs;
+    std::vector<int>     oldPhase, newPhase;
+    realignNewTimes(clusterTs, cumShift, gidx, upFactor, phaseCol, clusteringData,
+                    newTs, resTs, oldPhase, newPhase, log, emitFlush);
 
     // -----------------------------------------------------------------------
     // Project waveform onto per-channel PCA basis → full .fet row (timeDim values)
@@ -2055,6 +2459,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     upCut.applyTransform = spkIsTransformed; upCut.order = stderivOrder;
     upCut.partner = stderivPartnerPtr; upCut.setOff = stderivSetOffPtr; upCut.setMem = stderivSetMemPtr; upCut.expr = stderivExprPtr;
     upCut.seedFromPrevious = stderivSeeded;
+    RealignCut cut;
+    cut.fil = filF; cut.path = filPath; cut.totalSamples = totalSamples;
+    cut.totalNbChan = totalNbChan; cut.groupChannels = groupChannels;
+    cut.nChan = nChan; cut.nSamp = nSamp; cut.peakSamp0 = peakSamp0;
+    cut.basePeak0 = d.basePeakSampleIndex() - 1; cut.upFactor = upFactor;
+    cut.upCut = upCut;
+    cut.spkIsTransformed = spkIsTransformed; cut.stderivSeeded = stderivSeeded;
+    cut.stderivOrder = stderivOrder;
+    cut.stderivPartner = stderivPartnerPtr; cut.stderivSetOff = stderivSetOffPtr;
+    cut.stderivSetMem = stderivSetMemPtr; cut.stderivExpr = stderivExprPtr;
 
     // -----------------------------------------------------------------------
     // Write realignment results directly into the persistent .pending files.
@@ -2087,208 +2501,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     pending.nFeatCols      = nFeatCols;
     pending.records.reserve(static_cast<size_t>(N));
 
-    // -----------------------------------------------------------------------
-    // Verify the stored .spk against the raw file before writing anything.
-    // Every spike this run moves is re-cut from the raw file; every other
-    // spike keeps its stored row.  Both are right only if the stored rows are
-    // the windows at their .res in this raw file (and this .spk's transform).
-    //
-    // Up to 64 of the cluster's spikes, spread over it, are classified (a row
-    // "is" a window when every element is within 1 of it, bar a stderiv
-    // window's first sample, which depends on the seed convention):
-    //   intact     the window at .res;
-    //   rolled     the window at .res - s rolled circularly by s,
-    //              row[t] = W(res - s)[(t + s) mod nSamp], |s| <= 3 nSamp:
-    //              what Klusters realign wrote before 2026-10-21, cumulated
-    //              over runs (CHANGELOG);
-    //   stale      the window at .res - s: .res moved, the row was not re-cut;
-    //   all-pairs  (stderiv only) the window at .res with the all-pairs,
-    //              unseeded derivative: KiloKlustaKwik's re-cuts;
-    //   unexplained none of these (another raw source or transform).
-    // Any explained mismatch, or more unexplained rows than intact ones,
-    // stops the run with the diagnosis; nothing is written.
-    //
-    // (filF is always open here: realign stops earlier without a raw file.)
-    // -----------------------------------------------------------------------
-    // The group's window starting at `startSample`, read from the raw file and
-    // put in the .spk's space (channel-major, stderiv transform when the .spk
-    // has one), as the verification below and its diagnosis compare it.
-    // With `allPairs`, the transform is all-pairs and unseeded instead: what
-    // KiloKlustaKwik's checkpoint and Phase-2b re-cuts write (ApplySdiffAllpairs-
-    // TemporalDiff), whatever the group's pattern.
-    // A super-sampled .spk: the window is the recording's nSamp raw samples
-    // interpolated to factor ticks at the spike's phase (recutWindowCM with the
-    // kernel spec above), not nSamp raw frames.
-    auto cutStoredSpace = [&](int64_t startSample, std::vector<int16_t>& out,
-                              bool allPairs = false, int phase = 0) -> bool {
-        if (upFactor > 1) {
-            out.assign(static_cast<size_t>(nChan * nSamp), 0);
-            return recutWindowCM(filF, totalSamples, startSample, phase, upCut, out.data());
-        }
-        if (startSample < 0 || startSample + nSamp > totalSamples) return false;
-        const std::int64_t off = static_cast<std::int64_t>(startSample)
-                               * static_cast<std::int64_t>(totalNbChan)
-                               * static_cast<std::int64_t>(sizeof(short));
-        std::vector<int16_t> frame(static_cast<size_t>(nSamp * totalNbChan));
-        if (neurosuite::core::fseek64(filF, off, SEEK_SET) != 0
-            || fread(frame.data(), sizeof(short), frame.size(), filF) != frame.size())
-            return false;
-        out.assign(static_cast<size_t>(nChan * nSamp), 0);
-        for (int sm = 0; sm < nSamp; ++sm)
-            for (int ci = 0; ci < nChan; ++ci)
-                out[static_cast<size_t>(ci * nSamp + sm)] =
-                    frame[static_cast<size_t>(sm * totalNbChan + groupChannels[ci])];
-        if (spkIsTransformed && allPairs) {
-            neurosuite::core::applyStderivTransform(neurosuite::core::SdiffOrder::AllPairs,
-                out.data(), nChan, nSamp, out.data());
-        } else if (spkIsTransformed) {
-            std::vector<int16_t> seedBuf;
-            const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, off, totalNbChan, groupChannels,
-                stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
-            neurosuite::core::applyStderivTransform(stderivOrder, out.data(), nChan, nSamp, out.data(), stderivPartnerPtr,
-                seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
-        }
-        return true;
-    };
-    // Whether two channel-major rows are the same window: every element within
-    // 1 of the other, except, in a stderiv .spk, sample `seedAt` of each channel
-    // (the window's first sample, which depends on the seed convention; -1 for
-    // none).
-    auto sameRow = [&](const int16_t* a, const int16_t* b, int seedAt) {
-        if (!spkIsTransformed) seedAt = -1;
-        for (int ci = 0; ci < nChan; ++ci)
-            for (int t = 0; t < nSamp; ++t) {
-                const int e = ci * nSamp + t;
-                if (t != seedAt && std::abs(static_cast<int>(a[e]) - static_cast<int>(b[e])) > 1)
-                    return false;
-            }
-        return true;
-    };
-    // RMS of (a - b) relative to the RMS of b, over one spike's elements.
-    auto rmsRatioOf = [&](const int16_t* a, const int16_t* b) {
-        double d2 = 0.0, b2 = 0.0;
-        for (int e = 0; e < spkElems; ++e) {
-            const double dv = static_cast<double>(a[e]) - static_cast<double>(b[e]);
-            d2 += dv * dv;
-            b2 += static_cast<double>(b[e]) * static_cast<double>(b[e]);
-        }
-        return b2 > 0.0 ? std::sqrt(d2 / b2) : 0.0;
-    };
-
-    {
-        const int maxRoll = 3 * nSamp;
-        const int64_t nCheck = std::min<int64_t>(N, 64);
-        int nIntact = 0, nRolled = 0, nStale = 0, nAllPairs = 0, nOther = 0, nOut = 0;
-        int64_t firstBad = -1;
-        double worstOther = 0.0;
-        QMap<int, int> rolls, stales;
-        std::vector<int16_t> cut, rolled(static_cast<size_t>(spkElems));
-        for (int64_t k = 0; k < nCheck; ++k) {
-            const int64_t i = (nCheck == N) ? k : k * N / nCheck;
-            const int16_t* stored = storedWav.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            // The window's first RAW sample (a super-sampled space's peak is in ticks).
-            const int64_t start = resTs[static_cast<size_t>(i)]
-                - static_cast<int64_t>(upFactor > 1 ? d.basePeakSampleIndex() - 1 : peakSamp0);
-            const int phase = oldPhase[static_cast<size_t>(i)];
-            if (!cutStoredSpace(start, cut, false, phase)) { ++nOut; continue; }
-            if (sameRow(cut.data(), stored, 0)) { ++nIntact; continue; }
-            if (firstBad < 0) firstBad = i;
-            const double rmsAtRes = rmsRatioOf(cut.data(), stored);
-            bool found = false;
-            // .res moved, row not rewritten: the window at .res - s itself.
-            for (int sh = -maxRoll; sh <= maxRoll && !found; ++sh) {
-                if (sh == 0 || !cutStoredSpace(start - sh, cut, false, phase)) continue;
-                if (sameRow(cut.data(), stored, 0)) { ++nStale; ++stales[sh]; found = true; break; }
-                // Older Klusters realign: that window rolled circularly by s.
-                for (int ci = 0; ci < nChan; ++ci)
-                    for (int t = 0; t < nSamp; ++t)
-                        rolled[static_cast<size_t>(ci * nSamp + t)] =
-                            cut[static_cast<size_t>(ci * nSamp + (((t + sh) % nSamp) + nSamp) % nSamp)];
-                // (the cut's first sample lands where (t + s) mod nSamp == 0)
-                if (sameRow(rolled.data(), stored, ((-sh % nSamp) + nSamp) % nSamp)) {
-                    ++nRolled;
-                    ++rolls[sh];
-                    found = true;
-                }
-            }
-            // KiloKlustaKwik's all-pairs re-cut, at .res.
-            if (!found && spkIsTransformed && cutStoredSpace(start, cut, true)
-                && sameRow(cut.data(), stored, 0)) {
-                ++nAllPairs;
-                found = true;
-            }
-            if (!found) {
-                ++nOther;
-                worstOther = std::max(worstOther, rmsAtRes);
-            }
-        }
-        const int nChecked = static_cast<int>(nCheck) - nOut;
-        const int nExplained = nRolled + nStale + nAllPairs;
-        auto listOf = [](const QMap<int, int>& m) {
-            QStringList l;
-            for (auto it = m.cbegin(); it != m.cend(); ++it)
-                l << QStringLiteral("%1 (x%2)").arg(it.key()).arg(it.value());
-            return l.join(QStringLiteral(", "));
-        };
-        if (nChecked == 0) {
-            log << "WARNING: could not verify raw source — no spike's extraction\n"
-                << "  window fit within the raw file (all near boundaries).\n"
-                << "  Proceeding without verification.\n";
-            emitFlush();
-        } else if (nExplained > 0 || nOther > nIntact) {
-            log << "ERROR: raw source verification FAILED\n"
-                << "  raw file: " << filPath << "\n"
-                << "  checked " << nChecked << " of the cluster's " << N
-                << " stored .spk rows against it (first mismatch: spike " << firstBad
-                << ", ts=" << (firstBad >= 0 ? resTs[static_cast<size_t>(firstBad)] : 0) << "):\n"
-                << "    the window at .res (intact):                  " << nIntact << "\n"
-                << "    the window at .res - s, rolled by s:          " << nRolled << "\n"
-                << "    the window at .res - s (.res moved, row not): " << nStale << "\n";
-            if (spkIsTransformed)
-                log << "    the window at .res, all-pairs stderiv:        " << nAllPairs << "\n";
-            log << "    unexplained:                                  " << nOther;
-            if (nOther > 0)
-                log << "  (RMS difference up to " << QString::number(worstOther * 100.0, 'f', 1) << "%)";
-            log << "\n";
-            if (nRolled > 0)
-                log << "  rolled by s = " << listOf(rolls) << "\n"
-                    << "  Rolled rows are what Klusters realign wrote before 2026-10-21\n"
-                    << "  (CHANGELOG).\n";
-            if (nStale > 0)
-                log << "  stale by s = " << listOf(stales) << "\n"
-                    << "  Stale rows: a step moved .res without re-cutting the .spk\n"
-                    << "  (KiloKlustaKwik's Phase-1.5 checkpoint does so without a .fil).\n";
-            if (nAllPairs > 0)
-                log << "  All-pairs rows: KiloKlustaKwik re-cut them with the all-pairs\n"
-                    << "  derivative, not this group's pattern (checkpoint / Phase 2b).\n";
-            if (nExplained > 0)
-                log << "  The .res times are kept; the stored waveforms are wrong.  Repair\n"
-                    << "  first: back up the .spk and the .fet files projected from it, turn\n"
-                    << "  on Preferences > Refinement > \"Re-extract spike waveforms from\n"
-                    << "  .fil on save\", Save, then re-project those .fet files from the\n"
-                    << "  rebuilt .spk.\n";
-            else
-                log << "  Likely cause: .spk was extracted from a different raw source\n"
-                    << "  than the one on disk (e.g. .fil deleted and .dat used, or the\n"
-                    << "  raw file overwritten by a later stage), or with a different\n"
-                    << "  transform than this group's current pattern (was the session's\n"
-                    << "  sdiffPairs changed after extraction?).  Re-extract the\n"
-                    << "  waveforms (ndm_extractspikes) before retrying.\n";
-            log << "  Aborting realignment; nothing was changed.\n";
-            emitFlush();
-            if (spkW) fclose(spkW);
-            if (resW) fclose(resW);
-            if (fetW) fclose(fetW);
-            fclose(filF);
-            return false;
-        } else {
-            log << "Raw source verified: " << filPath << " — " << nIntact << " of "
-                << nChecked << " sampled .spk rows are the windows at their .res";
-            if (nOther > 0) log << " (" << nOther << " unexplained)";
-            log << "\n";
-            emitFlush();
-        }
+    // The stored rows must be the windows at their .res in this recording: every moved
+    // spike is re-cut from it and every other keeps its stored row.  (realignVerifyStoredRows)
+    if (!realignVerifyStoredRows(cut, storedWav, resTs, oldPhase, log, emitFlush)) {
+        if (spkW) fclose(spkW);
+        if (resW) fclose(resW);
+        if (fetW) fclose(fetW);
+        fclose(filF);
+        return false;
     }
 
     _rtWopenMs = _rtmr.elapsed();
@@ -2297,110 +2517,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     //snapshots from then on serve these bytes from memory while epochs
     //pinned before this batch never see them.
     QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
-    int64_t notRecut = 0;   // moved spikes whose window could not be re-cut: left in place
-    for (int64_t j = 0; j < N; ++j) {
-        const int64_t csIdx = j;                              // no reorder: each spike keeps its row
-        const int64_t dest  = gidx[static_cast<size_t>(j)];
-        int16_t* w = wavBuf.data()
-            + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
-        const int16_t* stored = storedWav.data()
-            + static_cast<ptrdiff_t>(csIdx) * static_cast<ptrdiff_t>(spkElems);
-
-        // A moved spike's window is cut afresh from the raw file at its new
-        // time (extTs).  The rolled working copy in w is never written: if the
-        // cut is impossible (window outside the file, seek or read failure)
-        // the spike stays where it was, with its stored window and time.
-        bool recut = false;
-        if (cumShift[static_cast<size_t>(csIdx)] != 0 && upFactor > 1) {
-            // Super-sampled: through the extraction kernel at the new whole-sample
-            // start and the new phase (margins, interpolation, transform in the
-            // super-sampled domain), so the window is what a sync would cut.
-            const int64_t startSample = newTs[static_cast<size_t>(csIdx)]
-                                      - static_cast<int64_t>(upCut.peakSample);
-            recut = recutWindowCM(filF, totalSamples, startSample, newPhase[static_cast<size_t>(csIdx)],
-                                  upCut, w);
-            if (!recut) {
-                cumShift[static_cast<size_t>(csIdx)] = 0;
-                newTs[static_cast<size_t>(csIdx)] = resTs[static_cast<size_t>(csIdx)];
-                newPhase[static_cast<size_t>(csIdx)] = oldPhase[static_cast<size_t>(csIdx)];
-                ++notRecut;
-            }
-        } else if (cumShift[static_cast<size_t>(csIdx)] != 0) {
-            const int64_t startSample = newTs[static_cast<size_t>(csIdx)]
-                                      - static_cast<int64_t>(peakSamp0);
-            if (startSample >= 0 && startSample + nSamp <= totalSamples) {
-                const std::int64_t rawOff = static_cast<std::int64_t>(startSample)
-                                   * static_cast<std::int64_t>(totalNbChan)
-                                   * static_cast<std::int64_t>(sizeof(short));
-                std::vector<int16_t> rawFrame(static_cast<size_t>(nSamp * totalNbChan));
-                if (neurosuite::core::fseek64(filF, rawOff, SEEK_SET) == 0
-                    && fread(rawFrame.data(), sizeof(short), rawFrame.size(), filF)
-                           == rawFrame.size()) {
-                    // Channel-major raw window of the group's channels.
-                    std::vector<int16_t> rawCM(static_cast<size_t>(nChan * nSamp));
-                    for (int s = 0; s < nSamp; ++s)
-                        for (int ci = 0; ci < nChan; ++ci)
-                            rawCM[static_cast<size_t>(ci * nSamp + s)] =
-                                rawFrame[static_cast<size_t>(s * totalNbChan + groupChannels[ci])];
-                    // Into w in the .spk's own space: the stderiv transform when
-                    // the .spk stores stderiv waveforms (Pipeline D), raw otherwise.
-                    if (spkIsTransformed) {
-                        std::vector<int16_t> seedBuf;
-                        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filF, rawOff, totalNbChan, groupChannels,
-                            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
-                        neurosuite::core::applyStderivTransform(stderivOrder, rawCM.data(), nChan, nSamp, w, stderivPartnerPtr,
-                            seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
-                    } else {
-                        std::copy(rawCM.begin(), rawCM.end(), w);
-                    }
-                    recut = true;
-                }
-            }
-            if (!recut) {
-                cumShift[static_cast<size_t>(csIdx)] = 0;
-                newTs[static_cast<size_t>(csIdx)] = resTs[static_cast<size_t>(csIdx)];
-                ++notRecut;
-            }
-        }
-        if (!recut) std::copy(stored, stored + spkElems, w);   // unmoved: the stored window
-
-        const int64_t ts = newTs[static_cast<size_t>(csIdx)]; // extTs: re-extraction window AND .res/.fet/in-memory timestamp (kept consistent)
-
-        // Capture original in-memory values before any update (needed for reject)
-        PendingSpkRecord rec;
-        rec.destPos = dest;
-        rec.ts      = ts;
-        rec.origTs  = static_cast<int64_t>(
-            clusteringData->featureValue(
-                static_cast<dataType>(dest + 1),
-                static_cast<int>(timeDim)));  // timestamp is last dim
-        rec.origFet.reserve(nFeatCols);
-        for (int col = 0; col < nFeatCols; ++col)
-            rec.origFet.append(
-                clusteringData->featureValue(
-                    static_cast<dataType>(dest + 1), col + 1));
-
-        // .spk rows are sample-major on disk.
-
-        // The .spk rows, as stored (sample-major): the new one, and the one it replaces.
-        const auto recordOf = [&](const int16_t* channelMajor) {
-            QByteArray bytes(static_cast<qsizetype>(bytesPerSpike), Qt::Uninitialized);
-            // reinterpret_cast: the record's bytes are the .spk's int16 samples.
-            int16_t* out = reinterpret_cast<int16_t*>(bytes.data());
-            for (int s = 0; s < nSamp; ++s)
-                for (int ch = 0; ch < nChan; ++ch)
-                    out[s * nChan + ch] = channelMajor[ch * nSamp + s];
-            return std::make_shared<const QByteArray>(std::move(bytes));
-        };
-        rec.spk     = recordOf(w);
-        rec.origSpk = recut ? recordOf(stored) : rec.spk;
-
-        rec.fetRow = makeFetRow(csIdx, w, ts);
-        if (upFactor > 1 && phaseCol >= 0 && phaseCol < static_cast<int>(rec.fetRow.size()))
-            rec.fetRow[static_cast<size_t>(phaseCol)] = newPhase[static_cast<size_t>(csIdx)];   // the phase column follows the move
-
-        pending.records.push_back(std::move(rec));
-    }
+    const int64_t notRecut = realignPlanRows(cut, clusteringData, gidx, storedWav, resTs, oldPhase,
+                                             timeDim, nFeatCols, phaseCol, makeFetRow,
+                                             wavBuf, cumShift, newTs, newPhase, pending.records);
 
     // ── Application ───────────────────────────────────────────────────────
     // Up to here no file and no table was changed: the files were read and the

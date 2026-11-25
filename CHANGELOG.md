@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: the new times, the verification and the row plan are functions](#2026-11-24--realign-the-new-times-the-verification-and-the-row-plan-are-functions) |
 | 2026-11-24 | [Realign undo: from any feature space](#2026-11-24--realign-undo-from-any-feature-space) |
 | 2026-11-24 | [Realign undo: the memory it may use is a preference](#2026-11-24--realign-undo-the-memory-it-may-use-is-a-preference) |
 | 2026-11-24 | [Realign can be undone](#2026-11-24--realign-can-be-undone) |
@@ -290,6 +291,39 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: the new times, the verification and the row plan are functions
+
+Three more stages of `KlustersDoc::realignSpikes` are functions of their own. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What moved.** Three stages of `KlustersDoc::realignSpikes`, each to a function of its own in
+`klustersdoc_realign.cpp`, with their text unchanged:
+
+- `realignNewTimes` — each spike's new time (and phase, in a super-sampled space), and the
+  warning when two spikes of the cluster change order;
+- `realignVerifyStoredRows` — the check that the stored `.spk` rows are the recording's windows
+  at their `.res`, with its diagnosis (rolled, stale, all-pairs, unexplained);
+- `realignPlanRows` — the new row of every spike: the window re-cut at the new time, the time,
+  the feature row.
+
+They share `RealignCut`, which says how a window of the shown space is cut from the recording,
+and `realignCutStored`, the cut itself. `realignSpikes` is 957 lines (2,085 before the series).
+
+**Checked.** The application before and after writes the same whole realign log and the same
+bytes in every `.res`, `.spk`, `.fet`, `.clu` and `.clc` for 27 realigns: the modes and windows
+at the recording's rate, a super-sampled space with both interpolators (the re-cut through the
+interpolating kernel), a child realigned from the child view, a parent with children, and
+Align All. The whole suite passes; it includes a realign the verification refuses
+(`test_supersample_interp_detect.py`).
+
+**Not run.** A stderiv space, and a moved spike that cannot be re-cut.
+
+</details>
 
 ---
 
