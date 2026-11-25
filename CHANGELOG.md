@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: the rows are computed first, then written](#2026-11-24--realign-the-rows-are-computed-first-then-written) |
 | 2026-11-24 | [Realign: the PCA refinement is two functions](#2026-11-24--realign-the-pca-refinement-is-two-functions) |
 | 2026-11-24 | [Audit: where the split of realignSpikes stands](#2026-11-24--audit-where-the-split-of-realignspikes-stands) |
 | 2026-11-24 | [Realign: a realign that cannot run says why](#2026-11-24--realign-a-realign-that-cannot-run-says-why) |
@@ -285,6 +286,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: the rows are computed first, then written
+
+The loop that computed and wrote each spike's new row is now a loop that computes all rows and a function that writes them. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What changed in the code.** The last loop of `KlustersDoc::realignSpikes` did two things per
+spike, interleaved: it computed the spike's new row (the window re-cut from the recording at
+the new time, the new time, the feature row) and it wrote that row to the `.spk`, `.res` and
+`.fet` working files, to the in-memory tables of the parent and the child layer, and to the
+waveform overlay. It is now two loops. The first computes every row and changes nothing. The
+second is a function, `realignApplyRows`, and is the first thing a realign changes.
+
+**Why.** That line is the boundary the audit asked for between the plan of a realign and its
+application. Up to it a realign can be abandoned without a trace; what an undo has to restore
+is exactly what the application wrote. Neither a cancel nor an undo is built on it yet.
+
+**Checked.** A row never depends on another spike's row having been written (each spike reads
+and writes only its own), so the order of work changes and the result does not: the
+application before and after writes the same whole realign log and the same bytes in every
+`.res`, `.spk`, `.fet` and `.clu` for 18 realigns of the synthetic session, and the realign
+self-tests of the child layer, the collision rows, a shown space and a super-sampled space
+pass, as does the whole suite.
+
+**Not run.** A stderiv space; a recording too short to re-cut a moved spike.
+
+</details>
 
 ---
 

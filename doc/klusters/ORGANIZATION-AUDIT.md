@@ -276,11 +276,18 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    - the PCA refinement is two functions of its own in the same file, `realignRefineBasis`
      (the basis the candidates are scored on) and `realignPcaRefineSearch` (the search, GPU
      or CPU), which take what they read in one `RealignRefineInput`;
+   - the write loop is cut in two: the rows are computed first (re-cut window, new time,
+     feature row; nothing changed yet), then `realignApplyRows` writes them to the working
+     files, the tables of both layers and the overlay. That line is the plan / application
+     boundary: a cancel could be honoured up to it, and what an undo must restore is what
+     the application wrote;
    - the log is sent on every return: a refusal used to drop its reason.
 
-   Still one function: choosing the space and the basis, the centering, the new times, the
-   feature rows, the verification against the recording, writing the rows (about 450 lines,
-   the largest part left), the child layer, the journal. The plan /
+   Still one function for the plan: choosing the space and the basis, the centering, the
+   new times, the verification against the recording, re-cutting the windows and the
+   feature rows; and after the application, the journal and the notifications. The plan is
+   not yet an object of its own (it is `pending.records` and the waveform buffer), and
+   neither cancel nor undo is built on the boundary. The plan /
    application boundary is not drawn until the writing is separate from what precedes it.
 6. The matrix-view base (§8).
 7. The glossary and the renames (§6), one word per patch.

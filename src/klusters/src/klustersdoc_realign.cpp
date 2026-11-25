@@ -1166,6 +1166,79 @@ static void realignPcaRefineSearch(FILE* filFp82, const RealignRefineInput& in,
     }  // if (!gpuPathRan)
 }
 
+// ---------------------------------------------------------------------------
+// The application of a realign: the planned rows go to the space's three working
+// files, to the in-memory tables of the parent and the child layer, and into the
+// batch of waveform records the caller hands to the overlay.  Row j of @p rows is
+// spike j of @p wavBuf (channel-major, as it will be stored).  Everything before
+// this call only reads; this is the first thing a realign changes.
+// ---------------------------------------------------------------------------
+static void realignApplyRows(const std::vector<KlustersDoc::PendingSpkRecord>& rows,
+                             const std::vector<int16_t>& wavBuf, int nChan, int nSamp,
+                             int timeDim, int nFeatCols,
+                             FILE* spkW, FILE* resW, FILE* fetW,
+                             Data* clusteringData, Data* childData,
+                             QHash<qint64, std::shared_ptr<const QByteArray>>& overlayBatch)
+{
+    const size_t  spkElems      = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    const int64_t bytesPerSpike = static_cast<int64_t>(spkElems) * 2;
+    for (size_t j = 0; j < rows.size(); ++j) {
+        const KlustersDoc::PendingSpkRecord& rec = rows[j];
+        const int64_t dest = rec.destPos;
+        const int64_t ts   = rec.ts;
+        const int16_t* w = wavBuf.data() + j * spkElems;
+
+        // The .spk row is sample-major.
+        std::vector<int16_t> spkRow(static_cast<size_t>(spkElems));
+        for (int s = 0; s < nSamp; ++s)
+            for (int ch = 0; ch < nChan; ++ch)
+                spkRow[static_cast<size_t>(s * nChan + ch)] =
+                    w[static_cast<size_t>(ch * nSamp + s)];
+
+        neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(bytesPerSpike), SEEK_SET);
+        fwrite(spkRow.data(), sizeof(int16_t), static_cast<size_t>(spkElems), spkW);
+
+        neurosuite::core::fseek64(resW, static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(sizeof(int64_t)), SEEK_SET);
+        fwrite(&ts, sizeof(int64_t), 1, resW);  // extTs — keep .res in lock-step with the re-extracted .spk window so .spk[i] peak == .fil at .res[i] (the invariant nudge depends on)
+
+        const std::int64_t fetOff = static_cast<std::int64_t>(sizeof(int32_t))
+            + static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(timeDim)
+              * static_cast<std::int64_t>(sizeof(int64_t));
+        neurosuite::core::fseek64(fetW, fetOff, SEEK_SET);
+        fwrite(rec.fetRow.data(), sizeof(int64_t), static_cast<size_t>(timeDim), fetW);
+
+        // Update in-memory feature table and timestamp so scatter/feature
+        // views reflect the new alignment without requiring a save first.
+        {
+            QList<dataType> vals;
+            vals.reserve(nFeatCols);
+            for (int col = 0; col < nFeatCols; ++col)
+                vals.append(static_cast<dataType>(rec.fetRow[static_cast<size_t>(col)]));
+            clusteringData->updateFeatureRow(
+                static_cast<dataType>(dest + 1), vals);
+            clusteringData->updateTimestamp(
+                static_cast<dataType>(dest + 1),
+                static_cast<dataType>(ts));
+            // Mirror into the child atom layer: childData is a second Data over the SAME
+            // spikes, so without this its scatter/feature views keep the pre-realign row
+            // (parent re-aligned, children shifted/scattered).  Hierarchical mode only.
+            if (childData) {
+                childData->updateFeatureRow(
+                    static_cast<dataType>(dest + 1), vals);
+                childData->updateTimestamp(
+                    static_cast<dataType>(dest + 1),
+                    static_cast<dataType>(ts));
+            }
+        }
+
+        overlayBatch.insert(
+            static_cast<qint64>(dest) * static_cast<qint64>(bytesPerSpike),
+            std::make_shared<const QByteArray>(
+                reinterpret_cast<const char*>(spkRow.data()),
+                static_cast<int>(spkElems * sizeof(int16_t))));
+    }
+}
+
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
@@ -2321,61 +2394,19 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     static_cast<dataType>(dest + 1), col + 1));
 
         // .spk rows are sample-major on disk.
-        std::vector<int16_t> spkRow(static_cast<size_t>(spkElems));
-        for (int s = 0; s < nSamp; ++s)
-            for (int ch = 0; ch < nChan; ++ch)
-                spkRow[static_cast<size_t>(s * nChan + ch)] =
-                    w[static_cast<size_t>(ch * nSamp + s)];
 
         rec.fetRow = makeFetRow(csIdx, w, ts);
         if (upFactor > 1 && phaseCol >= 0 && phaseCol < static_cast<int>(rec.fetRow.size()))
             rec.fetRow[static_cast<size_t>(phaseCol)] = newPhase[static_cast<size_t>(csIdx)];   // the phase column follows the move
 
-        // Write into the pending files (random-access, same layout as originals)
-        neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(bytesPerSpike), SEEK_SET);
-        fwrite(spkRow.data(), sizeof(int16_t), static_cast<size_t>(spkElems), spkW);
-
-        neurosuite::core::fseek64(resW, static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(sizeof(int64_t)), SEEK_SET);
-        fwrite(&ts, sizeof(int64_t), 1, resW);  // extTs — keep .res in lock-step with the re-extracted .spk window so .spk[i] peak == .fil at .res[i] (the invariant nudge depends on)
-
-        const std::int64_t fetOff = static_cast<std::int64_t>(sizeof(int32_t))
-            + static_cast<std::int64_t>(dest) * static_cast<std::int64_t>(timeDim)
-              * static_cast<std::int64_t>(sizeof(int64_t));
-        neurosuite::core::fseek64(fetW, fetOff, SEEK_SET);
-        fwrite(rec.fetRow.data(), sizeof(int64_t), static_cast<size_t>(timeDim), fetW);
-
-        // Update in-memory feature table and timestamp so scatter/feature
-        // views reflect the new alignment without requiring a save first.
-        {
-            QList<dataType> vals;
-            vals.reserve(nFeatCols);
-            for (int col = 0; col < nFeatCols; ++col)
-                vals.append(static_cast<dataType>(rec.fetRow[static_cast<size_t>(col)]));
-            clusteringData->updateFeatureRow(
-                static_cast<dataType>(dest + 1), vals);
-            clusteringData->updateTimestamp(
-                static_cast<dataType>(dest + 1),
-                static_cast<dataType>(ts));
-            // Mirror into the child atom layer: childData is a second Data over the SAME
-            // spikes, so without this its scatter/feature views keep the pre-realign row
-            // (parent re-aligned, children shifted/scattered).  Hierarchical mode only.
-            if (childData) {
-                childData->updateFeatureRow(
-                    static_cast<dataType>(dest + 1), vals);
-                childData->updateTimestamp(
-                    static_cast<dataType>(dest + 1),
-                    static_cast<dataType>(ts));
-            }
-        }
-
-        overlayBatch.insert(
-            static_cast<qint64>(dest) * static_cast<qint64>(bytesPerSpike),
-            std::make_shared<const QByteArray>(
-                reinterpret_cast<const char*>(spkRow.data()),
-                static_cast<int>(spkElems * sizeof(int16_t))));
-
         pending.records.push_back(std::move(rec));
     }
+
+    // ── Application ───────────────────────────────────────────────────────
+    // Up to here no file and no table was changed: the files were read and the
+    // rows computed (pending.records, wavBuf).
+    realignApplyRows(pending.records, wavBuf, nChan, nSamp, timeDim, nFeatCols,
+                     spkW, resW, fetW, clusteringData, childData, overlayBatch);
 
     fclose(spkW);
     fclose(resW);
