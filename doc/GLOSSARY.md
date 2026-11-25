@@ -29,7 +29,10 @@ final word.
 | Term | Meaning |
 |---|---|
 | **spike** | One detected extracellular event; index *i* is the same spike across the `.res`/`.clu`/`.fet`/`.spk` files of a group. |
-| **cluster** | A set of spikes assigned the same id. By convention id `0` = noise, `1` = unsorted MUA, `≥2` = candidate single units. |
+| **cluster** | A set of spikes assigned the same id. By convention id `0` = the **artifact** bin, `1` = the **noise** bin (unsorted, MUA), `≥2` = candidate single units. |
+| **artifact (bin)** | Cluster `0`: spikes that are not neural (stimulation, movement, electrical). Spelled *artifact* in the code and the texts; see [One word per thing](#one-word-per-thing-klusters). |
+| **noise (bin)** | Cluster `1`: neural but unsorted spikes (multi-unit activity). |
+| **parent / child (fiber / atom)** | The two layers of a hierarchical clustering. The **parent** layer is the `.clu`; the **child** layer (`.clc`) cuts each parent into finer clusters, and every child belongs to one parent. The manual and the menus call a parent with children a **fiber** and a child an **atom** (after fiber-kit, which makes them); the code says parent and child. |
 | **spike group / electrode group** | The channel group a set of spikes was detected on; the trailing `.N` on a per-group file names it. |
 | **feature / feature vector** | The per-spike coordinates (usually PCA components, last column = timestamp) that curation clusters in; stored in `.fet`, held in `Data::features`. |
 | **PCA** | Principal-component basis used to featurize waveforms; the per-group basis is the `.pca` file. |
@@ -49,6 +52,20 @@ final word.
 | **error / confusion matrix** | The pairwise mis-assignment probability matrix (`ErrorMatrixView`); the template / residual / drift matrices are its siblings (VIEW_SYSTEM §5). |
 
 ---
+
+## One word per thing (Klusters)
+
+Decided 2026-11-25 (`doc/klusters/ORGANIZATION-AUDIT.md` §6). In `src/klusters/` an
+identifier or a comment uses the left-hand word; the right-hand one is not used for it.
+
+| Use | Not | Where the other word stays |
+|---|---|---|
+| **parent**, **child** | fiber, atom | The manual, the menus, tool tips and messages say *fiber* and *atom*: they are the curator's words. So do fiber-kit and its file formats. |
+| **artifact** | artefact | Three names that other programs or stored files hold: the curation log's actions `DELETE_ARTEFACT` and `DELETE_REGION_ARTEFACT` (and their enumerators), the command id `tools.deleteArtefact`, and the image files `delete_artefact*.png`. |
+
+A new identifier follows the table. A name that is stored — a command id, a settings key, a
+field of a file — is permanent whatever it is spelled like
+(`src/klusters/docs/COMMANDS_AND_PREFERENCES.md`).
 
 ## On-disk formats
 

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Glossary: one word per thing in Klusters](#2026-11-24--glossary-one-word-per-thing-in-klusters) |
 | 2026-11-24 | [Matrix views: one base for the grid, the pan and zoom, the follow](#2026-11-24--matrix-views-one-base-for-the-grid-the-pan-and-zoom-the-follow) |
 | 2026-11-24 | [Self-test: the four matrix views under the mouse](#2026-11-24--self-test-the-four-matrix-views-under-the-mouse) |
 | 2026-11-24 | [Realign: realignSpikes reads as its stages](#2026-11-24--realign-realignspikes-reads-as-its-stages) |
@@ -294,6 +295,24 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Glossary: one word per thing in Klusters
+
+The glossary records which of two words the Klusters code uses for the cluster layers and for the artifact bin.
+
+<details>
+<summary>Details</summary>
+
+`doc/GLOSSARY.md` gains the two words the audit found used double in Klusters and what was
+decided for each: the code says **parent** and **child** (the manual and the menus keep
+*fiber* and *atom*, the curator's words), and **artifact**, not artefact. The table lists
+where the other word stays because a stored name holds it. The entry for *cluster* is
+corrected: id 0 is the artifact bin and id 1 the noise bin (it said 0 = noise, 1 = MUA).
+Text only; the renames follow one word per patch.
+
+</details>
 
 ---
 
