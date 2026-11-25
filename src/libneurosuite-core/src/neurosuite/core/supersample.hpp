@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <numbers>
 #include <string>
 #include <vector>
 
@@ -191,7 +192,7 @@ inline double lanczos3At(const double* x, int n, double t)
         if (dt == 0.0) w = 1.0;
         else if (std::fabs(dt) >= 3.0) w = 0.0;
         else {
-            const double p = M_PI * dt;
+            const double p = std::numbers::pi * dt;
             w = 3.0 * std::sin(p) * std::sin(p / 3.0) / (p * p);
         }
         const int jj = std::clamp(j, 0, n - 1);        // edge: clamp

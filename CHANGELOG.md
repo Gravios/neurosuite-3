@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-25 | [Windows build: pi from the standard library in supersample.hpp](#2026-11-25--windows-build-pi-from-the-standard-library-in-supersamplehpp) |
 | 2026-11-24 | [Klusters sources: eight subdirectories by layer](#2026-11-24--klusters-sources-eight-subdirectories-by-layer) |
 | 2026-11-24 | [Klusters texts: artifact, not artefact](#2026-11-24--klusters-texts-artifact-not-artefact) |
 | 2026-11-24 | [Klusters code: parent and child, not fiber and atom](#2026-11-24--klusters-code-parent-and-child-not-fiber-and-atom) |
@@ -299,6 +300,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-25 — Windows build: pi from the standard library in supersample.hpp
+
+`M_PI` is not C++ and MSVC does not declare it; the Lanczos kernel uses `std::numbers::pi`.
+
+<details>
+<summary>Details</summary>
+
+The Windows build (MSVC, CI) stopped at `supersample.hpp(194): error C2065: 'M_PI':
+undeclared identifier`, in every target that includes the header:
+`libklustersshared`, `process_extractspikes`, `process_extractspikes_sdiff`,
+`process_extractspikes_stderiv` (through `spike_extract.hpp`).
+
+`M_PI` is a POSIX addition to `<cmath>`, not C++; MSVC declares it only under
+`_USE_MATH_DEFINES`. The header now includes `<numbers>` and uses
+`std::numbers::pi` (C++20, the tree's standard), as `process_extractemg.cpp`
+already does. The value is the same double, so the Lanczos weights do not change:
+`supersample_test` and the whole suite pass unchanged on Linux.
+
+Not verified: no MSVC here. The log shows this one error; anything it was hiding
+shows on the next run. KiloKlustaKwik still uses `M_PI` in four files; the Windows
+workflow skips it (`NS_SKIP_KILOKLUSTAKWIK=ON`), so they are left as they are.
+
+</details>
 
 ---
 
