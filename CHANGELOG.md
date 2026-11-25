@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: the PCA refinement is two functions](#2026-11-24--realign-the-pca-refinement-is-two-functions) |
 | 2026-11-24 | [Audit: where the split of realignSpikes stands](#2026-11-24--audit-where-the-split-of-realignspikes-stands) |
 | 2026-11-24 | [Realign: a realign that cannot run says why](#2026-11-24--realign-a-realign-that-cannot-run-says-why) |
 | 2026-11-24 | [Realign: the final scores and their summary are library functions](#2026-11-24--realign-the-final-scores-and-their-summary-are-library-functions) |
@@ -284,6 +285,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: the PCA refinement is two functions
+
+The PCA refinement moved out of the body of `KlustersDoc::realignSpikes` into two functions of its own. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What moved.** The PCA refinement (realign mode "PCA refine", `--pca-refine`) was 480 lines in
+the middle of `KlustersDoc::realignSpikes`. It is now two functions above it in
+`klustersdoc_realign.cpp`:
+
+- `realignRefineBasis` — the copy of the space's basis the candidates are scored on,
+  restricted to the selected channels and weighted by the correlation window;
+- `realignPcaRefineSearch` — the search itself (GPU when there is one and the cluster is large
+  enough, else the CPU loop, parallel over spikes), which takes everything it reads in one
+  `RealignRefineInput` and changes only the shifts and the waveform buffer.
+
+The text of both is the old text; `realignSpikes` opens the recording, fills the input and
+calls them. It is now 1,360 lines (2,085 before this series).
+
+**Checked.** The application before and after writes the same whole realign log and the same
+bytes in every `.res`, `.spk`, `.fet` and `.clu` for 18 realigns of the synthetic session, ten
+of them with the refinement (alone, with threshold 0.95, and under the gauss, hann and
+template windows; two clusters each). The whole suite passes.
+
+**Not run.** The GPU path (no GPU on the build machine), the refinement in a stderiv space and
+under a channel selection (the test sessions have neither). Those branches moved as text.
+
+</details>
 
 ---
 

@@ -266,18 +266,21 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    are still separate lists (§2).
 5. Split `realignSpikes` into a plan and its application (§1). The largest single gain in
    legibility, and the way to a realign that can be cancelled and undone. Begun; the
-   function is down from 2,085 lines to 1,780:
+   function is down from 2,085 lines to 1,360:
    - the xcorr passes (template, pre-roll, channel mask, correlation window, per-spike lag,
      roll) are `realign_pass::clusterShifts` in `libklustersshared`, and the scores and
      summary that close the log are `finalScores` and `summarize` beside it. Their test
      holds the old code and requires the same result;
    - reading the cluster's rows of the `.spk`, `.res` and `.fet` is `realign_io`
      (`realignio.h`), with a unit test on files it writes;
+   - the PCA refinement is two functions of its own in the same file, `realignRefineBasis`
+     (the basis the candidates are scored on) and `realignPcaRefineSearch` (the search, GPU
+     or CPU), which take what they read in one `RealignRefineInput`;
    - the log is sent on every return: a refusal used to drop its reason.
 
-   Still one function: choosing the space and the basis, the PCA refinement (520 lines, the
-   largest part left), the centering, the new times, the feature rows, the verification
-   against the recording, writing the rows, the child layer, the journal. The plan /
+   Still one function: choosing the space and the basis, the centering, the new times, the
+   feature rows, the verification against the recording, writing the rows (about 450 lines,
+   the largest part left), the child layer, the journal. The plan /
    application boundary is not drawn until the writing is separate from what precedes it.
 6. The matrix-view base (§8).
 7. The glossary and the renames (§6), one word per patch.

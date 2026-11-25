@@ -644,6 +644,528 @@ KlustersDoc::RealignBasis KlustersDoc::resolveRealignBasis(
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// The PCA refinement of a realign (--pca-refine, realignMode 1): after the xcorr
+// passes, each spike is tried at every lag in [-maxShift, +maxShift] of where it
+// now stands and moved to the one where its projection onto the cluster's basis
+// has the most energy,
+//
+//     energy(s) = sum_ch sum_k <basis_ch_k, spike(s) - mean_ch>^2
+//
+// Each candidate window is cut fresh from the recording (no circular wrap).
+// Two functions: the basis the candidates are scored on, and the search.
+// ---------------------------------------------------------------------------
+
+// The basis the refinement scores on: a COPY of the space's basis, restricted to
+// the curator's channel selection and weighted by the correlation window.
+static neurosuite::core::PcaBasis realignRefineBasis(const neurosuite::core::PcaBasis& pca,
+                                                     const QList<int>& channelSelection,
+                                                     RealignKernel kernel, int kernelWidth,
+                                                     int peakSamp0, int nSamp, int nChan,
+                                                     const std::vector<int16_t>& wavBuf, int64_t N,
+                                                     QTextStream& log)
+{
+    using PcaBasis = neurosuite::core::PcaBasis;
+    const size_t spkElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    // ── Channel restriction ───────────────────────────────────────────────
+    // Ctrl+click on the waveform view picks channels; the matrix views already
+    // honour that selection and the alignment did not.  The refine pass scores
+    // each candidate shift by PCA-projection energy summed over channels, so a
+    // channel the curator has excluded was still voting on where every spike
+    // lands.
+    //
+    // The restriction is applied to a COPY OF THE BASIS, by zeroing the
+    // eigenvector rows of the dropped channels, rather than by teaching the
+    // scoring code about a mask.  Two reasons, both load-bearing:
+    //
+    //  1. The energy is Σ_ch Σ_k (Σ_u ev[k·d2u+u]·(x−μ))².  A zeroed ev row
+    //     makes that channel's score identically zero, so it contributes
+    //     nothing.  The CPU loop reads pca.evec and the CUDA kernel is handed
+    //     evecFlat packed from the same pca.evec, so BOTH honour the mask with
+    //     no kernel change and no dispatch-signature change.  Put the mask in
+    //     the code instead and the CPU and GPU become two implementations of
+    //     one rule -- which is exactly how this codebase ended up with two
+    //     single-linkage routines that differed by an order of complexity.
+    //
+    //  2. It must NOT touch `pca` itself.  That object is cached into
+    //     realignPcaCache for the rest of the batch (a masked cache would
+    //     silently follow a stale selection into the next cluster), and it is
+    //     ALSO the basis the feature recomputation projects through -- zeroing
+    //     it there would write zeroed features for the dropped channels into
+    //     the .fet.  The mask belongs to the refine pass and nowhere else.
+    PcaBasis pcaRef = pca;
+    {
+        std::vector<int> sel;
+        sel.reserve(channelSelection.size());
+        for (int c : channelSelection) sel.push_back(c);
+        // Mask against the BASIS channel count, not the group's: a stderiv
+        // basis is built on nChan-1 channels (the trailing one is linearly
+        // dependent and dropped), so pca.nCh is the only count that indexes
+        // pca.evec safely.
+        const std::vector<int> keep = cmResolveMask(sel, pcaRef.nCh);
+        if (!keep.empty()) {
+            for (int ch = 0; ch < pcaRef.nCh; ++ch) {
+                if (std::find(keep.begin(), keep.end(), ch) != keep.end()) continue;
+                std::fill(pcaRef.evec[static_cast<size_t>(ch)].begin(),
+                          pcaRef.evec[static_cast<size_t>(ch)].end(), 0.0);
+            }
+            log << "PCA-projection refine restricted to " << keep.size()
+                << " of " << pcaRef.nCh << " basis channels (selection:";
+            for (int c : keep) log << " " << c;
+            log << ")\n";
+            if (pca.nCh != nChan)
+                log << "  NOTE: this basis is stderiv-derived (" << pca.nCh
+                    << " basis channels for " << nChan << " raw), so a basis "
+                    << "channel is a spatial derivative, not raw channel n.\n";
+        }
+    }
+
+    // ── Correlation window ────────────────────────────────────────────────
+    // Under --kernel the xcorr passes score sum_t w[t] T[t] x[t+lag]; the
+    // refine scored sum_u ev[u] (x[u] - mu[u]) over the basis' whole window,
+    // so a second spike the passes had been told to ignore voted again on
+    // where each spike lands.  The windowed projection is the same inner
+    // product under the same weight, sum_u w[u] ev[u] (x[u] - mu[u]), and it
+    // goes where the channel restriction goes and for the same reasons: into
+    // the COPY of the basis, ev'[k][u] = ev[k][u] * w[recShift + u].  The CPU
+    // loop and the GPU kernel both read pcaRef.evec, so both honour it; the
+    // means are untouched (w multiplies the centred sample), and `pca`, the
+    // basis the features are recomputed through, never sees the window.
+    // Candidates are cut with their target on peakSamp0, which is where the
+    // window sits.  NOT normalised by the windowed spike energy, unlike the
+    // correlation: the refine maximises an energy, so a larger second spike
+    // slid onto the window's centre still scores high -- the window narrows
+    // what votes, it does not make the refine a collision guard.
+    if (kernel != RealignKernel::None) {
+        const std::vector<int16_t> mean = realignMeanWaveform(wavBuf, N, spkElems);
+        const std::vector<float> kw = realign_pass::kernelWeights(kernel, kernelWidth, peakSamp0,
+                                                           nSamp, nChan, mean.data());
+        if (!kw.empty()) {
+            for (int ch = 0; ch < pcaRef.nCh; ++ch) {
+                std::vector<double>& ev = pcaRef.evec[static_cast<size_t>(ch)];
+                for (int k = 0; k < pcaRef.nComp; ++k)
+                    for (int u = 0; u < pcaRef.data2use; ++u) {
+                        const int s = pcaRef.recShift + u;
+                        const double w = (s >= 0 && s < nSamp)
+                            ? static_cast<double>(kw[static_cast<size_t>(s)]) : 0.0;
+                        ev[static_cast<size_t>(k) * static_cast<size_t>(pcaRef.data2use)
+                           + static_cast<size_t>(u)] *= w;
+                    }
+            }
+            log << "PCA-projection refine under the "
+                << realignKernelName(kernel, kernelWidth) << " window.\n";
+        }
+    }
+    return pcaRef;
+}
+
+// What the search reads and may not change.
+struct RealignRefineInput {
+    QString  rawPath;                    // the recording the candidates are cut from
+    int64_t  totalSamples = 0;           // its length
+    int      totalNbChan  = 0;           // its channels
+    QList<int> groupChannels;            // the group's channels in it
+    int      nChan = 0, nSamp = 0, peakSamp0 = 0, maxShift = 0;
+    const neurosuite::core::PcaBasis* pca = nullptr;       // the space's basis (sizes, means)
+    const neurosuite::core::PcaBasis* pcaRef = nullptr;    // realignRefineBasis: what is scored on
+    // The stderiv space: candidates are transformed as the .spk was built.
+    bool     stderiv = false, stderivSeeded = true;
+    neurosuite::core::SdiffOrder stderivOrder = neurosuite::core::SdiffOrder::AllPairs;
+    const int* stderivPartner = nullptr;
+    const int* stderivSetOff  = nullptr;
+    const int* stderivSetMem  = nullptr;
+    const neurosuite::core::ChannelExprSet* stderivExpr = nullptr;
+    const std::vector<int64_t>* clusterTs = nullptr;        // the spikes' times before the realign
+    const std::vector<char>*    measuredCorrected = nullptr; // collision rows: not refined
+    std::function<void()> computeStarts;                     // timing mark, may be empty
+};
+
+// The search.  For every spike that moves: cumShift gets the lag added and its
+// row of wavBuf becomes the window cut at the new time (so that the statistics
+// see it as it will be written).  filFp82 is the open recording; the parallel
+// CPU path opens its own handles.  GPU when one is there and the cluster is large
+// enough (not in a stderiv space), else the CPU loop.
+static void realignPcaRefineSearch(FILE* filFp82, const RealignRefineInput& in,
+                                   std::vector<int>& cumShift, std::vector<int16_t>& wavBuf,
+                                   int& nRefined, int& nClamped,
+                                   QTextStream& log, const std::function<void()>& emitFlush)
+{
+    const int      nChan = in.nChan, nSamp = in.nSamp, peakSamp0 = in.peakSamp0, maxShift = in.maxShift;
+    const size_t   spkElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    const int64_t  N = static_cast<int64_t>(cumShift.size());
+    const int      totalNbChanP82 = in.totalNbChan;
+    const QList<int>& groupChannelsP82 = in.groupChannels;
+    const QString& filPathP82 = in.rawPath;
+    const int64_t  totalSamplesP82 = in.totalSamples;
+    const neurosuite::core::PcaBasis& pca = *in.pca;
+    const neurosuite::core::PcaBasis& pcaRef = *in.pcaRef;
+    const bool     isStderivRealign = in.stderiv, stderivSeeded = in.stderivSeeded;
+    const neurosuite::core::SdiffOrder stderivOrder = in.stderivOrder;
+    const int* stderivPartnerPtr = in.stderivPartner;
+    const int* stderivSetOffPtr  = in.stderivSetOff;
+    const int* stderivSetMemPtr  = in.stderivSetMem;
+    const neurosuite::core::ChannelExprSet* stderivExprPtr = in.stderivExpr;
+    const std::vector<int64_t>& clusterTs = *in.clusterTs;
+    const std::vector<char>&    measuredCorrected = *in.measuredCorrected;
+    nRefined = 0;
+    nClamped = 0;       // spikes whose every candidate window ran off the recording
+
+    std::vector<int16_t> rawFrame(
+        static_cast<size_t>(nSamp * totalNbChanP82));
+    std::vector<int16_t> candCM(static_cast<size_t>(spkElems));
+
+    // Use the SMALLER of pca.nCh and nChan in case they disagree
+    // (stderiv pipelines drop one channel; pca.nCh = nChan - 1).
+    const int chForPca = std::min(pca.nCh, nChan);
+    const int kComp    = pca.nComp;
+    const int d2u      = pca.data2use;
+    const int rShift   = pca.recShift;
+    const bool centered = pca.centered;
+    const bool useStder = isStderivRealign;
+
+
+    // ── GPU PCA-refine fast path ─────────────────────────────────
+    // For large clusters this replaces the per-spike per-candidate
+    // CPU loop below with: one wide .fil read per spike (covers all
+    // candidates) + one GPU kernel that evaluates every (spike,
+    // candidate) PCA energy and returns the argmax shift per spike.
+    //
+    // Returns true when the GPU path completed; otherwise we fall
+    // through to the CPU loop unchanged.
+    if (in.computeStarts) in.computeStarts();
+    bool gpuPathRan = false;
+    do {
+        if (!PcaRefineGpu::hasGpu()) break;
+        if (N < PcaRefineGpu::gpuThreshold()) break;
+        // The GPU kernel's stderiv is fixed: the all-pairs spatial
+        // derivative seeded with zero.  The CPU loop below applies the
+        // .spk's own transform (stderivOrder: _C<n>, _S<n>, an
+        // sdiffPairs pattern or expression, seeded from the previous
+        // sample), so for a stderiv feature space the two would score
+        // different waveforms and pick different shifts.  Only the raw
+        // space, where both project the same samples, takes the GPU.
+        if (useStder) break;
+        if (nChan > 256) break;        // safety — kernel sums across nChan in one block
+        const int M       = 2 * maxShift + 1;
+        // Each candidate c in [0,M) feeds the kernel rShift+d2u raw
+        // samples at channel-row offset [c, c+rShift+d2u); the widest
+        // candidate (c = 2*maxShift) therefore needs
+        // 2*maxShift + rShift + d2u samples per channel row.  The old
+        // nSamp+2*maxShift only covers that when nSamp >= rShift+d2u.
+        // When the stderiv pre-roll plus the PCA window exceed nSamp
+        // (e.g. d2u == nSamp with rShift >= 1) the top candidates read
+        // past their channel row — into the next channel for interior
+        // spikes, and past the d_raw allocation for the last spike,
+        // which raises an illegal memory access that poisons the CUDA
+        // context for the rest of the session (every later GPU call,
+        // including the grouping-assistant malloc, then fails sticky).
+        // Size the buffer for the widest read so the absolute samples
+        // each candidate uses are unchanged but never truncated.
+        const int wideLen = 2 * maxShift + std::max(nSamp, rShift + d2u);
+
+        // Bound the working buffer at ~512 MB to avoid surprising
+        // the GPU on very large clusters.  Above this the CPU loop
+        // is still fast enough that splitting the batch isn't
+        // worth the code.
+        const long long rawBytes =
+            static_cast<long long>(N) * nChan * wideLen * sizeof(int16_t);
+        if (rawBytes > static_cast<long long>(512) * 1024 * 1024) break;
+
+        std::vector<int16_t> rawWindows(
+            static_cast<size_t>(N) * nChan * wideLen, 0);
+        std::vector<int> validRow(static_cast<size_t>(N), 1);
+
+        // ── Phase A — read one wide window per spike ────────────
+        // Saves ~M× the .fil syscalls vs the CPU per-candidate loop.
+        // A spike whose widest candidate runs off the .fil edge
+        // gets validRow[i]=0 — those drop into the CPU path so
+        // edge-clamp accounting (nClamped) matches the legacy
+        // behaviour exactly.
+        int prepared = 0;
+        for (int64_t i = 0; i < N; ++i) {
+            const int   curr = cumShift[static_cast<size_t>(i)];
+            const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
+            const int64_t leftStart = baseTs - maxShift
+                                    - static_cast<int64_t>(peakSamp0);
+            if (leftStart < 0 ||
+                leftStart + wideLen > totalSamplesP82) {
+                validRow[static_cast<size_t>(i)] = 0;
+                continue;
+            }
+            const std::int64_t rawOff = static_cast<std::int64_t>(leftStart)
+                               * static_cast<std::int64_t>(totalNbChanP82)
+                               * static_cast<std::int64_t>(sizeof(short));
+            if (neurosuite::core::fseek64(filFp82, rawOff, SEEK_SET) != 0) {
+                validRow[static_cast<size_t>(i)] = 0;
+                continue;
+            }
+            // Read sample-major into rawFrame (reused), then
+            // gather to channel-major into rawWindows.
+            std::vector<int16_t> wide(
+                static_cast<size_t>(wideLen) * totalNbChanP82);
+            if (fread(wide.data(), sizeof(short),
+                      wide.size(), filFp82) != wide.size()) {
+                validRow[static_cast<size_t>(i)] = 0;
+                continue;
+            }
+            int16_t* spkBase = rawWindows.data()
+                             + static_cast<size_t>(i) * nChan * wideLen;
+            for (int t = 0; t < wideLen; ++t)
+                for (int ci = 0; ci < nChan; ++ci)
+                    spkBase[static_cast<size_t>(ci) * wideLen + t] =
+                        wide[static_cast<size_t>(t) * totalNbChanP82
+                           + groupChannelsP82[ci]];
+            ++prepared;
+        }
+
+        if (prepared < PcaRefineGpu::gpuThreshold()) break;
+
+        // ── Phase B — pack PCA basis into flat float arrays ─────
+        std::vector<float> evecFlat(
+            static_cast<size_t>(chForPca) * kComp * d2u);
+        std::vector<float> meansFlat(
+            centered ? static_cast<size_t>(chForPca) * d2u : 0);
+        for (int ch = 0; ch < chForPca; ++ch) {
+            const auto& ev = pcaRef.evec[static_cast<size_t>(ch)];
+            for (int k = 0; k < kComp; ++k)
+                for (int u = 0; u < d2u; ++u)
+                    evecFlat[static_cast<size_t>(ch) * kComp * d2u
+                           + static_cast<size_t>(k) * d2u + u] =
+                        static_cast<float>(ev[static_cast<size_t>(k) * d2u + u]);
+            if (centered) {
+                const auto& mu = pca.means[static_cast<size_t>(ch)];
+                for (int u = 0; u < d2u; ++u)
+                    meansFlat[static_cast<size_t>(ch) * d2u + u] =
+                        static_cast<float>(mu[static_cast<size_t>(u)]);
+            }
+        }
+
+        // ── Phase C — kernel launch + best-shift collection ─────
+        std::vector<int> bestShiftGpu(static_cast<size_t>(N), 0);
+        const int rc = PcaRefineGpu::refine(
+            static_cast<int>(N), M, wideLen, nSamp, nChan, chForPca,
+            kComp, d2u, rShift, maxShift,
+            centered ? 1 : 0, useStder ? 1 : 0,
+            rawWindows.data(),
+            evecFlat.data(),
+            centered ? meansFlat.data() : nullptr,
+            bestShiftGpu.data());
+        if (rc != 0) {
+            log << "  PCA-refine GPU dispatch returned "
+                << rc << " — falling back to CPU.\n";
+            emitFlush();
+            break;
+        }
+
+        // ── Phase D — apply shifts + refresh wavBuf per spike ────
+        // For spikes where validRow[i] == 0 (edge-clamped), we
+        // mark them as clamped and leave cumShift untouched —
+        // matches the CPU path's "every candidate ran off the
+        // .fil edge" accounting.
+        std::vector<int16_t> gpuFrame(
+            static_cast<size_t>(nSamp) * totalNbChanP82);
+        for (int64_t i = 0; i < N; ++i) {
+            if (!validRow[static_cast<size_t>(i)]) { ++nClamped; continue; }
+            // The candidates are raw cuts: a collision row keeps the lag its
+            // corrected record gave.
+            if (measuredCorrected[static_cast<size_t>(i)]) continue;
+            const int bestS = bestShiftGpu[static_cast<size_t>(i)];
+            if (bestS == 0) continue;
+
+            cumShift[static_cast<size_t>(i)] = cumShift[static_cast<size_t>(i)] + bestS;
+            ++nRefined;
+
+            // Refresh wavBuf[i] from .fil at the chosen position
+            // (same logic as the CPU branch below).
+            const int64_t bestStart =
+                clusterTs[static_cast<size_t>(i)] + cumShift[static_cast<size_t>(i)]
+              - static_cast<int64_t>(peakSamp0);
+            const std::int64_t bestOff = static_cast<std::int64_t>(bestStart)
+                                * static_cast<std::int64_t>(totalNbChanP82)
+                                * static_cast<std::int64_t>(sizeof(short));
+            if (neurosuite::core::fseek64(filFp82, bestOff, SEEK_SET) != 0) continue;
+            if (fread(gpuFrame.data(), sizeof(short),
+                      gpuFrame.size(), filFp82)
+                    != gpuFrame.size()) continue;
+            int16_t* wTgt = wavBuf.data()
+                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+            for (int t = 0; t < nSamp; ++t)
+                for (int ci = 0; ci < nChan; ++ci)
+                    wTgt[static_cast<size_t>(ci) * nSamp + t] =
+                        gpuFrame[static_cast<size_t>(t) * totalNbChanP82
+                               + groupChannelsP82[ci]];
+            if (useStder) {
+                std::vector<int16_t> seedBuf;
+                const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filFp82, bestOff, totalNbChanP82, groupChannelsP82,
+                    stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
+                neurosuite::core::applyStderivTransform(stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr,
+                    seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
+            }
+        }
+        gpuPathRan = true;
+    } while (false);
+
+    // ── CPU per-spike refine (GPU path not taken) ────────────────────
+    // Each spike's best-shift search is independent: it reads from
+    // .fil and writes only its own cumShift[i] and wavBuf[i] slot.  The
+    // only shared mutable state is the .fil handle (its file position)
+    // and the rawFrame/candCM scratch buffers, so we parallelise across
+    // spikes — each thread gets its own handle + buffers.  Falls back to
+    // a serial loop when OpenMP is unavailable or per-thread handles
+    // cannot be opened, giving identical results either way.
+    if (!gpuPathRan) {
+        enum class RefineResult { None, Refined, Clamped };
+        auto refineSpike =
+            [&](int64_t i, FILE* spikeFp,
+                std::vector<int16_t>& frameBuf,
+                std::vector<int16_t>& candBuf) -> RefineResult {
+        // The candidates are raw cuts: a collision row keeps the lag its
+        // corrected record gave.
+        if (measuredCorrected[static_cast<size_t>(i)]) return RefineResult::None;
+        const int   curr = cumShift[static_cast<size_t>(i)];
+        const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
+        int bestS = 0;
+        double bestEnergy = -1.0;
+        int validCandidates = 0;
+        for (int s = -maxShift; s <= maxShift; ++s) {
+            const int64_t candStart = baseTs + s
+                                    - static_cast<int64_t>(peakSamp0);
+            if (candStart < 0 ||
+                candStart + nSamp > totalSamplesP82) continue;
+
+            const std::int64_t rawOff = static_cast<std::int64_t>(candStart)
+                               * static_cast<std::int64_t>(totalNbChanP82)
+                               * static_cast<std::int64_t>(sizeof(short));
+            if (neurosuite::core::fseek64(spikeFp, rawOff, SEEK_SET) != 0) continue;
+            if (fread(frameBuf.data(), sizeof(short),
+                      frameBuf.size(), spikeFp)
+                    != frameBuf.size()) continue;
+
+            // Subset to group channels (sample-major in rawFrame
+            // → channel-major for PCA projection).
+            for (int t = 0; t < nSamp; ++t)
+                for (int ci = 0; ci < nChan; ++ci)
+                    candBuf[static_cast<size_t>(ci * nSamp + t)] =
+                        frameBuf[static_cast<size_t>(
+                            t * totalNbChanP82 + groupChannelsP82[ci])];
+
+            // Apply stderiv transform in-place if pipeline needs it.
+            // Spatial order from the basis; matches the disk-write block.
+            if (useStder) {
+                std::vector<int16_t> seedBuf;
+                const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(spikeFp, rawOff, totalNbChanP82, groupChannelsP82,
+                    stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
+                neurosuite::core::applyStderivTransform(stderivOrder, candBuf.data(), nChan, nSamp, candBuf.data(), stderivPartnerPtr,
+                    seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
+            }
+
+            // PCA projection energy — shared primitive in
+            // libneurosuite-core (same math the GPU kernel mirrors and
+            // the plugin's Stage 2 uses).  candCM is channel-major
+            // [ch*nSamp+t]; core derives chForPca/kComp/d2u/rShift/
+            // centered from pca.  The core fn additionally bounds-guards
+            // sIdx, a no-op here because the loader rejects any basis with
+            // recShift + data2use > nSamp.
+            const double energy = neurosuite::core::pcaProjectionEnergy(
+                candBuf.data(), nChan, nSamp, pcaRef);
+            ++validCandidates;
+
+            if (energy > bestEnergy) {
+                bestEnergy = energy;
+                bestS = s;
+            }
+        }
+
+        if (validCandidates == 0) {
+            // Every candidate ran off the .fil edge — nothing we
+            // can do, leave cumShift unchanged.
+            return RefineResult::Clamped;
+        }
+        if (bestS == 0) return RefineResult::None;   // already optimal
+
+        cumShift[static_cast<size_t>(i)] = curr + bestS;
+
+        // Refresh wavBuf[i] from the .fil at the chosen position
+        // so the downstream score-stats block uses post-refine
+        // content.  We need to re-extract once more (we don't
+        // cache the per-candidate candCM, only the winning bestS).
+        {
+            const int64_t bestStart =
+                clusterTs[static_cast<size_t>(i)]
+              + cumShift[static_cast<size_t>(i)]
+              - static_cast<int64_t>(peakSamp0);
+            const std::int64_t bestOff = static_cast<std::int64_t>(bestStart)
+                                * static_cast<std::int64_t>(totalNbChanP82)
+                                * static_cast<std::int64_t>(sizeof(short));
+            if (neurosuite::core::fseek64(spikeFp, bestOff, SEEK_SET) == 0 &&
+                fread(frameBuf.data(), sizeof(short),
+                      frameBuf.size(), spikeFp) == frameBuf.size()) {
+                int16_t* wTgt = wavBuf.data()
+                    + static_cast<ptrdiff_t>(i)
+                    * static_cast<ptrdiff_t>(spkElems);
+                for (int t = 0; t < nSamp; ++t)
+                    for (int ci = 0; ci < nChan; ++ci)
+                        wTgt[static_cast<size_t>(ci * nSamp + t)] =
+                            frameBuf[static_cast<size_t>(
+                                t * totalNbChanP82
+                              + groupChannelsP82[ci])];
+                if (useStder) {
+                    std::vector<int16_t> seedBuf;
+                    const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(spikeFp, bestOff, totalNbChanP82, groupChannelsP82,
+                        stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
+                    neurosuite::core::applyStderivTransform(stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr,
+                        seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
+                }
+            }
+        }
+        return RefineResult::Refined;
+        };  // refineSpike
+
+        // Dispatch: parallel across spikes when OpenMP is available and
+        // the cluster is large enough to amortise thread setup; each
+        // thread opens its own .fil handle and owns its scratch buffers.
+        bool ranParallel = false;
+#ifdef _OPENMP
+        const int nThr = omp_get_max_threads();
+        if (nThr > 1 && N >= 64) {
+            std::vector<FILE*> fh(static_cast<size_t>(nThr), nullptr);
+            bool allOpen = true;
+            for (int t = 0; t < nThr; ++t) {
+                fh[static_cast<size_t>(t)] =
+                    fopen(filPathP82.toLocal8Bit().constData(), "rb");
+                if (!fh[static_cast<size_t>(t)]) { allOpen = false; break; }
+            }
+            if (allOpen) {
+                #pragma omp parallel reduction(+:nRefined, nClamped)
+                {
+                    const int tid = omp_get_thread_num();
+                    FILE* filT = fh[static_cast<size_t>(tid)];
+                    std::vector<int16_t> rawT(rawFrame.size());
+                    std::vector<int16_t> candT(candCM.size());
+                    #pragma omp for schedule(dynamic, 16)
+                    for (int64_t i = 0; i < N; ++i) {
+                        const RefineResult r =
+                            refineSpike(i, filT, rawT, candT);
+                        if (r == RefineResult::Refined)      ++nRefined;
+                        else if (r == RefineResult::Clamped) ++nClamped;
+                    }
+                }
+                ranParallel = true;
+            }
+            for (FILE* h : fh) if (h) fclose(h);
+        }
+#endif
+        if (!ranParallel) {
+            for (int64_t i = 0; i < N; ++i) {
+                const RefineResult r =
+                    refineSpike(i, filFp82, rawFrame, candCM);
+                if (r == RefineResult::Refined)      ++nRefined;
+                else if (r == RefineResult::Clamped) ++nClamped;
+            }
+        }
+    }  // if (!gpuPathRan)
+}
+
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
@@ -1185,129 +1707,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     emitFlush();
 
     // -----------------------------------------------------------------------
-    // patch82 — PCA-projection-maximizing refine pass (opt-in via --pca-refine)
-    //
-    // After the mean-template xcorr alignment converges, refine each
-    // spike's position by trying candidate shifts s in [-maxShift, +maxShift]
-    // and picking the one that MAXIMIZES the spike's PCA-projection energy:
-    //
-    //     energy(s) = sum_ch sum_k <basis_ch_k, spike(s) - mean_ch>²
-    //
-    // Intuition: a well-aligned spike concentrates its variance in the
-    // directions of greatest cluster variance (the kept PCA components);
-    // a misaligned spike spreads variance across all directions,
-    // suppressing this sum.  energy(s) peaks where the spike most
-    // strongly looks like a member of the cluster as measured by the
-    // canonical PCA basis.
-    //
-    // Reads each candidate window FRESH from .fil (no circular wrap
-    // artifacts that would skew the PCA scores near the window edges).
-    // Uses a local FILE* so the existing .fil open at line ~4060 stays
-    // untouched.
-    //
-    // Update propagation: when bestS != 0,
-    //   - cumShift[i] += bestS (so the existing sort + disk-write code
-    //     downstream uses the refined position)
-    //   - wavBuf[i] is overwritten with the freshly-extracted window
-    //     at the refined position, so the score statistics block below
-    //     (computing finalTmpl + scores) sees post-refine waveforms
-    //     instead of stale circular-shifted ones.
-    //
-    // Falls back silently to no-op when:
-    //   - .pca eigenvector basis didn't load (pca.valid() == false)
-    //   - .fil can't be opened
-    //   - the cluster's spikes' windows would run off the end of .fil
-    //     at any candidate shift (handled per-spike)
+    // The PCA refinement (--pca-refine): see realignRefineBasis and
+    // realignPcaRefineSearch above.  It moves cumShift and replaces the moved
+    // spikes' rows of wavBuf by their windows at the new time.  Skipped, with a
+    // line in the log, when the basis did not load or the recording cannot be
+    // opened.
     if (pcaRefine && pca.valid()) {
-        // ── Channel restriction ───────────────────────────────────────────────
-        // Ctrl+click on the waveform view picks channels; the matrix views already
-        // honour that selection and the alignment did not.  The refine pass scores
-        // each candidate shift by PCA-projection energy summed over channels, so a
-        // channel the curator has excluded was still voting on where every spike
-        // lands.
-        //
-        // The restriction is applied to a COPY OF THE BASIS, by zeroing the
-        // eigenvector rows of the dropped channels, rather than by teaching the
-        // scoring code about a mask.  Two reasons, both load-bearing:
-        //
-        //  1. The energy is Σ_ch Σ_k (Σ_u ev[k·d2u+u]·(x−μ))².  A zeroed ev row
-        //     makes that channel's score identically zero, so it contributes
-        //     nothing.  The CPU loop reads pca.evec and the CUDA kernel is handed
-        //     evecFlat packed from the same pca.evec, so BOTH honour the mask with
-        //     no kernel change and no dispatch-signature change.  Put the mask in
-        //     the code instead and the CPU and GPU become two implementations of
-        //     one rule -- which is exactly how this codebase ended up with two
-        //     single-linkage routines that differed by an order of complexity.
-        //
-        //  2. It must NOT touch `pca` itself.  That object is cached into
-        //     realignPcaCache for the rest of the batch (a masked cache would
-        //     silently follow a stale selection into the next cluster), and it is
-        //     ALSO the basis the feature recomputation projects through -- zeroing
-        //     it there would write zeroed features for the dropped channels into
-        //     the .fet.  The mask belongs to the refine pass and nowhere else.
-        PcaBasis pcaRef = pca;
-        {
-            std::vector<int> sel;
-            sel.reserve(channelSelection.size());
-            for (int c : channelSelection) sel.push_back(c);
-            // Mask against the BASIS channel count, not the group's: a stderiv
-            // basis is built on nChan-1 channels (the trailing one is linearly
-            // dependent and dropped), so pca.nCh is the only count that indexes
-            // pca.evec safely.
-            const std::vector<int> keep = cmResolveMask(sel, pcaRef.nCh);
-            if (!keep.empty()) {
-                for (int ch = 0; ch < pcaRef.nCh; ++ch) {
-                    if (std::find(keep.begin(), keep.end(), ch) != keep.end()) continue;
-                    std::fill(pcaRef.evec[static_cast<size_t>(ch)].begin(),
-                              pcaRef.evec[static_cast<size_t>(ch)].end(), 0.0);
-                }
-                log << "PCA-projection refine restricted to " << keep.size()
-                    << " of " << pcaRef.nCh << " basis channels (selection:";
-                for (int c : keep) log << " " << c;
-                log << ")\n";
-                if (pca.nCh != nChan)
-                    log << "  NOTE: this basis is stderiv-derived (" << pca.nCh
-                        << " basis channels for " << nChan << " raw), so a basis "
-                        << "channel is a spatial derivative, not raw channel n.\n";
-            }
-        }
-
-        // ── Correlation window ────────────────────────────────────────────────
-        // Under --kernel the xcorr passes score sum_t w[t] T[t] x[t+lag]; the
-        // refine scored sum_u ev[u] (x[u] - mu[u]) over the basis' whole window,
-        // so a second spike the passes had been told to ignore voted again on
-        // where each spike lands.  The windowed projection is the same inner
-        // product under the same weight, sum_u w[u] ev[u] (x[u] - mu[u]), and it
-        // goes where the channel restriction goes and for the same reasons: into
-        // the COPY of the basis, ev'[k][u] = ev[k][u] * w[recShift + u].  The CPU
-        // loop and the GPU kernel both read pcaRef.evec, so both honour it; the
-        // means are untouched (w multiplies the centred sample), and `pca`, the
-        // basis the features are recomputed through, never sees the window.
-        // Candidates are cut with their target on peakSamp0, which is where the
-        // window sits.  NOT normalised by the windowed spike energy, unlike the
-        // correlation: the refine maximises an energy, so a larger second spike
-        // slid onto the window's centre still scores high -- the window narrows
-        // what votes, it does not make the refine a collision guard.
-        if (kernel != RealignKernel::None) {
-            const std::vector<int16_t> mean = realignMeanWaveform(wavBuf, N, spkElems);
-            const std::vector<float> kw = realign_pass::kernelWeights(kernel, kernelWidth, peakSamp0,
-                                                               nSamp, nChan, mean.data());
-            if (!kw.empty()) {
-                for (int ch = 0; ch < pcaRef.nCh; ++ch) {
-                    std::vector<double>& ev = pcaRef.evec[static_cast<size_t>(ch)];
-                    for (int k = 0; k < pcaRef.nComp; ++k)
-                        for (int u = 0; u < pcaRef.data2use; ++u) {
-                            const int s = pcaRef.recShift + u;
-                            const double w = (s >= 0 && s < nSamp)
-                                ? static_cast<double>(kw[static_cast<size_t>(s)]) : 0.0;
-                            ev[static_cast<size_t>(k) * static_cast<size_t>(pcaRef.data2use)
-                               + static_cast<size_t>(u)] *= w;
-                        }
-                }
-                log << "PCA-projection refine under the "
-                    << realignKernelName(kernel, kernelWidth) << " window.\n";
-            }
-        }
+        const PcaBasis pcaRef = realignRefineBasis(pca, channelSelection, kernel, kernelWidth, peakSamp0,
+                                                   nSamp, nChan, wavBuf, N, log);
 
         log << "PCA-projection refine pass: search ±" << maxShift
             << " samples, "
@@ -1328,362 +1735,24 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
               / (static_cast<int64_t>(sizeof(short)) * totalNbChanP82);
 
             // Scratch buffers reused across spikes.
-            std::vector<int16_t> rawFrame(
-                static_cast<size_t>(nSamp * totalNbChanP82));
-            std::vector<int16_t> candCM(static_cast<size_t>(spkElems));
-
-            // Use the SMALLER of pca.nCh and nChan in case they disagree
-            // (stderiv pipelines drop one channel; pca.nCh = nChan - 1).
-            const int chForPca = std::min(pca.nCh, nChan);
-            const int kComp    = pca.nComp;
-            const int d2u      = pca.data2use;
-            const int rShift   = pca.recShift;
-            const bool centered = pca.centered;
-            const bool useStder = isStderivRealign;
-
-            int nRefined = 0;
-            int nClamped = 0;   // spikes where the search bumped the .fil edge
-
-            // ── GPU PCA-refine fast path ─────────────────────────────────
-            // For large clusters this replaces the per-spike per-candidate
-            // CPU loop below with: one wide .fil read per spike (covers all
-            // candidates) + one GPU kernel that evaluates every (spike,
-            // candidate) PCA energy and returns the argmax shift per spike.
-            //
-            // Returns true when the GPU path completed; otherwise we fall
-            // through to the CPU loop unchanged.
-            _rtSetupMs = _rtmr.elapsed();
-            bool gpuPathRan = false;
-            do {
-                if (!PcaRefineGpu::hasGpu()) break;
-                if (N < PcaRefineGpu::gpuThreshold()) break;
-                // The GPU kernel's stderiv is fixed: the all-pairs spatial
-                // derivative seeded with zero.  The CPU loop below applies the
-                // .spk's own transform (stderivOrder: _C<n>, _S<n>, an
-                // sdiffPairs pattern or expression, seeded from the previous
-                // sample), so for a stderiv feature space the two would score
-                // different waveforms and pick different shifts.  Only the raw
-                // space, where both project the same samples, takes the GPU.
-                if (useStder) break;
-                if (nChan > 256) break;        // safety — kernel sums across nChan in one block
-                const int M       = 2 * maxShift + 1;
-                // Each candidate c in [0,M) feeds the kernel rShift+d2u raw
-                // samples at channel-row offset [c, c+rShift+d2u); the widest
-                // candidate (c = 2*maxShift) therefore needs
-                // 2*maxShift + rShift + d2u samples per channel row.  The old
-                // nSamp+2*maxShift only covers that when nSamp >= rShift+d2u.
-                // When the stderiv pre-roll plus the PCA window exceed nSamp
-                // (e.g. d2u == nSamp with rShift >= 1) the top candidates read
-                // past their channel row — into the next channel for interior
-                // spikes, and past the d_raw allocation for the last spike,
-                // which raises an illegal memory access that poisons the CUDA
-                // context for the rest of the session (every later GPU call,
-                // including the grouping-assistant malloc, then fails sticky).
-                // Size the buffer for the widest read so the absolute samples
-                // each candidate uses are unchanged but never truncated.
-                const int wideLen = 2 * maxShift + std::max(nSamp, rShift + d2u);
-
-                // Bound the working buffer at ~512 MB to avoid surprising
-                // the GPU on very large clusters.  Above this the CPU loop
-                // is still fast enough that splitting the batch isn't
-                // worth the code.
-                const long long rawBytes =
-                    static_cast<long long>(N) * nChan * wideLen * sizeof(int16_t);
-                if (rawBytes > static_cast<long long>(512) * 1024 * 1024) break;
-
-                std::vector<int16_t> rawWindows(
-                    static_cast<size_t>(N) * nChan * wideLen, 0);
-                std::vector<int> validRow(static_cast<size_t>(N), 1);
-
-                // ── Phase A — read one wide window per spike ────────────
-                // Saves ~M× the .fil syscalls vs the CPU per-candidate loop.
-                // A spike whose widest candidate runs off the .fil edge
-                // gets validRow[i]=0 — those drop into the CPU path so
-                // edge-clamp accounting (nClamped) matches the legacy
-                // behaviour exactly.
-                int prepared = 0;
-                for (int64_t i = 0; i < N; ++i) {
-                    const int   curr = cumShift[static_cast<size_t>(i)];
-                    const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
-                    const int64_t leftStart = baseTs - maxShift
-                                            - static_cast<int64_t>(peakSamp0);
-                    if (leftStart < 0 ||
-                        leftStart + wideLen > totalSamplesP82) {
-                        validRow[static_cast<size_t>(i)] = 0;
-                        continue;
-                    }
-                    const std::int64_t rawOff = static_cast<std::int64_t>(leftStart)
-                                       * static_cast<std::int64_t>(totalNbChanP82)
-                                       * static_cast<std::int64_t>(sizeof(short));
-                    if (neurosuite::core::fseek64(filFp82, rawOff, SEEK_SET) != 0) {
-                        validRow[static_cast<size_t>(i)] = 0;
-                        continue;
-                    }
-                    // Read sample-major into rawFrame (reused), then
-                    // gather to channel-major into rawWindows.
-                    std::vector<int16_t> wide(
-                        static_cast<size_t>(wideLen) * totalNbChanP82);
-                    if (fread(wide.data(), sizeof(short),
-                              wide.size(), filFp82) != wide.size()) {
-                        validRow[static_cast<size_t>(i)] = 0;
-                        continue;
-                    }
-                    int16_t* spkBase = rawWindows.data()
-                                     + static_cast<size_t>(i) * nChan * wideLen;
-                    for (int t = 0; t < wideLen; ++t)
-                        for (int ci = 0; ci < nChan; ++ci)
-                            spkBase[static_cast<size_t>(ci) * wideLen + t] =
-                                wide[static_cast<size_t>(t) * totalNbChanP82
-                                   + groupChannelsP82[ci]];
-                    ++prepared;
-                }
-
-                if (prepared < PcaRefineGpu::gpuThreshold()) break;
-
-                // ── Phase B — pack PCA basis into flat float arrays ─────
-                std::vector<float> evecFlat(
-                    static_cast<size_t>(chForPca) * kComp * d2u);
-                std::vector<float> meansFlat(
-                    centered ? static_cast<size_t>(chForPca) * d2u : 0);
-                for (int ch = 0; ch < chForPca; ++ch) {
-                    const auto& ev = pcaRef.evec[static_cast<size_t>(ch)];
-                    for (int k = 0; k < kComp; ++k)
-                        for (int u = 0; u < d2u; ++u)
-                            evecFlat[static_cast<size_t>(ch) * kComp * d2u
-                                   + static_cast<size_t>(k) * d2u + u] =
-                                static_cast<float>(ev[static_cast<size_t>(k) * d2u + u]);
-                    if (centered) {
-                        const auto& mu = pca.means[static_cast<size_t>(ch)];
-                        for (int u = 0; u < d2u; ++u)
-                            meansFlat[static_cast<size_t>(ch) * d2u + u] =
-                                static_cast<float>(mu[static_cast<size_t>(u)]);
-                    }
-                }
-
-                // ── Phase C — kernel launch + best-shift collection ─────
-                std::vector<int> bestShiftGpu(static_cast<size_t>(N), 0);
-                const int rc = PcaRefineGpu::refine(
-                    static_cast<int>(N), M, wideLen, nSamp, nChan, chForPca,
-                    kComp, d2u, rShift, maxShift,
-                    centered ? 1 : 0, useStder ? 1 : 0,
-                    rawWindows.data(),
-                    evecFlat.data(),
-                    centered ? meansFlat.data() : nullptr,
-                    bestShiftGpu.data());
-                if (rc != 0) {
-                    log << "  PCA-refine GPU dispatch returned "
-                        << rc << " — falling back to CPU.\n";
-                    emitFlush();
-                    break;
-                }
-
-                // ── Phase D — apply shifts + refresh wavBuf per spike ────
-                // For spikes where validRow[i] == 0 (edge-clamped), we
-                // mark them as clamped and leave cumShift untouched —
-                // matches the CPU path's "every candidate ran off the
-                // .fil edge" accounting.
-                std::vector<int16_t> gpuFrame(
-                    static_cast<size_t>(nSamp) * totalNbChanP82);
-                for (int64_t i = 0; i < N; ++i) {
-                    if (!validRow[static_cast<size_t>(i)]) { ++nClamped; continue; }
-                    // The candidates are raw cuts: a collision row keeps the lag its
-                    // corrected record gave.
-                    if (measuredCorrected[static_cast<size_t>(i)]) continue;
-                    const int bestS = bestShiftGpu[static_cast<size_t>(i)];
-                    if (bestS == 0) continue;
-
-                    cumShift[static_cast<size_t>(i)] = cumShift[static_cast<size_t>(i)] + bestS;
-                    ++nRefined;
-
-                    // Refresh wavBuf[i] from .fil at the chosen position
-                    // (same logic as the CPU branch below).
-                    const int64_t bestStart =
-                        clusterTs[static_cast<size_t>(i)] + cumShift[static_cast<size_t>(i)]
-                      - static_cast<int64_t>(peakSamp0);
-                    const std::int64_t bestOff = static_cast<std::int64_t>(bestStart)
-                                        * static_cast<std::int64_t>(totalNbChanP82)
-                                        * static_cast<std::int64_t>(sizeof(short));
-                    if (neurosuite::core::fseek64(filFp82, bestOff, SEEK_SET) != 0) continue;
-                    if (fread(gpuFrame.data(), sizeof(short),
-                              gpuFrame.size(), filFp82)
-                            != gpuFrame.size()) continue;
-                    int16_t* wTgt = wavBuf.data()
-                        + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-                    for (int t = 0; t < nSamp; ++t)
-                        for (int ci = 0; ci < nChan; ++ci)
-                            wTgt[static_cast<size_t>(ci) * nSamp + t] =
-                                gpuFrame[static_cast<size_t>(t) * totalNbChanP82
-                                       + groupChannelsP82[ci]];
-                    if (useStder) {
-                        std::vector<int16_t> seedBuf;
-                        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(filFp82, bestOff, totalNbChanP82, groupChannelsP82,
-                            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
-                        neurosuite::core::applyStderivTransform(stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr,
-                            seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
-                    }
-                }
-                gpuPathRan = true;
-            } while (false);
-
-            // ── CPU per-spike refine (GPU path not taken) ────────────────────
-            // Each spike's best-shift search is independent: it reads from
-            // .fil and writes only its own cumShift[i] and wavBuf[i] slot.  The
-            // only shared mutable state is the .fil handle (its file position)
-            // and the rawFrame/candCM scratch buffers, so we parallelise across
-            // spikes — each thread gets its own handle + buffers.  Falls back to
-            // a serial loop when OpenMP is unavailable or per-thread handles
-            // cannot be opened, giving identical results either way.
-            if (!gpuPathRan) {
-                enum class RefineResult { None, Refined, Clamped };
-                auto refineSpike =
-                    [&](int64_t i, FILE* spikeFp,
-                        std::vector<int16_t>& frameBuf,
-                        std::vector<int16_t>& candBuf) -> RefineResult {
-                // The candidates are raw cuts: a collision row keeps the lag its
-                // corrected record gave.
-                if (measuredCorrected[static_cast<size_t>(i)]) return RefineResult::None;
-                const int   curr = cumShift[static_cast<size_t>(i)];
-                const int64_t baseTs = clusterTs[static_cast<size_t>(i)] + curr;
-                int bestS = 0;
-                double bestEnergy = -1.0;
-                int validCandidates = 0;
-                for (int s = -maxShift; s <= maxShift; ++s) {
-                    const int64_t candStart = baseTs + s
-                                            - static_cast<int64_t>(peakSamp0);
-                    if (candStart < 0 ||
-                        candStart + nSamp > totalSamplesP82) continue;
-
-                    const std::int64_t rawOff = static_cast<std::int64_t>(candStart)
-                                       * static_cast<std::int64_t>(totalNbChanP82)
-                                       * static_cast<std::int64_t>(sizeof(short));
-                    if (neurosuite::core::fseek64(spikeFp, rawOff, SEEK_SET) != 0) continue;
-                    if (fread(frameBuf.data(), sizeof(short),
-                              frameBuf.size(), spikeFp)
-                            != frameBuf.size()) continue;
-
-                    // Subset to group channels (sample-major in rawFrame
-                    // → channel-major for PCA projection).
-                    for (int t = 0; t < nSamp; ++t)
-                        for (int ci = 0; ci < nChan; ++ci)
-                            candBuf[static_cast<size_t>(ci * nSamp + t)] =
-                                frameBuf[static_cast<size_t>(
-                                    t * totalNbChanP82 + groupChannelsP82[ci])];
-
-                    // Apply stderiv transform in-place if pipeline needs it.
-                    // Spatial order from the basis; matches the disk-write block.
-                    if (useStder) {
-                        std::vector<int16_t> seedBuf;
-                        const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(spikeFp, rawOff, totalNbChanP82, groupChannelsP82,
-                            stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
-                        neurosuite::core::applyStderivTransform(stderivOrder, candBuf.data(), nChan, nSamp, candBuf.data(), stderivPartnerPtr,
-                            seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
-                    }
-
-                    // PCA projection energy — shared primitive in
-                    // libneurosuite-core (same math the GPU kernel mirrors and
-                    // the plugin's Stage 2 uses).  candCM is channel-major
-                    // [ch*nSamp+t]; core derives chForPca/kComp/d2u/rShift/
-                    // centered from pca.  The core fn additionally bounds-guards
-                    // sIdx, a no-op here because the loader rejects any basis with
-                    // recShift + data2use > nSamp.
-                    const double energy = neurosuite::core::pcaProjectionEnergy(
-                        candBuf.data(), nChan, nSamp, pcaRef);
-                    ++validCandidates;
-
-                    if (energy > bestEnergy) {
-                        bestEnergy = energy;
-                        bestS = s;
-                    }
-                }
-
-                if (validCandidates == 0) {
-                    // Every candidate ran off the .fil edge — nothing we
-                    // can do, leave cumShift unchanged.
-                    return RefineResult::Clamped;
-                }
-                if (bestS == 0) return RefineResult::None;   // already optimal
-
-                cumShift[static_cast<size_t>(i)] = curr + bestS;
-
-                // Refresh wavBuf[i] from the .fil at the chosen position
-                // so the downstream score-stats block uses post-refine
-                // content.  We need to re-extract once more (we don't
-                // cache the per-candidate candCM, only the winning bestS).
-                {
-                    const int64_t bestStart =
-                        clusterTs[static_cast<size_t>(i)]
-                      + cumShift[static_cast<size_t>(i)]
-                      - static_cast<int64_t>(peakSamp0);
-                    const std::int64_t bestOff = static_cast<std::int64_t>(bestStart)
-                                        * static_cast<std::int64_t>(totalNbChanP82)
-                                        * static_cast<std::int64_t>(sizeof(short));
-                    if (neurosuite::core::fseek64(spikeFp, bestOff, SEEK_SET) == 0 &&
-                        fread(frameBuf.data(), sizeof(short),
-                              frameBuf.size(), spikeFp) == frameBuf.size()) {
-                        int16_t* wTgt = wavBuf.data()
-                            + static_cast<ptrdiff_t>(i)
-                            * static_cast<ptrdiff_t>(spkElems);
-                        for (int t = 0; t < nSamp; ++t)
-                            for (int ci = 0; ci < nChan; ++ci)
-                                wTgt[static_cast<size_t>(ci * nSamp + t)] =
-                                    frameBuf[static_cast<size_t>(
-                                        t * totalNbChanP82
-                                      + groupChannelsP82[ci])];
-                        if (useStder) {
-                            std::vector<int16_t> seedBuf;
-                            const int16_t* seed = !stderivSeeded ? nullptr : readStderivSeed(spikeFp, bestOff, totalNbChanP82, groupChannelsP82,
-                                stderivOrder, stderivPartnerPtr, stderivSetOffPtr, stderivSetMemPtr, seedBuf, stderivExprPtr);
-                            neurosuite::core::applyStderivTransform(stderivOrder, wTgt, nChan, nSamp, wTgt, stderivPartnerPtr,
-                                seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
-                        }
-                    }
-                }
-                return RefineResult::Refined;
-                };  // refineSpike
-
-                // Dispatch: parallel across spikes when OpenMP is available and
-                // the cluster is large enough to amortise thread setup; each
-                // thread opens its own .fil handle and owns its scratch buffers.
-                bool ranParallel = false;
-#ifdef _OPENMP
-                const int nThr = omp_get_max_threads();
-                if (nThr > 1 && N >= 64) {
-                    std::vector<FILE*> fh(static_cast<size_t>(nThr), nullptr);
-                    bool allOpen = true;
-                    for (int t = 0; t < nThr; ++t) {
-                        fh[static_cast<size_t>(t)] =
-                            fopen(filPathP82.toLocal8Bit().constData(), "rb");
-                        if (!fh[static_cast<size_t>(t)]) { allOpen = false; break; }
-                    }
-                    if (allOpen) {
-                        #pragma omp parallel reduction(+:nRefined, nClamped)
-                        {
-                            const int tid = omp_get_thread_num();
-                            FILE* filT = fh[static_cast<size_t>(tid)];
-                            std::vector<int16_t> rawT(rawFrame.size());
-                            std::vector<int16_t> candT(candCM.size());
-                            #pragma omp for schedule(dynamic, 16)
-                            for (int64_t i = 0; i < N; ++i) {
-                                const RefineResult r =
-                                    refineSpike(i, filT, rawT, candT);
-                                if (r == RefineResult::Refined)      ++nRefined;
-                                else if (r == RefineResult::Clamped) ++nClamped;
-                            }
-                        }
-                        ranParallel = true;
-                    }
-                    for (FILE* h : fh) if (h) fclose(h);
-                }
-#endif
-                if (!ranParallel) {
-                    for (int64_t i = 0; i < N; ++i) {
-                        const RefineResult r =
-                            refineSpike(i, filFp82, rawFrame, candCM);
-                        if (r == RefineResult::Refined)      ++nRefined;
-                        else if (r == RefineResult::Clamped) ++nClamped;
-                    }
-                }
-            }  // if (!gpuPathRan)
+            RealignRefineInput refine;
+            refine.rawPath       = filPathP82;
+            refine.totalSamples  = totalSamplesP82;
+            refine.totalNbChan   = totalNbChanP82;
+            refine.groupChannels = groupChannelsP82;
+            refine.nChan = nChan; refine.nSamp = nSamp; refine.peakSamp0 = peakSamp0; refine.maxShift = maxShift;
+            refine.pca = &pca; refine.pcaRef = &pcaRef;
+            refine.stderiv = isStderivRealign; refine.stderivSeeded = stderivSeeded;
+            refine.stderivOrder   = stderivOrder;
+            refine.stderivPartner = stderivPartnerPtr;
+            refine.stderivSetOff  = stderivSetOffPtr;
+            refine.stderivSetMem  = stderivSetMemPtr;
+            refine.stderivExpr    = stderivExprPtr;
+            refine.clusterTs = &clusterTs;
+            refine.measuredCorrected = &measuredCorrected;
+            refine.computeStarts = [&]() { _rtSetupMs = _rtmr.elapsed(); };
+            int nRefined = 0, nClamped = 0;
+            realignPcaRefineSearch(filFp82, refine, cumShift, wavBuf, nRefined, nClamped, log, emitFlush);
             fclose(filFp82);
             _rtComputeMs = _rtmr.elapsed();
 
