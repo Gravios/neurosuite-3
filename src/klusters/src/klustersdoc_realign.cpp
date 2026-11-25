@@ -742,6 +742,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             _lineBuf.clear();
         }
     };
+    // Whatever is written and not yet sent goes out when the function returns: most of the
+    // refusals below write their reason and return at once.
+    struct FlushOnReturn {
+        std::function<void()> flush;
+        ~FlushOnReturn() { flush(); }
+    } flushOnReturn{ emitFlush };
 
     // Per-phase wall-clock timing, opt-in via NS3_REALIGN_TIMING=1.  Emits one
     // line per cluster (setup / compute / writeback / total) so a batch can be

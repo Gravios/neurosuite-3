@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: a realign that cannot run says why](#2026-11-24--realign-a-realign-that-cannot-run-says-why) |
 | 2026-11-24 | [Realign: the final scores and their summary are library functions](#2026-11-24--realign-the-final-scores-and-their-summary-are-library-functions) |
 | 2026-11-24 | [Realign: reading a cluster's rows is three plain functions](#2026-11-24--realign-reading-a-clusters-rows-is-three-plain-functions) |
 | 2026-11-24 | [Realign: the pass loop is a library function](#2026-11-24--realign-the-pass-loop-is-a-library-function) |
@@ -282,6 +283,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: a realign that cannot run says why
+
+The reason a realign refused was written and then dropped before it reached the Realign panel. It is now sent on every return.
+
+<details>
+<summary>Details</summary>
+
+**The fault.** `KlustersDoc::realignSpikes` writes its log into a buffer and sends it on at
+chosen points. Most of its refusals wrote the reason and returned without sending it: a cluster
+that is not there, a missing file, a row of the `.spk`, `.res` or `.fet` that cannot be read, a
+failed correlation, pending files that cannot be opened. The Realign panel showed the lines up
+to the last one sent and stopped. The closing line of a realign that worked
+(`Done. N shifted. (pending save)`) was dropped the same way.
+
+**The fix.** What is written and not yet sent goes out when the function returns, by whatever
+way.
+
+**What changes for the curator.** A realign that cannot run now says why. Every realign's log
+ends with its `Done.` line, so Align All shows one more line per cluster.
+
+**Checked.** `test_realign_failure_is_logged.py`: a cluster that does not exist and a `.res`
+too short for the cluster's rows each leave their `ERROR:` line in the log and change no file;
+both checks fail on the build before this change. For eighteen realigns of the synthetic
+session the log differs from before by the `Done.` line only and the files are the same. The
+other refusals were not provoked.
+
+</details>
 
 ---
 
