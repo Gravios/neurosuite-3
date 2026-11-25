@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: reading a cluster's rows is three plain functions](#2026-11-24--realign-reading-a-clusters-rows-is-three-plain-functions) |
 | 2026-11-24 | [Realign: the pass loop is a library function](#2026-11-24--realign-the-pass-loop-is-a-library-function) |
 | 2026-11-24 | [Klusters developer docs: commands and preferences](#2026-11-24--klusters-developer-docs-commands-and-preferences) |
 | 2026-11-24 | [Klusters: the rest of the Preferences pages are filled from the table](#2026-11-24--klusters-the-rest-of-the-preferences-pages-are-filled-from-the-table) |
@@ -280,6 +281,39 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: reading a cluster's rows is three plain functions
+
+The file reads at the start of a realign moved out of `KlustersDoc::realignSpikes` into `realignio.h` and have a unit test. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What moved.** Reading a cluster's rows for a realign is now three functions on plain paths
+in `src/klusters/src/realignio.h`, with no document and no Qt: `readWaveforms` (the rows of the
+`.spk`, turned channel-major), `readTimesAndExtraFeatures` (the times from the `.res` and the
+feature columns that are not projections from the `.fet`) and `toChannelMajor`.
+`KlustersDoc::realignSpikes` calls them and is 90 lines shorter. The lines they add to the
+realign log are the ones the function wrote before.
+
+**Checked.**
+
+- `klusters_test_realignio` (19 checks) on files it writes: values land at
+  [spike][channel][sample] in the order of the rows asked; times and extra columns; a `.fet`
+  whose header disagrees with the session is read by its own width with a warning; a row past
+  the end of the `.spk` or `.res` is an error naming the row; a feature past the end of the
+  `.fet` is a warning and stays 0; a missing file.
+- The application before and after writes the same whole realign log and the same bytes in
+  every `.res`, `.spk`, `.fet` and `.clu` for realigns of two clusters of the synthetic session
+  under nine settings (thresholds 0.10, 0.70, 0.95; the three windows; the three modes).
+
+**Noticed, not changed.** A read that fails makes `realignSpikes` return without sending the
+error line it has just written to the log: the curator sees the realign fail and not why. The
+same holds for several other early returns of that function.
+
+</details>
 
 ---
 

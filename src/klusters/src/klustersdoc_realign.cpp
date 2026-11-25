@@ -29,6 +29,7 @@
 #include <system_error>
 #include "filecommit.h"
 #include "realign_pass.h"
+#include "realignio.h"
 #include <stdint.h>
 #ifdef _OPENMP
 #include <omp.h>            // CPU-fallback realign parallelisation
@@ -1012,52 +1013,22 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         << (N * bytesPerSpike / (1024*1024)) << " MB)...\n";
     emitFlush();
 
-    std::vector<int16_t> wavBuf(static_cast<size_t>(N) * spkElems);
+    // The cluster's rows of the .spk, channel-major ([ch * nSamp + s]: the passes' and
+    // XcorrDispatch's layout; the file is sample-major).  realignio.h.
+    const auto logReadLines = [&](const realign_io::Outcome& o) {
+        for (const std::string& line : o.lines) log << QString::fromStdString(line) << "\n";
+    };
+    std::vector<int16_t> wavBuf;
     {
-        FILE* sf = fopen(spkPath.toLocal8Bit().constData(), "rb");
-        if (!sf) {
-            log << "ERROR: cannot open " << spkPath << "\n";
-            return false;
-        }
-        for (int64_t i = 0; i < N; ++i) {
-            const std::int64_t off = static_cast<std::int64_t>((gidx[static_cast<size_t>(i)] * bytesPerSpike));
-            if (neurosuite::core::fseek64(sf, off, SEEK_SET) != 0) {
-                fclose(sf);
-                log << "ERROR: .spk seek failed at spike "
-                    << gidx[static_cast<size_t>(i)] << "\n";
-                return false;
-            }
-            int16_t* dst = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            if (fread(dst, 2, spkElems, sf) != spkElems) {
-                fclose(sf);
-                log << "ERROR: .spk short read at spike "
-                    << gidx[static_cast<size_t>(i)] << "\n";
-                return false;
-            }
-        }
-        fclose(sf);
+        const realign_io::Outcome read =
+            realign_io::readWaveforms(spkPath.toLocal8Bit().toStdString(), gidx, nChan, nSamp, wavBuf);
+        if (read.cannotOpen) log << "ERROR: cannot open " << spkPath << "\n";
+        logReadLines(read);
+        if (!read.ok) return false;
     }
     log << "Waveforms loaded.\n";
     emitFlush();
 
-    // -----------------------------------------------------------------------
-    // Transpose wavBuf from sample-major (.spk on-disk: [s * nChan + ch])
-    // to channel-major (algorithm + XcorrDispatch: [ch * nSamp + s]).
-    // -----------------------------------------------------------------------
-    {
-        std::vector<int16_t> cm(static_cast<size_t>(N) * spkElems);
-        for (int64_t i = 0; i < N; ++i) {
-            const int16_t* src = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            int16_t* dst = cm.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            for (int s = 0; s < nSamp; ++s)
-                for (int ch = 0; ch < nChan; ++ch)
-                    dst[ch * nSamp + s] = src[s * nChan + ch];
-        }
-        wavBuf = std::move(cm);
-    }
     // The stored windows, unrolled (channel-major).  The shift passes roll
     // wavBuf circularly as a working copy; what is written is either a fresh
     // cut from the raw file at the new time or, for a spike that does not
@@ -1083,10 +1054,8 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                     || static_cast<int64_t>((*it)->size()) != bytesPerSpike) continue;
                 // reinterpret_cast: the record's bytes are the .spk's int16 samples, sample-major.
                 const int16_t* src = reinterpret_cast<const int16_t*>((*it)->constData());
-                int16_t* dst = wavBuf.data() + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-                for (int s = 0; s < nSamp; ++s)
-                    for (int ch = 0; ch < nChan; ++ch)
-                        dst[ch * nSamp + s] = src[s * nChan + ch];
+                realign_io::toChannelMajor(src, nChan, nSamp,
+                    wavBuf.data() + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems));
                 measuredCorrected[static_cast<size_t>(i)] = 1;
                 ++n;
             }
@@ -1108,78 +1077,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     }
 
     // -----------------------------------------------------------------------
-    // Read cluster timestamps and extra feature columns from binary files.
-    //
-    // Binary .res: N_total * int64_t, no header.
-    //   spike p (0-based) → byte offset p * 8
-    //
-    // Binary .fet: int32_t nDimensions; then N_total * nDimensions * int64_t
-    //   spike p (0-based), column c (0-based) →
-    //     byte offset sizeof(int32_t) + (p * nDimensions + c) * 8
-    //   columns 0..nFeatCols-1 = features; column nFeatCols = timestamp
+    // The cluster's times (.res) and its feature columns that are not projections
+    // (.fet; carried over unchanged when the row is rewritten).  realignio.h.
     // -----------------------------------------------------------------------
-    std::vector<int64_t> clusterTs(static_cast<size_t>(N));
-    // Extra non-PCA feature columns per cluster spike [spike][col]
-    std::vector<std::vector<int64_t>> extraFeats;
-    if (nExtraFeats > 0)
-        extraFeats.assign(static_cast<size_t>(N),
-                          std::vector<int64_t>(static_cast<size_t>(nExtraFeats), 0));
-
+    std::vector<int64_t> clusterTs;
+    std::vector<std::vector<int64_t>> extraFeats;      // [spike][column]
     {
-        FILE* rf = fopen(resPath.toLocal8Bit().constData(), "rb");
-        if (!rf) {
-            log << "ERROR: cannot open " << resPath << "\n";
-            return false;
-        }
-        FILE* ff = fopen(fetPath.toLocal8Bit().constData(), "rb");
-        if (!ff) {
-            fclose(rf);
-            log << "ERROR: cannot open " << fetPath << "\n";
-            return false;
-        }
-
-        // Validate .fet nDimensions header
-        int32_t fetNDim = 0;
-        if (fread(&fetNDim, sizeof(int32_t), 1, ff) != 1) {
-            fclose(rf); fclose(ff);
-            log << "ERROR: cannot read .fet header\n";
-            return false;
-        }
-        if (fetNDim != static_cast<int32_t>(timeDim)) {
-            log << "WARNING: .fet nDimensions=" << fetNDim
-                << " but timeDim=" << timeDim
-                << " — proceeding with file value\n";
-        }
-        const int32_t fileDim = (fetNDim > 0) ? fetNDim : static_cast<int32_t>(timeDim);
-
-        for (int64_t i = 0; i < N; ++i) {
-            const int64_t p = gidx[static_cast<size_t>(i)];
-
-            // Read timestamp from .res at byte offset p*8
-            if (neurosuite::core::fseek64(rf, static_cast<std::int64_t>((p * static_cast<int64_t>(sizeof(int64_t)))), SEEK_SET) != 0 ||
-                fread(&clusterTs[static_cast<size_t>(i)],
-                      sizeof(int64_t), 1, rf) != 1) {
-                fclose(rf); fclose(ff);
-                log << "ERROR: cannot read .res at spike " << p << "\n";
-                return false;
-            }
-
-            // Read extra feature columns from .fet row p
-            for (int k = 0; k < nExtraFeats; ++k) {
-                const int col = nPcaFeats + k;
-                const std::int64_t off = static_cast<std::int64_t>(sizeof(int32_t))
-                                + static_cast<std::int64_t>((p * static_cast<int64_t>(fileDim) + col))
-                                * static_cast<std::int64_t>(sizeof(int64_t));
-                if (neurosuite::core::fseek64(ff, off, SEEK_SET) != 0 ||
-                    fread(&extraFeats[static_cast<size_t>(i)][static_cast<size_t>(k)],
-                          sizeof(int64_t), 1, ff) != 1) {
-                    log << "WARNING: cannot read extra feat col=" << col
-                        << " spike=" << p << "\n";
-                }
-            }
-        }
-        fclose(rf);
-        fclose(ff);
+        const realign_io::Outcome read = realign_io::readTimesAndExtraFeatures(
+            resPath.toLocal8Bit().toStdString(), fetPath.toLocal8Bit().toStdString(),
+            gidx, timeDim, nPcaFeats, nExtraFeats, clusterTs, extraFeats);
+        if (read.cannotOpen) log << "ERROR: cannot open " << (read.cannotOpen == 1 ? resPath : fetPath) << "\n";
+        logReadLines(read);
+        if (!read.ok) return false;
     }
 
     // Seed convention of this stderiv .spk (see detectSpkSeeding): every

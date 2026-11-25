@@ -87,6 +87,7 @@ set(klusters_SRCS
     klustersdoc_recluster.cpp   # KlustersDoc reclustering subsystem (split from klustersdoc.cpp)
     klustersdoc_subsession.cpp  # KlustersDoc recluster sub-session (a fiber-kit plan on the selection)
     subsessionfiles.cpp         # its file operations (QtCore only; klusters_test_subsessionfiles)
+    realignio.cpp               # realign_io: the rows of one cluster read from .spk / .res / .fet (no document)
     undohistory.cpp             # UndoHistory: the entries, the steps and the depth of the one undo history
     klustersdoc_undo.cpp        # KlustersDoc undo/redo subsystem (split from klustersdoc.cpp)
     klustersdoc_hierarchy.cpp   # KlustersDoc hierarchical (.clc child) clustering (split from klustersdoc.cpp)

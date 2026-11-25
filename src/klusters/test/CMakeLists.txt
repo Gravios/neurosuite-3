@@ -74,6 +74,12 @@ target_include_directories(klusters_test_undohistory PRIVATE "${_klu_src}" "${_s
 target_link_libraries(klusters_test_undohistory PRIVATE Qt6::Core)
 add_test(NAME klusters_test_undohistory COMMAND klusters_test_undohistory)
 
+# What a realign reads of one cluster from .spk / .res / .fet (no session, no Qt).
+add_executable(klusters_test_realignio realignio_test.cpp "${_klu_src}/realignio.cpp")
+target_compile_features(klusters_test_realignio PRIVATE cxx_std_20)
+target_include_directories(klusters_test_realignio PRIVATE "${_klu_src}" "${_core}")
+add_test(NAME klusters_test_realignio COMMAND klusters_test_realignio)
+
 # Reserved clusters -- what an edit may do to the clusters a fiber-kit chunk
 # run reserved (header-only; types.h from libklustersshared).
 add_executable(klusters_test_reservedclusters reservedclusters_test.cpp)
