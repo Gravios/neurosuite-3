@@ -265,13 +265,20 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    in place of the undo / redo twins. The level stacks of `Data`, the colours and the views
    are still separate lists (§2).
 5. Split `realignSpikes` into a plan and its application (§1). The largest single gain in
-   legibility, and the way to a realign that can be cancelled and undone. Begun: the xcorr
-   passes (template, pre-roll, channel mask, correlation window, per-spike lag, roll) are
-   `realign_pass::clusterShifts` in `libklustersshared`, with a test that holds the old loop
-   and requires the same result. `realignSpikes` is still one function for everything
-   around them: choosing the space, reading the waveforms, the refinement and centering
-   passes, writing the rows, the child layer, the journal. Those are the next cuts, and
-   the plan / application boundary is not drawn until the writing is separate.
+   legibility, and the way to a realign that can be cancelled and undone. Begun; the
+   function is down from 2,085 lines to 1,780:
+   - the xcorr passes (template, pre-roll, channel mask, correlation window, per-spike lag,
+     roll) are `realign_pass::clusterShifts` in `libklustersshared`, and the scores and
+     summary that close the log are `finalScores` and `summarize` beside it. Their test
+     holds the old code and requires the same result;
+   - reading the cluster's rows of the `.spk`, `.res` and `.fet` is `realign_io`
+     (`realignio.h`), with a unit test on files it writes;
+   - the log is sent on every return: a refusal used to drop its reason.
+
+   Still one function: choosing the space and the basis, the PCA refinement (520 lines, the
+   largest part left), the centering, the new times, the feature rows, the verification
+   against the recording, writing the rows, the child layer, the journal. The plan /
+   application boundary is not drawn until the writing is separate from what precedes it.
 6. The matrix-view base (§8).
 7. The glossary and the renames (§6), one word per patch.
 8. Directories (§9), last: it touches every include and is cheap once the rest is settled.

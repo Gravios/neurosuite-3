@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Audit: where the split of realignSpikes stands](#2026-11-24--audit-where-the-split-of-realignspikes-stands) |
 | 2026-11-24 | [Realign: a realign that cannot run says why](#2026-11-24--realign-a-realign-that-cannot-run-says-why) |
 | 2026-11-24 | [Realign: the final scores and their summary are library functions](#2026-11-24--realign-the-final-scores-and-their-summary-are-library-functions) |
 | 2026-11-24 | [Realign: reading a cluster's rows is three plain functions](#2026-11-24--realign-reading-a-clusters-rows-is-three-plain-functions) |
@@ -283,6 +284,21 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Audit: where the split of realignSpikes stands
+
+The organization audit records the progress of its step 5.
+
+<details>
+<summary>Details</summary>
+
+`doc/klusters/ORGANIZATION-AUDIT.md`, order of work, step 5: what of `realignSpikes` has moved
+out (the passes, the final scores, the reads), what the function still holds, and where the
+plan / application boundary will be. Text only.
+
+</details>
 
 ---
 
