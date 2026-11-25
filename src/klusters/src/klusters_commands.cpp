@@ -108,8 +108,8 @@ QList<CommandSpec> KlustersApp::commandTable()
     // then a Yes/No confirmation (default Yes) before moving.
     t << CommandSpec("action.purgeSmallClusters", "Clusters", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
             .editing();
-    // Bulk artefact removal: move every spike more than 5 sigma from its cluster's
-    // per-dimension feature mean (in any one dimension) into the artefact cluster.
+    // Bulk artifact removal: move every spike more than 5 sigma from its cluster's
+    // per-dimension feature mean (in any one dimension) into the artifact cluster.
     // Non-mutating scan first, then a Yes/No confirmation showing the exact spike
     // count (default No, since it is destructive); undoable.
     t << CommandSpec("action.stripOutliers", "Split", tr("Strip Feature &Outliers (5\u03c3)\u2026"), ON(triggered, slotStripFeatureOutliers))
@@ -117,7 +117,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     // Waveform counterpart of the feature strip, and the interactive twin of
     // fiber-kit's consolidate mode=shed: strip each SELECTED cluster's own
     // worst-fitting spikes (residual to its median waveform, robust MAD tail)
-    // into ONE new cluster (not the artefact bin -- the strip is a hypothesis to
+    // into ONE new cluster (not the artifact bin -- the strip is a hypothesis to
     // review, so the shed spikes stay inspectable rather than being discarded).
     // Selection-scoped (not bulk) because it is shortcut-driven -- Shift+X acts
     // on the cluster under inspection.  Same non-mutating scan -> confirm ->
@@ -176,7 +176,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     // Mark/unmark the selected cluster(s) as template units.  Marked units are the
     // template library for this clustering; a save persists the set and (re)writes
     // their .wtf via the fiber-template plugin.  A gesture on the selection, like
-    // the move-to-noise/artefact actions, rather than a configuration dialog.
+    // the move-to-noise/artifact actions, rather than a configuration dialog.
     t << CommandSpec("action.markAsTemplate", "Clusters", tr("Mark/Unmark as &Template"), ON(triggered, slotToggleTemplate))
             .toolTip(tr("Toggle the selected cluster(s) as template units.  On save their linked "
                      "template waveforms (.wtf) are written in every available method.")).editing();
@@ -450,7 +450,7 @@ QList<CommandSpec> KlustersApp::commandTable()
     t << CommandSpec("tools.applyMultiLasso", "", tr("Split by &Lassos"), ON(triggered, slotApplyMultiLasso))
             .toolTip(tr("Split the kept multi-lassos by their overlaps (Enter)")).editing();
     // Reachable via menu / toolbar / Ctrl+3.
-    t << CommandSpec("tools.deleteArtifactSpikes", "", tr("Delete &Artifact Spikes"), ON(triggered, slotDeleteArtefact))
+    t << CommandSpec("tools.deleteArtifactSpikes", "", tr("Delete &Artifact Spikes"), ON(triggered, slotDeleteArtifact))
             .checkable().editing();
     // Reachable via menu / toolbar / Ctrl+4.
     t << CommandSpec("tools.deleteNoisySpikes", "", tr("Delete &Noisy Spikes"), ON(triggered, slotDeleteNoise))

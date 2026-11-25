@@ -175,12 +175,12 @@ public Q_SLOTS:
 
     /**
   * Updates the clusters which have been modified by the suppression of spikes
-  * (used to create a new cluster or simply move to the cluster of noise or artefact).
+  * (used to create a new cluster or simply move to the cluster of noise or artifact).
   * This method aims to reduce the number of clusters to draw.
   * @param modifiedClusters list of clusters from which spikes were taken from.
   * @param active true if the view is the active one, false otherwise.
   * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
-  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
   */
     inline void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion) override {
         spikesRemovedFromClusters(modifiedClusters,active);
@@ -188,7 +188,7 @@ public Q_SLOTS:
 
     /**
   * Updates the clusters which have been modified by the suppression of spikes
-  * (used to create a new cluster or simply move to the cluster of noise or artefact).
+  * (used to create a new cluster or simply move to the cluster of noise or artifact).
   * This method is call only during an undo otherwise the updateClusters is call.
   * There are 2 functions in order to reduce the number of clusters to draw whenever possible.
   * @param modifiedClusters list of clusters from which spikes were taken from.

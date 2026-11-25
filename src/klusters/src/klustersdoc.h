@@ -435,7 +435,7 @@ public:
      *  siblings next to the .clu (Hierarchy > Promote to Hierarchical Session).
      *
      *  With no .clc yet, every unit becomes one atom with the same id (the
-     *  artefact bin 0 gets atom 0): the atom layer starts as a copy of the unit
+     *  artifact bin 0 gets atom 0): the atom layer starts as a copy of the unit
      *  layer, the state Flatten Hierarchy leaves, and the child palette then
      *  splits real atoms.  An existing .clc that is nested in the .clu is kept
      *  and only its .clp is written; one that is not nested is refused.
@@ -796,7 +796,7 @@ public:
      *  without deleting its spikes.  Equivalent to dropChildrenToBin({child}, 1). */
     bool dropChildToNoise(int childCluster, KlustersView& activeView);
     /** Delete at the child level: the atoms @p children are RECLASSIFIED onto the
-     *  reserve bin @p binId (1 = noise, 0 = artefact) -- their spikes leave their
+     *  reserve bin @p binId (1 = noise, 0 = artifact) -- their spikes leave their
      *  parent in the parent layer and keep their atom id, as dropChildToNoise does
      *  -- in one gesture.  Then the selection lands where the curator works next:
      *  on the nearest surviving SIBLING (the one above the lowest dropped id, else
@@ -851,7 +851,7 @@ public:
   * (Pearson, as in mergeOrphanChildren: a smaller copy of a unit still matches
   * it), and the orphans whose best correlation reaches @p minCorrelation are
   * grouped by that template.  The others are not merged at all: they go to
-  * @p unmatchedOut, if given, for the report.  The artefact and noise clusters
+  * @p unmatchedOut, if given, for the report.  The artifact and noise clusters
   * and the reserved chunk clusters take no part; an orphan without a waveform
   * is left out of both lists.
   * @return one group per matched template, ascending template id; no group is
@@ -881,7 +881,7 @@ public:
         bool   keepsParentId = false;   ///< the largest child with no target keeps the parent's id
     };
     /**Plans Break Up Parent by Template.  Every child of each parent in
-  * @p parents (noise, artefact and reserved chunk parents left out) is matched,
+  * @p parents (noise, artifact and reserved chunk parents left out) is matched,
   * by its own mean waveform, to the TEMPLATE -- the mean waveform -- of every
   * other parent with more than @p minTargetSpikes spikes; a parent being
   * broken up is never a target.  A child whose best correlation (Pearson, as in
@@ -1067,7 +1067,7 @@ public:
                                    int toCluster,
                                    KlustersView& activeView);
 
-    /**Manages the deletion of clusters, if @p clusterId is 0, the clusters are moved to cluster 0 (cluster of artefact)
+    /**Manages the deletion of clusters, if @p clusterId is 0, the clusters are moved to cluster 0 (cluster of artifact)
     * if @p clusterId is , the clusters are moved to cluster 1 (cluster of noise).
     * @param clustersToDelete list of clusters to be deleted.
     * @param activeView the view in which the change has to be immediate.
@@ -1091,7 +1091,7 @@ public:
     }
 
     /**
-    * Removes spikes from some clusters and assign them to the cluster 0, the cluster for the artefact.
+    * Removes spikes from some clusters and assign them to the cluster 0, the cluster for the artifact.
     * @param region the polygon defining the area containing the spikes corresponding to the noise.
     * @param clustersOfOrigin a list of the cluster numbers (in ascending order) identifying the clusters which
     * may contain spikes in the region.
@@ -1421,7 +1421,7 @@ public:
      *  act on (slotStripWaveformOutliers pools them, lifts each to its 1-based
      *  feature row and splits them off into ONE new cluster via the undoable
      *  createNewCluster -- the shed spikes stay inspectable rather than being
-     *  dropped into the artefact bin).  The waveform counterpart of Strip Feature
+     *  dropped into the artifact bin).  The waveform counterpart of Strip Feature
      *  Outliers, and the interactive twin of fiber-kit's consolidate mode=shed.
      *
      *  Metric, per spike x over the selected channels' points p (same as
@@ -1554,7 +1554,7 @@ public:
      *
      *  CHILDREN.  With @p onChildLayer the ids (and the seed) name children --
      *  the .clc layer -- and the scan reads that layer; the children of the
-     *  artefact and noise bins are skipped as the bins themselves are.  The
+     *  artifact and noise bins are skipped as the bins themselves are.  The
      *  returned indices are .spk rows either way.  The caller passes no chunk
      *  boundaries for children: a child is scored whole. */
     ResidualOutlierResult detectResidualOutliers(const QList<int>& clusters,
@@ -2566,7 +2566,7 @@ public Q_SLOTS:
     /** Renumber selected clusters to IDs greater than the current global
      *  maximum, so they end up at the tail of the (sorted-by-ID) palette.
      *  Triggered by the palette T shortcut.  Single undo entry covers
-     *  the whole batch.  IDs 0 / 1 (artefact / noise) and the
+     *  the whole batch.  IDs 0 / 1 (artifact / noise) and the
      *  global-max cluster are filtered by the caller. */
     void renumberClustersToEnd(QList<int> clustersToRenumber);
 
@@ -2872,7 +2872,7 @@ private:
 
     /**
     * Removes spikes from some clusters and assign them to the cluster @pdestinationCluster
-    * which is either the cluster 0, corresponding to the artefact, or the cluster 1, corresponding to the noise.
+    * which is either the cluster 0, corresponding to the artifact, or the cluster 1, corresponding to the noise.
     * @param destination the cluster number to assign the spikes contained in the region.
     * @param region the polygon defining the area containing the spikes corresponding to the noise.
     * @param clustersOfOrigin a list of the cluster numbers (in ascending order) identifying the clusters which
@@ -2943,7 +2943,7 @@ private:
     * @param modifiedClusters the list of last modified clusters.
     * @param deletedClusters the list of last deleted clusters.
     * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
-    * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+    * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
    */
     void prepareUndo(QList<int>& modifiedClusters,QList<int>& deletedClusters,bool isModifiedByDeletion = false);
 
@@ -2953,7 +2953,7 @@ private:
     * @param modifiedClusters the list of last modified clusters.
     * @param deletedClusters the list of last deleted clusters.
     * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
-    * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+    * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
     */
     void prepareUndo(int newCluster, QList<int>& modifiedClusters,QList<int>& deletedClusters,bool isModifiedByDeletion = false);
 

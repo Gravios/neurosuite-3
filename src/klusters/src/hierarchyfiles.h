@@ -41,7 +41,7 @@ namespace hierarchyfiles {
  * Atom ids and fiber ids are DISJOINT, so that an id names one thing whichever
  * layer a view, a palette or a log line is looking at:
  *
- *     0, 1                       the artefact and noise bins: the one atom of
+ *     0, 1                       the artifact and noise bins: the one atom of
  *                                each bin carries the bin's own id
  *     2 .. 9999                  fibers (parents) only
  *     10002 .. 19999             SELF CHILDREN: the self child of fiber p is

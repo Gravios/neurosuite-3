@@ -260,7 +260,7 @@ Array<double>* GroupingAssistant::computeMeanProbabilitiesIncremental(
     // of fault as the dropped loop counters, and one value shared by every consumer
     // removes it by construction rather than by discipline.
     //
-    // (The clusterInfoMap->remove(Artefact) that historically sat below the
+    // (The clusterInfoMap->remove(Artifact) that historically sat below the
     // index build was a dead mutation — buildModelIndex is the map's only
     // reader, and it has already run — and the map is now the published
     // epoch's own table, which must never be mutated.)
@@ -560,7 +560,7 @@ Array<double>* GroupingAssistant::computeProbabilities(
     clusterInfoMap  = snap->clusterInfoMap;
     // The model index, computed ONCE for this compute and used everywhere
     // below — see the note in computeMeanProbabilitiesIncremental, including
-    // why the historical remove(Artefact) below it is gone.
+    // why the historical remove(Artifact) below it is gone.
     const QVector<ModelEntry> model = buildModelIndex(clusterInfoMap.get());
 
     int nbClusters = model.size();

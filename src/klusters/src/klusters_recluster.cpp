@@ -504,7 +504,7 @@ void KlustersApp::slotRecluster(){
             if(activeView())
                 sel = activeView()->clusters();
 
-            // Remove noise/artefact pseudo-clusters (0 and 1) — they have no
+            // Remove noise/artifact pseudo-clusters (0 and 1) — they have no
             // meaningful feature spread and would dilute the variance estimate.
             sel.removeAll(0);
             sel.removeAll(1);
@@ -838,7 +838,7 @@ void KlustersApp::slotRecluster(){
     // residual structure).  Takes precedence over the mean-subtracted subdim
     // path when both are enabled.  Writes a small K-component residual-PCA .fet
     // and overrides %features to match.  (clustersToRecluster is sorted, so
-    // first() > 1 means the selection contains no noise/artefact pseudo-cluster.)
+    // first() > 1 means the selection contains no noise/artifact pseudo-cluster.)
     if ((reclusterOnceMode==ReclusterOnce::MedianResidual ||
          (reclusterOnceMode==ReclusterOnce::None &&
           configuration().getReclusterMedianWaveformResidual())) &&

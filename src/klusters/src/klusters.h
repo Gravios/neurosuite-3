@@ -345,8 +345,8 @@ private Q_SLOTS:
     void slotApplyMultiLasso();
     /**Changes to a mode enabling the deletion of spikes from a cluster and move them to the cluster (number 1) containing the poorly isolated cells.*/
     void slotDeleteNoise();
-    /**Changes to a mode enabling the deletion of spikes from a cluster and move them to the cluster (number 0) containing the artefacts.*/
-    void slotDeleteArtefact();
+    /**Changes to a mode enabling the deletion of spikes from a cluster and move them to the cluster (number 0) containing the artifacts.*/
+    void slotDeleteArtifact();
     /**Changes to a mode enabling the user to zoom.*/
     void slotZoom();
     /**Increases scatter plot point size (+ key).*/
@@ -419,19 +419,19 @@ private Q_SLOTS:
      *  (KlustersDoc::dropChildrenToBin -- their spikes leave the parent, the
      *  selection lands on the next sibling, or on the next parent when the last
      *  atom went); otherwise the parent palette's selection is deleted as before.
-     *  @p reservedId is 1 (noise) or 0 (artefact). */
+     *  @p reservedId is 1 (noise) or 0 (artifact). */
     void slotDeleteSelected(int reservedId);
     /** Move every cluster with fewer than N spikes into the noise cluster (1),
      *  after asking for N and a Yes/No confirmation (default Yes). */
     void slotPurgeSmallClusters();
-    /** Strip feature-space artefacts: for every real cluster (id >= 2), move any
+    /** Strip feature-space artifacts: for every real cluster (id >= 2), move any
      *  spike lying more than 5 sigma from that cluster's per-dimension feature
-     *  mean (in ANY single feature dimension) into the artefact cluster (0).
+     *  mean (in ANY single feature dimension) into the artifact cluster (0).
      *  Detection is a non-mutating two-pass scan so the exact spike count can be
      *  confirmed before anything moves; the moves are undoable. */
     void slotStripFeatureOutliers();
     /** Actions: strip each selected cluster's own WAVEFORM outliers (residual to
-     *  its median waveform, robust MAD tail) into the artefact cluster.  The
+     *  its median waveform, robust MAD tail) into the artifact cluster.  The
      *  waveform counterpart of slotStripFeatureOutliers; shortcut Shift+X. */
     void slotStripWaveformOutliers();
     /** Actions: strip each selected cluster's residual outliers -- Shift+X's
@@ -522,10 +522,10 @@ private Q_SLOTS:
      *  spike count (high-count block upper-left, low-count lower-right). */
     void slotSortByResidualGated();
     /**Calls the document to move the clusters contain in @p selectedClusters list
-    * to the cluster of artefact (cluster 0) and trigger the update of the displays.
+    * to the cluster of artifact (cluster 0) and trigger the update of the displays.
     * @param selectedClusters list of clusters which have been selected to be moved
     */
-    void slotMoveClustersToArtefact(QList<int> selectedClusters);
+    void slotMoveClustersToArtifact(QList<int> selectedClusters);
     /**Sets the selection mode to immediate, disenabling the update action.*/
     void slotImmediateSelection();
     /**Set the selection mode to delay, enabling the update action.*/
@@ -765,7 +765,7 @@ public:
     /**Select all the clusters.*/
     void slotSelectAll();
 
-    /**Selects all the clusters except the clusters of artefact and noise
+    /**Selects all the clusters except the clusters of artifact and noise
    * (clusters 0 and 1 respectively).*/
     void slotSelectAllWO01();
 
@@ -1252,9 +1252,9 @@ private:
      *  plugin runs. */
     bool refuseWhileJobRuns(const QString& title);
 
-    /** Shared implementation of slotMoveClustersToNoise / ToArtefact.
+    /** Shared implementation of slotMoveClustersToNoise / ToArtifact.
      *  Both slots delete the selected clusters into a reserved ID
-     *  (1 = noise, 0 = artefact); the status string and the reserved
+     *  (1 = noise, 0 = artifact); the status string and the reserved
      *  ID are the only differences. */
     void moveSelectedClustersToReservedId(const QList<int>& selectedClusters,
                                            int reservedId,
@@ -1539,7 +1539,7 @@ private:
     QAction *mGroupeClusters;
     QAction *mAutoMerge;            // patch 0069 — Auto-Merge action
     QAction *mPurgeSmallClusters;   // move all clusters below N spikes to noise
-    QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artefact(0)
+    QAction *mStripOutliers;        // move >5-sigma feature-space outliers to artifact(0)
     QAction *mStripWaveformOutliers; // split waveform-residual outliers of selected clusters into a new cluster
     QAction *mStripResidualOutliers = nullptr; // gain-free on/off-channel residual strip (dialog)
     QAction *mSplitOffSpurious = nullptr;      // one cluster: its core kept, the spikes that are not it split off

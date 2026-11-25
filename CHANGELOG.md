@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Klusters code: artifact, not artefact](#2026-11-24--klusters-code-artifact-not-artefact) |
 | 2026-11-24 | [Glossary: one word per thing in Klusters](#2026-11-24--glossary-one-word-per-thing-in-klusters) |
 | 2026-11-24 | [Matrix views: one base for the grid, the pan and zoom, the follow](#2026-11-24--matrix-views-one-base-for-the-grid-the-pan-and-zoom-the-follow) |
 | 2026-11-24 | [Self-test: the four matrix views under the mouse](#2026-11-24--self-test-the-four-matrix-views-under-the-mouse) |
@@ -295,6 +296,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Klusters code: artifact, not artefact
+
+Identifiers and comments in the Klusters source use one spelling. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+In `src/klusters/` every identifier and comment spelled *artefact* is now *artifact*: 171
+places in 36 files, among them `moveClustersToArtifact`, `slotMoveClustersToArtifact`,
+`slotDeleteArtifact`, `deleteArtifactCursor`, the view mode `DELETE_ARTIFACT` and
+`DELETE_ARTIFACT_COLOR`. `deleteArtifact` was already spelled so.
+
+Left as they are, because a stored file or another program holds the name: the curation
+log's actions `DELETE_ARTEFACT` and `DELETE_REGION_ARTEFACT` with their enumerators, the
+command id `tools.deleteArtefact`, the image files `delete_artefact*.png`. Texts shown to the
+curator are not touched by this patch.
+
+The rename was made outside string literals by a script; the build and the whole suite are
+the check (the command and settings snapshots are unchanged).
+
+</details>
 
 ---
 

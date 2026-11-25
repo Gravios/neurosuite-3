@@ -156,7 +156,7 @@ void KlustersApp::slotDipSplit()
     if (!activeView() || !clusterPalette) return;
     if (doesActiveDisplayContainProcessWidget()) return;
 
-    // Pick the current cluster: first non-noise / non-artefact cluster
+    // Pick the current cluster: first non-noise / non-artifact cluster
     // shown in the active view.
     const QList<int>& shown = activeView()->clusters();
     int clusterId = -1;
@@ -353,7 +353,7 @@ void KlustersApp::dipPostCommitUndo()
             }
         }
         // Return focus to the palette — same convention as the other
-        // curation slots (slotMoveClustersToNoise, slotMoveClustersToArtefact).
+        // curation slots (slotMoveClustersToNoise, slotMoveClustersToArtifact).
         // The user invoked dipsplit from the palette; they should land
         // back there after undoing.  slotUndo's focusClusterView() is
         // wrong here because it targets the scatter widget.
@@ -692,7 +692,7 @@ void KlustersApp::slotNudgeTimestampPlus()  { nudgeSelectedSingleCluster(+1); }
 //
 // Edge cases:
 //   - the highest-numbered cluster is filtered out (already at the end)
-//   - 0 / 1 (artefact / noise) are filtered (special-cased throughout)
+//   - 0 / 1 (artifact / noise) are filtered (special-cased throughout)
 //   - empty selection or only-already-at-end → status message, no-op
 // ---------------------------------------------------------------------------
 void KlustersApp::slotMoveSelectedClustersToEnd()

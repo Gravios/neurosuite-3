@@ -69,7 +69,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
 
     QList<int> sources = sourceClusters;
     sources.removeAll(templateCluster);
-    sources.removeAll(ClusterId::Artefact);
+    sources.removeAll(ClusterId::Artifact);
     sources.removeAll(ClusterId::Noise);
     if (sources.isEmpty()) {
         R.reason = tr("No source clusters besides the template (artifact and "
@@ -408,7 +408,7 @@ KlustersDoc::stripByTemplate(int               templateCluster,
 // spikes against the cluster's OWN median waveform with the identical
 // kernel-weighted residual D, then flags the robust tail
 // median(D) + kMad*1.4826*MAD(D).  Non-mutating: the caller confirms the count
-// and moves the flagged rows to the artefact cluster through the same undoable
+// and moves the flagged rows to the artifact cluster through the same undoable
 // moveSpikeSubsetToCluster the feature-outlier strip uses.  Parent scope only,
 // matching that mutation path (idsBelongTo(parentData(), ...)).
 //
@@ -443,7 +443,7 @@ KlustersDoc::detectWaveformOutliers(const QList<int>& clusters,
     std::vector<float>   wav;
 
     for (int c : clusters) {
-        if (c < 2) continue;                        // never strip artefact / noise
+        if (c < 2) continue;                        // never strip artifact / noise
         SortableTable pos;
         if (!layer.spikePositions(c, pos)) continue;
         const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(c)));
@@ -902,7 +902,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
     auto name = [this, onChildLayer](int id) {
         return onChildLayer ? tr("child %1").arg(id) : clusterLabel(id);
     };
-    // The artefact / noise bins are never stripped: ids 0 and 1 in the parent
+    // The artifact / noise bins are never stripped: ids 0 and 1 in the parent
     // layer, and in the child layer the children OF those two.
     auto isBin = [this, onChildLayer](int id) {
         return onChildLayer ? (parentOfChild(id) < 2) : (id < 2);
@@ -1030,7 +1030,7 @@ KlustersDoc::detectResidualOutliers(const QList<int>& clusters,
     }
 
     for (int c : scored) {
-        if (isBin(c)) continue;                     // never strip artefact / noise
+        if (isBin(c)) continue;                     // never strip artifact / noise
         SortableTable pos;
         if (!layer.spikePositions(c, pos)) continue;
         const long n = static_cast<long>(layer.nbOfSpikes(static_cast<dataType>(c)));

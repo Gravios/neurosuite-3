@@ -76,14 +76,14 @@ public:
     /**Enum to be use as a Mode.
   * <ul>
   * <li>DELETE_NOISE Enumeration indicating that the user is in a mode enabling him to delete noisy spikes.</li>
-  * <li>DELETE_ARTEFACT Enumeration indicating that the user is in a mode enabling him to delete artefact spikes.</li>
+  * <li>DELETE_ARTIFACT Enumeration indicating that the user is in a mode enabling him to delete artifact spikes.</li>
   * <li>NEW_CLUSTER Enumeration indicating that the user is in a mode enabling him to create a new cluster.</li>
   * <li>NEW_CLUSTERS Enumeration indicating that the user is in a mode enabling him to create new clusters.</li>
   * </ul>
   * (SELECT_TIME was retired in the Overview redesign — the feature-view normal-cursor click
   *  now jumps the trace to the picked time; see ClusterView::pickSelectionTime.)
   */
-    enum {DELETE_NOISE = ZOOM+1,DELETE_ARTEFACT = ZOOM+2,NEW_CLUSTER = ZOOM+3,NEW_CLUSTERS = ZOOM+4,
+    enum {DELETE_NOISE = ZOOM+1,DELETE_ARTIFACT = ZOOM+2,NEW_CLUSTER = ZOOM+3,NEW_CLUSTERS = ZOOM+4,
           MULTI_LASSO = ZOOM+5};   ///< lassos are kept, then split together by their overlaps
 
 public Q_SLOTS:
@@ -155,18 +155,18 @@ public Q_SLOTS:
 
     /**
   * Updates the clusters which have been modified by the suppression of spikes
-  * (used to create a new cluster or simply move to the cluster of noise or artefact).
+  * (used to create a new cluster or simply move to the cluster of noise or artifact).
   * This method aims to reduce the number of clusters to draw.
   * @param modifiedClusters list of clusters from which spikes were taken from.
   * @param active true if the view is the active one, false otherwise.
   * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
-  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact abd cluster of noise respectively).
+  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact abd cluster of noise respectively).
   */
     virtual void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion) {}
 
     /**
   * Updates the clusters which have been modified by the suppression of spikes
-  * (used to create a new cluster or simply move to the cluster of noise or artefact).
+  * (used to create a new cluster or simply move to the cluster of noise or artifact).
   * This method is called only during an undo otherwise the updateClusters is call.
   * There are 2 functions in order to reduce the number of clusters to draw whenever possible.
   * @param modifiedClusters list of clusters from which spikes were taken from.

@@ -3802,7 +3802,7 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
         //Deal with the undo mechanism.  Spikes crossing the cluster-0 boundary
         //in EITHER direction change the dimension extrema: destination 0 removes
         //spikes from consideration (the sources in the list catch the shrink),
-        //and cluster 0 among the ORIGINS -- a lasso over artefact spikes sent to
+        //and cluster 0 among the ORIGINS -- a lasso over artifact spikes sent to
         //noise -- admits spikes, which the list containing 0 turns into the full
         //rescan they require.  The old gate only looked at the destination.
         bool dimChanged = (destinationCluster == 0) || fromClusters.contains(0);
@@ -3825,11 +3825,11 @@ void Data::deleteSpikesFromClusters(const SpikeSelection& selection, const QList
     }
 }
 
-void Data::moveClustersToArtefact(QList <int>& clustersToDelete){
+void Data::moveClustersToArtifact(QList <int>& clustersToDelete){
     // Entry self-heal (see createNewCluster): repair a pre-existing clusterInfoMap /
     // row-table desync before this builder tiles its table, so the edit proceeds
     // rather than being dropped by prepareUndo's net.
-    healClusterInfoMapIfDesynced("moveClustersToArtefact");
+    healClusterInfoMapIfDesynced("moveClustersToArtifact");
     //If clustersToDelete is not empty, the cluster 0 will be modified and the max and min dimensions
     //have to be recalculated. If minMaxThread is running, clusterZeroJustModified will
     //inform it that it has to stop (the computation will be done again on the new data).
@@ -4809,7 +4809,7 @@ void Data::moveClusters(QList<int>& clustersToDelete,SortableTable* spikesByClus
         // Desync guard: a missing key here would default-construct a
         // ClusterInfo (firstPos=0, nbSpikes=0), making the memcpy below
         // a 0-byte no-op AND still appending a (bogus) entry to
-        // positions/nbOfspikes — the caller (moveClustersToArtefact /
+        // positions/nbOfspikes — the caller (moveClustersToArtifact /
         // moveClustersToNoise) would then operate on a list with extra
         // zero-spike entries, producing wrong totals and an
         // inconsistent destination cluster.  Skip with a warning so
@@ -5140,7 +5140,7 @@ void Data::renumberPartial(const QMap<int,int>& oldToNew)
     // Sanity: no entry may remap 0 or 1, or a reserved cluster (it keeps its id), or
     // give a cluster a reserved id (that would add spikes to a reserved cluster).
     for (auto it = oldToNew.constBegin(); it != oldToNew.constEnd(); ++it) {
-        if (it.key() == 0 || it.key() == 1) return;        // would corrupt artefact/noise
+        if (it.key() == 0 || it.key() == 1) return;        // would corrupt artifact/noise
         if (it.value() == 0 || it.value() == 1) return;
         if (protectsReserved && (isReservedClusterId(it.key()) || isReservedClusterId(it.value()))) {
             qWarning() << "Data::renumberPartial: REFUSING to rename" << it.key() << "to" << it.value()

@@ -2,7 +2,7 @@
  *  curationlogger.h  —  JSON-Lines audit log for Klusters manual curation
  *
  *  Records cluster characteristic snapshots before and after every curation
- *  action (group, split, recluster, realign, nudge, delete-to-noise/artefact).
+ *  action (group, split, recluster, realign, nudge, delete-to-noise/artifact).
  *  The resulting log file is human-readable and directly importable into
  *  pandas/scikit-learn for empirical decision-tree training.
  *
@@ -131,7 +131,7 @@ struct ClusterSnapshot
     /// Mean excess kurtosis across dims (0 = Gaussian; >0 = heavy tails).
     double  featKurtosisMean = 0.0;
     /// Max excess kurtosis across dims.
-    /// Positive → outlier spikes (artefact); negative → platykurtic → bimodal candidate.
+    /// Positive → outlier spikes (artifact); negative → platykurtic → bimodal candidate.
     double  featKurtosisMax  = 0.0;
 
     // ── E. Temporal stability ─────────────────────────────────────────────
@@ -139,7 +139,7 @@ struct ClusterSnapshot
     /// normalised by featVarFrobenius.  > 0.3 → waveform drift → REALIGN.
     double  temporalDriftIndex = 0.0;
     /// CV of spike count across 10 equal time bins.
-    /// ~0 = stable rate; >1 = sporadic / artefact-like.
+    /// ~0 = stable rate; >1 = sporadic / artifact-like.
     double  temporalRateCv     = 0.0;
 
     // ── F. Global context ─────────────────────────────────────────────────
@@ -231,6 +231,8 @@ public:
         REALIGN         = 4,  ///< Spike waveform realignment, in-place
         NUDGE           = 5,  ///< Timestamp ±1 sample shift, in-place
         DELETE_NOISE    = 6,  ///< Move entire cluster → cluster 1
+        // The two ..._ARTEFACT names are written to the log as they stand and read by
+        // other programs: they keep this spelling (the code says "artifact" elsewhere).
         DELETE_ARTEFACT = 7,  ///< Move entire cluster → cluster 0
         DELETE_REGION_NOISE    = 8, ///< Region selection moved → cluster 1
         DELETE_REGION_ARTEFACT = 9, ///< Region selection moved → cluster 0

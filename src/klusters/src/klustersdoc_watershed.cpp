@@ -111,7 +111,7 @@ int KlustersDoc::watershedSelectedClusters(const QList<int>& selectedClusters,
     QList<int>  inputs = selectedClusters;
     if (inputs.isEmpty()) return 0;
 
-    // Drop 0 / 1 from input — we never reassign artefact / noise spikes.
+    // Drop 0 / 1 from input — we never reassign artifact / noise spikes.
     inputs.removeAll(0);
     inputs.removeAll(1);
     if (inputs.isEmpty()) return 0;
@@ -393,7 +393,7 @@ int KlustersDoc::watershedSelectedChildren(const QList<int>& selectedChildren,
     QList<int> inputs = selectedChildren;
     if (inputs.isEmpty()) return 0;
 
-    // 0 / 1 are the artefact / noise self atoms -- never reassigned, exactly
+    // 0 / 1 are the artifact / noise self atoms -- never reassigned, exactly
     // as the parent path never reassigns the reserved parents.
     inputs.removeAll(0);
     inputs.removeAll(1);

@@ -161,7 +161,7 @@ public:
     void clearPaletteScope(){ paletteScope.clear(); paletteScoped = false; }
     /** Set a VIEW-ONLY display order for the PARENT palette: the >= 2 clusters are
      *  listed in the given cluster-id order (produced by Reorder-by-similarity in
-     *  display-only mode), with the artefact(0)/noise(1) specials pinned first and
+     *  display-only mode), with the artifact(0)/noise(1) specials pinned first and
      *  any cluster not named in the order appended afterwards in natural id order.
      *  Cluster ids are NOT changed.  This is a parent-level feature only: on a
      *  child-scoped palette the call is ignored, so child lists keep their natural
@@ -227,7 +227,7 @@ public Q_SLOTS:
     void toggleCurrentSelection();
     void changeColor(QListWidgetItem *item);
     void moveClustersToNoise();
-    void moveClustersToArtefact();
+    void moveClustersToArtifact();
     void groupClusters();
     void updateClusters();
 
@@ -253,7 +253,7 @@ Q_SIGNALS:
     void selectionClickedAgain(const QList<int>& selectedClusters);
     void groupClusters(const QList<int> &selectedClusters);
     void moveClustersToNoise(const QList<int> &selectedClusters);
-    void moveClustersToArtefact(const QList<int> &selectedClusters);
+    void moveClustersToArtifact(const QList<int> &selectedClusters);
     void clusterInformationModified();
     /** Forwarded from ClusterPaletteWidget: emitted when the palette gains
      *  keyboard focus. klusters.cpp uses this to switch to the Overview tab. */

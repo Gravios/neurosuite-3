@@ -1909,7 +1909,7 @@ void KlustersView::changeClusterIds(QMap<int,int>& clusterIds){
     // operator[] form returned 0 for missing keys AND mutated the
     // caller's map by inserting the missing key with a default value
     // — both of which were silent bugs for partial-rename callers
-    // (any cluster not in the map would become cluster 0 = artefact).
+    // (any cluster not in the map would become cluster 0 = artifact).
     // Existing full-map callers (renumber / undoRenumbering build a
     // covering map) are unaffected by this change.
     for (int cid : *shownClusters)

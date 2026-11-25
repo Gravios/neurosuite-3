@@ -503,7 +503,7 @@ void ClusterPalette::updateClusterList(){
 
     // Visiting order over ItemColors indices.  Default is natural (index) order.
     // A parent-level similarity order (set by Reorder-by-similarity in display-only
-    // mode; ignored on child palettes) visits the artefact(0)/noise(1) specials
+    // mode; ignored on child palettes) visits the artifact(0)/noise(1) specials
     // first, then the >= 2 clusters in similarity order, then any cluster not named
     // in the order in natural index order.  Stored by id, so it self-heals: ids no
     // longer bound are skipped (contains()), and unlisted clusters fall through to
@@ -870,10 +870,10 @@ void ClusterPalette::moveClustersToNoise(){
     }
 }
 
-void ClusterPalette::moveClustersToArtefact(){
+void ClusterPalette::moveClustersToArtifact(){
     QList<int> selected = selectedClusters();
     if(!selected.isEmpty()){
-        emit moveClustersToArtefact(selected);
+        emit moveClustersToArtifact(selected);
         isUpToDate = true;
     }
 }

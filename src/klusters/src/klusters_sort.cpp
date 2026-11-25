@@ -177,7 +177,7 @@ private:
 // slotSortClustersBySpikeCount
 //
 // Renumber the non-special clusters so their IDs run by DESCENDING spike count
-// (largest cluster becomes 2, next 3, ...).  Clusters 0 (artefact) and 1
+// (largest cluster becomes 2, next 3, ...).  Clusters 0 (artifact) and 1
 // (noise) keep their IDs.  Equal-size clusters keep their current relative
 // order (stable sort).  All undo / curation-log / palette / view bookkeeping is
 // handled inside reorderClustersByPermutation (same path as the Shift+S
@@ -752,7 +752,7 @@ void KlustersApp::slotSortByResidualGated()
 // linkage agglomerative clustering on it to produce a 1-D ordering where
 // similar clusters end up adjacent, then renumbers the clusters so that
 // the post-rename palette layout matches that ordering.  Clusters 0
-// (artefact) and 1 (noise) are preserved at the front.
+// (artifact) and 1 (noise) are preserved at the front.
 //
 // Matrix selection
 // ----------------
@@ -1177,7 +1177,7 @@ void KlustersApp::reorderClustersByFeatureSpace()
     if (!activeView()) return;
     Data& d = sortMetricData();   // scoped atom layer or parent layer, never data()
 
-    // Non-special clusters (0 = artefact, 1 = noise stay pinned at the front).
+    // Non-special clusters (0 = artifact, 1 = noise stay pinned at the front).
     // Under a child scope the set is the SCOPE's atoms, mirroring
     // clustersToSort -- the centroids must be of the things being ordered.
     QList<int> clusters;
@@ -1313,7 +1313,7 @@ void KlustersApp::reorderClustersByFeatureSpace()
 // their per-sample MEDIAN waveforms, so waveform-similar clusters get adjacent
 // ids.  Unlike the matrix reorders this reads no error/template matrix -- it
 // pulls each cluster's spikes straight from the .spk file and takes a robust
-// per-sample median (resistant to the odd artefact spike, which a mean is not),
+// per-sample median (resistant to the odd artifact spike, which a mean is not),
 // or the mean when Preferences > Curation > Cluster order asks for it.
 //
 // Cost: the read + median is O(total_spikes * nPts) -- the dominant, disk-bound
@@ -1328,7 +1328,7 @@ void KlustersApp::reorderClustersByFeatureSpace()
 //
 // clustersOut <- non-special clusters (id >= 2); distOut <- their N x N Euclidean
 // distance matrix over per-sample MEDIAN waveforms (read from the .spk file,
-// robust to the odd artefact spike that a mean would follow), or over MEAN
+// robust to the odd artifact spike that a mean would follow), or over MEAN
 // waveforms when Preferences > Curation > Cluster order says so.  Returns false,
 // after a status message, if there is nothing to sort or the .spk data is
 // unavailable.  Callers wrap the call in a wait cursor.  Cost: the read is
@@ -1369,7 +1369,7 @@ QList<int> KlustersApp::clustersToSort(const QAction* action, const QString& sor
         for (int id : scope)
             if (id >= 2 && !clusters.contains(id)) clusters.append(id);
     } else {
-        // 0/1 are noise/artefact; a reserved chunk cluster keeps its id and is not
+        // 0/1 are noise/artifact; a reserved chunk cluster keeps its id and is not
         // sorted (nor is its metric computed).
         const auto ids = doc->parentData().clusterIds();
         for (const auto id : ids)

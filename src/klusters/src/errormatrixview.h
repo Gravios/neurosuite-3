@@ -115,7 +115,7 @@ public:
         return !dataReady || isNotUpToDate
                || !modifiedClusterList.isEmpty() || hasBeenRenumbered;
     }
-    /// Cluster IDs present in the matrix (including noise/artefact).
+    /// Cluster IDs present in the matrix (including noise/artifact).
     QList<int> matrixClusterList() const { return clusterList; }
     /// Cluster IDs that actually have computed probabilities.
     QList<int> matrixComputedClusterList() const { return computedClusterList; }
@@ -212,7 +212,7 @@ public Q_SLOTS:
   * if the deletion of clusters have impacted clusters presented in the matrix.
   * @param deletedClusters list of clusters having been deleted
   * @param destinationCluster cluster with which the clusters in @p deletedClusters are merge
-  * (cluster 0 or 1 cluster of artefact and cluster of noise respectively).
+  * (cluster 0 or 1 cluster of artifact and cluster of noise respectively).
   */
     void clustersDeleted(QList<int>& deletedClusters,int destinationCluster);
 
@@ -292,7 +292,7 @@ public Q_SLOTS:
   * @param addedClusters list of clusters which were added
   * @param modifiedClusters list of clusters which were modified
   * @param isModifiedByDeletion true if the clusters of @p updatedClusters have been modified
-  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
   * @param deletedClusters list of clusters which were deleted.
   */
     void redoAdditionModification(QList<int>& addedClusters,QList<int>& modifiedClusters,bool isModifiedByDeletion,QList<int>& deletedClusters);
@@ -308,7 +308,7 @@ public Q_SLOTS:
   * the last undo action has modified any of the clusters presented in the error matrix.
   * @param updatedClusters list of clusters which were modified
   * @param isModifiedByDeletion true if the clusters of @p updatedClusters have been modified
-  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
   * @param deletedClusters list of clusters which were deleted.
   */
     void redoModification(QList<int>& updatedClusters,bool isModifiedByDeletion,QList<int>& deletedClusters);

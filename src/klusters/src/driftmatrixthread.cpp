@@ -86,10 +86,10 @@ void DriftMatrixThread::process()
             // this list, so what goes in it is the matrix -- a parent with 7
             // children gives 8x8.
             //
-            // Noise is kept and artefact is not, matching the unscoped build below.
+            // Noise is kept and artifact is not, matching the unscoped build below.
             // Noise earns its row: comparing a child against it is how spikes get
             // judged and moved back out, so it is a destination the curator uses.
-            // Artefact has no waveform, so its row would be empty in every one of
+            // Artifact has no waveform, so its row would be empty in every one of
             // these three views, which compare templates.
             //
             // Noise is included regardless of spike count so the shape does not

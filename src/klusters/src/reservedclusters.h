@@ -13,7 +13,7 @@
         cluster it was not in (firstReservedGain below).
       - Only reclustering and selections in the feature space take spikes
         out of one: the Recluster menu, DipSplit, Watershed, and the lasso
-        tools (new cluster, split, delete to artefact or noise, decollide).
+        tools (new cluster, split, delete to artifact or noise, decollide).
         Every other edit leaves reserved clusters out of the clusters it
         works on (withoutReserved): group, auto-merge, delete clusters,
         the strips, purge, partition by time, the hierarchy's merges, the

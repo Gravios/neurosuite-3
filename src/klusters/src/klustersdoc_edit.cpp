@@ -374,7 +374,7 @@ void KlustersDoc::moveSpikeSubsetToCluster(int fromCluster,
     QList<int> updatedClusters = {fromCluster, toCluster};
 
     // Ensure cluster 1 (noise) has its grey colour when first receiving spikes,
-    // and cluster 0 (artefact) its red -- dropChildrenToBin reaches here with
+    // and cluster 0 (artifact) its red -- dropChildrenToBin reaches here with
     // either bin, and a bin without a colour entry is missing from the palette.
     if (toCluster == 1 && !clusterColorList->contains(1)) {
         QColor grey;
@@ -540,11 +540,11 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         }
     }
 
-    //case where the clusters are moved to the cluster 0 (artefact)
+    //case where the clusters are moved to the cluster 0 (artifact)
     if(clusterId == 0){
         // Parent scope by construction (the child scope delegated above), so
         // data() is clusteringData.
-        data().moveClustersToArtefact(clustersToDelete);
+        data().moveClustersToArtifact(clustersToDelete);
         //Update clusterColors, add cluster 0 if need it
         if(!clusterColorList->contains(0)){
             //Prepare the undo
@@ -636,7 +636,7 @@ void KlustersDoc::deleteClusters(QList<int> clustersToDelete,KlustersView& activ
         //update the TraceView if any
         activeView.updateTraceView(electrodeGroupID,clusterColorList,true);
     }
-    // Log the resulting state of the destination cluster (noise=1, artefact=0).
+    // Log the resulting state of the destination cluster (noise=1, artifact=0).
     logAfter(QList<int>{ clusterId });
 
     // Hierarchical mode: deleting WHOLE parents cannot break the nesting invariant --

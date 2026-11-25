@@ -130,20 +130,20 @@ class Data;
 /**Reserve cluster ids.
  *
  * Two ids are reserved across the whole application and mean the same thing in
- * every layer: 0 is the artefact bin and 1 is noise.  They were written as bare
+ * every layer: 0 is the artifact bin and 1 is noise.  They were written as bare
  * literals in at least nine places -- `id == 1`, `contains(0)`, `prepend(1)` --
  * and the reader had to infer from context whether a given 1 meant noise or an
  * index base, a count, or a metric selector.  One file has `metric == 1` a few
  * lines from `id == 1`, meaning entirely different things.
  *
- * Naming them makes the artefact/noise policy greppable, which matters because
+ * Naming them makes the artifact/noise policy greppable, which matters because
  * it is not uniform: the error matrix keeps noise as its probability reference,
  * the template, residual and drift matrices keep it as a merge destination, and
- * all four exclude artefact because it carries no waveform.  Those are three
+ * all four exclude artifact because it carries no waveform.  Those are three
  * separate decisions that currently look like the same literal.
  */
 namespace ClusterId {
-    constexpr int Artefact = 0;   ///< no meaningful waveform; excluded from the matrices
+    constexpr int Artifact = 0;   ///< no meaningful waveform; excluded from the matrices
     constexpr int Noise     = 1;  ///< the reference column, and a merge destination
 }
 
@@ -631,7 +631,7 @@ public:
   * Deletes the clusters contained in @p clustersToDelete. The correponding spikes are assign to cluster 0 (the artifact)
   * @param clustersToDelete a list of the cluster numbers (in ascending order) identifying the clusters to delete.
   */
-    void moveClustersToArtefact(QList <int>& clustersToDelete);
+    void moveClustersToArtifact(QList <int>& clustersToDelete);
 
     /**
   * Groups the clusters contained in @p clustersToGroup. The correponding spikes are assign to a new cluster.
@@ -674,7 +674,7 @@ public:
      *   - new IDs in `oldToNew` must not collide with any existing
      *     cluster ID OR with any other new ID in the same map;
      *   - oldId must already exist in clusterInfoMap;
-     *   - 0 and 1 (artefact / noise) must NOT be remapped.
+     *   - 0 and 1 (artifact / noise) must NOT be remapped.
      *
      *  Pushes the pre-rename spike table onto the undo stack via
      *  prepareUndo so Ctrl+Z reverses the operation.  Caller is

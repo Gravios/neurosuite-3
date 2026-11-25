@@ -49,7 +49,7 @@ struct MergeGroup {
 /**
  * Compute merge proposals.  Returns groups of size >= 2 whose members
  * are connected via pairwise scores at or above the threshold.
- * Skips clusters 0 (artefact) and 1 (noise) unconditionally.
+ * Skips clusters 0 (artifact) and 1 (noise) unconditionally.
  *
  * The progress dialog is parented to @p parent; cancelling returns an
  * empty list.  This call is synchronous on the GUI thread and uses

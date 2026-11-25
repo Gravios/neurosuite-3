@@ -830,7 +830,7 @@ void KlustersApp::createMenus()
     connect(childPaletteA, &ClusterPalette::updateShownClusters, this, &KlustersApp::slotChildSelectionChanged);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::groupClusters), this, &KlustersApp::slotGroupClusters);
     connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToNoise), this, &KlustersApp::slotMoveClustersToNoise);
-    connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToArtefact), this, &KlustersApp::slotMoveClustersToArtefact);
+    connect(clusterPalette, static_cast<void(ClusterPalette::*)(const QList<int>&)>(&ClusterPalette::moveClustersToArtifact), this, &KlustersApp::slotMoveClustersToArtifact);
     connect(clusterPalette, &ClusterPalette::clusterInformationModified, this, &KlustersApp::slotClusterInformationModified);
     connect(clusterPalette, &ClusterPalette::paletteGainedFocus, this, &KlustersApp::slotShowOverviewForPalette);
     connect(doc, &KlustersDoc::updateUndoNb, this, &KlustersApp::slotUpdateUndoNb);
@@ -2177,7 +2177,7 @@ void KlustersApp::registerInputBindings()
         c.defaultChord = input::Chord::key(Qt::Key_3, Qt::ControlModifier);
         c.enabled  = [this](const input::Ctx&){
             return !isInit && doc && activeView() && !editConsolidationLock; };
-        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("Delete Artifact Spikes"))) slotDeleteArtefact(); };
+        c.invoke   = [this](const input::Ctx&){ if(!refuseWhileBlocked(tr("Delete Artifact Spikes"))) slotDeleteArtifact(); };
         reg.addCommand(c);
     }
     {   // Ctrl+4 — enter the Delete Noise tool
@@ -2927,7 +2927,7 @@ void KlustersApp::initDisplay(){
     if(prefDialog != nullptr)
         prefDialog->enableChannelSettings(true);
 
-    // Pre-select the last real cluster (skip noise=0 and artefact=1)
+    // Pre-select the last real cluster (skip noise=0 and artifact=1)
     // so the waveform view shows something useful on startup.
     QList<int>* clusterList = new QList<int>();
     {
@@ -4469,7 +4469,7 @@ void KlustersApp::slotDeleteNoise(){
     slotStatusMsg(tr("Ready."));
 }
 /**Deletes spikes from a cluster and move them to the cluster (number 0) containing the artifacts*/
-void KlustersApp::slotDeleteArtefact(){
+void KlustersApp::slotDeleteArtifact(){
     slotStatusMsg(tr("Delete artifact…"));
 
     //If we are in delay mode, update the display, if need it, before triggering the tool change
@@ -4479,8 +4479,8 @@ void KlustersApp::slotDeleteArtefact(){
 
     KlustersView* view = activeView();
     if(!view) return;
-    const BaseFrame::Mode m = (view->currentMode() == ViewWidget::DELETE_ARTEFACT)
-                                  ? BaseFrame::NONE : static_cast<BaseFrame::Mode>(ViewWidget::DELETE_ARTEFACT);
+    const BaseFrame::Mode m = (view->currentMode() == ViewWidget::DELETE_ARTIFACT)
+                                  ? BaseFrame::NONE : static_cast<BaseFrame::Mode>(ViewWidget::DELETE_ARTIFACT);
     view->setMode(m);
     updateToolModeActions(m);
     slotStatusMsg(tr("Ready."));
@@ -4531,7 +4531,7 @@ void KlustersApp::updateToolModeActions(BaseFrame::Mode mode){
     mNewCluster->setChecked(mode == ViewWidget::NEW_CLUSTER);
     mSplitClusters->setChecked(mode == ViewWidget::NEW_CLUSTERS);
     mMultiLasso->setChecked(mode == ViewWidget::MULTI_LASSO);
-    mDeleteArtifactSpikes->setChecked(mode == ViewWidget::DELETE_ARTEFACT);
+    mDeleteArtifactSpikes->setChecked(mode == ViewWidget::DELETE_ARTIFACT);
     mDeleteNoisySpikes->setChecked(mode == ViewWidget::DELETE_NOISE);
 }
 
@@ -4598,7 +4598,7 @@ bool KlustersApp::wsEnter()
     const bool onChild = !sel.isEmpty();
     if (!onChild) {
         // Noise (1) stays in: splitting dense units out of the noise bin is a
-        // common curation step.  The artefact bin (0) is never split.
+        // common curation step.  The artifact bin (0) is never split.
         sel = clusterPalette->selectedClusters();
         sel.removeAll(0);
     }
@@ -5008,7 +5008,7 @@ void KlustersApp::wsRefreshOverlay()
         if (wsView) {
             const QList<int>& shown = wsView->clusters();
             for (int cid : shown) {
-                if (cid <= 1) continue;     // 0/1 = artefact/noise, drawn black/grey
+                if (cid <= 1) continue;     // 0/1 = artifact/noise, drawn black/grey
                 forbiddenHues.insert(
                     static_cast<int>(std::fmod(cid * 7.0, 36.0)) * 10);
             }
@@ -5665,7 +5665,7 @@ void KlustersApp::slotPartitionClusterByTime(){
     // The cluster the user is on, in whichever layer is driving: in child view
     // the shown list holds atom ids and doc.data() is the child clustering, so
     // the same call partitions an atom.  Reserve bins are excluded -- cutting
-    // noise or artefact into time blocks has no curation meaning.
+    // noise or artifact into time blocks has no curation meaning.
     const QList<int>& shown = activeView()->clusters();
     int clusterId = -1;
     for(int c : shown){
@@ -6145,9 +6145,9 @@ void KlustersApp::scheduleAutoPostClusterEdit(bool clusterSetChanged)
 // ---------------------------------------------------------------------------
 // moveSelectedClustersToReservedId
 //
-// Shared body for slotMoveClustersToNoise / slotMoveClustersToArtefact.
+// Shared body for slotMoveClustersToNoise / slotMoveClustersToArtifact.
 // Both slots delete the selected clusters into a reserved ID (1 = noise,
-// 0 = artefact); everything else (status messages, traceView state
+// 0 = artifact); everything else (status messages, traceView state
 // transitions, palette refocus) is identical.
 // ---------------------------------------------------------------------------
 void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClusters,
@@ -6158,7 +6158,7 @@ void KlustersApp::moveSelectedClustersToReservedId(const QList<int>& selectedClu
     KlustersView* view = activeView();
     QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
     // The ids come from the PARENT palette (ClusterPalette::moveClustersToNoise /
-    // ToArtefact), so the delete runs on the parent layer whatever is shown.  With
+    // ToArtifact), so the delete runs on the parent layer whatever is shown.  With
     // atoms selected in the child palette the child clustering is the active one,
     // and deleteClusters works on data(): left in that scope it looked these
     // parent numerals up in the ATOM id space and reclassified whichever atoms
@@ -6212,7 +6212,7 @@ void KlustersApp::slotDeleteSelected(int reservedId)
     // Parent palette (or anything else) focused: the parent selection, as before.
     if (!clusterPalette) return;
     if (reservedId == 1) clusterPalette->moveClustersToNoise();
-    else                 clusterPalette->moveClustersToArtefact();
+    else                 clusterPalette->moveClustersToArtifact();
 }
 
 void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters)
@@ -6221,9 +6221,9 @@ void KlustersApp::slotMoveClustersToNoise(QList<int> selectedClusters)
                                       tr("Delete &noisy cluster(s)…"));
 }
 
-void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters)
+void KlustersApp::slotMoveClustersToArtifact(QList<int> selectedClusters)
 {
-    moveSelectedClustersToReservedId(selectedClusters, /*artefact=*/0,
+    moveSelectedClustersToReservedId(selectedClusters, /*artifact=*/0,
                                       tr("Delete &artifact cluster(s)…"));
 }
 
@@ -6232,7 +6232,7 @@ void KlustersApp::slotMoveClustersToArtefact(QList<int> selectedClusters)
 //
 // Move every cluster whose spike count is strictly below a user-entered
 // threshold N into the noise cluster (reserved id 1).  The reserved clusters
-// 0 (artefact) and 1 (noise) are never purged.  Asks for N (pre-filled with
+// 0 (artifact) and 1 (noise) are never purged.  Asks for N (pre-filled with
 // the last value used this session), then a Yes/No confirmation that defaults
 // to Yes, before performing the move through the same path as "Delete Noisy
 // Cluster(s)" (so curation logging and a single undo step come for free).
@@ -6265,7 +6265,7 @@ QList<int> KlustersApp::purgeSmallClusters(int n, bool ask)
     QList<int> small;
     if (!doc || !activeView()) return small;
     const bool childView = doc->isChildClusteringActive() && doc->hasChildClustering() && childPalette;
-    // Skipping the reserved artefact(0)/noise(1) and the reserved chunk clusters of a
+    // Skipping the reserved artifact(0)/noise(1) and the reserved chunk clusters of a
     // fiber-kit chunk run (in the child view, their atoms), which only reclustering and
     // feature-space selections take spikes out of.
     if (childView) {
@@ -6317,11 +6317,11 @@ QList<int> KlustersApp::purgeSmallClusters(int n, bool ask)
 }
 
 // ---------------------------------------------------------------------------
-// slotStripFeatureOutliers  --  bulk feature-space artefact removal
+// slotStripFeatureOutliers  --  bulk feature-space artifact removal
 //
 // For every real cluster (id >= 2), flag any spike lying more than kSigma
 // standard deviations from that cluster's mean in ANY single feature dimension,
-// and move all flagged spikes into the artefact cluster (0).
+// and move all flagged spikes into the artifact cluster (0).
 //
 // The criterion is per-DIMENSION, not Mahalanobis, and that is deliberate: in
 // D ~ 24 feature dimensions the typical Mahalanobis distance of an ordinary in-
@@ -6360,7 +6360,7 @@ void KlustersApp::slotStripFeatureOutliers()
     const auto ids = d.clusterIds();
     for (const auto idRaw : ids) {
         const int c = static_cast<int>(idRaw);
-        if (c < 2) continue;                        // skip artefact(0) / noise(1)
+        if (c < 2) continue;                        // skip artifact(0) / noise(1)
         if (isReservedClusterId(c)) continue;       // reserved chunk clusters are not stripped
 
         SortableTable pos;
@@ -6431,7 +6431,7 @@ void KlustersApp::slotStripFeatureOutliers()
     for (auto it = outliersByCluster.constBegin(); it != outliersByCluster.constEnd(); ++it) {
         KlustersView* view = activeView();
         if (!view) break;                           // view could close mid-loop
-        doc->moveSpikeSubsetToCluster(it.key(), it.value(), /*artefact=*/0, *view);
+        doc->moveSpikeSubsetToCluster(it.key(), it.value(), /*artifact=*/0, *view);
         ++movedClusters;
     }
 
@@ -6448,7 +6448,7 @@ void KlustersApp::slotStripFeatureOutliers()
 // the robust upper tail (median + k*1.4826*MAD, one-sided since the residual
 // is non-negative and skewed) and split them off into ONE new cluster.
 //
-// The shed spikes land in a fresh cluster, not the artefact/noise bin: a
+// The shed spikes land in a fresh cluster, not the artifact/noise bin: a
 // self-outlier strip is a hypothesis ("these do not belong"), and parking the
 // result where the curator can look at it -- compare it to the source, split it
 // further, or send it to noise once satisfied -- keeps the gesture reversible in
@@ -6480,7 +6480,7 @@ void KlustersApp::slotStripWaveformOutliers()
         return;
     }
 
-    // Parent-scope selection, minus the artefact/noise bins, which are never
+    // Parent-scope selection, minus the artifact/noise bins, which are never
     // stripped.
     QList<int> selected = view->clusters();
     selected.removeAll(0);
@@ -6703,7 +6703,7 @@ void KlustersApp::slotSplitBurstFollowers()
     if (children) {
         selected = childPaletteA ? childPaletteA->selectedClusters() : view->clusters();
         doc->leaveOutChildrenOfReserved(selected, tr("Split burst followers"));
-        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artefact / noise bins
+        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artifact / noise bins
             if (doc->parentOfChild(selected.at(k)) < 2) selected.removeAt(k);
     } else {
         selected = view->clusters();
@@ -6805,7 +6805,7 @@ void KlustersApp::slotSplitOffSpurious()
     if (children) {
         selected = childPaletteA ? childPaletteA->selectedClusters() : view->clusters();
         doc->leaveOutChildrenOfReserved(selected, tr("Split off spurious spikes"));
-        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artefact / noise bins
+        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artifact / noise bins
             if (doc->parentOfChild(selected.at(k)) < 2) selected.removeAt(k);
     } else {
         selected = view->clusters();
@@ -6859,7 +6859,7 @@ void KlustersApp::slotSplitOffSpurious()
 //
 // Same shape as the waveform strip otherwise: a non-mutating scan, the user
 // confirms the exact count (default No), then one undoable createNewCluster
-// per product.  The shed spikes land in a fresh cluster, not the artefact bin
+// per product.  The shed spikes land in a fresh cluster, not the artifact bin
 // -- a self-outlier strip is a hypothesis, and parking it where the curator
 // can look at it keeps the gesture reversible in practice as well as by
 // Ctrl+Z.  "Keep the terms apart" makes up to three products (on-channel
@@ -6884,7 +6884,7 @@ void KlustersApp::slotStripResidualOutliers()
         // (slotChildSelectionChanged); read it there rather than off the view.
         selected = childPaletteA ? childPaletteA->selectedClusters() : view->clusters();
         doc->leaveOutChildrenOfReserved(selected, tr("Strip residual outliers"));
-        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artefact / noise bins
+        for (int k = selected.size() - 1; k >= 0; --k)       // children of the artifact / noise bins
             if (doc->parentOfChild(selected.at(k)) < 2) selected.removeAt(k);
     } else {
         selected = view->clusters();
@@ -7303,7 +7303,7 @@ void KlustersApp::slotSetObliqueBasis()
     }
 
     // Pre-fill: the existing pin, else the current selection minus the reserve
-    // bins (artefact 0 / noise 1), which can never be a template axis.
+    // bins (artifact 0 / noise 1), which can never be a template axis.
     QList<int> prefill = cv->obliqueBasisClusters();
     if (prefill.isEmpty() && activeView())
         for (int id : activeView()->clusters())
@@ -9467,7 +9467,7 @@ void KlustersApp::slotToggleTemplate()
     const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
     QList<int> targets;
     for (int id : sel)
-        if (id > 1) targets.append(id);              // never the artefact(0)/noise(1) bins
+        if (id > 1) targets.append(id);              // never the artifact(0)/noise(1) bins
     if (targets.isEmpty()) {
         slotStatusMsg(tr("Mark as template: select one or more clusters (not noise/artefact)."));
         return;
@@ -9745,7 +9745,7 @@ void KlustersApp::slotGenerateTemplateForSelection()
     const QList<int> sel = clusterPalette ? clusterPalette->selectedClusters() : QList<int>();
     QList<int> targets;
     for (int id : sel)
-        if (id > 1) targets.append(id);                  // never noise(1)/artefact(0)
+        if (id > 1) targets.append(id);                  // never noise(1)/artifact(0)
     if (targets.isEmpty()) {
         slotStatusMsg(tr("Generate template: select one or more clusters (not noise/artefact)."));
         return;

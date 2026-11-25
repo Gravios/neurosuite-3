@@ -2,7 +2,7 @@
 // "Promote to Hierarchical Session".
 //
 // Checks: the nesting scan and its straddlers; the .clp payload; promotion of a
-// flat .clu (identity atoms, artefact bin 0 -> atom 0, gaps unmapped) and that
+// flat .clu (identity atoms, artifact bin 0 -> atom 0, gaps unmapped) and that
 // the promoted pair scans back to the same map with no straddler; sibling names
 // keep method, group and suffix; a staged write leaves the target untouched
 // until it is installed, keeps a .bak, and the files read back with the layout

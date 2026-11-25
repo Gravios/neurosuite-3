@@ -215,7 +215,7 @@ QList<MergeGroup> computeProposals(
 {
     QList<MergeGroup> result;
 
-    // ── 1. Filter candidates: skip 0 (artefact), 1 (noise), the reserved
+    // ── 1. Filter candidates: skip 0 (artifact), 1 (noise), the reserved
     //       chunk clusters of a layer that protects them (the chunks a fiber-kit
     //       chunk run left unsorted: never merged, never scored), and clusters
     //       below minClusterSize.

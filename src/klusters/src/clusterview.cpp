@@ -70,7 +70,7 @@
 
 const QColor ClusterView::NEW_CLUSTER_COLOR(Qt::green);
 const QColor ClusterView::DELETE_NOISE_COLOR(220,220,220);
-const QColor ClusterView::DELETE_ARTEFACT_COLOR(Qt::red);
+const QColor ClusterView::DELETE_ARTIFACT_COLOR(Qt::red);
 
 ClusterView::ClusterView(KlustersDoc& klustersDoc,KlustersView& klustersView,const QColor& backgroundColor,int timeInterval,QStatusBar * statusBarWidget,QWidget* parent, const char* name,
                          int minSize, int maxSize, int windowTopLeft ,int windowBottomRight, int border) :
@@ -102,7 +102,7 @@ ClusterView::ClusterView(KlustersDoc& klustersDoc,KlustersView& klustersView,con
     newClusterCursor = QCursor(QPixmap(":/cursors/new_cluster_cursor.png"),0,0);
     newClustersCursor = QCursor(QPixmap(":/cursors/new_clusters_cursor.png"),0,0);
     deleteNoiseCursor = QCursor(QPixmap(":/cursors/delete_noise_cursor.png"),0,0);
-    deleteArtefactCursor = QCursor(QPixmap(":/cursors/delete_artefact_cursor.png"),0,0);
+    deleteArtifactCursor = QCursor(QPixmap(":/cursors/delete_artefact_cursor.png"),0,0);
 
     //Default to the normal arrow cursor (mode = NONE); the rubber-band ZOOM tool is retired, so
     //the view must not open with the stale magnifier cursor (it used to persist until a mode was
@@ -670,7 +670,7 @@ void ClusterView::applyLassoSelection(const QSet<dataType>& rows, const QList<in
     const SpikeSelection selection(rows);
     tsneApplyingLasso = true;               // our own edit: do not self-drop
     switch (static_cast<BaseFrame::Mode>(lassoMode)) {
-    case DELETE_ARTEFACT: doc.deleteArtifact(selection, sources);    break;
+    case DELETE_ARTIFACT: doc.deleteArtifact(selection, sources);    break;
     case DELETE_NOISE:    doc.deleteNoise(selection, sources);       break;
     case NEW_CLUSTER:     doc.createNewCluster(selection, sources);  break;
     case NEW_CLUSTERS:    doc.createNewClusters(selection, sources); break;
@@ -1382,7 +1382,7 @@ void ClusterView::applyMultiLasso()
     // id as well, and the original id goes away with its last spike.  That puts
     // the remainder through the same new-cluster path as the lassoed pieces
     // (realign, colour, log), and the selection ends on ALL the new clusters.  The
-    // noise and artefact bins and the reserved chunk clusters survive their lassos
+    // noise and artifact bins and the reserved chunk clusters survive their lassos
     // as before: a bin has no remainder to promote.
     if (!created.isEmpty()) {
         const QVector<dataType> after = doc.data().labelByFeatureRow();
@@ -1997,7 +1997,7 @@ void ClusterView::applyModeCursor(){
     if (lineageOverlay_) { setCursor(Qt::ArrowCursor); return; }
     switch(mode){
     case DELETE_NOISE:    setCursor(deleteNoiseCursor);    break;
-    case DELETE_ARTEFACT: setCursor(deleteArtefactCursor); break;
+    case DELETE_ARTIFACT: setCursor(deleteArtifactCursor); break;
     case NEW_CLUSTER:     setCursor(newClusterCursor);     break;
     case NEW_CLUSTERS:    setCursor(newClustersCursor);    break;
     case MULTI_LASSO:     setCursor(newClustersCursor);    break;
@@ -2077,7 +2077,7 @@ void ClusterView::beginBoundaryDrag(const QPoint& vp)
 
 bool ClusterView::inSelectionMode() const
 {
-    return mode == DELETE_NOISE || mode == DELETE_ARTEFACT
+    return mode == DELETE_NOISE || mode == DELETE_ARTIFACT
         || mode == NEW_CLUSTER  || mode == NEW_CLUSTERS || mode == MULTI_LASSO;
 }
 
@@ -2398,7 +2398,7 @@ void ClusterView::mousePressEvent(QMouseEvent* e){
         // implementation here is what made the two feel different -- and it
         // drifted immediately (no tracking vertex, its own undo arithmetic,
         // its own pen).
-        if (mode != DELETE_NOISE && mode != DELETE_ARTEFACT &&
+        if (mode != DELETE_NOISE && mode != DELETE_ARTIFACT &&
             mode != NEW_CLUSTER  && mode != NEW_CLUSTERS && mode != MULTI_LASSO) {
             // Zoom / time modes have no meaning here: the axes are not features.
             if (statusBar) statusBar->showMessage(
@@ -2532,7 +2532,7 @@ void ClusterView::wheelEvent(QWheelEvent* e){
 void ClusterView::keyPressEvent(QKeyEvent* e){
     // Enter or Return closes the selection polygon, same as middle mouse button
     if((e->key() == Qt::Key_Return || e->key() == Qt::Key_Enter) &&
-       (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
+       (mode == DELETE_NOISE || mode == DELETE_ARTIFACT ||
         mode == NEW_CLUSTER  || mode == NEW_CLUSTERS || mode == MULTI_LASSO) &&
        selectionPolygon.size() > 2)
     {
@@ -2587,7 +2587,7 @@ bool ClusterView::setObliqueBasis(const QList<int>& ids, QString* message){
     }
     QList<int> clean;                               // de-duplicate, preserve order
     for (int id : ids) {
-        if (id <= 1) {                              // 0 artefact / 1 noise carry no template
+        if (id <= 1) {                              // 0 artifact / 1 noise carry no template
             if (message) *message = tr("Oblique basis: cluster %1 is a reserve bin "
                                        "(artefact/noise) and has no template.").arg(id);
             return false;
@@ -3099,7 +3099,7 @@ std::vector<int64_t> ClusterView::shownClusterSpikes() const
     std::vector<int64_t> out;
     const QList<int> shown = view.clusters();
     for (int cid : shown) {
-        if (cid <= 1) continue;                  // skip noise(0) / artefact(1)
+        if (cid <= 1) continue;                  // skip noise(0) / artifact(1)
         const QVector<int> idx = doc.data().clusterSpkIndices(cid);
         for (int s : idx) if (s >= 0) out.push_back(static_cast<int64_t>(s));
     }
@@ -3856,7 +3856,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
         if(hoverRow0_ >= 0 && statusBar)
             statusBar->showMessage(tr("Spike %1 of cluster %2").arg(hoverRow0_ + 1).arg(hoverCluster_));
         if(!polygonClosed &&
-           (mode == DELETE_NOISE || mode == DELETE_ARTEFACT ||
+           (mode == DELETE_NOISE || mode == DELETE_ARTIFACT ||
             mode == NEW_CLUSTER  || mode == NEW_CLUSTERS || mode == MULTI_LASSO) &&
            !selectionPolygon.isEmpty()){
             const QPoint current = selectionPoint(e->position().toPoint());
@@ -3920,7 +3920,7 @@ void ClusterView::mouseMoveEvent(QMouseEvent* e){
     //If the user is closing the polygon do not take mousemove event into account
     if(!polygonClosed){
         //In one of the selection modes we draw the tracking line
-        if(mode == DELETE_NOISE || mode == DELETE_ARTEFACT || mode == NEW_CLUSTER || mode == NEW_CLUSTERS
+        if(mode == DELETE_NOISE || mode == DELETE_ARTIFACT || mode == NEW_CLUSTER || mode == NEW_CLUSTERS
            || mode == MULTI_LASSO){
 
 
@@ -3999,7 +3999,7 @@ void ClusterView::customEvent(QEvent* event){
             case DELETE_NOISE:
                 doc.deleteNoise(selection,view.clusters());
                 break;
-            case DELETE_ARTEFACT:
+            case DELETE_ARTIFACT:
                 doc.deleteArtifact(selection,view.clusters());
                 break;
             case NEW_CLUSTER:

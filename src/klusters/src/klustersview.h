@@ -283,7 +283,7 @@ public:
     /**Updates the view due deletion of clusters.
     * @param deletedClusters list of clusters having been deleted.
     * @param destinationCluster cluster with which the clusters in @p deletedClusters are merge
-    * (cluster 0 or 1 cluster of artefact and cluster of noise respectively).
+    * (cluster 0 or 1 cluster of artifact and cluster of noise respectively).
     * @param active true if the view is the active one, false otherwise.
     * @return true if at least one of the clusters in deletedClusters was in the list of clusters shown.
     */
@@ -399,7 +399,7 @@ public:
    * The clusters in @p modifiedClusters, if present in shownClusters, will be updated.
    * @param updatedClusters list of clusters which were modified.
    * @param isModifiedByDeletion true if the clusters of @p updatedClusters have been modified
-   * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+   * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
    * @param active true if the view is the active one, false otherwise.
    * @param deletedClusters list of clusters which were deleted.
    */
@@ -414,7 +414,7 @@ public:
    * @param addedClusters list of clusters which were added.
    * @param modifiedClusters list of clusters which were modified.
    * @param isModifiedByDeletion true if the clusters of @p updatedClusters have been modified
-   * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+   * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
    * @param active true if the view is the active one, false otherwise.
    * @param deletedClusters list of clusters which were deleted.
    */

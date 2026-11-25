@@ -1574,7 +1574,7 @@ bool KlustersDoc::dropChildrenToBin(const QList<int>& childrenIn, int binId, Klu
         for (int c : it.value()) spk += childData->clusterSpkIndices(c);
         if (spk.isEmpty()) continue;
         // Child-primary: the atoms are RECLASSIFIED, not relabelled.  Noise and
-        // artefact are parent-layer classifications -- an atom is a sub-cluster of
+        // artifact are parent-layer classifications -- an atom is a sub-cluster of
         // a unit and has no signal/noise character of its own -- so dropping it is
         // exactly "its parent is now the bin".  moveSpikeSubsetToCluster changes the
         // .clu of those rows and leaves the .clc alone, which says the same thing.
@@ -1914,7 +1914,7 @@ QList<KlustersDoc::OrphanParentGroup> KlustersDoc::planOrphanParents(
     if (!clusteringData || minSpikes < 1)
         return plan;
 
-    // Not the artefact and noise clusters, and not a reserved chunk cluster: a
+    // Not the artifact and noise clusters, and not a reserved chunk cluster: a
     // chunk's unsorted spikes are no unit to match against, and never merged.
     const auto inPlay = [](int c) { return c > 1 && !isReservedClusterId(c); };
     const dataType threshold = static_cast<dataType>(minSpikes);

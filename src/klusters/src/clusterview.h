@@ -91,7 +91,7 @@ public:
      *  toggleObliquePresentation() then projects the current SELECTION onto these
      *  fixed axes instead of onto the selection itself, so a third cluster can be
      *  examined against a chosen pair.  @p ids must be >= 2 existing parent
-     *  clusters that own spikes (artefact/noise 0,1 rejected); an EMPTY list
+     *  clusters that own spikes (artifact/noise 0,1 rejected); an EMPTY list
      *  clears the pin and restores the default (basis == selection).  The pin
      *  persists across view toggles until re-set, cleared, or invalidated by a
      *  later edit.  Returns false with *message set on a bad id, true with a
@@ -216,7 +216,7 @@ public:
      *  inline in the press.  Assumes lineageBoundaryGrabAt(vp) >= 0 (enabled() ensured it). */
     void beginBoundaryDrag(const QPoint& vp);
     /** True while the tool is one of the four polygon-selection modes (DELETE_NOISE /
-     *  DELETE_ARTEFACT / NEW_CLUSTER / NEW_CLUSTERS).  Gates the view.cluster.lasso scope. */
+     *  DELETE_ARTIFACT / NEW_CLUSTER / NEW_CLUSTERS).  Gates the view.cluster.lasso scope. */
     bool inSelectionMode() const;
     /** Append a vertex to the selection polygon at viewport point @p viewportPos (and grab
      *  keyboard focus so Enter/Return closes it).  The lasso presses are Action commands —
@@ -476,13 +476,13 @@ public Q_SLOTS:
 
     /**
   * Update the clusters which have been modified by the suppression of spikes
-  * (used to create a new cluster or simply move to the cluster of noise or artefact).
+  * (used to create a new cluster or simply move to the cluster of noise or artifact).
   * This method aims to reduce the number of clusters to draw. The view is redraw
   * only if @p isModifiedByDeletion is true.
   * @param modifiedClusters list of clusters from which spikes were taken from.
   * @param active true if the view is the active one, false otherwise.
   * @param isModifiedByDeletion true if the clusters of @p modifiedClusters have been modified
-  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artefact and cluster of noise respectively).
+  * by the deletion of spikes (moved to cluster 0 or 1, cluster of artifact and cluster of noise respectively).
   */
     void updateClusters(QList<int>& modifiedClusters,bool active,bool isModifiedByDeletion) override {
         tsneDropIfActive();
@@ -491,7 +491,7 @@ public Q_SLOTS:
 
     /**
   * Update the clusters which have been modified by the suppression of spikes
-  * (used to create a new cluster or simply move to the cluster of noise or artefact).
+  * (used to create a new cluster or simply move to the cluster of noise or artifact).
   * This method is call only during an undo otherwise the updateClusters is call.
   * There are 2 functions in order to reduce the number of clusters to draw whenever possible.
   * @param modifiedClusters list of clusters from which spikes were taken from.
@@ -943,7 +943,7 @@ private:
     //Color for the different selection modes
     static const QColor NEW_CLUSTER_COLOR;
     static const QColor DELETE_NOISE_COLOR;
-    static const QColor DELETE_ARTEFACT_COLOR;
+    static const QColor DELETE_ARTIFACT_COLOR;
 
     // One kept multi-lasso: its spikes, and its outline in the space it was drawn in
     // (feature-world coordinates of the dimX/dimY projection, or embedding
@@ -981,8 +981,8 @@ private:
         switch(selMode){
         case DELETE_NOISE:
             return DELETE_NOISE_COLOR;
-        case DELETE_ARTEFACT:
-            return DELETE_ARTEFACT_COLOR;
+        case DELETE_ARTIFACT:
+            return DELETE_ARTIFACT_COLOR;
         case NEW_CLUSTER:
             return NEW_CLUSTER_COLOR;
         case NEW_CLUSTERS:
@@ -1096,7 +1096,7 @@ private:
     QCursor newClusterCursor;
     QCursor newClustersCursor;
     QCursor deleteNoiseCursor;
-    QCursor deleteArtefactCursor;
+    QCursor deleteArtifactCursor;
 
 
     class ComputeEvent;

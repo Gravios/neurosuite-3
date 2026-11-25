@@ -393,7 +393,7 @@ void KlustersDoc::applyClusterRename(const QMap<int,int>& partialOldToNew,
 //
 // Edge cases handled by the caller (slotMoveSelectedClustersToEnd):
 //   - global-max cluster filtered out (already at end)
-//   - 0 / 1 (artefact / noise) filtered out
+//   - 0 / 1 (artifact / noise) filtered out
 //
 // Single undo entry covers the whole batch — Ctrl+Z reverts all renames
 // in one step, matching the user's mental model of T as a single action.
@@ -548,7 +548,7 @@ void KlustersDoc::renumberChildrenToEnd(QList<int> atomsToRenumber)
 // computes the order and hands it here, so all the undo/log/palette/view
 // bookkeeping stays inside the doc layer where it belongs.
 //
-// New IDs start at 2; clusters 0 (artefact) and 1 (noise) are untouched and
+// New IDs start at 2; clusters 0 (artifact) and 1 (noise) are untouched and
 // stay at the front of the palette.  Any newOrder entry referencing 0, 1,
 // or a missing cluster makes the whole call a no-op (returns -1) so we never
 // half-apply a rename.
@@ -593,7 +593,7 @@ int KlustersDoc::reorderClustersByPermutation(const QList<int>& requestedOrder,
 
     // Build maps.  We rename the listed clusters to consecutive IDs
     // starting at 2; any existing cluster NOT in newOrder keeps its
-    // current ID — that's an artefact of the slot only handing us
+    // current ID — that's an artifact of the slot only handing us
     // clusters present in the similarity matrix, and is fine because
     // applyClusterRename uses Data::renumberPartial which preserves
     // unlisted IDs.
