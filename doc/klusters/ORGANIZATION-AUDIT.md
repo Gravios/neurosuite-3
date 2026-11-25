@@ -264,31 +264,29 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    a unit test; applying an entry is one `stepOneEntry(direction)` in `klustersdoc_undo.cpp`
    in place of the undo / redo twins. The level stacks of `Data`, the colours and the views
    are still separate lists (§2).
-5. Split `realignSpikes` into a plan and its application (§1). The largest single gain in
-   legibility, and the way to a realign that can be cancelled and undone. Begun; the
-   function is down from 2,085 lines to 1,360:
-   - the xcorr passes (template, pre-roll, channel mask, correlation window, per-spike lag,
-     roll) are `realign_pass::clusterShifts` in `libklustersshared`, and the scores and
-     summary that close the log are `finalScores` and `summarize` beside it. Their test
-     holds the old code and requires the same result;
-   - reading the cluster's rows of the `.spk`, `.res` and `.fet` is `realign_io`
-     (`realignio.h`), with a unit test on files it writes;
-   - the PCA refinement is two functions of its own in the same file, `realignRefineBasis`
-     (the basis the candidates are scored on) and `realignPcaRefineSearch` (the search, GPU
-     or CPU), which take what they read in one `RealignRefineInput`;
-   - the write loop is cut in two: the rows are computed first (re-cut window, new time,
-     feature row; nothing changed yet), then `realignApplyRows` writes them to the working
-     files, the tables of both layers and the overlay. That line is the plan / application
-     boundary: a cancel could be honoured up to it, and what an undo must restore is what
-     the application wrote;
-   - the log is sent on every return: a refusal used to drop its reason.
+5. ~~Split `realignSpikes` into a plan and its application (§1).~~ Done: the function is
+   777 lines (2,085 before) and reads as its list of stages; each stage that does not need
+   the document is a function.
+   - In `libklustersshared`: the xcorr passes, the final scores and their summary
+     (`realign_pass`), with a test that holds the old code and requires the same result.
+   - In `realignio.h`: reading the cluster's rows of the `.spk`, `.res` and `.fet`, with a
+     unit test on files it writes.
+   - In `klustersdoc_realign.cpp`, above the function: the stderiv transform of the space
+     (`realignStderivSpec`), the centroid de-jitter, the PCA refinement
+     (`realignRefineBasis`, `realignPcaRefineSearch`), the new times (`realignNewTimes`),
+     the check of the stored rows against the recording (`realignVerifyStoredRows`), the
+     new rows (`realignPlanRows`), the feature row, the log's details and timing.
+   - **The plan / application boundary** is one call: everything before
+     `realignApplyRows` reads, and it writes the rows to the working files, the tables of
+     both layers and the overlay. Built on it: the undo and redo of a realign (the record
+     of the rows, written either way by the same function).
+   - The log is sent on every return: a refusal used to drop its reason.
 
-   Still one function for the plan: choosing the space and the basis, the centering, the
-   new times, the verification against the recording, re-cutting the windows and the
-   feature rows; and after the application, the journal and the notifications. The plan is
-   not yet an object of its own. Built on the boundary since: the undo of a realign (the
-   record of the rows, applied either way by `realignApplyRows`). A cancel is not. The plan /
-   application boundary is not drawn until the writing is separate from what precedes it.
+   What the function still holds is what needs the document: choosing the space and its
+   files, the refusals, the settings, resolving the basis, the collision rows' corrected
+   records, the bookkeeping after the application (moved rows, generation, overlay,
+   curation log). Not done: a cancel honoured before the application; the same treatment
+   for `nudgeClusterTimestamps` (1,156 lines, which repeats much of this).
 6. The matrix-view base (§8).
 7. The glossary and the renames (§6), one word per patch.
 8. Directories (§9), last: it touches every include and is cheap once the rest is settled.

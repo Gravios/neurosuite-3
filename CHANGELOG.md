@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: realignSpikes reads as its stages](#2026-11-24--realign-realignspikes-reads-as-its-stages) |
 | 2026-11-24 | [Realign: the new times, the verification and the row plan are functions](#2026-11-24--realign-the-new-times-the-verification-and-the-row-plan-are-functions) |
 | 2026-11-24 | [Realign undo: from any feature space](#2026-11-24--realign-undo-from-any-feature-space) |
 | 2026-11-24 | [Realign undo: the memory it may use is a preference](#2026-11-24--realign-undo-the-memory-it-may-use-is-a-preference) |
@@ -291,6 +292,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: realignSpikes reads as its stages
+
+The last self-contained stages of `KlustersDoc::realignSpikes` are functions; the function is 777 lines, from 2,085. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What moved.** The remaining stages of `KlustersDoc::realignSpikes` that do not need the
+document, each to a function above it, their text unchanged: the stderiv transform of the
+space (`realignStderivSpec`), the centroid de-jitter (`realignCentroidShifts`), the feature
+row (`realignFeatureRow`), the two mean waveforms, the details for the curation log
+(`realignRecordDetails`) and the opt-in timing (`RealignTiming`, `realignLogTiming`). The
+comment at the head of the function, which called it "one large function by design", is now
+the list of its stages and where each lives.
+
+`realignSpikes` is 777 lines; it was 2,085 at the start of the series. The audit's step 5 is
+closed in `ORGANIZATION-AUDIT.md`, with what the function still holds and what was not done
+(a cancel before the application; `nudgeClusterTimestamps`).
+
+**Checked.** The same whole realign log and the same bytes in every per-spike file, before
+and after, for the 27 realigns of the previous entry; the timing line under
+`NS3_REALIGN_TIMING=1` has the same form; the whole suite passes (it compares the curation
+log's realign entry).
+
+**Not run.** A stderiv space, so `realignStderivSpec` beyond its default branch.
+
+</details>
 
 ---
 

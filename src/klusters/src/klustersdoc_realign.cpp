@@ -1693,6 +1693,232 @@ static int64_t realignPlanRows(const RealignCut& c, Data* clusteringData,
     return notRecut;
 }
 
+// The mean waveform of the buffer (channel-major), as floats, for a caller that shows it.
+static void realignMeanInto(const std::vector<int16_t>& wavBuf, int64_t N, size_t spkElems, QVector<float>& mean)
+{
+    mean.resize(static_cast<int>(spkElems));
+    for (size_t e = 0; e < spkElems; ++e) {
+        double acc = 0.0;
+        for (int64_t i = 0; i < N; ++i)
+            acc += wavBuf[static_cast<size_t>(i) * spkElems + e];
+        mean[static_cast<int>(e)] = static_cast<float>(acc / N);
+    }
+}
+
+// realignMode 3 (--align-centroid): reference-free per-spike centroid de-jitter -- the parent-kit
+// fiber_realign method='centroid'.  No template, no xcorr: each spike is shifted so its OWN circular
+// energy centroid lands on the POPULATION's circular-mean centroid (perSpikeCentroidShifts, the shared
+// realign_center math).  Fills cumShift and rolls wavBuf exactly as the xcorr passes would.  This is the aligner for clusters whose mean is too noisy to
+// anchor the normalised xcorr -- the case the xcorr path leaves jittered.
+static void realignCentroidShifts(std::vector<int16_t>& wavBuf, int nChan, int nSamp, std::vector<int>& cumShift)
+{
+    const int64_t N = static_cast<int64_t>(cumShift.size());
+    const size_t spkElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+    std::vector<double> energy(static_cast<size_t>(N) * nSamp, 0.0);
+    for (int64_t i = 0; i < N; ++i) {
+        const int16_t* w = wavBuf.data()
+            + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
+        double* e = energy.data() + static_cast<size_t>(i) * nSamp;
+        for (int ch = 0; ch < nChan; ++ch)
+            for (int s = 0; s < nSamp; ++s) {
+                const double v = w[static_cast<size_t>(ch * nSamp + s)];
+                e[static_cast<size_t>(s)] += v * v;          // channel-summed per-sample energy
+            }
+    }
+    std::vector<int> csh;
+    realign_center::perSpikeCentroidShifts(energy.data(), static_cast<int>(N), nSamp, csh);
+    for (int64_t i = 0; i < N; ++i) {
+        const int s = csh[static_cast<size_t>(i)];
+        cumShift[static_cast<size_t>(i)] = s;                // newTs = clusterTs + cumShift downstream
+        if (s == 0) continue;
+        realign_pass::rollSpike(wavBuf.data()
+            + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems),
+            nChan, nSamp, s);                                // the xcorr passes' roll
+    }
+}
+
+// What a realign did, for its entry in the curation log: the snapshots show the cluster
+// before and after, not how many spikes moved or how far.
+static void realignRecordDetails(CurationLogger* curationLogger, const std::vector<int>& cumShift,
+                                 int nShifted, int64_t notRecut)
+{
+    const int64_t N = static_cast<int64_t>(cumShift.size());
+    std::vector<int> mag; mag.reserve(static_cast<size_t>(N));
+    double sum = 0.0; int mx = 0;
+    for (int64_t i = 0; i < N; ++i) {
+        const int s = cumShift[static_cast<size_t>(i)];
+        if (s == 0) continue;
+        mag.push_back(std::abs(s)); sum += s; mx = std::max(mx, std::abs(s));
+    }
+    std::sort(mag.begin(), mag.end());
+    curationLogger->recordActionDetails({
+        { QStringLiteral("edit"),             QStringLiteral("realign") },
+        { QStringLiteral("outcome"),          QStringLiteral("applied") },
+        { QStringLiteral("n_spikes"),         static_cast<qlonglong>(N) },
+        { QStringLiteral("n_shifted"),        nShifted },
+        { QStringLiteral("shifted_share"),    N > 0 ? static_cast<double>(mag.size()) / static_cast<double>(N) : 0.0 },
+        { QStringLiteral("shift_abs_median"), mag.empty() ? 0 : mag[mag.size() / 2] },
+        { QStringLiteral("shift_abs_max"),    mx },
+        { QStringLiteral("shift_mean"),       mag.empty() ? 0.0 : sum / static_cast<double>(mag.size()) },
+        { QStringLiteral("not_recut"),        static_cast<qlonglong>(notRecut) },
+    });
+}
+
+// Per-phase wall-clock timing of one realign, opt-in via NS3_REALIGN_TIMING=1: one line per
+// cluster (setup / compute / the write's parts / total), so that a batch can be checked for
+// which phase grows.  The marks are elapsed ms of `timer`; gapMs is the time since the
+// previous cluster's realign ended (the batch worker's own overhead between two).
+struct RealignTiming {
+    bool on = false;
+    QElapsedTimer timer;
+    qint64 setupMs = 0, computeMs = 0;
+    qint64 wprepMs = 0, wopenMs = 0, wwriteMs = 0;     // after sort-prep, after open + verify, after the write
+    long long gapMs = -1;
+};
+static void realignLogTiming(const RealignTiming& t, int clusterId, int64_t N,
+                             QTextStream& log, const std::function<void()>& emitFlush)
+{
+    const qint64 _tot = t.timer.elapsed();
+    log << "[timing] cluster " << clusterId
+        << ": nspk=" << N
+        << " gap=" << t.gapMs << "ms"
+        << " setup=" << t.setupMs << "ms"
+        << " compute=" << (t.computeMs - t.setupMs) << "ms"
+        << " wsort=" << (t.wprepMs - t.computeMs) << "ms"
+        << " wopen=" << (t.wopenMs - t.wprepMs) << "ms"
+        << " wwrite=" << (t.wwriteMs - t.wopenMs) << "ms"
+        << " wlog=" << (_tot - t.wwriteMs) << "ms"
+        << " total=" << _tot << "ms";
+    emitFlush();
+    // Mirror to stderr so the line lands in the launching terminal too —
+    // far easier to redirect/capture than the in-app realign output panel
+    // (which is where the live log above goes).
+    fprintf(stderr,
+            "[timing] cluster %d: nspk=%lld gap=%lldms setup=%lldms "
+            "compute=%lldms wsort=%lldms wopen=%lldms wwrite=%lldms "
+            "wlog=%lldms total=%lldms\n",
+            clusterId, static_cast<long long>(N), t.gapMs, static_cast<long long>(t.setupMs),
+            static_cast<long long>((t.computeMs - t.setupMs)),
+            static_cast<long long>((t.wprepMs - t.computeMs)),
+            static_cast<long long>((t.wopenMs - t.wprepMs)),
+            static_cast<long long>((t.wwriteMs - t.wopenMs)),
+            static_cast<long long>((_tot - t.wwriteMs)), static_cast<long long>(_tot));
+    fflush(stderr);
+}
+
+// The .fet row of one spike: its waveform projected onto the space's basis, the columns that
+// are not projections carried over, the time last.  Without a usable basis the stored
+// features are kept.
+static std::vector<int64_t> realignFeatureRow(const neurosuite::core::PcaBasis& pca, int nChan, int nSamp,
+                                              int timeDim, int nFeatCols, int nPcaFeats, int nExtraFeats,
+                                              const std::vector<std::vector<int64_t>>& extraFeats,
+                                              const std::vector<int64_t>& gidx, Data* clusteringData,
+                                              int64_t csIdx, const int16_t* wav, int64_t ts)
+{
+    std::vector<int64_t> row(static_cast<size_t>(timeDim), int64_t{0});
+
+    // wavBuf is loaded from .spkD which already stores the stderiv-
+    // transformed waveform in channel-major layout [ch*nSamp+s].
+    // For stderiv sessions pca.nCh = nChan-1 (last channel is linearly
+    // dependent and excluded); for raw sessions pca.nCh = nChan.
+    // Either way, project wav[ch * nSamp + recShift + j2] directly —
+    // no second stderiv transform needed.
+    // Same width rule as the refusal above: any basis no wider than the
+    // group projects.  These two tests MUST agree -- a stricter test here
+    // silently zero-fills rows the guard has already admitted, which is
+    // the failure mode the guard exists to prevent.
+    const bool canProject = pca.valid() && pca.nCh > 0 && pca.nCh <= nChan;
+
+    if (canProject) {
+        // Raw waveform, channel-major.  Centring and rounding belong to the
+        // kernel, so this side only says where its samples live.
+        klusters::projectSpikeOntoPca(
+            pca,
+            [&](int ch, int j) {
+                return static_cast<double>(
+                    wav[static_cast<size_t>(ch * nSamp + pca.recShift + j)]);
+            },
+            row.data());
+        // Extra (non-PCA) feature columns copied verbatim
+        for (int k = 0; k < nExtraFeats; ++k)
+            row[static_cast<size_t>(nPcaFeats + k)] =
+                extraFeats[static_cast<size_t>(csIdx)]
+                           [static_cast<size_t>(k)];
+    } else {
+        // PCA unavailable: copy existing feature values from in-memory Data
+        const dataType spikeRow =
+            static_cast<dataType>(
+                gidx[static_cast<size_t>(csIdx)] + 1);  // 1-based
+        Q_ASSERT_X(clusteringData->isValidSpikeIndex(spikeRow),
+                   "featureValue", "spikeRow out of range");
+        for (int col = 0; col < nFeatCols; ++col)
+            row[static_cast<size_t>(col)] =
+                static_cast<int64_t>(
+                    clusteringData->featureValue(spikeRow, col + 1));
+    }
+
+    // Last column is always the timestamp
+    row[static_cast<size_t>(nFeatCols)] = ts;
+    return row;
+}
+
+// The stderiv transform of the shown space: the order and, for a group extracted with a
+// custom difference pattern, its per-channel operator.
+struct RealignStderiv {
+    neurosuite::core::SdiffOrder order = neurosuite::core::SdiffOrder::AllPairs;
+    std::vector<int> partner, setOff, setMem;
+    neurosuite::core::ChannelExprSet expr;
+};
+static RealignStderiv realignStderivSpec(const neurosuite::core::PcaBasis& pca, bool isStderivRealign,
+                                         const QString& parameterFile, const QString& grpId, int nChan,
+                                         int totalNbChan, const QString& fetMethod, QTextStream& log)
+{
+// Spatial-derivative order for the stderiv reprojection below, taken from the
+// basis (PCAE Method) rather than hardcoded.  The three transform sites
+// (candidate refine, raw-source verify, disk-write) all used a fixed all-pairs
+// formula; the basis is the authority now (cf. the nudge flatten).  Fall back
+// to all-pairs for a non-temporal-diff / invalid basis, which keeps every
+// existing stderiv session byte-identical and never reaches the transform with
+// a raw basis anyway.
+neurosuite::core::SdiffOrder stderivOrder =
+    neurosuite::core::hasTemporalDiff(pca.method)
+        ? neurosuite::core::spatialOrder(pca.method)
+        : neurosuite::core::SdiffOrder::AllPairs;
+
+// A group extracted with a custom difference pattern has a basis whose
+// method reports all-pairs (the PCAE cannot encode a pattern), so consult
+// the session and reproject with the same per-channel operator the
+// .spk/.fet were built with.  On any parse failure or channel-count
+// mismatch we leave the basis order untouched (fall back to all-pairs)
+// rather than misreproject or abort.
+std::vector<int> stderivPartner, stderivSetOff, stderivSetMem;
+neurosuite::core::ChannelExprSet stderivExpr;
+if (isStderivRealign && !parameterFile.isEmpty()) {
+    {
+        const SdiffPattern sp = sdiffPatternForMethod(parameterFile, grpId, nChan,
+                                                      totalNbChan, fetMethod);
+        if (sp.applied) {
+            stderivPartner  = sp.partner;
+            stderivSetOff   = sp.setOff;
+            stderivSetMem   = sp.setMem;
+            stderivExpr     = sp.expr;
+            stderivOrder    = sp.order;
+            log << "custom difference pattern for group " << grpId
+                << ": " << sp.spec << "\n";
+        } else if (!sp.problem.isEmpty()) {
+            log << "WARNING: group " << grpId << " sdiffPairs '"
+                << sp.spec << "': " << sp.problem
+                << "; reprojecting with all-pairs\n";
+        }
+    }
+}
+    RealignStderiv r;
+    r.order = stderivOrder;
+    r.partner = stderivPartner; r.setOff = stderivSetOff; r.setMem = stderivSetMem;
+    r.expr = stderivExpr;
+    return r;
+}
+
 bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
                                 std::function<void(const QString&,bool)> liveLog,
                                 const QString& args,
@@ -1743,13 +1969,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         return false;
     }
 
-    // Pipeline (follow the ── section banners below): refuse early only if features
-    // cannot be reprojected; restrict to the active channels; cross-correlate each
-    // spike against the cluster template and circularly roll it to the template peak;
-    // PCA-refine the shift (GPU fast path, Phases A–D, else the CPU per-spike loop);
-    // optionally RMS-recenter; re-extract waveforms and write the shifted res/spk to
-    // pending files; then commit pending over the originals.  One large function by
-    // design — the Phase-0 helpers above are the only extracted parts.
+    // The stages, in order (the functions above this one and in libklustersshared):
+    //   the space and its files; the settings; the cluster's rows; the basis and the
+    //   stderiv transform; reading (realign_io); the shifts -- the centroid de-jitter or
+    //   the xcorr passes (realign_pass), the PCA refinement (realignPcaRefineSearch), the
+    //   RMS recenter -- and their statistics; the plan -- the new times
+    //   (realignNewTimes), the check of the stored rows against the recording
+    //   (realignVerifyStoredRows), the new rows (realignPlanRows); then the application
+    //   (realignApplyRows), the first thing that changes anything, and its bookkeeping.
 
     // Snapshot the cluster before any waveform data is modified.  During an
     // Align-All batch the centroid pass this triggers is served from a
@@ -1798,25 +2025,16 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         ~FlushOnReturn() { flush(); }
     } flushOnReturn{ emitFlush };
 
-    // Per-phase wall-clock timing, opt-in via NS3_REALIGN_TIMING=1.  Emits one
-    // line per cluster (setup / compute / writeback / total) so a batch can be
-    // checked for which phase grows with cluster index.  No-op (one cheap
-    // elapsed() pair) when the env var is unset.
-    const bool _timing = qEnvironmentVariableIsSet("NS3_REALIGN_TIMING");
-    QElapsedTimer _rtmr; _rtmr.start();
-    qint64 _rtSetupMs = 0, _rtComputeMs = 0;
-    // Writeback sub-phase markers (elapsed ms): boundary after sort-prep, after
-    // file-open+verify, and after the write loop+close.  Pinpoints which part of
-    // the (flat ~130ms) writeback is the fixed per-cluster cost.
-    qint64 _rtWprepMs = 0, _rtWopenMs = 0, _rtWwriteMs = 0;
-    // Gap since the previous cluster's realign finished — captures the
-    // inter-cluster overhead (the batch worker's per-iteration bookkeeping and
-    // clusterDone emit) that is invisible to the in-function timers.
-    const long long _nowStartMs = static_cast<long long>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count());
-    const long long _gapMs =
-        (realignPrevEndMs >= 0) ? (_nowStartMs - realignPrevEndMs) : -1;
+    // Per-phase wall-clock timing, opt-in via NS3_REALIGN_TIMING=1 (RealignTiming).
+    RealignTiming timing;
+    timing.on = qEnvironmentVariableIsSet("NS3_REALIGN_TIMING");
+    timing.timer.start();
+    {
+        const long long nowMs = static_cast<long long>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count());
+        timing.gapMs = (realignPrevEndMs >= 0) ? (nowMs - realignPrevEndMs) : -1;
+    }
 
     const Data& d         = data();
     const int   nChan     = d.nbOfChannels();
@@ -2007,53 +2225,14 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     }
 
 
-    // Spatial-derivative order for the stderiv reprojection below, taken from the
-    // basis (PCAE Method) rather than hardcoded.  The three transform sites
-    // (candidate refine, raw-source verify, disk-write) all used a fixed all-pairs
-    // formula; the basis is the authority now (cf. the nudge flatten).  Fall back
-    // to all-pairs for a non-temporal-diff / invalid basis, which keeps every
-    // existing stderiv session byte-identical and never reaches the transform with
-    // a raw basis anyway.
-    neurosuite::core::SdiffOrder stderivOrder =
-        neurosuite::core::hasTemporalDiff(pca.method)
-            ? neurosuite::core::spatialOrder(pca.method)
-            : neurosuite::core::SdiffOrder::AllPairs;
-
-    // A group extracted with a custom difference pattern has a basis whose
-    // method reports all-pairs (the PCAE cannot encode a pattern), so consult
-    // the session and reproject with the same per-channel operator the
-    // .spk/.fet were built with.  On any parse failure or channel-count
-    // mismatch we leave the basis order untouched (fall back to all-pairs)
-    // rather than misreproject or abort.
-    std::vector<int> stderivPartner, stderivSetOff, stderivSetMem;
-    neurosuite::core::ChannelExprSet stderivExpr;
-    if (isStderivRealign && !parameterFile.isEmpty()) {
-        {
-            const SdiffPattern sp = sdiffPatternForMethod(parameterFile, grpId, nChan,
-                                                          d.getTotalNbChannels(), fetMethod);
-            if (sp.applied) {
-                stderivPartner  = sp.partner;
-                stderivSetOff   = sp.setOff;
-                stderivSetMem   = sp.setMem;
-                stderivExpr     = sp.expr;
-                stderivOrder    = sp.order;
-                log << "custom difference pattern for group " << grpId
-                    << ": " << sp.spec << "\n";
-            } else if (!sp.problem.isEmpty()) {
-                log << "WARNING: group " << grpId << " sdiffPairs '"
-                    << sp.spec << "': " << sp.problem
-                    << "; reprojecting with all-pairs\n";
-            }
-        }
-    }
-    const int* stderivPartnerPtr =
-        stderivPartner.empty() ? nullptr : stderivPartner.data();
-    const int* stderivSetOffPtr =
-        stderivSetOff.empty() ? nullptr : stderivSetOff.data();
-    const int* stderivSetMemPtr =
-        stderivSetMem.empty() ? nullptr : stderivSetMem.data();
-    const neurosuite::core::ChannelExprSet* stderivExprPtr =
-        stderivExpr.empty() ? nullptr : &stderivExpr;
+    // The stderiv transform of this space (order, custom difference pattern).
+    const RealignStderiv stderiv = realignStderivSpec(pca, isStderivRealign, parameterFile, grpId, nChan,
+                                                      d.getTotalNbChannels(), fetMethod, log);
+    const neurosuite::core::SdiffOrder stderivOrder = stderiv.order;
+    const int* stderivPartnerPtr = stderiv.partner.empty() ? nullptr : stderiv.partner.data();
+    const int* stderivSetOffPtr  = stderiv.setOff.empty()  ? nullptr : stderiv.setOff.data();
+    const int* stderivSetMemPtr  = stderiv.setMem.empty()  ? nullptr : stderiv.setMem.data();
+    const neurosuite::core::ChannelExprSet* stderivExprPtr = stderiv.expr.empty() ? nullptr : &stderiv.expr;
 
     // -----------------------------------------------------------------------
     // Load cluster waveforms from binary .spk (int16, no header)
@@ -2121,15 +2300,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     }
 
     // Capture before-mean in channel-major order for the review dialog.
-    if (meanBefore) {
-        meanBefore->resize(static_cast<int>(spkElems));
-        for (size_t e = 0; e < spkElems; ++e) {
-            double acc = 0.0;
-            for (int64_t i = 0; i < N; ++i)
-                acc += wavBuf[static_cast<size_t>(i) * spkElems + e];
-            (*meanBefore)[static_cast<int>(e)] = static_cast<float>(acc / N);
-        }
-    }
+    if (meanBefore) realignMeanInto(wavBuf, N, spkElems, *meanBefore);
 
     // -----------------------------------------------------------------------
     // The cluster's times (.res) and its feature columns that are not projections
@@ -2173,35 +2344,10 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     std::vector<int>   cumShift(static_cast<size_t>(N), 0);
     std::vector<float> bestScore(static_cast<size_t>(N), 0.0f);
 
-    // realignMode 3 (--align-centroid): reference-free per-spike centroid de-jitter -- the parent-kit
-    // fiber_realign method='centroid'.  No template, no xcorr: each spike is shifted so its OWN circular
-    // energy centroid lands on the POPULATION's circular-mean centroid (perSpikeCentroidShifts, the shared
-    // realign_center math).  Fill cumShift and roll wavBuf exactly as the xcorr loop would, then set
-    // nIter=0 so the loop below is skipped.  This is the aligner for clusters whose mean is too noisy to
-    // anchor the normalised xcorr -- the case the xcorr path leaves jittered.
+    // realignMode 3: the per-spike centroid de-jitter in place of the xcorr passes.
     if (alignCentroid) {
-        std::vector<double> energy(static_cast<size_t>(N) * nSamp, 0.0);
-        for (int64_t i = 0; i < N; ++i) {
-            const int16_t* w = wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
-            double* e = energy.data() + static_cast<size_t>(i) * nSamp;
-            for (int ch = 0; ch < nChan; ++ch)
-                for (int s = 0; s < nSamp; ++s) {
-                    const double v = w[static_cast<size_t>(ch * nSamp + s)];
-                    e[static_cast<size_t>(s)] += v * v;          // channel-summed per-sample energy
-                }
-        }
-        std::vector<int> csh;
-        realign_center::perSpikeCentroidShifts(energy.data(), static_cast<int>(N), nSamp, csh);
-        for (int64_t i = 0; i < N; ++i) {
-            const int s = csh[static_cast<size_t>(i)];
-            cumShift[static_cast<size_t>(i)] = s;                // newTs = clusterTs + cumShift downstream
-            if (s == 0) continue;
-            realign_pass::rollSpike(wavBuf.data()
-                + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems),
-                nChan, nSamp, s);                                // the xcorr passes' roll
-        }
-        nIter = 0;   // centroid alignment complete; skip the xcorr iteration loop
+        realignCentroidShifts(wavBuf, nChan, nSamp, cumShift);
+        nIter = 0;
         log << "  centroid: per-spike reference-free centroid de-jitter (no template)\n";
     }
 
@@ -2277,11 +2423,11 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             refine.stderivExpr    = stderivExprPtr;
             refine.clusterTs = &clusterTs;
             refine.measuredCorrected = &measuredCorrected;
-            refine.computeStarts = [&]() { _rtSetupMs = _rtmr.elapsed(); };
+            refine.computeStarts = [&]() { timing.setupMs = timing.timer.elapsed(); };
             int nRefined = 0, nClamped = 0;
             realignPcaRefineSearch(filFp82, refine, cumShift, wavBuf, nRefined, nClamped, log, emitFlush);
             fclose(filFp82);
-            _rtComputeMs = _rtmr.elapsed();
+            timing.computeMs = timing.timer.elapsed();
 
             log << "  PCA-refine: " << nRefined
                 << " spike(s) refined";
@@ -2377,54 +2523,9 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // Project waveform onto per-channel PCA basis → full .fet row (timeDim values)
     // Row layout: [pca_ch0_pc0, pca_ch0_pc1, ..., pca_chN_pcK, extras..., timestamp]
     // -----------------------------------------------------------------------
-    auto makeFetRow = [&](int64_t csIdx, const int16_t* wav,
-                           int64_t ts) -> std::vector<int64_t>
-    {
-        std::vector<int64_t> row(static_cast<size_t>(timeDim), int64_t{0});
-
-        // wavBuf is loaded from .spkD which already stores the stderiv-
-        // transformed waveform in channel-major layout [ch*nSamp+s].
-        // For stderiv sessions pca.nCh = nChan-1 (last channel is linearly
-        // dependent and excluded); for raw sessions pca.nCh = nChan.
-        // Either way, project wav[ch * nSamp + recShift + j2] directly —
-        // no second stderiv transform needed.
-        // Same width rule as the refusal above: any basis no wider than the
-        // group projects.  These two tests MUST agree -- a stricter test here
-        // silently zero-fills rows the guard has already admitted, which is
-        // the failure mode the guard exists to prevent.
-        const bool canProject = pca.valid() && pca.nCh > 0 && pca.nCh <= nChan;
-
-        if (canProject) {
-            // Raw waveform, channel-major.  Centring and rounding belong to the
-            // kernel, so this side only says where its samples live.
-            klusters::projectSpikeOntoPca(
-                pca,
-                [&](int ch, int j) {
-                    return static_cast<double>(
-                        wav[static_cast<size_t>(ch * nSamp + pca.recShift + j)]);
-                },
-                row.data());
-            // Extra (non-PCA) feature columns copied verbatim
-            for (int k = 0; k < nExtraFeats; ++k)
-                row[static_cast<size_t>(nPcaFeats + k)] =
-                    extraFeats[static_cast<size_t>(csIdx)]
-                               [static_cast<size_t>(k)];
-        } else {
-            // PCA unavailable: copy existing feature values from in-memory Data
-            const dataType spikeRow =
-                static_cast<dataType>(
-                    gidx[static_cast<size_t>(csIdx)] + 1);  // 1-based
-            Q_ASSERT_X(clusteringData->isValidSpikeIndex(spikeRow),
-                       "featureValue", "spikeRow out of range");
-            for (int col = 0; col < nFeatCols; ++col)
-                row[static_cast<size_t>(col)] =
-                    static_cast<int64_t>(
-                        clusteringData->featureValue(spikeRow, col + 1));
-        }
-
-        // Last column is always the timestamp
-        row[static_cast<size_t>(nFeatCols)] = ts;
-        return row;
+    const auto makeFetRow = [&](int64_t csIdx, const int16_t* wav, int64_t ts) {
+        return realignFeatureRow(pca, nChan, nSamp, timeDim, nFeatCols, nPcaFeats, nExtraFeats,
+                                 extraFeats, gidx, clusteringData, csIdx, wav, ts);
     };
 
     // -----------------------------------------------------------------------
@@ -2435,7 +2536,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     const QList<int>& groupChannels = clusteringData->getCurrentChannels();
 
     const QString& filPath = rawPath;
-    _rtWprepMs = _rtmr.elapsed();
+    timing.wprepMs = timing.timer.elapsed();
     FILE* filF = fopen(filPath.toLocal8Bit().constData(), "rb");
     if (!filF) {
         log << "ERROR: cannot open raw file " << filPath
@@ -2511,7 +2612,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
         return false;
     }
 
-    _rtWopenMs = _rtmr.elapsed();
+    timing.wopenMs = timing.timer.elapsed();
     //The overlay batch (epoch-snapshot step 7): every record written into the
     //pending file below is also staged here and published afterwards, so
     //snapshots from then on serve these bytes from memory while epochs
@@ -2541,7 +2642,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             << "  they were left unmoved.\n";
         emitFlush();
     }
-    _rtWwriteMs = _rtmr.elapsed();
+    timing.wwriteMs = timing.timer.elapsed();
 
     // spkFileName already points to pendingSpkPath (set on open and kept
     // permanently) — no redirect needed here.
@@ -2571,39 +2672,12 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     log << "Done. " << nShifted << " shifted. (pending save)\n";
 
     // Capture after-mean for the review dialog.
-    if (meanAfter) {
-        meanAfter->resize(static_cast<int>(spkElems));
-        for (size_t e = 0; e < spkElems; ++e) {
-            double acc = 0.0;
-            for (int64_t i = 0; i < N; ++i)
-                acc += wavBuf[static_cast<size_t>(i) * spkElems + e];
-            (*meanAfter)[static_cast<int>(e)] = static_cast<float>(acc / N);
-        }
-    }
+    if (meanAfter) realignMeanInto(wavBuf, N, spkElems, *meanAfter);
 
     // What the realign did: the snapshots show the cluster before and after, not how
     // many spikes moved or how far.
-    if (curationLogger && curationLogger->isOpen() && logActionOpen) {
-        std::vector<int> mag; mag.reserve(static_cast<size_t>(N));
-        double sum = 0.0; int mx = 0;
-        for (int64_t i = 0; i < N; ++i) {
-            const int s = cumShift[static_cast<size_t>(i)];
-            if (s == 0) continue;
-            mag.push_back(std::abs(s)); sum += s; mx = std::max(mx, std::abs(s));
-        }
-        std::sort(mag.begin(), mag.end());
-        curationLogger->recordActionDetails({
-            { QStringLiteral("edit"),             QStringLiteral("realign") },
-            { QStringLiteral("outcome"),          QStringLiteral("applied") },
-            { QStringLiteral("n_spikes"),         static_cast<qlonglong>(N) },
-            { QStringLiteral("n_shifted"),        nShifted },
-            { QStringLiteral("shifted_share"),    N > 0 ? static_cast<double>(mag.size()) / static_cast<double>(N) : 0.0 },
-            { QStringLiteral("shift_abs_median"), mag.empty() ? 0 : mag[mag.size() / 2] },
-            { QStringLiteral("shift_abs_max"),    mx },
-            { QStringLiteral("shift_mean"),       mag.empty() ? 0.0 : sum / static_cast<double>(mag.size()) },
-            { QStringLiteral("not_recut"),        static_cast<qlonglong>(notRecut) },
-        });
-    }
+    if (curationLogger && curationLogger->isOpen() && logActionOpen)
+        realignRecordDetails(curationLogger.get(), cumShift, nShifted, notRecut);
 
     // Log the cluster after realignment — features and timestamps have been
     // updated.  Served from the batch centroid cache during Align-All.
@@ -2612,34 +2686,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     logAfterNotUndoable(QList<int>{ clusterId });
     realignLogClose.committed = true;
 
-    if (_timing) {
-        const qint64 _tot = _rtmr.elapsed();
-        log << "[timing] cluster " << clusterId
-            << ": nspk=" << N
-            << " gap=" << _gapMs << "ms"
-            << " setup=" << _rtSetupMs << "ms"
-            << " compute=" << (_rtComputeMs - _rtSetupMs) << "ms"
-            << " wsort=" << (_rtWprepMs - _rtComputeMs) << "ms"
-            << " wopen=" << (_rtWopenMs - _rtWprepMs) << "ms"
-            << " wwrite=" << (_rtWwriteMs - _rtWopenMs) << "ms"
-            << " wlog=" << (_tot - _rtWwriteMs) << "ms"
-            << " total=" << _tot << "ms";
-        emitFlush();
-        // Mirror to stderr so the line lands in the launching terminal too —
-        // far easier to redirect/capture than the in-app realign output panel
-        // (which is where the live log above goes).
-        fprintf(stderr,
-                "[timing] cluster %d: nspk=%lld gap=%lldms setup=%lldms "
-                "compute=%lldms wsort=%lldms wopen=%lldms wwrite=%lldms "
-                "wlog=%lldms total=%lldms\n",
-                clusterId, static_cast<long long>(N), _gapMs, static_cast<long long>(_rtSetupMs),
-                static_cast<long long>((_rtComputeMs - _rtSetupMs)),
-                static_cast<long long>((_rtWprepMs - _rtComputeMs)),
-                static_cast<long long>((_rtWopenMs - _rtWprepMs)),
-                static_cast<long long>((_rtWwriteMs - _rtWopenMs)),
-                static_cast<long long>((_tot - _rtWwriteMs)), static_cast<long long>(_tot));
-        fflush(stderr);
-    }
+    if (timing.on) realignLogTiming(timing, clusterId, N, log, emitFlush);
     // Record this call's end so the next cluster can report its gap.  Updated
     // unconditionally (cheap) so it is correct regardless of the timing flag.
     realignPrevEndMs = static_cast<long long>(
