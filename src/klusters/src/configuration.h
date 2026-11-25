@@ -101,6 +101,8 @@ public:
     void setRealignThreshold(double v)  {realignThreshold = qBound(0.0, v, 1.0);}
     void setRealignIterations(int n)     {realignIterations = qMax(1, n);}
     void setRealignMaxShift(int n)        {realignMaxShift = qMax(0, n);}
+    /// MB the rows kept for the undo of realigns may take together; 0: realigns are not undoable.
+    void setRealignUndoMemoryMB(int mb)   {realignUndoMemoryMB = qBound(0, mb, 262144);}
     void setRealignKernel(int k)          {realignKernel = (k < 0 || k > 3) ? 0 : k;}   // 0 none, 1 gauss, 2 hann, 3 template energy
     void setRealignKernelWidth(int n)     {realignKernelWidth = qMax(0, n);}            // samples each side of the peak, 0 = auto
     /**Sets the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter, 3=per-spike centroid).*/
@@ -293,6 +295,7 @@ public:
     double getRealignThreshold()  const {return realignThreshold;}
     int    getRealignIterations() const {return realignIterations;}
     int    getRealignMaxShift()   const {return realignMaxShift;}
+    int    getRealignUndoMemoryMB() const {return realignUndoMemoryMB;}
     int    getRealignKernel()     const {return realignKernel;}
     int    getRealignKernelWidth() const {return realignKernelWidth;}
     /**Returns the post-alignment mode (0=off, 1=PCA refine, 2=RMS recenter).*/
@@ -461,6 +464,7 @@ public:
     double getRealignThresholdDefault()  const {return 0.10;}
     int    getRealignIterationsDefault() const {return prefDefault("realignIterations").value<int>();}
     int    getRealignMaxShiftDefault()   const {return 0;}  // 0 = use peakSamp/2
+    int    getRealignUndoMemoryMBDefault() const {return prefDefault("realignUndoMemoryMB").value<int>();}
     int    getRealignKernelDefault()     const {return 0;}  // none: the whole window, as before
     int    getRealignKernelWidthDefault() const {return prefDefault("realignKernelWidth").value<int>();} // 0 = half the peak position
     int    getRealignModeDefault()       const {return 0;}  // 0 = off (plain xcorr)
@@ -705,6 +709,7 @@ private:
     double  realignThreshold;
     int     realignIterations;
     int     realignMaxShift;
+    int     realignUndoMemoryMB = 4096;
     int     realignKernel;
     int     realignKernelWidth;
     int     realignMode;

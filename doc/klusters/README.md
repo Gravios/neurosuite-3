@@ -1875,9 +1875,12 @@ session files. The session files are updated atomically on save:
   - A realign done in another feature space is undone **in that space**: with a
     different one shown, Undo stops there and the status bar names the space.
   - The rows are kept in memory: for each spike of the cluster the old and the
-    new waveform. Realign steps count against the undo depth, and the oldest
-    are dropped once they hold more than 1 GB together (the edits of the same
-    step stay undoable).
+    new waveform. Realign steps count against the undo depth. What they may
+    take together is **Preferences → General → Session → Undo → Memory for the
+    undo of realigns** (4 GB unless changed). Beyond it the oldest realign
+    steps are dropped (the edits of the same step stay undoable), and a single
+    realign or Align All larger than it cannot be undone: the status bar says
+    so. With 0, no realign is kept.
 - A **nudge** is **not undoable**, and it ends the undo of the realigns before
   it: their kept rows no longer describe the files. `Ctrl+Z` then goes to the
   edit before. The way back from a nudge is the opposite nudge, or **File →

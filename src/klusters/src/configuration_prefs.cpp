@@ -79,6 +79,8 @@ const QList<PrefSpec>& Configuration::prefTable()
                   [](int i) { return qBound(0, i, 5); }).on("crashRecoveryComboBox");   // the range its page allows
         t << pref("General", "nbUndo", &Configuration::nbUndo, nbUndoDefault,
                   [](int n) { return qBound(0, n, 30); }).on("undoSpinBox");   // the range its page allows
+        t << prefVia("General", "realignUndoMemoryMB", &Configuration::realignUndoMemoryMB, 4096,
+                     &Configuration::setRealignUndoMemoryMB).on("realignUndoMemorySpinBox");   // 0 .. 262144, in the setter
         t << pref("General", "backgroundColor", &Configuration::backgroundColor, backgroundColorDefault).on("backgroundColorButton");
         t << pref("General", "reclusteringExecutable", &Configuration::reclusteringExecutable, reclusteringExecutableDefault).on("reclusteringExecutableLineEdit");
         t << pref("General", "reclusteringArgs", &Configuration::reclusteringArgs, reclusteringArgsDefault);

@@ -157,6 +157,17 @@ def main():
                       supersampleInterp=0)
     check(ran(rep) and got == base_up, "... back in the realign's space, Undo works", differing(got, base_up))
 
+    # ── the memory kept for it is a preference ───────────────────
+    rep, got, _ = run(klusters, [{"realign": 2}, {"wait": 50}, STATE, UNDO, SAVE], realignUndoMemoryMB=0)
+    st = results(rep, "undoSteps")
+    check(ran(rep) and st and st[0]["undoSteps"] == 0 and "not kept for undo" in st[0].get("status", ""),
+          "with 0 MB for the undo of realigns, a realign is no step and the status bar says why", st[:1])
+    check(got == realigned, "... and Undo then changes nothing", differing(got, realigned))
+    rep, got, _ = run(klusters, [{"realign": 2}, {"realign": 3}, STATE, UNDO, UNDO, SAVE], realignUndoMemoryMB=1)
+    st = results(rep, "undoSteps")
+    check(ran(rep) and st and st[0]["undoSteps"] == 2, "1 MB holds both small realigns", st[:1])
+    check(got == orig, "... and both are undone", differing(got, orig))
+
     # ── Align All is one step ────────────────────────────────────
     rep, all_aligned, _ = run(klusters, [{"alignAll": True}, STATE, SAVE])
     st = results(rep, "undoSteps")

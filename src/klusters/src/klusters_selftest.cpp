@@ -157,6 +157,8 @@ void KlustersApp::startSelfTest(const QString& specPath)
     if (spec.contains(QStringLiteral("realignThreshold")))
         configuration().setRealignThreshold(spec.value(QStringLiteral("realignThreshold")).toDouble());
     realignArgs = buildRealignArgs();
+    if (spec.contains(QStringLiteral("realignUndoMemoryMB")))    // MB kept for the undo of realigns; 0: none
+        configuration().setRealignUndoMemoryMB(spec.value(QStringLiteral("realignUndoMemoryMB")).toInt());
     if (spec.contains(QStringLiteral("nbUndo"))) {                // the undo depth (Preferences > General)
         configuration().setNbUndo(spec.value(QStringLiteral("nbUndo")).toInt());
         nbUndo = configuration().getNbUndo();

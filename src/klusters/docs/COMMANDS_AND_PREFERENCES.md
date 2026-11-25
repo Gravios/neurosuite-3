@@ -169,7 +169,7 @@ records it and `test_command_table.py` fails on it.
 ## 5. The preference table
 
 `Configuration::prefTable()` returns one `PrefSpec` per value of the settings
-file (113 rows):
+file (114 rows):
 
 ```cpp
 t << prefVia("General", "knnK", &Configuration::knnK, 10, &Configuration::setKnnK).on("knnKSpinBox");
@@ -234,7 +234,7 @@ every row whose control it finds under the dialog:
 | radio buttons | the index of the one checked | `.on("first|second|third")` |
 | `QColorButton` | a colour | `.on("name")` |
 
-74 settings are bound. A row naming a control that no page has is reported
+75 settings are bound. A row naming a control that no page has is reported
 (`PrefDialog::unboundPreferenceRows()`), and `test_settings_file.py` fails on it.
 
 **A control that enables others** does so from its own signal, connected in the

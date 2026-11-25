@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign undo: the memory it may use is a preference](#2026-11-24--realign-undo-the-memory-it-may-use-is-a-preference) |
 | 2026-11-24 | [Realign can be undone](#2026-11-24--realign-can-be-undone) |
 | 2026-11-24 | [Realign: each rewritten row keeps what was there](#2026-11-24--realign-each-rewritten-row-keeps-what-was-there) |
 | 2026-11-24 | [Realign: the rows are computed first, then written](#2026-11-24--realign-the-rows-are-computed-first-then-written) |
@@ -288,6 +289,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign undo: the memory it may use is a preference
+
+The cap on the rows kept for the undo of realigns is a preference on the Session page, 4 GB by default, in place of a constant of 1 GB.
+
+<details>
+<summary>Details</summary>
+
+**What changes for the curator.** **Preferences → General → Session → Undo** has a second
+setting, *Memory for the undo of realigns (MB)*: what the rows kept by undoable realigns may
+take together. It was a fixed 1 GB; it is 4096 MB unless changed, from 0 to 262144.
+
+- Beyond it the oldest realign steps are dropped (the edits of the same step stay undoable).
+- A single realign or Align All larger than it cannot be undone; the status bar says so when
+  it ends.
+- With 0 no realign is kept, and the status bar says that instead.
+- A lower value takes effect at the next realign.
+
+**In the code.** One row of the preference table (`realignUndoMemoryMB`) and a spin box named
+in it; the constant `KlustersDoc::realignUndoBudgetBytes` is gone.
+
+**Checked.** `test_realign_undo.py`: with 0 MB a realign is no undo step, the status bar gives
+the reason and Undo changes nothing; with 1 MB two small realigns are both kept and undone.
+`test_settings_file.py` and its snapshot have the key in all seven cases (117 keys). The
+whole suite passes. Not checked: the drop of the oldest step by a real overflow (the generated
+clusters take well under 1 MB); that path has a unit test only.
+
+</details>
 
 ---
 

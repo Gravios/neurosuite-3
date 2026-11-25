@@ -1975,14 +1975,12 @@ public:
     /** Make the realigns done since the last call undo steps (GUI thread, once the job
      *  that ran them is over): one step for all of them, and with @p joinPrevious the
      *  step of the edit before them (the automatic realign after a merge).  Returns how
-     *  many.  The oldest realign steps are dropped while they keep more than
-     *  realignUndoBudgetBytes. */
+     *  many.  The oldest realign steps are dropped while they keep more than the
+     *  preference allows (Configuration::getRealignUndoMemoryMB). */
     int recordRealignUndo(bool joinPrevious = false);
     /** Forget how to undo the realigns so far: their rows no longer describe the files
      *  (a nudge rewrote them).  Other steps stay. */
     void dropRealignUndo();
-    /// What the kept rows of undoable realigns may take, old and new together.
-    static constexpr qint64 realignUndoBudgetBytes = qint64(1) << 30;
 
     /** True when realignment results are waiting to be written to disk. */
     bool hasPendingRealign() const { return !pendingRealign.empty(); }

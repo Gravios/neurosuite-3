@@ -112,7 +112,7 @@ The audit fixed five faults and the single undo history closed the four behaviou
   (`realignApplyRows`, `KlustersDoc::applyRealignBatch`).  Open:
   - the nudge writes no record; it drops the realign steps instead (`dropRealignUndo`).
     The same record would make it a step;
-  - the kept rows are in memory, capped at `realignUndoBudgetBytes` (1 GB, a constant);
+  - the kept rows are in memory, capped by a preference (`realignUndoMemoryMB`, 4 GB);
     a file beside the working copies would lift the cap;
   - a realign made in another feature space is refused until that space is shown; the
     application could show it, apply, and come back, as it does for a realign;

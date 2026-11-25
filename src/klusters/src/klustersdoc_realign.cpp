@@ -2660,11 +2660,15 @@ int KlustersDoc::recordRealignUndo(bool joinPrevious)
         for (const PendingSpkRecord& r : b->records)
             mine += static_cast<qint64>(2 * sizeof(int64_t)) * b->timeDim
                   + (r.origSpk == r.spk ? 1 : 2) * b->bytesPerSpike;
-    while (undoHistory.totalCost() > realignUndoBudgetBytes && undoHistory.dropOldestCostly()) {}
-    if (mine > realignUndoBudgetBytes)
-        emit undoRefused(tr("This realign rewrote %1 MB of rows, more than is kept for an undo (%2 MB): "
-                            "it cannot be undone.  Close without saving to go back.")
-                             .arg(mine >> 20).arg(realignUndoBudgetBytes >> 20));
+    // Preferences > Session > Undo: what the kept rows may take together.
+    const qint64 budget = static_cast<qint64>(configuration().getRealignUndoMemoryMB()) << 20;
+    while (undoHistory.totalCost() > budget && undoHistory.dropOldestCostly()) {}
+    if (mine > budget)
+        emit undoRefused(budget == 0
+            ? tr("Realigns are not kept for undo (Preferences: memory for the undo of realigns is 0).")
+            : tr("This realign rewrote %1 MB of rows, more than is kept for an undo (%2 MB, in the Preferences): "
+                 "it cannot be undone.  Close without saving to go back.")
+                  .arg(qMax<qint64>(1, mine >> 20)).arg(budget >> 20));
     refreshUndoRedoEnable();
     return static_cast<int>(batches.size());
 }

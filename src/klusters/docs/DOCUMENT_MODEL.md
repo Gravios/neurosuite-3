@@ -401,7 +401,7 @@ tested without a session (`undohistory_test.cpp`).
   for the automatic realign after a merge). An entry that cannot be applied (another
   space shown) stays where it was and `undoRefused` carries the reason. The entries
   keep `Entry::cost` bytes; `UndoHistory::dropOldestCostly` holds the total under
-  `realignUndoBudgetBytes`.
+  the preference `realignUndoMemoryMB`.
 - **Not in the history:** a nudge (it rewrites `.spk` / `.res` without a record, and
   calls `dropRealignUndo`: the realign entries no longer describe the files; see §7.4)
   and a save.
