@@ -577,6 +577,7 @@ private:
     QString     selfTestRealignLog_;
     QJsonArray  selfTestSteps_;
     QJsonArray  selfTestResults_;
+    QJsonArray  selfTestAnswerNo_;      ///< "answerNo" of the spec: boxes holding one of these texts get No
     QString     selfTestReport_;
     QTimer*     selfTestTimer_ = nullptr;
     int         selfTestIndex_ = 0;
@@ -597,9 +598,11 @@ public:
     void applySupersampleMode();
     /** Build the super-sampled space (factor) over the .clu's own space and, with
      *  @p show, show it (the action; the mode leaves the shown space alone);
-     *  the shared body of the action and the mode.  @p quiet: no dialogs (the mode).
-     *  Returns the new token, empty on failure. */
-    QString buildAndShowSupersampledSpace(int factor, bool quiet, bool show = true);
+     *  the shared body of the action and the mode.  @p quiet: not the action's dialogs (the
+     *  mode).  @p declined, when given with @p quiet: a session without the super-sampled
+     *  .spk is asked whether to build it, and a No is reported there (nothing built).
+     *  Returns the new token, empty on failure or when declined. */
+    QString buildAndShowSupersampledSpace(int factor, bool quiet, bool show = true, bool* declined = nullptr);
     /** The two Super-sample actions follow the Preferences gate and the document state. */
     void updateSupersampleActions();
     /** The super-sampling interpolator the preference index names (0 cubic spline,

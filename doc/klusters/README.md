@@ -222,14 +222,19 @@ new spaces only.
 **Preferences → Curation → Realignment → Super-sampling** sets
 the **mode** (off by default, ×2, ×4): in a mode, every session that opens
 gets the super-sampled space over its `.clu`'s space built, if its files are
-not there yet. The session still opens in the `.clu`'s own space; the
+not there yet. When the waveforms (`.spk.<token>_U4.N`) are not there Klusters
+asks first, naming the file and its size: **Yes** builds the `.spk`, its PCA
+basis and `.fet`; **No** builds nothing, turns the mode off in the preferences
+and carries on at the recording's sampling (with the `.spk` there and only the
+`.fet` missing, the `.fet` is fitted without a question). The session still opens in the `.clu`'s own space; the
 super-sampled one is read when you switch to it (the *Space* box, Ctrl+Tab).
 With *Also save the clustering under the
 super-sampled token* the `.clu` is saved as `<base>.clu.<token>_U4.N` and
 reopened there, so realign and nudge run at sub-sample resolution without a
 further step. A super-sampled `.clu` opened while its `.spk.<token>_U4.N` is
 missing (copied without the big file) is rebuilt the same way through the base
-space. **Spikes → Super-sample ×2 / ×4…** does it by hand; it builds, over the
+space, after the same question; with **No** the session stays in the base
+clustering. **Spikes → Super-sample ×2 / ×4…** does it by hand; it builds, over the
 `.clu`'s space, `<base>.spk.<token>_U4.N` (every spike
 re-cut from the `.fil` with a margin of raw samples on either side so the
 edges are exact; from the stored windows when there is no recording), a PCA

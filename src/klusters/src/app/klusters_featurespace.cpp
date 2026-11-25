@@ -248,8 +248,9 @@ void KlustersApp::slotExportBaseRate()
     statusBar()->showMessage(tr("Exported at the recording's sampling: %1").arg(QFileInfo(written.value(0)).fileName()), 6000);
 }
 
-QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet, bool show)
+QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet, bool show, bool* declined)
 {
+    if (declined) *declined = false;
     if (!doc || doc->url().isEmpty()) return QString();
     if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
         statusBar()->showMessage(tr("Wait for the running job to finish before super-sampling."), 5000);
@@ -294,6 +295,26 @@ QString KlustersApp::buildAndShowSupersampledSpace(int factor, bool quiet, bool 
                     .arg(spkBytes / (1024 * 1024)).arg(d.nbOfChannels() * d.nbOfFeaturesByChannel() + 2).arg(how),
                 QMessageBox::Yes | QMessageBox::Cancel, QMessageBox::Yes);
             if (answer != QMessageBox::Yes) return QString();
+        }
+        // Super-sample MODE (the preference) on a session without the waveforms: the build
+        // writes a .spk `factor` times the size of the session's, so it is asked for.  With
+        // the .spk there already only the basis and the .fet are fitted: not asked.
+        if (quiet && declined && !haveSpk) {
+            const QString back = mSupersampleReopenUrl.isEmpty() ? QString()
+                : tr("<br><br>%1 was opened through its base clustering (%2); with No the session stays there.")
+                      .arg(QFileInfo(mSupersampleReopenUrl).fileName(), QFileInfo(doc->url()).fileName());
+            const auto answer = QMessageBox::question(this, tr("Super-sample ×%1").arg(factor),
+                tr("Super-sampling ×%1 is selected in the preferences, but this session has no super-sampled "
+                   "waveforms (<b>%2</b>).<br><br>Build them now?  %3 spikes × %4 channels × %5 ticks: a new .spk of "
+                   "<b>%6 MB</b>, with its PCA basis and .fet -- %7.<br><br>"
+                   "No turns super-sampling off in the preferences and continues at the recording's sampling.%8")
+                    .arg(factor).arg(QFileInfo(QString::fromStdString(neurosuite::custody::methodPath(stem, "spk", token.toStdString(), group))).fileName())
+                    .arg(nSpikes).arg(d.nbOfChannels()).arg(d.baseNbSamplesPerWaveform() * factor).arg(spkBytes / (1024 * 1024))
+                    .arg(haveRec ? tr("every spike re-cut from %1 and interpolated (%2)").arg(QFileInfo(rec).fileName(),
+                                       interpLabel(configuration().getSupersampleInterp()))
+                                 : tr("no recording found, so the stored windows are interpolated"), back),
+                QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+            if (answer != QMessageBox::Yes) { *declined = true; return QString(); }
         }
         QString log, err, newToken;
         QApplication::setOverrideCursor(Qt::WaitCursor);
@@ -358,7 +379,18 @@ void KlustersApp::applySupersampleMode()
     // Built if missing, NOT shown: the base-rate space stays on screen and the
     // super-sampled files are read when the user switches to them (Space box,
     // Ctrl+Tab, Spikes > Super-sample).
-    const QString token = buildAndShowSupersampledSpace(mode, /*quiet*/ true, /*show*/ false);
+    bool declined = false;
+    const QString token = buildAndShowSupersampledSpace(mode, /*quiet*/ true, /*show*/ false, &declined);
+    if (declined) {
+        // Not built: the preference goes off (and is saved), so the question is not asked
+        // again at every open, and the session carries on at the recording's sampling.
+        configuration().setSupersampleMode(0);
+        configuration().write();
+        mSupersampleReopenUrl.clear();
+        updateSupersampleActions();
+        statusBar()->showMessage(tr("Super-sampling turned off in the preferences (Preferences > Realignment > Super-sampling turns it back on)."), 10000);
+        return;
+    }
     if (token.isEmpty()) return;
     const bool adopt = configuration().getSupersampleAdopt() || !mSupersampleReopenUrl.isEmpty();
     if (!adopt) return;

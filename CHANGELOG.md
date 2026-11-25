@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-25 | [Super-sample mode asks before it builds the waveforms](#2026-11-25--super-sample-mode-asks-before-it-builds-the-waveforms) |
 | 2026-11-25 | [Self-test: the command table does not depend on the Qt version](#2026-11-25--self-test-the-command-table-does-not-depend-on-the-qt-version) |
 | 2026-11-25 | [Windows build: pi from the standard library in supersample.hpp](#2026-11-25--windows-build-pi-from-the-standard-library-in-supersamplehpp) |
 | 2026-11-24 | [Klusters sources: eight subdirectories by layer](#2026-11-24--klusters-sources-eight-subdirectories-by-layer) |
@@ -301,6 +302,49 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-25 — Super-sample mode asks before it builds the waveforms
+
+With the mode on and the super-sampled .spk missing, Klusters asks; No turns the mode off and continues.
+
+<details>
+<summary>Details</summary>
+
+Until now a super-sample mode (Preferences > Curation > Realignment > Super-sampling,
+×2 or ×4) built the super-sampled space of every session that opened without one,
+unasked: a `.spk` two or four times the size of the session's.
+
+Now, when the mode is on and the session's `.spk.<token>_U<f>.N` is not there,
+Klusters asks. The box names the file, the spike count, the size of the new `.spk`
+and where the waveforms come from (re-cut from the recording, or interpolated from
+the stored windows).
+
+- **Yes** (the default) builds the `.spk`, its PCA basis and `.fet`, as before.
+- **No** builds nothing, sets the mode to *off*, saves the preferences (so the next
+  session does not ask again), and the session carries on at the recording's
+  sampling. The status bar says where to turn it back on.
+
+With the `.spk` there and only the `.fet` missing (waveforms built elsewhere,
+`ndm_extractspikes --supersample`) nothing is asked: fitting the basis and the `.fet`
+writes no large file.
+
+The same question is asked when a super-sampled `.clu` is opened without its `.spk`
+(the session is opened through its base clustering to rebuild it): the box says so,
+and with No the session stays in the base clustering.
+
+**Spikes > Super-sample ×2 / ×4…** is unchanged (it always asked).
+
+Code: `buildAndShowSupersampledSpace` takes `bool* declined`; `applySupersampleMode`
+turns the preference off on a No. Self-test harness: `"answerNo": [texts]` in the
+spec answers No to the message boxes holding one of the texts (the default button is
+taken otherwise, as before). New `test_supersample_mode_asks.py` (19 checks): No, Yes,
+`.spk` present, and the super-sampled `.clu` without its `.spk`.
+
+Not looked at on a screen: the box was exercised through the offscreen harness only.
+
+</details>
 
 ---
 

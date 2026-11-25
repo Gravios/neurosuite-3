@@ -85,7 +85,8 @@
  *                                        in memory, the loaded times (and phases) of
  *                                        the cluster's spikes
  * A modal dialog that opens during a step is closed (its default button) and
- * recorded in the step's result, so the run never hangs on one.
+ * recorded in the step's result, so the run never hangs on one.  "answerNo": [texts]
+ * in the spec: a message box whose title or text holds one of them gets No instead.
  *
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
@@ -186,6 +187,7 @@ void KlustersApp::startSelfTest(const QString& specPath)
         configuration().setAutoUpdateMatricesAfterMerge(spec.value(QStringLiteral("autoMatrices")).toBool());
     if (spec.contains(QStringLiteral("realignVerbose")))
         configuration().setRealignVerbose(spec.value(QStringLiteral("realignVerbose")).toBool());
+    selfTestAnswerNo_ = spec.value(QStringLiteral("answerNo")).toArray();
     if (spec.contains(QStringLiteral("supersampleMode")))
         configuration().setSupersampleMode(spec.value(QStringLiteral("supersampleMode")).toInt());
     if (spec.contains(QStringLiteral("supersampleInterp"))) {      // 0 cubic spline, 1 Lanczos-3, 2 smoothing spline
@@ -309,7 +311,13 @@ void KlustersApp::selfTestTick()
             QJsonObject note;
             note.insert(QStringLiteral("dialog"), box->windowTitle() + QStringLiteral(": ") + box->text());
             selfTestResults_.append(note);
-            if (QPushButton* b = box->defaultButton()) b->click(); else box->reject();
+            // "answerNo": [texts] in the spec: a box whose title or text holds one of them
+            // gets No instead of its default.
+            bool no = false;
+            for (const QJsonValue& v : selfTestAnswerNo_)
+                no = no || note.value(QStringLiteral("dialog")).toString().contains(v.toString());
+            if (QAbstractButton* b = no ? box->button(QMessageBox::No) : nullptr) b->click();
+            else if (QPushButton* b = box->defaultButton()) b->click(); else box->reject();
         } else {
             w->close();
         }
