@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Realign: each rewritten row keeps what was there](#2026-11-24--realign-each-rewritten-row-keeps-what-was-there) |
 | 2026-11-24 | [Realign: the rows are computed first, then written](#2026-11-24--realign-the-rows-are-computed-first-then-written) |
 | 2026-11-24 | [Realign: the PCA refinement is two functions](#2026-11-24--realign-the-pca-refinement-is-two-functions) |
 | 2026-11-24 | [Audit: where the split of realignSpikes stands](#2026-11-24--audit-where-the-split-of-realignspikes-stands) |
@@ -286,6 +287,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Realign: each rewritten row keeps what was there
+
+The record of a realign now holds the old and the new waveform row beside the old and new time and features, and one function writes a row either way. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What changed in the code.** The record a realign keeps of each row it rewrote
+(`KlustersDoc::PendingSpkRecord`) had the new time and feature row and the old time and
+features. It now also has the two waveform rows: the one written, which is the record the
+waveform overlay already shows (shared, not copied), and the one that was there. A row whose
+waveform did not change shares one record for both. `realignApplyRows` writes from the records
+alone, and takes a direction: forward writes each row as realigned, backward the same row as
+it was, by the same code.
+
+**Why.** It is what an undo of a realign needs, and nothing calls the backward direction yet.
+
+**Cost.** Until the next save, a realign keeps one more copy of the waveforms of the spikes it
+moved.
+
+**Checked.** Forward is what a realign did before: the application before and after writes
+the same whole realign log and the same bytes in every `.res`, `.spk`, `.fet` and `.clu` for 18
+realigns of the synthetic session, and the realign self-tests of the child layer, the collision
+rows, a shown space and a super-sampled space pass.
+
+</details>
 
 ---
 

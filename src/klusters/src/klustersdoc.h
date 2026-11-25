@@ -1941,25 +1941,28 @@ public:
     void refeaturizeRealignedClusters(const QList<int>& parents);
 
     // ── Pending realignment ────────────────────────────────────────────────
-    /** One modified spike record, held in memory until saveDocument() writes
-     *  it to disk.  The original values are stored with it: what an undo of
-     *  the realign would put back (there is none: doc/dev/ROADMAP.md). */
+    /** One row a realign rewrote: what it wrote and what was there before, so that the
+     *  row can be put either way (realignApplyRows in klustersdoc_realign.cpp).  The
+     *  waveform records are the .spk's bytes (int16, sample-major); the new one is the
+     *  record the Data-side SpkOverlay shows, shared, and a row whose waveform did not
+     *  change shares one record for both. */
     struct PendingSpkRecord {
-        // The rewritten .spk bytes live in the Data-side SpkOverlay (one
-        // shared copy per record, epoch-snapshot step 7); this record keeps
-        // only what the reject path restores.
-        int64_t              destPos;    // 0-based global spike position in file
-        int64_t              ts;        // new timestamp for .res
-        std::vector<int64_t> fetRow;   // new feature row for .fet (length timeDim)
-        // --- originals for reject ---
+        int64_t              destPos;   // 0-based row in the files
+        int64_t              ts;        // new time for the .res
+        std::vector<int64_t> fetRow;    // new row for the .fet (length timeDim, the time last)
+        std::shared_ptr<const QByteArray> spk;       // new row for the .spk
+        // --- what was there ---
         int64_t              origTs;
-        QList<dataType>      origFet;  // original feature values (length nFeatCols)
+        QList<dataType>      origFet;   // feature values (length nFeatCols)
+        std::shared_ptr<const QByteArray> origSpk;
     };
 
+    /** The rows of one realign of one cluster, in the space it ran in. */
     struct PendingRealign {
-        // Paths are stored doc-level (origSpkPath etc.); only per-batch
-        // metadata and the per-spike undo records are needed here.
         QString method;              ///< the space the realign ran in (its working copies hold the rows)
+        int     clusterId     = 0;   ///< the cluster realigned, on the layer that was active
+        int     nChan         = 0;
+        int     nSamp         = 0;
         int64_t bytesPerSpike = 0;
         int     spkElems      = 0;
         int     timeDim       = 0;
