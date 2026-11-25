@@ -44,6 +44,7 @@ set(klusters_SRCS
     filecommit.cpp             # all-or-nothing commit of the saved files; parity stamps
     hierarchyfiles.cpp         # .clu/.clc/.clp triple on disk: nesting scan, promotion, staged writes
     residualmatrixthread.cpp
+    matrixviewbase.cpp          # MatrixViewBase: grid geometry, pan / zoom, follow and id labels of the four matrices
     residualmatrixview.cpp
     pairxcorrthread.cpp
     driftgeometry.cpp

@@ -40,6 +40,7 @@
 #include "array.h"
 #include "klustersjobpool.h"    // KlustersJobToken (shared with the jobs)
 #include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
+#include "matrixviewbase.h"       // the grid, pan / zoom, follow and id labels the four matrices share
 #include "matrixviewport.h"      // MatrixViewport — shared pan/zoom state + per-scope swap
 #include "matrixdisplayorder.h"   // MatrixDisplayOrder — the child-scope display permutation
 #include "matrixnavigator.h"     // MatrixNavigator — shared Ctrl+Left-drag pan state machine
@@ -53,7 +54,7 @@ class DriftShiftThread;
 class QSlider;
 class QSpinBox;
 
-class DriftMatrixView : public QWidget {
+class DriftMatrixView : public QWidget, public MatrixViewBase {
     Q_OBJECT
 
 public:
@@ -150,15 +151,7 @@ public Q_SLOTS:
     /// Set the full zoom + pan state from another (cross-connected) matrix
     /// view.  Does not emit viewChanged, so the views can be cross-connected
     /// without a feedback loop.
-    void setViewState(double zoom, double px, double py);
-    /// Follow mode (View > Follow Selection in Matrices): pan so the diagonal
-    /// cell of cluster `id` is centred in the matrix area.  Applied at once when
-    /// the cluster is in the matrix and no recompute is pending; otherwise held
-    /// and applied when the next result lands (the cluster may be absent from
-    /// the matrix being shown -- a parent while the child-scoped matrix is up --
-    /// in which case the request lapses with that result).  Does not emit
-    /// viewChanged: every matrix is asked to follow on its own.
-    void followCluster(int id);
+    void setViewState(double zoom, double px, double py) { applyViewState(zoom, px, py); }
 
 protected:
     /**Recompute on reveal if an edit landed while this view was hidden.*/
@@ -188,10 +181,6 @@ private:
     KlustersView& view;
     QStatusBar*   statusBar;
 
-    // ── pan + zoom (shared helper, audit D1/S5; same transform as the others) ──
-    // This view keeps its own matrixTopLeft()/mouse handling; it has no adaptive
-    // effZoomMin(), so it clamps to the plain zoomMin.
-    MatrixViewport vp_;
     /// Display permutation (display position -> matrix row); identity unless a
     /// child-scope sort is held.  Every row/col index a cell is read, drawn,
     /// labelled or hit-tested with goes through dm().
@@ -200,25 +189,8 @@ private:
     void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
     // ── follow mode / out-of-view check ────────────────────────────────────
     /// The widget rectangle the grid is drawn in (the view less its bars).
-    QRectF matrixArea() const;
-    /// 0-based display position of cluster `id` on the diagonal, -1 if absent.
-    int displayPositionOf(int id) const;
-    /// Centre followId_ when it is in the matrix; clears the pending request.
-    void applyPendingFollow();
-    /// Nothing of the grid on screen -> back to the upper-left corner.
-    bool ensureMatrixInView();
-    int  followId_ = -1;              // cluster to centre at the next chance
-    bool followPending_ = false;      // a followCluster() not yet applied
-    MatrixNavigator nav_;       // Ctrl+Left-drag pan state (shared helper)
-    static constexpr double zoomMin{0.5};
-    static constexpr double zoomMax{20.0};
-    static constexpr double zoomStep{1.15};
+    QRectF matrixArea() const override;
     static constexpr int    panDragThreshold{3};
-
-    inline double effCellSize() const { return cellWidth * vp_.zoom; }
-    inline QPointF effMatrixTopLeft() const { return vp_.effTopLeft(matrixTopLeft()); }
-    void  zoomAroundPoint(double newZoom, const QPointF& pivot);
-    void  resetPanZoom();
 
     // ── matrix data ──────────────────────────────────────────────────────
     /**One computed matrix and everything the view needs to keep using it.
@@ -276,9 +248,6 @@ private:
     void launchCompute();
 
     Array<double>* scores;        // [N x N], 1-based, xcorr in [0,1] (NON-owning:
-                                  // aliases cacheAll.scores or cacheSel.scores)
-    QList<int>     clusterList;
-    bool           dataReady;
     bool           goingToDie;
     bool           isStale;
 
@@ -297,8 +266,6 @@ private:
     * the token's own generation is the request generation now.*/
     std::shared_ptr<KlustersJobToken> computeToken;
 
-    // ── geometry / colour / drawing ──────────────────────────────────────
-    int cellWidth;
     int widthBorder, heightBorder;
     static constexpr int NB_COLORS = 100;
     QMap<int, QColor> colorMap;
@@ -342,11 +309,16 @@ private:
     void recomputeAtCurrentDrift();
     void updateWindow();
     void drawMatrix(QPainter& painter);
-    void drawClusterIds(QPainter& painter);
 
-    QPoint matrixTopLeft() const;
-    int    cellAtX(int viewX) const;
-    int    cellAtY(int viewY) const;
+    QPoint matrixTopLeft() const override;
+    // MatrixViewBase: what this view supplies
+    int  displayToMatrix(int d) const override { return order_.toMatrix(d); }
+    int  matrixToDisplay(int m) const override { return order_.toDisplay(m); }
+    bool matrixResultPending() const override;
+    void matrixRepaint() override { update(); }
+    void matrixViewChanged() override { emit viewChanged(vp_.zoom, vp_.panX, vp_.panY); }
+    QColor matrixLabelColor() const override { return textColor; }
+    int  matrixLabelTop() const override;          // below the drift slider bar
 };
 
 #endif // DRIFTMATRIXVIEW_H

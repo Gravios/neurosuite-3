@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-24 | [Matrix views: one base for the grid, the pan and zoom, the follow](#2026-11-24--matrix-views-one-base-for-the-grid-the-pan-and-zoom-the-follow) |
 | 2026-11-24 | [Self-test: the four matrix views under the mouse](#2026-11-24--self-test-the-four-matrix-views-under-the-mouse) |
 | 2026-11-24 | [Realign: realignSpikes reads as its stages](#2026-11-24--realign-realignspikes-reads-as-its-stages) |
 | 2026-11-24 | [Realign: the new times, the verification and the row plan are functions](#2026-11-24--realign-the-new-times-the-verification-and-the-row-plan-are-functions) |
@@ -293,6 +294,43 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-24 — Matrix views: one base for the grid, the pan and zoom, the follow
+
+The error, template, residual and drift matrices share `MatrixViewBase` in place of four copies of their geometry and navigation. No change in behaviour.
+
+<details>
+<summary>Details</summary>
+
+**What changed in the code.** The four curation matrices were four copies of the same grid.
+`MatrixViewBase` (`matrixviewbase.h`) now holds what they share: the clusters, the pan and
+zoom state, the cell under a point, the display position of a cluster, zooming about a point,
+reset, a state taken from a linked view, the bring-back of a grid panned out of sight, the
+follow of a cluster, the zoom floor that lets a large grid fit, and the id labels. It is not
+a widget: each view derives from its widget class and from it, and supplies what differs
+(where the grid sits, the display order, how to repaint, its signal) through small overrides.
+
+Ten functions that existed in all four files, and the zoom floor that two of them had, exist once. The four views are 556 lines
+shorter; the base is 248.
+
+**Checked.**
+
+- The four views sent the same 18 events (Ctrl+wheel, Ctrl+drag, click, shift-click, follow,
+  restored state) leave the same zoom, pan and selection as before, and the same picture
+  after every event (the view's pixels, hashed), built before and after.
+- `klusters_test_matrixviewbase` (29 checks) on a view that is no widget: the cell under a
+  point with pan and zoom; zooming about a point keeps the point's cell; the zoom limits and
+  the lowered floor for 400 clusters; the display order; the follow (at once, deferred while
+  a result is pending, lapsing when the cluster is absent); a state from another view is not
+  announced; a lost grid comes back.
+- The whole suite passes.
+
+**Not checked.** Two views linked to each other on screen, a resize, a matrix of thousands of
+clusters in the real widgets, the child scope's display order, and printing.
+
+</details>
 
 ---
 

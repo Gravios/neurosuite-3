@@ -230,7 +230,18 @@ Because both `KlustersDoc::newClustersAdded` and each matrix's `newClustersAdded
 
 ## 5. The matrix-view support classes
 
-The four curation matrices (`ErrorMatrixView`, `TemplateMatrixView`, `ResidualMatrixView`, `DriftMatrixView`) share **no render base** — the error matrix is a `ViewWidget`, the other three are plain `QWidget`s (`matrixgrid.h`). To avoid four diverging copies, the behavior they have in common is factored into header-only helpers that each view holds **by composition** (or calls as free functions):
+The four curation matrices (`ErrorMatrixView`, `TemplateMatrixView`, `ResidualMatrixView`, `DriftMatrixView`) are not one widget class — the error matrix is a `ViewWidget`, the other three are plain `QWidget`s — but each also derives from **`MatrixViewBase`** (`matrixviewbase.h`), which is neither a `QObject` nor a widget and holds what the four have in common:
+
+- the state: `clusterList`, `dataReady`, `cellWidth`, the pan / zoom (`vp_`), the pan drag (`nav_`), the follow request;
+- the geometry: `effCellSize()`, `effMatrixTopLeft()`, `cellAtX` / `cellAtY`, `displayPositionOf`;
+- the navigation: `zoomAroundPoint`, `resetPanZoom`, `applyViewState`, `ensureMatrixInView`, `followCluster` / `applyPendingFollow`, and the zoom floor that lets a large grid fit (`zoomFloorToFitAll`);
+- the id labels (`drawClusterIds`).
+
+A view supplies what differs through overrides: where the grid sits (`matrixTopLeft`, `matrixArea`), its display order (`displayToMatrix`, `matrixToDisplay`), whether a result is pending, how to repaint, its `viewChanged` signal (the base cannot emit: it is no `QObject`), and optionally a lower zoom floor, a hook after a zoom, the label colour and the top of the label strip. A view keeps its data and compute thread, its colours, its bars, and what a click and the wheel mean (the wheel differs between the views).
+
+`matrixviewbase_test.cpp` checks the base on a view that is no widget; `test_matrix_views.py` sends the same wheel, drag and click events to the four real views and compares zoom, pan and selection with a snapshot.
+
+Besides the base they share these helpers:
 
 | Helper | What it is | Decl (file) |
 |---|---|---|
@@ -246,8 +257,7 @@ How the four views share them:
 
 | Helper | ErrorMatrixView | TemplateMatrixView | ResidualMatrixView | DriftMatrixView |
 |---|---|---|---|---|
-| `MatrixViewport vp_` | `errormatrixview.h` | `templatematrixview.h` | `residualmatrixview.h` | `driftmatrixview.h` |
-| `MatrixNavigator nav_` | `errormatrixview.h` | `templatematrixview.h` | `residualmatrixview.h` | `driftmatrixview.h` |
+| `MatrixViewport vp_`, `MatrixNavigator nav_` | `MatrixViewBase` | `MatrixViewBase` | `MatrixViewBase` | `MatrixViewBase` |
 | `MatrixTemplateStrip strip_` | `errormatrixview.h` | `templatematrixview.h` | `residualmatrixview.h` | `driftmatrixview.h` |
 | `drawMatrixGrid` | `errormatrixview.cpp` | `templatematrixview.cpp` | `residualmatrixview.cpp` | `driftmatrixview.cpp` |
 | `drawMatrixParentBands` | `errormatrixview.cpp` | `templatematrixview.cpp` | `residualmatrixview.cpp` | `driftmatrixview.cpp` |

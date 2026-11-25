@@ -61,7 +61,6 @@ static bool errorMatrixIncrementalEnabled(){
 ErrorMatrixView::ErrorMatrixView(KlustersDoc& kdoc,KlustersView& kview,const QColor& backgroundColor,QStatusBar* sbar,QWidget *parent,const char* name,int minSize, int
                                  maxSize, int windowTopLeft ,int windowBottomRight,int border) :
     ViewWidget(kdoc,kview,backgroundColor,sbar,parent,name,minSize,maxSize,windowTopLeft,windowBottomRight,border),
-    dataReady(false),
     nbColors(100),
     cutoffProbability(0.1),
     init(true),
@@ -660,60 +659,6 @@ QPoint ErrorMatrixView::matrixTopLeft() const
                   static_cast<int>(heightBorder));
 }
 
-int ErrorMatrixView::cellAtX(int viewX) const
-{
-    const double eff = effCellSize();
-    if (eff <= 0.0) return -1;
-    const double mx = effMatrixTopLeft().x();
-    const int ci = static_cast<int>(std::floor((viewX - mx) / eff));
-    return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
-}
-
-int ErrorMatrixView::cellAtY(int viewY) const
-{
-    const double eff = effCellSize();
-    if (eff <= 0.0) return -1;
-    const double my = effMatrixTopLeft().y();
-    const int ci = static_cast<int>(std::floor((viewY - my) / eff));
-    return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
-}
-
-// Adaptive minimum zoom (maximum zoom-out): fit the whole grid on screen when it
-// overflows even at the zoomMin floor (large n, cellWidth pinned at 4px).
-double ErrorMatrixView::effZoomMin() const
-{
-    const int n = clusterList.size();
-    if (n <= 0 || cellWidth <= 0) return zoomMin;
-    const int matH   = std::max(height() - CONTROLS_H, 1);
-    const int availW = width() - LABEL_MARGIN - 10;
-    const int availH = matH - 14 - 10;
-    const int avail  = std::min(availW, availH);
-    if (avail <= 0) return zoomMin;
-    const double fitAll = static_cast<double>(avail)
-                        / (static_cast<double>(n) * cellWidth);
-    return std::min(zoomMin, fitAll);
-}
-
-void ErrorMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
-{
-    vp_.zoomAround(newZoom, pivot, matrixTopLeft(), effZoomMin(), zoomMax);
-    // Hold the selected-pair overlay off during the gesture; the settle timer
-    // repaints it once the wheel goes quiet.
-    suppressPairBoxes = true;
-    pairBoxSettleTimer->start(pairBoxSettleMs);
-    invalidate(REDRAW);
-    update();
-    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
-}
-
-void ErrorMatrixView::resetPanZoom()
-{
-    vp_.reset();
-    invalidate(REDRAW);
-    update();
-    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
-}
-
 // ErrorMatrixView keeps its OWN paintEvent (it does not use the BufferedView
 // template): it is a device-coordinate matrix with no world window, repaints only on
 // REDRAW, and sizes its buffer to the full widget — a different model from the
@@ -741,34 +686,6 @@ void ErrorMatrixView::paintEvent ( QPaintEvent*){
         drawContentsMode = REFRESH;
     }
     p.drawPixmap(0, 0, doublebuffer);
-}
-
-void ErrorMatrixView::drawClusterIds(QPainter& painter){
-    const int n = clusterList.size();
-    const QPoint  base = matrixTopLeft();
-    const QPointF oriF = effMatrixTopLeft();
-    const double  eff  = effCellSize();
-    const int     w    = std::max(1, static_cast<int>(std::round(eff)));
-    const int fontSize = std::max(5, std::min(14,
-                            static_cast<int>(std::round(eff / 5.0))));
-    QFont f("Helvetica", fontSize);
-    painter.setFont(f);
-    painter.setPen(colorLegend);
-
-    // Column labels: top strip [0, base.y()], x tracks the cell columns.
-    for(int col = 0; col < n; ++col){
-        const int px = static_cast<int>(std::round(oriF.x() + col * eff));
-        painter.drawText(QRect(px, 0, w, base.y()),
-                         Qt::AlignHCenter | Qt::AlignBottom,
-                         clusterLabel(clusterList[displayToMatrix(col)]));
-    }
-    // Row labels: left strip [0, LABEL_MARGIN-2], y tracks the cell rows.
-    for(int row = 0; row < n; ++row){
-        const int py = static_cast<int>(std::round(oriF.y() + row * eff));
-        painter.drawText(QRect(0, py, LABEL_MARGIN - 2, w),
-                         Qt::AlignRight | Qt::AlignVCenter,
-                         clusterLabel(clusterList[displayToMatrix(row)]));
-    }
 }
 
 void ErrorMatrixView::setDisplayOrder(const QList<int>& order)
@@ -1153,61 +1070,30 @@ void ErrorMatrixView::mouseDoubleClickEvent(QMouseEvent* e){
 // ErrorMatrixView::swapViewStateForScope is now an inline forwarder to
 // vp_.swapForScope() (see the header); the shared logic lives in MatrixViewport.
 
-void ErrorMatrixView::setViewState(double newZoom, double px, double py){
-    // Full (zoom + pan) state pushed from the cross-connected template view.  No
-    // signal is emitted so the two views do not echo the change back and forth.
-    vp_.setState(newZoom, px, py, effZoomMin(), zoomMax);
-    suppressPairBoxes = true;
-    pairBoxSettleTimer->start(pairBoxSettleMs);
+// ── follow mode / out-of-view check (View > Follow Selection in Matrices) ───
+
+bool ErrorMatrixView::matrixResultPending() const
+{
+    return isComputing() || doc.matrixUpdatesHeld();
+}
+
+void ErrorMatrixView::matrixRepaint()
+{
     invalidate(REDRAW);
     update();
 }
 
-// ── follow mode / out-of-view check (View > Follow Selection in Matrices) ───
+// While the zoom changes the selected-pair overlay is not drawn; it comes back
+// when the zooming has settled (pairBoxSettleTimer).
+void ErrorMatrixView::matrixZoomed()
+{
+    suppressPairBoxes = true;
+    pairBoxSettleTimer->start(pairBoxSettleMs);
+}
 
 QRectF ErrorMatrixView::matrixArea() const
 {
     return QRectF(rect());
-}
-
-int ErrorMatrixView::displayPositionOf(int id) const
-{
-    const int m = clusterList.indexOf(id);
-    return m < 0 ? -1 : matrixToDisplay(m);
-}
-
-void ErrorMatrixView::followCluster(int id)
-{
-    followId_ = id;
-    followPending_ = id >= 0;
-    // A result on its way (or held back) will move the rows: centre on it when
-    // it lands.  Otherwise the matrix shown is the one the selection refers to
-    // -- unless the cluster is not in it (a fiber picked while the atom matrix
-    // is up): then the request waits for the next result, which may be the
-    // parent matrix coming back, and lapses with it if it is not.
-    if (isComputing() || doc.matrixUpdatesHeld()) return;
-    if (dataReady && displayPositionOf(id) >= 0) applyPendingFollow();
-}
-
-void ErrorMatrixView::applyPendingFollow()
-{
-    if (!followPending_ || !dataReady) return;
-    followPending_ = false;
-    const int d = displayPositionOf(followId_);
-    if (d < 0) return;                 // not in this matrix (another scope): lapses
-    vp_.centerOnDiagonal(d, effCellSize(), matrixTopLeft(), matrixArea());
-    invalidate(REDRAW);
-    update();
-}
-
-bool ErrorMatrixView::ensureMatrixInView()
-{
-    if (!dataReady) return false;
-    if (!vp_.bringBackIfLost(clusterList.size(), effCellSize(), matrixTopLeft(), matrixArea()))
-        return false;
-    invalidate(REDRAW);
-    update();
-    return true;
 }
 
 

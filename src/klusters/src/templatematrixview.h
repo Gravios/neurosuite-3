@@ -26,6 +26,7 @@
 #include "pair.h"
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 #include "matrixtemplatestrip.h"  // MatrixTemplateStrip — shared marked-node template region (§11.5)
+#include "matrixviewbase.h"       // the grid, pan / zoom, follow and id labels the four matrices share
 #include "matrixviewport.h"       // MatrixViewport — shared pan/zoom state + per-scope swap
 #include "matrixdisplayorder.h"   // MatrixDisplayOrder — the child-scope display permutation
 #include "matrixnavigator.h"      // MatrixNavigator — shared Ctrl+Left-drag pan state machine
@@ -53,7 +54,7 @@ class PairXcorrThread;
  *      target cluster.
  *   4. U key (via KlustersApp) or T shortcut: recomputes everything from scratch.
  */
-class TemplateMatrixView : public QWidget {
+class TemplateMatrixView : public QWidget, public MatrixViewBase {
     Q_OBJECT
 
 public:
@@ -63,15 +64,7 @@ public:
     /// Set the zoom level from an external source (e.g. the synchronised error
     /// matrix view): sets the full zoom + pan state. Does not emit
     /// viewChanged, so the two views can be cross-connected without a loop.
-    void setViewState(double zoom, double px, double py);
-    /// Follow mode (View > Follow Selection in Matrices): pan so the diagonal
-    /// cell of cluster `id` is centred in the matrix area.  Applied at once when
-    /// the cluster is in the matrix and no recompute is pending; otherwise held
-    /// and applied when the next result lands (the cluster may be absent from
-    /// the matrix being shown -- a parent while the child-scoped matrix is up --
-    /// in which case the request lapses with that result).  Does not emit
-    /// viewChanged: every matrix is asked to follow on its own.
-    void followCluster(int id);
+    void setViewState(double zoom, double px, double py) { applyViewState(zoom, px, py); }
 
     /// Channel selection committed in the waveform view (empty = all channels).
     /// Swaps in a cached matrix when one matches, otherwise recomputes.
@@ -232,9 +225,8 @@ private:
     //   Ctrl + Mouse Wheel    → zoom around the cursor position
     //   +/=  /  -             → zoom in / zoom out (around the centre)
     //   0                     → reset pan & zoom
-    // Pan/zoom state + the per-scope view swap (shared helper, audit D1/S5).  This
-    // view keeps its own matrixTopLeft()/effZoomMin()/mouse handling below.
-    MatrixViewport vp_;
+    // The state and the transform are MatrixViewBase's; this view keeps its own
+    // matrixTopLeft(), effZoomMin() and mouse handling.
     /// Display permutation (display position -> matrix row); identity unless a
     /// child-scope sort is held.  Every row/col index a cell is read, drawn,
     /// labelled or hit-tested with goes through dm().
@@ -243,19 +235,7 @@ private:
     void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
     // ── follow mode / out-of-view check ────────────────────────────────────
     /// The widget rectangle the grid is drawn in (the view less its bars).
-    QRectF matrixArea() const;
-    /// 0-based display position of cluster `id` on the diagonal, -1 if absent.
-    int displayPositionOf(int id) const;
-    /// Centre followId_ when it is in the matrix; clears the pending request.
-    void applyPendingFollow();
-    /// Nothing of the grid on screen -> back to the upper-left corner.
-    bool ensureMatrixInView();
-    int  followId_ = -1;              // cluster to centre at the next chance
-    bool followPending_ = false;      // a followCluster() not yet applied
-    MatrixNavigator nav_;       // Ctrl+Left-drag pan state (shared helper)
-    static constexpr double zoomMin{0.5};    // baseline zoom-out floor; effZoomMin() lowers it to fit large grids
-    static constexpr double zoomMax{20.0};
-    static constexpr double zoomStep{1.15};  // wheel/key zoom multiplier per tick
+    QRectF matrixArea() const override;
     static constexpr int    panDragThreshold{3};  // px before press → pan
 
     /// Adaptive minimum zoom (maximum zoom-out).  At zoom Z the matrix spans
@@ -264,12 +244,7 @@ private:
     /// floor just enough to let the whole matrix fit on screen (so all clusters are
     /// visible at ~10000), but never above the historical 0.5, so small grids are
     /// unaffected.
-    double  effZoomMin() const;
-
-    inline double effCellSize() const { return cellWidth * vp_.zoom; }
-    inline QPointF effMatrixTopLeft() const { return vp_.effTopLeft(matrixTopLeft()); }
-    void  zoomAroundPoint(double newZoom, const QPointF& pivot);
-    void  resetPanZoom();
+    double  effZoomMin() const { return zoomFloorToFitAll(); }
 
     // ── matrix data (from main thread) ──────────────────────────────────────
     /**All-channel result and the result for cachedSelection.  Both are owned;
@@ -296,8 +271,6 @@ private:
     void launchCompute();
 
     Array<double>* scores;        // [nClusters × nClusters] (NON-owning alias)
-    QList<int>     clusterList;
-    bool           dataReady;
     bool           goingToDie;
     bool           isStale;
 
@@ -353,8 +326,6 @@ private:
     int selectedA;   // column (target)  cluster id, -1 = none
     int selectedB;   // row    (source) cluster id
 
-    // ── geometry ─────────────────────────────────────────────────────────────
-    int cellWidth;
     int widthBorder, heightBorder;
 
     // ── colour ───────────────────────────────────────────────────────────────
@@ -399,14 +370,19 @@ private:
     void stopPairThread();
     void updateWindow();
     void drawMatrix(QPainter& painter);
-    void drawClusterIds(QPainter& painter);
     void updateSliderPreview();
     /**Refresh the label showing the colour axis and the threshold.*/
     void updateThresholdLabel();
 
-    QPoint matrixTopLeft() const;
-    int    cellAtX(int viewX) const;
-    int    cellAtY(int viewY) const;
+    QPoint matrixTopLeft() const override;
+    // MatrixViewBase: what this view supplies
+    int  displayToMatrix(int d) const override { return order_.toMatrix(d); }
+    int  matrixToDisplay(int m) const override { return order_.toDisplay(m); }
+    bool matrixResultPending() const override;
+    void matrixRepaint() override { update(); }
+    void matrixViewChanged() override { emit viewChanged(vp_.zoom, vp_.panX, vp_.panY); }
+    double matrixZoomFloor() const override { return effZoomMin(); }
+    QColor matrixLabelColor() const override { return textColor; }
 
     /**Map a score to a colour index using the span as the axis.  Degenerate
      * spans (both handles together) collapse to a single step rather than

@@ -30,7 +30,6 @@
 #include <algorithm>
 
 static constexpr int CELL_WIDTH   = 50;
-static constexpr int LABEL_MARGIN = 16;
 static constexpr int CONTROLS_H   = 50;
 
 // ── ctor / dtor ──────────────────────────────────────────────────────────────
@@ -42,16 +41,17 @@ TemplateMatrixView::TemplateMatrixView(KlustersDoc& doc_, KlustersView& view_,
     : QWidget(parent),
       doc(doc_), view(view_), statusBar(statusBar_),
       scores(nullptr),
-      dataReady(false), goingToDie(false), isStale(false),
+      goingToDie(false), isStale(false),
       matrixToken(std::make_shared<KlustersJobToken>()),
       pairToken(std::make_shared<KlustersJobToken>()),
       selectedA(-1), selectedB(-1),
-      cellWidth(CELL_WIDTH), widthBorder(0), heightBorder(0),
+      widthBorder(0), heightBorder(0),
       currentThreshold(0.90),
       colourLow(0.0),
       sliderMin(configuration().getTemplateThresholdMin()),
       sliderMax(configuration().getTemplateThresholdMax())
 {
+    cellWidth = CELL_WIDTH;
     QPalette pal = palette();
     pal.setColor(QPalette::Window, backgroundColor);
     setPalette(pal);
@@ -570,48 +570,9 @@ void TemplateMatrixView::updateWindow()
     heightBorder     = cellWidth / 3 + 14;
 }
 
-double TemplateMatrixView::effZoomMin() const
-{
-    // Mirror updateWindow()'s available-area math.  The grid spans n*cellWidth
-    // pixels at zoom 1; the fit-all zoom is the ratio that shrinks it to the
-    // available area.  When the grid overflows even at the 0.5 floor (large n,
-    // cellWidth pinned at 4px), drop the floor to fit-all so the whole matrix can
-    // be viewed; otherwise keep the historical 0.5.
-    const int n = clusterList.size();
-    if (n <= 0 || cellWidth <= 0) return zoomMin;
-    const int matH   = std::max(height() - CONTROLS_H, 1);
-    const int availW = width() - LABEL_MARGIN - 10;
-    const int availH = matH - 14 - 10;
-    const int avail  = std::min(availW, availH);
-    if (avail <= 0) return zoomMin;
-    const double fitAll = static_cast<double>(avail)
-                        / (static_cast<double>(n) * cellWidth);
-    return std::min(zoomMin, fitAll);
-}
-
 QPoint TemplateMatrixView::matrixTopLeft() const
 {
     return QPoint(LABEL_MARGIN + widthBorder, heightBorder);
-}
-
-int TemplateMatrixView::cellAtX(int viewX) const
-{
-    // patch80 — account for pan + zoom.  Use double arithmetic and
-    // floor() so cells just inside the grid don't round into -1.
-    const double eff = effCellSize();
-    if (eff <= 0.0) return -1;
-    const double mx = effMatrixTopLeft().x();
-    const int ci = static_cast<int>(std::floor((viewX - mx) / eff));
-    return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
-}
-
-int TemplateMatrixView::cellAtY(int viewY) const
-{
-    const double eff = effCellSize();
-    if (eff <= 0.0) return -1;
-    const double my = effMatrixTopLeft().y();
-    const int ci = static_cast<int>(std::floor((viewY - my) / eff));
-    return (ci >= 0 && ci < clusterList.size()) ? ci : -1;
 }
 
 // ── painting ─────────────────────────────────────────────────────────────────
@@ -860,42 +821,6 @@ void TemplateMatrixView::drawMatrix(QPainter& p)
     }
 }
 
-void TemplateMatrixView::drawClusterIds(QPainter& p)
-{
-    const int n      = clusterList.size();
-    // patch80 — label margin stays anchored at screen edge for legibility,
-    // but per-column / per-row labels track the cell positions through
-    // the pan/zoom transform.  Column labels live in the top strip
-    // (y = 0 .. base.y()), so they pan/zoom horizontally only; row
-    // labels live in the left strip (x = 0 .. LABEL_MARGIN-2), so they
-    // pan/zoom vertically only.  When pan/zoom would push a label
-    // outside the strip it just clips — acceptable for now; a future
-    // patch could hide off-screen labels and add a scroll indicator.
-    const QPoint  base = matrixTopLeft();
-    const QPointF oriF = effMatrixTopLeft();
-    const double  eff  = effCellSize();
-    const int     w    = std::max(1, static_cast<int>(std::round(eff)));
-    const int fontSize = std::max(5, std::min(14,
-                            static_cast<int>(std::round(eff / 5.0))));
-    QFont f("Helvetica", fontSize);
-    p.setFont(f);
-    p.setPen(textColor);
-
-    for (int col = 0; col < n; ++col) {
-        const int px = static_cast<int>(std::round(oriF.x() + col * eff));
-        p.drawText(QRect(px, 0, w, base.y()),
-                   Qt::AlignHCenter | Qt::AlignBottom,
-                   clusterLabel(clusterList[dm(col)]));
-    }
-
-    for (int row = 0; row < n; ++row) {
-        const int py = static_cast<int>(std::round(oriF.y() + row * eff));
-        p.drawText(QRect(0, py, LABEL_MARGIN-2, w),
-                   Qt::AlignRight | Qt::AlignVCenter,
-                   clusterLabel(clusterList[dm(row)]));
-    }
-}
-
 // ── mouse ────────────────────────────────────────────────────────────────────
 
 // patch80 — Ctrl + Left-drag pans; everything else (plain click, Ctrl-click
@@ -1071,75 +996,19 @@ void TemplateMatrixView::mouseReleaseEvent(QMouseEvent* e)
 // which simplifies to:
 //   panNew = panOld + (P - base - panOld) * (1 - ratio)
 
-void TemplateMatrixView::zoomAroundPoint(double newZoom, const QPointF& pivot)
-{
-    vp_.zoomAround(newZoom, pivot, matrixTopLeft(), effZoomMin(), zoomMax);
-    update();
-    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
-}
-
-void TemplateMatrixView::resetPanZoom()
-{
-    vp_.reset();
-    update();
-    emit viewChanged(vp_.zoom, vp_.panX, vp_.panY);
-}
-
 // TemplateMatrixView::swapViewStateForScope is now an inline forwarder to
 // vp_.swapForScope() (see the header); the shared logic lives in MatrixViewport.
 
-void TemplateMatrixView::setViewState(double newZoom, double px, double py)
-{
-    // Full (zoom + pan) state pushed from the cross-connected error-matrix view.
-    // The two views share an identical pixel layout at equal size, so panX/panY
-    // transfer directly.  No signal is emitted so the change is not echoed back.
-    vp_.setState(newZoom, px, py, effZoomMin(), zoomMax);
-    update();
-}
-
 // ── follow mode / out-of-view check (View > Follow Selection in Matrices) ───
+
+bool TemplateMatrixView::matrixResultPending() const
+{
+    return computing || doc.matrixUpdatesHeld();
+}
 
 QRectF TemplateMatrixView::matrixArea() const
 {
     return QRectF(0, 0, width(), std::max(height() - CONTROLS_H, 1));
-}
-
-int TemplateMatrixView::displayPositionOf(int id) const
-{
-    const int m = clusterList.indexOf(id);
-    return m < 0 ? -1 : order_.toDisplay(m);
-}
-
-void TemplateMatrixView::followCluster(int id)
-{
-    followId_ = id;
-    followPending_ = id >= 0;
-    // A result on its way (or held back) will move the rows: centre on it when
-    // it lands.  Otherwise the matrix shown is the one the selection refers to
-    // -- unless the cluster is not in it (a fiber picked while the atom matrix
-    // is up): then the request waits for the next result, which may be the
-    // parent matrix coming back, and lapses with it if it is not.
-    if (computing || doc.matrixUpdatesHeld()) return;
-    if (dataReady && displayPositionOf(id) >= 0) applyPendingFollow();
-}
-
-void TemplateMatrixView::applyPendingFollow()
-{
-    if (!followPending_ || !dataReady) return;
-    followPending_ = false;
-    const int d = displayPositionOf(followId_);
-    if (d < 0) return;                 // not in this matrix (another scope): lapses
-    vp_.centerOnDiagonal(d, effCellSize(), matrixTopLeft(), matrixArea());
-    update();
-}
-
-bool TemplateMatrixView::ensureMatrixInView()
-{
-    if (!dataReady) return false;
-    if (!vp_.bringBackIfLost(clusterList.size(), effCellSize(), matrixTopLeft(), matrixArea()))
-        return false;
-    update();
-    return true;
 }
 
 void TemplateMatrixView::wheelEvent(QWheelEvent* event)

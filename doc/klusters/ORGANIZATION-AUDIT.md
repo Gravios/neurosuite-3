@@ -287,7 +287,16 @@ and a line in `RECIPES.md` naming which of them a change to undo, jobs or input 
    records, the bookkeeping after the application (moved rows, generation, overlay,
    curation log). Not done: a cancel honoured before the application; the same treatment
    for `nudgeClusterTimestamps` (1,156 lines, which repeats much of this).
-6. The matrix-view base (§8).
+6. ~~The matrix-view base (§8).~~ Done for the geometry and navigation: `MatrixViewBase`
+   (`matrixviewbase.h`) holds the clusters, the pan / zoom state, the hit test, the follow,
+   the zoom floor and the id labels of the four matrices; each view derives from its widget
+   class and from it, and supplies what differs through eleven small overrides. Ten
+   functions that existed four times exist once (the four views lost 556 lines; the base
+   and its test are 400). A unit test covers the base and a snapshot test the four views
+   under the same mouse events. Not in the base: the compute thread and its caches (the
+   thread types differ; `launchComputeThread` is the same text in two views), the info
+   line of the residual and drift views, the wheel (the views do not zoom alike: see the
+   changelog), the click.
 7. The glossary and the renames (§6), one word per patch.
 8. Directories (§9), last: it touches every include and is cheap once the rest is settled.
 

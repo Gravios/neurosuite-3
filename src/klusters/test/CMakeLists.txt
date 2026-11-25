@@ -163,6 +163,14 @@ if(Qt6_FOUND)
     target_link_libraries(klusters_test_matrixtemplatestrip PRIVATE Qt6::Core Qt6::Gui)
     add_test(NAME klusters_test_matrixtemplatestrip COMMAND klusters_test_matrixtemplatestrip)
 
+    # MatrixViewBase: the grid geometry, pan / zoom and follow the four curation matrices
+    # share, on a view that is not a widget (QPainter is linked, never used).
+    add_executable(klusters_test_matrixviewbase matrixviewbase_test.cpp "${_klu_src}/matrixviewbase.cpp")
+    target_compile_features(klusters_test_matrixviewbase PRIVATE cxx_std_20)
+    target_include_directories(klusters_test_matrixviewbase PRIVATE "${_klu_src}" "${_shared}" "${_core}")
+    target_link_libraries(klusters_test_matrixviewbase PRIVATE Qt6::Core Qt6::Gui)
+    add_test(NAME klusters_test_matrixviewbase COMMAND klusters_test_matrixviewbase)
+
     # ProcessLineMaker: a child's stdout and stderr cut into lines for the output pane.
     # Runs /bin/sh, so POSIX only.
     if(UNIX)

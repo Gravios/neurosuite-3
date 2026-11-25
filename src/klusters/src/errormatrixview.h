@@ -43,6 +43,7 @@
 #include "data.h"              // Data::ClusteringSnapshot (the raw cache's epoch key)
 #include "klustersjobpool.h"   // KlustersJobToken (shared with the jobs)
 #include "matrixtemplatestrip.h" // MatrixTemplateStrip — shared marked-node template region (§11.5)
+#include "matrixviewbase.h"      // the grid, pan / zoom, follow and id labels the four matrices share
 #include "matrixviewport.h"      // MatrixViewport — shared pan/zoom state + per-scope swap
 #include "matrixnavigator.h"     // MatrixNavigator — shared Ctrl+Left-drag pan state machine
 
@@ -63,7 +64,7 @@ class QTimer;
   * @since klusters 1.1
   */
 
-class ErrorMatrixView : public ViewWidget  {
+class ErrorMatrixView : public ViewWidget, public MatrixViewBase {
     Q_OBJECT
 
 public:
@@ -172,15 +173,7 @@ public Q_SLOTS:
     /// Set the zoom level from an external source (the synchronised template
     /// matrix view): sets the full zoom + pan state. Does not emit viewChanged, so
     /// the two views can be cross-connected without a loop.
-    void setViewState(double zoom, double px, double py);
-    /// Follow mode (View > Follow Selection in Matrices): pan so the diagonal
-    /// cell of cluster `id` is centred in the matrix area.  Applied at once when
-    /// the cluster is in the matrix and no recompute is pending; otherwise held
-    /// and applied when the next result lands (the cluster may be absent from
-    /// the matrix being shown -- a parent while the child-scoped matrix is up --
-    /// in which case the request lapses with that result).  Does not emit
-    /// viewChanged: every matrix is asked to follow on its own.
-    void followCluster(int id);
+    void setViewState(double zoom, double px, double py) { applyViewState(zoom, px, py); }
 
     /// Channel selection committed in the waveform view (empty = all channels).
     /// Recomputes over just those channels' feature columns.
@@ -365,8 +358,6 @@ protected:
 private:
     /**Color map use to represent the probabilities of the error matrix.*/
     QMap<int,QColor> colorMap;
-    /**List of the clusters present in the error matrix.*/
-    QList<int> clusterList;
     /**List of the clusters present in the error matrix which have a probability calculated.*/
     QList<int> computedClusterList;
     /**List of the clusters present in the error matrix which do not have a probability calculated.*/
@@ -379,12 +370,12 @@ private:
      * without touching probabilities/clusterList, so no cluster renumber.*/
     QList<int> displayOrder;
     /**0-based display position -> 0-based matrix index (identity if unset).*/
-    int displayToMatrix(int d) const {
+    int displayToMatrix(int d) const override {
         return (displayOrder.size() == clusterList.size() && d >= 0 && d < displayOrder.size())
                ? displayOrder[d] : d;
     }
     /**0-based matrix index -> 0-based display position (identity if unset).*/
-    int matrixToDisplay(int m) const {
+    int matrixToDisplay(int m) const override {
         return (displayOrder.size() == clusterList.size()) ? displayOrder.indexOf(m) : m;
     }
 
@@ -455,8 +446,6 @@ private:
     /**The height border*/
     uint heightBorder;
 
-    /**The width of a cell of the error matrix.*/
-    int cellWidth;
 
     // ── pan / zoom interaction (pixel model — copied from TemplateMatrixView) ──
     // The matrix is rendered at an effective top-left of matrixTopLeft()+(panX,panY)
@@ -465,39 +454,26 @@ private:
     // Ctrl+Wheel zooms around the cursor; double-click resets.  A quick Ctrl-click
     // that never crosses the drag threshold still reaches Ctrl-add pair-selection.
     static constexpr int    CELL_WIDTH   = 50;
-    static constexpr int    LABEL_MARGIN = 16;
     static constexpr int    CONTROLS_H   = 0;   // ErrorMatrixView has no control bar
 
-    // Pan/zoom state + the per-scope view swap (shared helper, audit D1/S5).  This
-    // view keeps its own matrixTopLeft()/effZoomMin()/mouse handling below.
-    MatrixViewport vp_;
+    // The state and the transform are MatrixViewBase's; this view keeps its own
+    // matrixTopLeft(), effZoomMin() and mouse handling.
     void swapViewStateForScope(bool scopeActive) { vp_.swapForScope(scopeActive); }
     // ── follow mode / out-of-view check ────────────────────────────────────
     /// The widget rectangle the grid is drawn in (the view less its bars).
-    QRectF matrixArea() const;
-    /// 0-based display position of cluster `id` on the diagonal, -1 if absent.
-    int displayPositionOf(int id) const;
-    /// Centre followId_ when it is in the matrix; clears the pending request.
-    void applyPendingFollow();
-    /// Nothing of the grid on screen -> back to the upper-left corner.
-    bool ensureMatrixInView();
-    int  followId_ = -1;              // cluster to centre at the next chance
-    bool followPending_ = false;      // a followCluster() not yet applied
-    MatrixNavigator nav_;        // Ctrl+Left-drag pan state (shared helper)
+    QRectF matrixArea() const override;
     static constexpr int    panDragThreshold{3};       // px before press → pan
     static constexpr int    selectionSuppressMove{2};  // px of Ctrl-drag that cancels the cell selection on release
-    static constexpr double zoomMin{0.5};    // baseline zoom-out floor; effZoomMin() lowers it to fit large grids
-    static constexpr double zoomMax{20.0};
-    static constexpr double zoomStep{1.15};  // wheel zoom multiplier per tick
 
-    double  effZoomMin() const;              // adaptive max-zoom-out to fit large grids
-    QPoint  matrixTopLeft() const;           // fixed grid origin (label strips reserved)
-    inline double  effCellSize() const { return cellWidth * vp_.zoom; }
-    inline QPointF effMatrixTopLeft() const { return vp_.effTopLeft(matrixTopLeft()); }
-    int  cellAtX(int viewX) const;
-    int  cellAtY(int viewY) const;
-    void zoomAroundPoint(double newZoom, const QPointF& pivot);
-    void resetPanZoom();
+    double  effZoomMin() const { return zoomFloorToFitAll(); }   // adaptive max-zoom-out to fit large grids
+    QPoint  matrixTopLeft() const override;  // fixed grid origin (label strips reserved)
+    // MatrixViewBase: what this view supplies (displayToMatrix / matrixToDisplay are above)
+    bool matrixResultPending() const override;
+    void matrixRepaint() override;
+    void matrixViewChanged() override { emit viewChanged(vp_.zoom, vp_.panX, vp_.panY); }
+    double matrixZoomFloor() const override { return effZoomMin(); }
+    void matrixZoomed() override;
+    QColor matrixLabelColor() const override { return colorLegend; }
 
     /// While zooming or panning, the selected-pair overlay is suppressed: redrawing
     /// its boxes every interaction frame is costly (an O(nbClusters) clusterList
@@ -519,8 +495,6 @@ private:
     std::shared_ptr<KlustersJobToken> displayToken;
     std::shared_ptr<KlustersJobToken> warmerToken;
 
-    /**True if the probabilities are available.*/
-    bool dataReady;
 
     /**Number of colors used for the errror matrix.*/
     int nbColors;
@@ -585,11 +559,6 @@ private:
   * @param painter painter on which to draw the error matrix
   */
     void drawMatrix(QPainter& painter);
-
-    /**Draws the clusters identifiers.
-  * @param painter painter on which to draw the information
-  */
-    void drawClusterIds(QPainter& painter);
 
     /**Draws the marked-node template strip (§11.5) at the right/bottom edge.  All
      * cells grey (see setTemplateColumns): the value functor sets grey=true for

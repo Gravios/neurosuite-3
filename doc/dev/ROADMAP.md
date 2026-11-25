@@ -332,9 +332,8 @@ a second `loadKeymapsFromDir` scan — presets are compiled in only).
 The three refactor tiers are done.  Only if they clearly pay: a world/device
 coordinate RAII guard (instead of manual `resetTransform`), an overlay
 registry (register overlay objects instead of overriding
-`paintWidgetOverlays`, worthwhile only if the overlay set grows), and
-folding the Residual/Drift/Template matrices from `MatrixViewport` onto a
-shared base.
+`paintWidgetOverlays`, worthwhile only if the overlay set grows).  (The
+four matrices have a shared base since 2026-11-25: `MatrixViewBase`.)
 
 **Probe-tab branch merge.**
 Half-merged probe migration polluting dead-code analysis (`getShankIndex`,
