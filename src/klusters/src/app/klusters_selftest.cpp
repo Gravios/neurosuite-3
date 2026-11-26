@@ -856,6 +856,10 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         for (auto it = scan.stretchesOf.constBegin(); it != scan.stretchesOf.constEnd(); ++it)
             stretches.insert(QString::number(it.key()), it.value());
         result.insert(QStringLiteral("stretches"), stretches);
+        QJsonObject chance;
+        for (auto it = scan.expectedOf.constBegin(); it != scan.expectedOf.constEnd(); ++it)
+            chance.insert(QString::number(it.key()), it.value());
+        result.insert(QStringLiteral("expected"), chance);
         result.insert(QStringLiteral("ok"), scan.ok);
         result.insert(QStringLiteral("reason"), scan.reason);
         result.insert(QStringLiteral("scanned"), static_cast<double>(scan.scanned));

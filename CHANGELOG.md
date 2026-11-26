@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: Mark Collisions shows what chance would give for each partner](#2026-11-26--klusters-mark-collisions-shows-what-chance-would-give-for-each-partner) |
 | 2026-11-26 | [Klusters: collision rows as a child, and marks taken back](#2026-11-26--klusters-collision-rows-as-a-child-and-marks-taken-back) |
 | 2026-11-26 | [Klusters: Mark Collisions tries a cluster only where it is firing](#2026-11-26--klusters-mark-collisions-tries-a-cluster-only-where-it-is-firing) |
 | 2026-11-26 | [Formats: the .eap and .tcl pages say what the two implementations do](#2026-11-26--formats-the-eap-and-tcl-pages-say-what-the-two-implementations-do) |
@@ -315,6 +316,36 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: Mark Collisions shows what chance would give for each partner
+
+Beside each partner's count the dialog shows the rows two independent units would share. On cluster 78, a quarter of the marks name partners at more than three times chance.
+
+<details>
+<summary>Details</summary>
+
+The scan reports, per partner tried, the number of rows two independently firing units would
+share: for each row searched, the partner's rate around it (its own spikes within the presence
+window, the window cut at the ends of the session) times the duration of the lags searched.
+`CollisionScan::expectedOf`; the dialog shows it in brackets beside each partner's count.
+
+Measured.
+
+- `test_mark_collisions`: 8.9 rows for two units of 400 spikes in 18 s, which is 400 x 22.2 /s x
+  20 lags at 20 kHz. (The generator puts both units on one grid of 40 samples, which doubles the
+  coincidences: 17 and 19 are found.)
+- sirotaA-jg-000005-20120312 group 8, cluster 78, 6,911 marks: cluster 64 is named 3,613 times
+  against 2,517 by chance (1.4x); 100, 40, 126 and 125 are at 0.7-1.1x. Clusters 68 (305 against
+  30), 102 (229 against 8), 14, 95, 103, 86, 30 are at 8-30x. Partners named at least 20 times and
+  more than three times chance account for 1,877 of the marks (27 %).
+
+What it does not say: units that fire together (in the same network events) share more rows than
+independent ones, so a ratio of 2 or 3 is not evidence of a misfit; 10 to 30 is hard to get that
+way. No ground truth on the real group.
+
+</details>
 
 ---
 

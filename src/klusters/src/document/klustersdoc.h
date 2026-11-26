@@ -2114,6 +2114,7 @@ public:
         QHash<int, qint64> controlOf;        ///< ... and rows whose control is over the threshold
         qint64  notPresent = 0;              ///< (row, cluster) pairs not tried: the cluster has no spike near the row's time
         QHash<int, int> stretchesOf;         ///< per cluster with a template: how many it has along the session
+        QHash<int, double> expectedOf;       ///< per partner tried: the collisions independent firing would give in the rows searched
         qint64  milliseconds = 0;
     };
     /** How scanCollisions() searches. */

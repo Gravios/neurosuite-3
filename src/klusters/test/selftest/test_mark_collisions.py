@@ -11,6 +11,8 @@ at 30 spikes of unit 3; the .spk is cut again.  Through the `markCollisions` ste
   - NEGATIVE CONTROL: the same session cut from the recording WITHOUT the added spikes gives at
     most 4 hits in each cluster beside the rows where the generator itself put a spike of each
     unit at one time (both units are drawn from one grid of times; about 18 of 400 coincide);
+  - CHANCE: the scan reports, per partner, the rows two independently firing units would share
+    (the partner's local rate x the lags searched, summed over the rows): 8.9 for these units;
   - marked, the rows are served corrected -- far closer to the record they had before the partner
     was added -- with the .spk unchanged, two template classes made, and the document modified;
   - nothing is written before Save: a session closed without saving leaves no .eap and no .tcl;
@@ -169,6 +171,14 @@ def main():
             print(f"      nothing planted: {seen} of {[len(nat[2]), len(nat[3])]} rows where the two units coincide in the recording are found; "
                   f"other hits {n}, over the threshold {[s.get('candidates') for s in st]}, "
                   f"control {[s.get('controlOver') for s in st]} of {[s.get('scanned') for s in st]}")
+            # chance: both units fire 400 spikes in 18 s, on one grid of 40 samples.  The scan's
+            # estimate takes the partner's rate as uniform in time: 400 rows x 22.2 /s x the lags
+            # searched (20 samples of 20 kHz) = 8.9.  The grid doubles that (a partner is at the
+            # row's own grid point or 40 samples away), which is the 17-19 found.
+            exp = [s.get("expected", {}).get(str(p)) for s, p in zip(st, (3, 2))]
+            print(f"      chance, by the scan's estimate: {[round(e, 1) for e in exp]} rows; found where the units coincide: {seen}")
+            check(all(e is not None and 7.0 <= e <= 11.0 for e in exp),
+                  "the rows two independent units share by chance are estimated from their rates (8.9 here)", str(exp))
             check(max(n) <= 4, "NEGATIVE CONTROL: with no spike added, at most 4 rows are called in each cluster beside those where the units coincide", str(n))
 
     # ── scan, mark, close without saving ──

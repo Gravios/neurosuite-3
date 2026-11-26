@@ -1306,6 +1306,13 @@ its own; bind one in **Preferences → Input**.
   out of the search.
 - **The dialog** shows, for each selected cluster or child, the rows found and the rows the
   control puts over the threshold, and the partners by count. Nothing is changed before *Yes*.
+- **Chance.** Beside each partner's count stands, in brackets, the number of rows two
+  independently firing units would share: the partner's own rate around each row (its spikes
+  within the presence window) times the duration of the lags searched, summed over the rows
+  searched. Real collisions come out near it, or below it — the search misses a partner within
+  about 4 samples of the row's own spike. A partner named many times more often than chance is
+  more likely a misfit of the row's own unit than a partner; Remove Collision Marks takes such
+  marks back.
 - **What a mark is.** The row's `.eap` row gets its own cluster's class at offset 0 (when it names
   none) and the partner's class at the fitted offset. A cluster without a class is given one,
   named by every row of the cluster that names no class, with the cluster as its provenance in

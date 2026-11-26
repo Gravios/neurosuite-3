@@ -88,7 +88,9 @@ void KlustersApp::slotMarkCollisions()
     QList<int> partners = byPartner.keys();
     std::sort(partners.begin(), partners.end(), [&](int a, int b) { return byPartner.value(a) > byPartner.value(b); });
     QStringList who;
-    for (int i = 0; i < partners.size() && i < 8; ++i) who << tr("%1: %2").arg(partners[i]).arg(byPartner.value(partners[i]));
+    for (int i = 0; i < partners.size() && i < 8; ++i)
+        who << tr("%1: %2 (%3)").arg(partners[i]).arg(byPartner.value(partners[i]))
+                   .arg(R.expectedOf.value(partners[i]), 0, 'f', R.expectedOf.value(partners[i]) < 10.0 ? 1 : 0);
     QStringList notes;
     for (auto it = R.lookAlikes.constBegin(); it != R.lookAlikes.constEnd(); ++it) {
         QStringList alike;
@@ -110,7 +112,9 @@ void KlustersApp::slotMarkCollisions()
         tr("A marked row names its partner in the stage's membership (.eap).  It is then shown, averaged "
            "and realigned with the partner's template subtracted; the .spk and the clustering are not "
            "changed.  The marks are written at Save and dropped if the session is closed without saving; "
-           "Undo does not take them back.\n\n%1\n\nPartners (cluster: rows): %2.\n\n"
+           "Undo does not take them back.\n\n%1\n\nPartners (cluster: rows, and in brackets the rows two independently firing units "
+           "would share by chance): %2.  A partner named many times more often than chance is more "
+           "likely a misfit than a partner.\n\n"
            "The control is the same search with the partners' templates negated: rows it puts over the "
            "threshold (%3 of %4 in all) are what noise and misfit alone give.%5")
             .arg(lines.join(QLatin1Char('\n')), who.join(QStringLiteral(", ")))

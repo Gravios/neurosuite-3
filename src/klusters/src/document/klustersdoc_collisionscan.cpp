@@ -271,6 +271,45 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
         }
     }
 
+    // ── what chance gives ──
+    // Two units firing independently share a window now and then.  For a row at time t and a
+    // partner firing at rate r around t, the chance that the partner's peak falls at one of the
+    // lags searched is r x (the lags' duration); summed over the rows searched, that is the
+    // number of collisions with this partner that need no explaining.  r is the partner's own
+    // spikes within the presence window of t (the whole session with the window off).  A
+    // partner named far more often than this is more likely a misfit than a partner.
+    {
+        const double lagSeconds = static_cast<double>(lastLag - firstLag + 1) / rate;
+        std::vector<double> expected(units.size(), 0.0);
+        // The window is cut at the ends of the session: there is no recording beyond them.
+        const auto ends = std::minmax_element(timeOf.begin(), timeOf.end());
+        const qint64 sessionStart = *ends.first, sessionEnd = *ends.second;
+        for (std::size_t i = 0; i < jobs.size(); ++i) {
+            if (!out[i].searched) continue;
+            const qint64 row = jobs[i].row;
+            const std::vector<char>& skip = *skipOf.constFind(clu[static_cast<std::size_t>(row)]);
+            const qint64 when = timeOf[static_cast<std::size_t>(row)];
+            for (std::size_t k = 0; k < units.size(); ++k) {
+                if (skip[k]) continue;
+                const std::vector<qint64>& times = units[k].times;
+                if (times.empty()) continue;
+                double perSecond = 0.0;
+                if (presence > 0) {
+                    const auto lo = std::lower_bound(times.begin(), times.end(), when - presence);
+                    const auto hi = std::upper_bound(lo, times.end(), when + presence);
+                    const qint64 from = std::max(when - presence, sessionStart), to = std::min(when + presence, sessionEnd);
+                    perSecond = to > from ? static_cast<double>(hi - lo) / (static_cast<double>(to - from) / rate) : 0.0;
+                } else {
+                    const double span = static_cast<double>(times.back() - times.front()) / rate;
+                    perSecond = span > 0.0 ? static_cast<double>(times.size()) / span : 0.0;
+                }
+                expected[k] += perSecond * lagSeconds;
+            }
+        }
+        for (std::size_t k = 0; k < units.size(); ++k)
+            if (expected[k] > 0.0) R.expectedOf.insert(units[k].cluster, expected[k]);
+    }
+
     // ── the threshold: what the control reaches in falseRate of the rows ──
     std::vector<float> control;
     control.reserve(out.size());
