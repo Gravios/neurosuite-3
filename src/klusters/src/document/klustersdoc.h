@@ -2146,6 +2146,16 @@ public:
     CollisionMarks markCollisions(const std::vector<CollisionHit>& hits);
     /** Rows marked since the last Save. */
     qint64 pendingCollisionMarkCount() const { return static_cast<qint64>(pendingMarks.rows.size()); }
+    /** Whether Save has membership changes to write: marks made, or marks removed. */
+    bool hasPendingCollisionMarks() const { return !pendingMarks.empty(); }
+    /** The rows (0-based, ascending) of @p clusters -- children of the child layer when
+     *  @p children -- that name a partner now: two classes or more in the stage's membership,
+     *  whoever wrote them, the marks not yet saved included. */
+    std::vector<qint64> collisionRowsOf(const QList<int>& clusters, bool children) const;
+    /** Takes the partners out of @p rows: each keeps the class that is its own cluster's (as the
+     *  corrected rows read it) and names no other.  In memory, like a mark: shown at once,
+     *  written at Save, dropped when the session is closed unsaved.  Returns the rows changed. */
+    int removeCollisionMarks(const std::vector<qint64>& rows);
 
     /** The .spk the shown space reads (a pending copy when there is one). */
     const QString& activeSpkFilePath() const { return activeSpkPath; }

@@ -587,6 +587,8 @@ void KlustersApp::createMenus()
     connect(mPreviousFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(-1); });
     mLocalPcaSpace = addCommand(nullptr, "action.localPcaSpace");
     mMarkCollisions = addCommand(nullptr, "action.markCollisions");
+    mCollisionRowsToChild = addCommand(nullptr, "action.collisionRowsToChild");
+    mRemoveCollisionMarks = addCommand(nullptr, "action.removeCollisionMarks");
 
     mSortSpikesByTime = addCommand(nullptr, "action.sortSpikesByTime");
 
@@ -805,7 +807,7 @@ void KlustersApp::createMenus()
     fill(viewMenu, { mIncreasePointSize, mDecreasePointSize, nullptr, mImmediateSelection, mDelaySelection });
 
     fill(clustersMenu, { mGroupeClusters, mDeleteArtifact, mDeleteNoisy, nullptr,
-                         mRenumberClusters, mPurgeSmallClusters, mAutoMerge, mMarkCollisions, nullptr,
+                         mRenumberClusters, mPurgeSmallClusters, mAutoMerge, nullptr, mMarkCollisions, mCollisionRowsToChild, mRemoveCollisionMarks, nullptr,
                          mMarkAsTemplate, mGenerateTemplate, nullptr });
     clustersMenu->addMenu(mClusterSortMenu);
     fill(splitMenu, { mWatershed, mDipSplit, mSplitByKnn, mPartitionByTime, nullptr,

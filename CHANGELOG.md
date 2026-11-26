@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: collision rows as a child, and marks taken back](#2026-11-26--klusters-collision-rows-as-a-child-and-marks-taken-back) |
 | 2026-11-26 | [Klusters: Mark Collisions tries a cluster only where it is firing](#2026-11-26--klusters-mark-collisions-tries-a-cluster-only-where-it-is-firing) |
 | 2026-11-26 | [Formats: the .eap and .tcl pages say what the two implementations do](#2026-11-26--formats-the-eap-and-tcl-pages-say-what-the-two-implementations-do) |
 | 2026-11-26 | [Klusters: the .tcl Mark Collisions writes is as wide as the .eap](#2026-11-26--klusters-the-tcl-mark-collisions-writes-is-as-wide-as-the-eap) |
@@ -314,6 +315,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: collision rows as a child, and marks taken back
+
+Two companions of Mark Collisions: the rows that name a partner become a child of their cluster to be looked at, and Remove Collision Marks takes partners out again.
+
+<details>
+<summary>Details</summary>
+
+For the last look at marked collision rows.
+
+- **Clusters → Collision Rows to a Child** (`action.collisionRowsToChild`): the rows of the
+  selected clusters or children that name a partner (two classes or more in the membership,
+  whoever wrote them) become one new child per parent. No row leaves its cluster; rows that are a
+  child of their own already are left. Needs a child layer. Uses the builder the other child
+  splits use, so it is undone like them.
+- **Clusters → Remove Collision Marks…** (`action.removeCollisionMarks`): those rows keep the
+  class that is their own cluster's (`decollide_fit::splitRow`, as the corrected rows read it)
+  and no other. Held in memory and written at Save like a mark (`PendingCell` -128); it removes
+  saved marks and a sorter's as well as this session's.
+- `KlustersDoc::collisionRowsOf`, `removeCollisionMarks`, `hasPendingCollisionMarks` (Save now
+  writes when only removals are pending, with the preference off too).
+
+`test_collision_curation`: 57 marked rows of cluster 2, from both of its children, become one
+child of 57 rows with cluster 2 still at 400 spikes; a second run makes nothing; removing the
+marks of that child (child scope) leaves no row corrected and every row served raw; saved marks
+are removed in a later session; removing cluster 3's marks leaves cluster 2's.
+
+Not tested on the real group.
+
+</details>
 
 ---
 

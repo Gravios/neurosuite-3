@@ -1047,7 +1047,7 @@ void KlustersDoc::finishSave(bool ok){
             // last rebuild fitted (they are relative to these times), then rebuild from the file.
             // Marks not yet saved (markCollisions) are written whatever the preference says.
             const bool corrected = configuration().getCorrectCollisionRows();
-            if (corrected || pendingCollisionMarkCount() > 0) {
+            if (corrected || hasPendingCollisionMarks()) {
                 int changed = 0; QString why;
                 if (writeCollisionOffsets(&changed, &why, !corrected)) {
                     if (changed > 0)

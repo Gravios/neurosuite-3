@@ -489,3 +489,64 @@ KlustersDoc::CollisionMarks KlustersDoc::markCollisions(const std::vector<Collis
     M.ok = true;
     return M;
 }
+
+std::vector<qint64> KlustersDoc::collisionRowsOf(const QList<int>& clusters, bool children) const
+{
+    namespace nf = neurofileio;
+    std::vector<qint64> out;
+    Data* layer = children ? childData : clusteringData;
+    if (!clusteringData || !layer) return out;
+    const qint64 nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    const nf::EapFile eap = currentEap(stageEapPath(), nSpikes);
+    if (!eap.ok || eap.nSpikes != nSpikes || eap.nClasses <= 0) return out;
+    for (const int id : clusters)
+        for (const int r : layer->clusterSpkIndices(id)) {
+            if (r < 0 || r >= nSpikes) continue;
+            const int8_t* cells = &eap.cells[static_cast<std::size_t>(r) * eap.nClasses];
+            int n = 0;
+            for (int j = 0; j < eap.nClasses && n < 2; ++j) if (nf::eapPresent(cells[j])) ++n;
+            if (n >= 2) out.push_back(r);
+        }
+    std::sort(out.begin(), out.end());
+    out.erase(std::unique(out.begin(), out.end()), out.end());
+    return out;
+}
+
+int KlustersDoc::removeCollisionMarks(const std::vector<qint64>& rows)
+{
+    namespace nf = neurofileio;
+    namespace df = neurosuite::decollide_fit;
+    if (!clusteringData || rows.empty()) return 0;
+    const qint64 nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    const QString path = stageEapPath();
+    const nf::EapFile eap = currentEap(path, nSpikes);
+    if (!eap.ok || eap.nSpikes != nSpikes) return 0;
+    std::vector<int> clu(static_cast<std::size_t>(nSpikes), 0);
+    for (const dataType id : clusteringData->clusterIds())
+        for (const int r : clusteringData->clusterSpkIndices(static_cast<int>(id)))
+            if (r >= 0 && r < nSpikes) clu[static_cast<std::size_t>(r)] = static_cast<int>(id);
+    const std::vector<int> home = collisionClassHomes(eap, clu);
+    // The times the table holds for are kept as they are: nothing is stored here but absences.
+    if (collisionRefEap != path || static_cast<qint64>(collisionRefTimes.size()) != nSpikes) {
+        const int timeDim = clusteringData->nbOfDimensionsTotal();
+        collisionRefTimes.resize(static_cast<std::size_t>(nSpikes));
+        for (qint64 i = 0; i < nSpikes; ++i)
+            collisionRefTimes[static_cast<std::size_t>(i)] =
+                static_cast<qint64>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+        collisionRefEap = path;
+    }
+    int changed = 0;
+    df::Member own; std::vector<df::Member> partners;
+    for (const qint64 row : rows) {
+        if (row < 0 || row >= nSpikes) continue;
+        // The same split the corrected rows are made with: what is "own" there stays.
+        if (!df::splitRow(eap, row, clu[static_cast<std::size_t>(row)], home, own, partners)) continue;
+        for (const df::Member& p : partners) pendingMarks.cells.push_back(PendingCell{row, p.classId, kCellAbsent});
+        ++changed;
+    }
+    if (changed == 0) return 0;
+    setModified(true);
+    refreshCollisionRows();
+    qInfo().noquote() << "[mark collisions]" << changed << "rows no longer name a partner";
+    return changed;
+}

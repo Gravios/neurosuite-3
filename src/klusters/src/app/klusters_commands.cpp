@@ -115,6 +115,16 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "that hold a second cluster's spike, and name the partner in the membership (.eap):\n"
                      "the rows are then shown with the partner's template subtracted.  The clustering and\n"
                      "the .spk are not changed; the marks are written at Save.")).editing();
+    // The two companions of Mark Collisions for the final look at the marked rows: put them
+    // beside the cluster's other spikes as a child of their own, and take marks back.
+    t << CommandSpec("action.collisionRowsToChild", "Clusters", tr("Collision Rows to a C&hild"), ON(triggered, slotCollisionRowsToChild))
+            .toolTip(tr("Make the rows of the selected clusters (or children) that name a partner one child\n"
+                     "of their cluster, so they can be looked at beside its other spikes.  No row leaves\n"
+                     "its cluster.  Needs a hierarchical session.  Undoable.")).editing();
+    t << CommandSpec("action.removeCollisionMarks", "Clusters", tr("Remove Collision Mar&ks…"), ON(triggered, slotRemoveCollisionMarks))
+            .toolTip(tr("Take the partners out of the rows of the selected clusters (or children) that name\n"
+                     "one: each row keeps its own cluster's class and is shown as the .spk holds it.\n"
+                     "Written at Save.")).editing();
     t << CommandSpec("action.purgeSmallClusters", "Clusters", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
             .editing();
     // Bulk artifact removal: move every spike more than 5 sigma from its cluster's

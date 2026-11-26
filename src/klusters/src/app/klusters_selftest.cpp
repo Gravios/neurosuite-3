@@ -777,6 +777,50 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         return true;
     }
+    if (step.contains(QStringLiteral("collisionChild")) || step.contains(QStringLiteral("unmarkCollisions"))) {
+        // {"collisionChild": {"clusters": [..], "children": bool}}: Clusters > Collision Rows to a Child.
+        // {"unmarkCollisions": {"clusters": [..], "children": bool}}: Clusters > Remove Collision Marks,
+        // without its dialog.  Both report "rows", the rows of the selection naming a partner before.
+        const bool toChild = step.contains(QStringLiteral("collisionChild"));
+        const QJsonObject o = step.value(toChild ? QStringLiteral("collisionChild") : QStringLiteral("unmarkCollisions")).toObject();
+        QList<int> ids;
+        for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
+        const bool children = o.value(QStringLiteral("children")).toBool(false);
+        if (children || toChild) {
+            QString err;
+            if (!doc->loadChildClustering(err) && children) {
+                result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err);
+                return false;
+            }
+        }
+        if (children && o.contains(QStringLiteral("childOfRow"))) {       // a child named by a row it holds
+            const int row = o.value(QStringLiteral("childOfRow")).toInt();
+            for (const dataType id : doc->childClusterData().clusterIds())
+                if (doc->childClusterData().clusterSpkIndices(static_cast<int>(id)).contains(row)) ids.append(static_cast<int>(id));
+        }
+        const std::vector<qint64> rows = doc->collisionRowsOf(ids, children);
+        QJsonArray named;
+        for (const qint64 r : rows) named.append(static_cast<double>(r));
+        result.insert(QStringLiteral("rows"), named);
+        if (toChild) {
+            QString summary;
+            QJsonArray made;
+            QJsonObject parents, sizes;
+            for (const int id : collisionRowsToChildren(ids, children, summary)) {
+                made.append(id);
+                parents.insert(QString::number(id), doc->parentOfChild(id));
+                sizes.insert(QString::number(id), static_cast<double>(doc->childClusterData().nbOfSpikes(static_cast<dataType>(id))));
+            }
+            result.insert(QStringLiteral("created"), made);
+            result.insert(QStringLiteral("createdParent"), parents);
+            result.insert(QStringLiteral("createdSize"), sizes);
+            result.insert(QStringLiteral("summary"), summary);
+        } else {
+            result.insert(QStringLiteral("removed"), doc->removeCollisionMarks(rows));
+        }
+        result.insert(QStringLiteral("modified"), doc->isModified());
+        return true;
+    }
     if (step.contains(QStringLiteral("markCollisions"))) {
         // {"markCollisions": {"clusters": [..], "children": bool, "falseRate": 0.01, "apply": bool}}:
         // Clusters > Mark Collisions without its dialog -- the scan, and with "apply" the marks.

@@ -595,8 +595,9 @@ bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error, bool marks
     if (!nf::writeEap(target, eap.nSpikes, eap.nClasses, eap.group, eap.flags, eap.cells))
         return fail(QStringLiteral("could not write %1").arg(QString::fromStdString(target)));
     if (marks) {
-        qInfo().noquote() << "[collision rows]" << pendingMarks.rows.size() << "marked rows written to"
-                          << QFileInfo(QString::fromStdString(target)).fileName();
+        qInfo().noquote() << "[collision rows] membership changes written to"
+                          << QFileInfo(QString::fromStdString(target)).fileName() << "(" << pendingMarks.rows.size()
+                          << "rows marked," << pendingMarks.cells.size() << "cells in all )";
         pendingMarks.clear();
     }
     // The offsets on disk now hold for the times as they are -- unless only the marks were

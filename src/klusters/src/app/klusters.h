@@ -635,6 +635,14 @@ public:
      *  child view) for rows holding a second cluster's spike and, on confirmation, name the
      *  partners in the stage's membership (KlustersDoc::scanCollisions / markCollisions). */
     void slotMarkCollisions();
+    /** Clusters > Collision Rows to a Child: the rows of the selection that name a partner become
+     *  one child of their parent, to be looked at beside the cluster's other spikes. */
+    void slotCollisionRowsToChild();
+    /** Clusters > Remove Collision Marks: the rows of the selection that name a partner keep
+     *  their own class only (KlustersDoc::removeCollisionMarks). */
+    void slotRemoveCollisionMarks();
+    /** The work of slotCollisionRowsToChild: returns the children made, @p summary what was done. */
+    QList<int> collisionRowsToChildren(const QList<int>& ids, bool children, QString& summary);
     /** Spikes > Sort Spikes by Time: put the group's spike rows back in time
      *  order in every row-indexed file, then reopen (KlustersDoc::planTimeSort). */
     void slotSortSpikesByTime();
@@ -1653,6 +1661,8 @@ private:
     QAction *mPreviousFeatureSpace = nullptr;   ///< View > Previous Feature Space (Ctrl+Shift+Tab)
     QAction *mLocalPcaSpace        = nullptr;   ///< View > Local PCA of the Selection (Shift+Y)
     QAction *mMarkCollisions       = nullptr;   ///< Clusters > Mark Collisions
+    QAction *mCollisionRowsToChild = nullptr;   ///< Clusters > Collision Rows to a Child
+    QAction *mRemoveCollisionMarks = nullptr;   ///< Clusters > Remove Collision Marks
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;

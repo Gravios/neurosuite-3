@@ -1128,6 +1128,8 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Entry | Key | What it does |
 |---|---|---|
 | Split ▸ Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
+| Clusters ▸ Collision Rows to a Child | — | Makes the rows of the selected clusters (or children) that name a partner one child of their cluster, to be looked at beside its other spikes. No row leaves its cluster |
+| Clusters ▸ Remove Collision Marks… | — | Takes the partners out of the rows of the selected clusters (or children) that name one, after a confirmation; written at Save |
 | Clusters ▸ Mark Collisions… | — | Searches the selected clusters (in the child view: the selected children) for rows that hold a second cluster's spike and, after a confirmation, names the partner in the `.eap`: the rows are then shown with the partner subtracted. See [Mark Collisions](#mark-collisions--the-collisions-no-sorter-named) |
 | Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
 | Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artifact (0), after a confirmation |
@@ -1320,6 +1322,24 @@ its own; bind one in **Preferences → Input**.
 - **Left as it is:** a hit one of whose clusters can be given no class (fewer than 30 rows naming
   none).
 - With the preference off the rows are marked and written but shown as they are.
+
+**Looking at the marked rows, and taking marks back.**
+
+- **Clusters → Collision Rows to a Child** makes the rows of the selected clusters (or children)
+  that name a partner one child of their cluster — one new child per parent, whichever of its
+  children the rows were in. No row leaves its cluster. Shown beside the cluster's other children
+  (the local PCA, `Shift+Y`, is the place to look), a row that is the cluster's spike plus a
+  partner sits among the cluster's own once the partner is subtracted; one that does not has the
+  wrong cluster or the wrong partner. It needs a hierarchical session (**Hierarchy → Promote to
+  Hierarchical Session**) and is undone like any split of children.
+- **Clusters → Remove Collision Marks…** takes the partners out of the rows of the selected
+  clusters (or children) that name one: each keeps its own cluster's class and is shown as the
+  `.spk` holds it again. It removes every partner those rows name, whoever named it — Mark
+  Collisions or the sort — and, like a mark, is held in memory, written at Save and not on the
+  undo stack; Mark Collisions finds the rows again. Select the child made above to take back
+  exactly the rows you looked at.
+
+Neither has a key of its own.
 
 Limits. A partner is found only where the partner's cluster has a template and spikes of its
 own nearby in time: a unit the sort missed, one with fewer than 200 rows, or one whose spikes of

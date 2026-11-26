@@ -18,10 +18,25 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QMap>
 #include <QMessageBox>
+#include <QSet>
 #include <QStatusBar>
 
 #include <algorithm>
+
+namespace {
+/** The selection Mark Collisions and its companions work on: the child palette's while the child
+ *  view is active, the parent clusters shown otherwise; never the artefact and noise bins. */
+QList<int> collisionSelection(KlustersDoc* doc, KlustersView* view, ClusterPalette* childPalette, bool& childScope)
+{
+    childScope = doc->isChildClusteringActive();
+    QList<int> selected = (childScope && childPalette) ? childPalette->selectedClusters() : view->clusters();
+    selected.removeAll(0);
+    selected.removeAll(1);
+    return selected;
+}
+} // namespace
 
 void KlustersApp::slotMarkCollisions()
 {
@@ -32,12 +47,8 @@ void KlustersApp::slotMarkCollisions()
     }
     KlustersView* view = activeView();
     if (!view) return;
-    // The selection, in the layer on screen: the child palette's while the child view is
-    // active, the parent clusters shown otherwise.
-    const bool childScope = doc->isChildClusteringActive();
-    QList<int> selected = (childScope && childPaletteA) ? childPaletteA->selectedClusters() : view->clusters();
-    selected.removeAll(0);
-    selected.removeAll(1);
+    bool childScope = false;
+    QList<int> selected = collisionSelection(doc, view, childPaletteA, childScope);
     if (!childScope) doc->leaveOutReserved(selected, tr("Mark collisions"));
     if (selected.isEmpty()) {
         slotStatusMsg(tr("Mark collisions: select one or more clusters first."));
@@ -120,4 +131,96 @@ void KlustersApp::slotMarkCollisions()
     if (M.withoutClass > 0) left += tr("  %1 had a cluster that could be given no class.").arg(M.withoutClass);
     slotStatusMsg(tr("Marked %1 collision rows (%2 template classes made).  Written at Save.%3")
                       .arg(M.marked).arg(M.classesCreated).arg(left));
+}
+
+QList<int> KlustersApp::collisionRowsToChildren(const QList<int>& ids, bool children, QString& summary)
+{
+    QList<int> created;
+    QString err;
+    if (!doc->loadChildClustering(err)) {
+        summary = tr("Collision rows to a child: the session has no child layer (%1). "
+                     "The rows stay in their clusters; Hierarchy > Promote to Hierarchical Session gives it one.").arg(err);
+        return created;
+    }
+    const std::vector<qint64> rows = doc->collisionRowsOf(ids, children);
+    if (rows.empty()) { summary = tr("Collision rows to a child: the selection holds no row that names a partner."); return created; }
+    // One new child per parent, holding that parent's collision rows whichever of its children
+    // they were in.  A row never leaves its parent.
+    const QVector<dataType> parentOfRow = doc->parentData().labelByFeatureRow();
+    QMap<int, QSet<dataType>> byParent;
+    for (const qint64 r : rows) {
+        const int row = static_cast<int>(r) + 1;                       // 0-based .spk -> 1-based feature row
+        if (row <= 0 || row >= parentOfRow.size()) continue;
+        const int parent = static_cast<int>(parentOfRow.at(row));
+        if (parent > 1) byParent[parent].insert(static_cast<dataType>(row));
+    }
+    int moved = 0, already = 0;
+    for (auto it = byParent.constBegin(); it != byParent.constEnd(); ++it) {
+        // Already a child of their own: every row of the children they are in is a collision row.
+        doc->setActiveClustering(true);
+        const QVector<dataType> childOfRow = doc->data().labelByFeatureRow();
+        QSet<int> kids;
+        for (const dataType row : it.value()) kids.insert(static_cast<int>(childOfRow.at(static_cast<int>(row))));
+        qint64 held = 0;
+        for (const int k : kids) held += static_cast<qint64>(doc->childClusterData().nbOfSpikes(static_cast<dataType>(k)));
+        if (kids.size() == 1 && held == it.value().size()) { already += it.value().size(); continue; }
+        const int made = splitOffBurstFollowers(it.value(), /*children*/ true, QStringLiteral("collision_rows"));
+        if (made > 0) { created.append(made); moved += it.value().size(); }
+    }
+    summary = tr("Collision rows to a child: %1 rows of %2 cluster(s) are now %3 child(ren) of their own%4.")
+                  .arg(moved).arg(byParent.size()).arg(created.size())
+                  .arg(already > 0 ? tr(" (%1 were one already)").arg(already) : QString());
+    return created;
+}
+
+void KlustersApp::slotCollisionRowsToChild()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish first."), 5000);
+        return;
+    }
+    KlustersView* view = activeView();
+    if (!view) return;
+    bool childScope = false;
+    const QList<int> selected = collisionSelection(doc, view, childPaletteA, childScope);
+    if (selected.isEmpty()) { slotStatusMsg(tr("Collision rows to a child: select one or more clusters first.")); return; }
+    QString summary;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    collisionRowsToChildren(selected, childScope, summary);
+    QApplication::restoreOverrideCursor();
+    slotStatusMsg(summary);
+}
+
+void KlustersApp::slotRemoveCollisionMarks()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish first."), 5000);
+        return;
+    }
+    KlustersView* view = activeView();
+    if (!view) return;
+    bool childScope = false;
+    const QList<int> selected = collisionSelection(doc, view, childPaletteA, childScope);
+    if (selected.isEmpty()) { slotStatusMsg(tr("Remove collision marks: select one or more clusters first.")); return; }
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const std::vector<qint64> rows = doc->collisionRowsOf(selected, childScope);
+    QApplication::restoreOverrideCursor();
+    if (rows.empty()) { slotStatusMsg(tr("Remove collision marks: the selection holds no row that names a partner.")); return; }
+    QMessageBox box(QMessageBox::Question, tr("Remove Collision Marks"),
+        tr("%1 row(s) of the selected %2 name a partner.  Take the partners out?")
+            .arg(rows.size()).arg(childScope ? tr("children") : tr("clusters")),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box.setInformativeText(
+        tr("Each row keeps its own cluster's class and is shown as the .spk holds it again.  This "
+           "takes out every partner these rows name, whoever named it -- Mark Collisions or the sort.  "
+           "It is written at Save and dropped if the session is closed without saving; Undo does not "
+           "bring the marks back (Mark Collisions finds them again)."));
+    box.setDefaultButton(QMessageBox::No);
+    if (box.exec() != QMessageBox::Yes) return;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const int changed = doc->removeCollisionMarks(rows);
+    QApplication::restoreOverrideCursor();
+    slotStatusMsg(tr("Removed the partners of %1 row(s).  Written at Save.").arg(changed));
 }
