@@ -30,6 +30,12 @@ at 30 spikes of unit 3; the .spk is cut again.  Through the `markCollisions` ste
     (or, when it is the partner's, turned into the partner's offset) and names cluster 2's; rows
     that are not marked keep what they name; no class is made;
   - an .eap wider than the default with no .tcl beside it: the .tcl written at Save is as wide;
+  - DRIFT AND PRESENCE: a cluster is tried as a partner only where it has spikes of its own near
+    the row's time.  With cluster 3's spikes of the first 7 s moved to the noise, and a presence
+    window of 2 s, no row before 4.5 s is called and the planted ones after 8 s are; with the window
+    off (0) the early ones are called again, from a template of another time.  A cluster's
+    templates are cut by time as well as by rows: with 4 s per stretch the 400 rows of cluster 2
+    get 4 templates (one, by rows alone), and the planted rows are still found;
   - with the preference off the rows are marked and written at Save all the same, and served raw;
   - in the child view the scan takes the rows of the selected CHILD and searches them as rows of
     their parent cluster.
@@ -350,6 +356,42 @@ def main():
             check(width == 256 and len(tcl) == 256, "the .tcl written is as wide as the .eap", f"{width} vs {saved.shape[1]}")
             check(st[2].get("corrected") == st[0].get("marked") and st[0].get("marked") >= 34,
                   "the marked rows are corrected from the saved files", str({k: st[2].get(k) for k in ("collisionRows", "corrected")}))
+
+    # ── presence in time, and templates cut by time ──
+    with tempfile.TemporaryDirectory() as d:
+        base, clu, plan, before, raw = build(d, "when")
+        res = S.read_res(f"{base}.res.standard.1")
+        t = res / S.SR
+        gone = (clu == 3) & (t < 7.0)                     # cluster 3 is not sorted before 7 s
+        late = clu.copy(); late[gone] = 1
+        with open(f"{base}.clu.standard.1", "wb") as fh:
+            np.array([np.unique(late).size], np.int32).tofile(fh)
+            late.astype(np.int32).tofile(fh)
+        rows2 = plan[2][0]
+        early = [int(r) for r in rows2 if t[r] < 4.5]
+        after = [int(r) for r in rows2 if t[r] > 8.0]
+        steps = [{"markCollisions": {"clusters": [2], "presenceSeconds": 2.0}},
+                 {"markCollisions": {"clusters": [2], "presenceSeconds": 0}},
+                 {"markCollisions": {"clusters": [2], "presenceSeconds": 2.0, "stretchSeconds": 4.0}}]
+        ok, st = run(klusters, base, steps, d)
+        check(ok, "presence: every scan ran")
+        if ok:
+            near, anywhere, cut = (found(s, 2) for s in st)
+            n_early = [sum(r in h for r in early) for h in (near, anywhere)]
+            n_after = [sum(r in h for r in after) for h in (near, anywhere, cut)]
+            print(f"      cluster 3 unsorted before 7 s ({int((late == 3).sum())} rows left): planted rows before 4.5 s called {n_early[0]} of {len(early)} with a 2 s "
+                  f"window, {n_early[1]} with none; after 8 s {n_after[0]} and {n_after[1]} of {len(after)}; "
+                  f"{st[0].get('notPresent')} row-cluster pairs not tried")
+            check(len(early) >= 5 and n_early[0] == 0 and not any(t[r] < 4.5 for r in near),
+                  "no row is called where the partner has no spike of its own within the window", str(n_early))
+            check(n_after[0] >= len(after) - 2, "where the partner is present the planted rows are found", f"{n_after[0]} of {len(after)}")
+            check(n_early[1] >= len(early) - 2, "NEGATIVE CONTROL: with the window off the early rows are called (the rule is what leaves them out)",
+                  f"{n_early[1]} of {len(early)}")
+            check(st[0].get("notPresent", 0) > 0 and st[1].get("notPresent") == 0, "the pairs not tried are counted")
+            k = [s.get("stretches", {}).get("2") for s in st]
+            print(f"      templates of cluster 2 (400 rows over {t[clu == 2].max() - t[clu == 2].min():.0f} s): {k[0]} by rows, {k[2]} with 4 s per stretch")
+            check(k[0] == 1 and k[2] == 4, "a cluster's templates are cut by time as well as by rows", str(k))
+            check(n_after[2] >= len(after) - 2, "... and with four templates the planted rows are still found", f"{n_after[2]} of {len(after)}")
 
     # ── the preference off ──
     with tempfile.TemporaryDirectory() as d:

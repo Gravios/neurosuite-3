@@ -1289,9 +1289,14 @@ its own; bind one in **Preferences → Input**.
 - **The confirmation.** Each candidate is fitted jointly with the row's own template — the fit
   the corrected rows are made with — and kept when the partner comes out at 0.5–1.6 of its
   template and removes at least a fifth of what the own template leaves.
-- **Templates** follow the session: a cluster's rows are cut into stretches of about 3000 and a
-  template is the mean of up to 300 rows spread over one. A row is searched with its own
-  cluster's stretch and each partner's stretch at the same place in time.
+- **Templates** follow the session: a cluster's rows are cut into stretches and a template is
+  the mean of up to 300 rows spread over one. A stretch is at most about 3000 rows and at most
+  ten minutes of the cluster's life, but never fewer than 100 rows, and a cluster has at most 64.
+  A row is searched with its own cluster's stretch and each partner's stretch at the same place
+  in time.
+- **Presence.** A cluster is tried as a partner of a row only where it has spikes of its own
+  within five minutes of the row. A unit that is silent, or not sorted, around that time is not
+  there to collide with; its template from another hour would only be fitted to noise.
 - **Not tried as partners:** a cluster whose template is too like the row's own (cosine 0.85 or
   more at some shift within 3 samples, between any two of their templates along the session) — it
   would take the row's own spike for itself; the
@@ -1316,8 +1321,9 @@ its own; bind one in **Preferences → Input**.
   none).
 - With the preference off the rows are marked and written but shown as they are.
 
-Limits. A partner is found only where the partner's cluster has a template: a unit the sort
-missed, or one with fewer than 200 rows, is not found. A partner whose peak lies in the outer 6
+Limits. A partner is found only where the partner's cluster has a template and spikes of its
+own nearby in time: a unit the sort missed, one with fewer than 200 rows, or one whose spikes of
+that part of the session are in another cluster, is not found. A partner whose peak lies in the outer 6
 samples of the window, or outside it, is not searched for. Two spikes of look-alike clusters are
 not told apart. The marks add nothing to the partner's cluster: its own spike in that row is
 still missing from its train.

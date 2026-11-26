@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: Mark Collisions tries a cluster only where it is firing](#2026-11-26--klusters-mark-collisions-tries-a-cluster-only-where-it-is-firing) |
 | 2026-11-26 | [Formats: the .eap and .tcl pages say what the two implementations do](#2026-11-26--formats-the-eap-and-tcl-pages-say-what-the-two-implementations-do) |
 | 2026-11-26 | [Klusters: the .tcl Mark Collisions writes is as wide as the .eap](#2026-11-26--klusters-the-tcl-mark-collisions-writes-is-as-wide-as-the-eap) |
 | 2026-11-26 | [Klusters: Mark Collisions gives a moved row its own cluster's class](#2026-11-26--klusters-mark-collisions-gives-a-moved-row-its-own-clusters-class) |
@@ -313,6 +314,48 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: Mark Collisions tries a cluster only where it is firing
+
+A cluster is tried as a partner only where it has spikes of its own within five minutes of the row, and a cluster's templates are cut by time as well as by rows.
+
+<details>
+<summary>Details</summary>
+
+The scan took each cluster's template at the row's place in the session, but tried every cluster
+everywhere: one with no spike of its own around the row's time was fitted with its nearest
+template, from another part of the session.
+
+- **Presence.** A cluster is tried as a partner of a row only where it has spikes of its own
+  within 5 minutes of the row (`CollisionScanOptions::presenceSeconds`, 300; 0 = anywhere).
+- **Templates cut by time too.** A stretch was about 3000 rows, so a cluster under 6000 rows had
+  one template for the whole session. A stretch is now also at most ten minutes of the cluster's
+  life (`stretchSeconds`, 600), never fewer than 100 rows, at most 64 per cluster
+  (`collisionscan::stretchCount`).
+- `scanCollisions` takes a `CollisionScanOptions`; the scan reports the row-cluster pairs not
+  tried and the number of templates per cluster.
+
+Measured.
+
+- `test_mark_collisions`: with cluster 3's spikes of the first 7 s moved to the noise and a 2 s
+  window, 0 of the 11 planted rows before 4.5 s are called and 22 of 22 after 8 s; with the window
+  off, 11 of 11 early ones are called (from a template of another time). With 4 s per stretch
+  cluster 2 gets 4 templates (1 by rows) and the planted rows are still found.
+- sirotaA-jg-000005-20120312 group 8, cluster 78: of the 6,741 rows marked before, 864 (13 %)
+  named a partner with no spike of its own within 5 minutes (clusters 68, 23, 106, 99, 31, 95
+  most). Now 6,911 rows are marked, 3,613 with cluster 64 (3,300 before); 6,459 rows are in both
+  sets, 4,838 with the same partner. 4.5 million row-cluster pairs are not tried, and the scan
+  takes 73 s on two cores (110 s). Clusters with one template: 15 of 96 (the median has 10).
+- Side effect: with more templates per cluster, more pairs of clusters reach the look-alike
+  cosine at some time. For 78 the clusters not tried went from 13 to 16 (20, 23 and 92 added);
+  23 had been named 403 times.
+
+Not tested: other window lengths on the real group; whether the 452 rows marked only now are
+collisions (no ground truth).
+
+</details>
 
 ---
 

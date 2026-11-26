@@ -2112,13 +2112,25 @@ public:
         QHash<int, qint64> rowsOf;           ///< per selected cluster (or child): rows searched
         QHash<int, qint64> hitsOf;           ///< ... and collisions found
         QHash<int, qint64> controlOf;        ///< ... and rows whose control is over the threshold
+        qint64  notPresent = 0;              ///< (row, cluster) pairs not tried: the cluster has no spike near the row's time
+        QHash<int, int> stretchesOf;         ///< per cluster with a template: how many it has along the session
         qint64  milliseconds = 0;
+    };
+    /** How scanCollisions() searches. */
+    struct CollisionScanOptions {
+        double falseRate = 0.01;             ///< share of the rows the control may put over the threshold
+        double presenceSeconds = 300.0;      ///< a cluster is tried only where it has a spike of its own this near in time (0 = anywhere)
+        double stretchSeconds = 600.0;       ///< a template stands for at most this long of a cluster's life (0 = by rows only)
     };
     /** Searches the rows of @p clusters (children of the child layer when @p children) for another
      *  cluster's spike: collisionscan.h on every row, the threshold taken where the control
-     *  reaches @p falseRate of the rows, each candidate confirmed by the joint fit the corrected
-     *  rows are made with (decollide_fit::fitPartner).  A row's own unit is its PARENT cluster. */
-    CollisionScan scanCollisions(const QList<int>& clusters, bool children, double falseRate = 0.01);
+     *  reaches falseRate of the rows, each candidate confirmed by the joint fit the corrected
+     *  rows are made with (decollide_fit::fitPartner).  A row's own unit is its PARENT cluster.
+     *  Drift: templates are per stretch of a cluster's rows and of the session's time, a row is
+     *  searched with the stretches at its own time, and a cluster is tried only where it has
+     *  spikes of its own within presenceSeconds of the row. */
+    CollisionScan scanCollisions(const QList<int>& clusters, bool children, const CollisionScanOptions& options);
+    CollisionScan scanCollisions(const QList<int>& clusters, bool children) { return scanCollisions(clusters, children, CollisionScanOptions()); }
     /** What markCollisions() did. */
     struct CollisionMarks {
         bool    ok = false;

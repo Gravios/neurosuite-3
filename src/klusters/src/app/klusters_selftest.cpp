@@ -801,7 +801,17 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         QJsonArray searched;
         for (const int id : ids) searched.append(id);
         result.insert(QStringLiteral("searched"), searched);
-        const KlustersDoc::CollisionScan scan = doc->scanCollisions(ids, children, o.value(QStringLiteral("falseRate")).toDouble(0.01));
+        // "presenceSeconds" / "stretchSeconds": KlustersDoc::CollisionScanOptions.
+        KlustersDoc::CollisionScanOptions how;
+        how.falseRate = o.value(QStringLiteral("falseRate")).toDouble(how.falseRate);
+        how.presenceSeconds = o.value(QStringLiteral("presenceSeconds")).toDouble(how.presenceSeconds);
+        how.stretchSeconds = o.value(QStringLiteral("stretchSeconds")).toDouble(how.stretchSeconds);
+        const KlustersDoc::CollisionScan scan = doc->scanCollisions(ids, children, how);
+        result.insert(QStringLiteral("notPresent"), static_cast<double>(scan.notPresent));
+        QJsonObject stretches;
+        for (auto it = scan.stretchesOf.constBegin(); it != scan.stretchesOf.constEnd(); ++it)
+            stretches.insert(QString::number(it.key()), it.value());
+        result.insert(QStringLiteral("stretches"), stretches);
         result.insert(QStringLiteral("ok"), scan.ok);
         result.insert(QStringLiteral("reason"), scan.reason);
         result.insert(QStringLiteral("scanned"), static_cast<double>(scan.scanned));

@@ -44,7 +44,8 @@
 namespace {
 
 constexpr int    kTemplateSpikes  = 300;    ///< rows a stretch's template is the mean of, at most
-constexpr int    kStretchRows     = 3000;   ///< rows of a cluster one template stands for
+constexpr int    kStretchRows     = 3000;   ///< rows of a cluster one template stands for, at most
+constexpr int    kMinStretchRows  = 100;    ///< ... and at least, when the stretches are cut by time
 constexpr int    kMaxStretches    = 64;
 constexpr int    kMinPartnerRows  = 200;    ///< a cluster with fewer rows is not tried as a partner
 constexpr int    kMinOwnRows      = 30;     ///< ... and with fewer than this has no template of its own
@@ -58,6 +59,7 @@ constexpr int    kCellAbsent      = -128;   ///< a PendingCell that takes a clas
 struct UnitTemplates {
     int cluster = -1;
     QVector<int> rows;                                   ///< its rows naming no partner, ascending
+    std::vector<qint64> times;                           ///< the times of ALL its rows, ascending
     std::vector<std::vector<float>> stretch;             ///< mean records
     std::vector<collisionscan::Candidate> candidate;     ///< the same, with their energy per lag
     int stretchAt(qint64 row) const {
@@ -70,8 +72,10 @@ struct UnitTemplates {
 
 } // namespace
 
-KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& clusters, bool children, double falseRate)
+KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& clusters, bool children,
+                                                       const CollisionScanOptions& options)
 {
+    double falseRate = options.falseRate;
     namespace cs = collisionscan;
     namespace df = neurosuite::decollide_fit;
     namespace nf = neurofileio;
@@ -133,6 +137,14 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
     if (jobs.empty()) { R.reason = tr("The selection holds no row to search."); return R; }
     std::sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) { return a.row < b.row; });
 
+    // ── when each row is, and each cluster's spikes ──
+    const int timeDim = clusteringData->nbOfDimensionsTotal();
+    std::vector<qint64> timeOf(static_cast<std::size_t>(nSpikes));
+    for (qint64 i = 0; i < nSpikes; ++i)
+        timeOf[static_cast<std::size_t>(i)] = static_cast<qint64>(clusteringData->featureValue(static_cast<dataType>(i + 1), timeDim));
+    const double rate = clusteringData->getSamplingRate() > 0.0 ? clusteringData->getSamplingRate() : 1.0;
+    const qint64 presence = options.presenceSeconds > 0.0 ? static_cast<qint64>(options.presenceSeconds * rate) : 0;
+
     // ── templates ──
     const qint64 recBytes = static_cast<qint64>(nSamp) * nChan * static_cast<qint64>(sizeof(int16_t));
     const std::size_t rec = static_cast<std::size_t>(nSamp) * nChan;
@@ -143,7 +155,11 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
         for (const int r : rowsOfCluster.value(cluster))
             if (!named[static_cast<std::size_t>(r)]) u.rows.append(r);
         if (u.rows.size() < minRows) return u;
-        const int k = std::clamp(static_cast<int>(u.rows.size() / kStretchRows), 1, kMaxStretches);
+        for (const int r : rowsOfCluster.value(cluster)) u.times.push_back(timeOf[static_cast<std::size_t>(r)]);
+        std::sort(u.times.begin(), u.times.end());
+        const double span = u.times.empty() ? 0.0 : static_cast<double>(u.times.back() - u.times.front()) / rate;
+        const int k = cs::stretchCount(u.rows.size(), span, kStretchRows, options.stretchSeconds, kMinStretchRows, kMaxStretches);
+        R.stretchesOf.insert(cluster, k);
         u.stretch.reserve(static_cast<std::size_t>(k));
         for (int s = 0; s < k; ++s) {
             const qint64 lo = static_cast<qint64>(u.rows.size()) * s / k, hi = static_cast<qint64>(u.rows.size()) * (s + 1) / k;
@@ -208,7 +224,7 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
     for (const Job& j : jobs) skipFor(clu[static_cast<std::size_t>(j.row)]);   // filled before the threads read it
 
     // ── the search ──
-    struct Out { float gain = 0.0f, control = 0.0f; int unit = -1; int stretch = 0; int lag = 0; bool searched = false; };
+    struct Out { float gain = 0.0f, control = 0.0f; int unit = -1; int stretch = 0; int lag = 0; int absent = 0; bool searched = false; };
     std::vector<Out> out(jobs.size());
     std::vector<int16_t> block(static_cast<std::size_t>(kBatch) * rec);
     for (std::size_t b0 = 0; b0 < jobs.size(); b0 += kBatch) {
@@ -233,9 +249,13 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
                 const UnitTemplates& mine = units[static_cast<std::size_t>(own)];
                 cs::ownResidual(w.data(), mine.stretch[static_cast<std::size_t>(mine.stretchAt(row))].data(), nSamp, nChan, params, r);
                 cs::Found f;
-                int bestStretch = 0;
+                int bestStretch = 0, absent = 0;
+                const qint64 when = timeOf[static_cast<std::size_t>(row)];
                 for (std::size_t k = 0; k < units.size(); ++k) {
                     if (skip[k]) continue;
+                    // A cluster with no spike of its own near this time is not there to collide
+                    // with: its template from another hour would only be fitted to noise.
+                    if (presence > 0 && !cs::presentNear(units[k].times, when, presence)) { ++absent; continue; }
                     const int s = units[k].stretchAt(row);
                     const int before = f.candidate;
                     const double gainBefore = f.gain;
@@ -246,7 +266,7 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
                 Out& o = out[b0 + static_cast<std::size_t>(i)];
                 o.searched = true;
                 o.gain = static_cast<float>(f.gain); o.control = static_cast<float>(f.control);
-                o.unit = f.candidate; o.stretch = bestStretch; o.lag = f.lag;
+                o.unit = f.candidate; o.stretch = bestStretch; o.lag = f.lag; o.absent = absent;
             }
         }
     }
@@ -254,7 +274,7 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
     // ── the threshold: what the control reaches in falseRate of the rows ──
     std::vector<float> control;
     control.reserve(out.size());
-    for (const Out& o : out) if (o.searched) control.push_back(o.control);
+    for (const Out& o : out) if (o.searched) { control.push_back(o.control); R.notPresent += o.absent; }
     R.scanned = static_cast<qint64>(control.size());
     if (control.empty()) { R.reason = tr("None of the selected clusters has a template of its own (too few rows)."); return R; }
     falseRate = std::clamp(falseRate, 0.0001, 0.5);
@@ -289,7 +309,8 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
     R.milliseconds = timer.elapsed();
     qInfo().noquote() << "[mark collisions]" << R.scanned << "rows searched against" << R.partnerUnits << "clusters,"
                       << R.candidates << "over the threshold (the control:" << R.controlOver << "),"
-                      << R.hits.size() << "confirmed;" << R.milliseconds << "ms";
+                      << R.hits.size() << "confirmed;" << R.notPresent << "row-cluster pairs not tried, the cluster"
+                      << "having no spike within" << options.presenceSeconds << "s;" << R.milliseconds << "ms";
     return R;
 }
 

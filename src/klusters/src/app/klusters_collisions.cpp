@@ -44,11 +44,10 @@ void KlustersApp::slotMarkCollisions()
         return;
     }
 
-    constexpr double kFalseRate = 0.01;
     QApplication::setOverrideCursor(Qt::WaitCursor);
     slotStatusMsg(tr("Searching the selection for collisions…"));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-    const KlustersDoc::CollisionScan R = doc->scanCollisions(selected, childScope, kFalseRate);
+    const KlustersDoc::CollisionScan R = doc->scanCollisions(selected, childScope);
     QApplication::restoreOverrideCursor();
     if (!R.ok) {
         slotStatusMsg(tr("Mark collisions: %1").arg(R.reason));
@@ -85,6 +84,8 @@ void KlustersApp::slotMarkCollisions()
         for (const int c : it.value()) alike << QString::number(c);
         notes << tr("Not tried as partners of cluster %1, too like it: %2.").arg(it.key()).arg(alike.join(QStringLiteral(", ")));
     }
+    if (R.notPresent > 0)
+        notes << tr("A cluster is tried as a partner only where it has spikes of its own within 5 minutes of the row.");
     if (R.alreadyNamed > 0) notes << tr("%1 rows already name a partner and were left out.").arg(R.alreadyNamed);
     if (!configuration().getCorrectCollisionRows())
         notes << tr("Preferences > Cluster view > Subtract the partner from collision rows is off: the rows "

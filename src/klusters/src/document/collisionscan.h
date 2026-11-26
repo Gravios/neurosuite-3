@@ -69,6 +69,27 @@ inline double laggedDot(const float* a, const float* t, int nSamples, int nChann
     return s;
 }
 
+/** How many templates a cluster of @p rows rows spread over @p spanSeconds gets: one per
+ *  @p rowsPerStretch rows or per @p secondsPerStretch, whichever asks for more (a unit drifts
+ *  with time, however few spikes it fires), but none made of fewer than @p minRows rows. */
+inline int stretchCount(long long rows, double spanSeconds, int rowsPerStretch, double secondsPerStretch,
+                        int minRows, int most)
+{
+    long long k = rowsPerStretch > 0 ? rows / rowsPerStretch : 1;
+    if (secondsPerStretch > 0.0 && spanSeconds > 0.0)
+        k = std::max(k, static_cast<long long>(std::ceil(spanSeconds / secondsPerStretch)));
+    if (minRows > 0) k = std::min(k, rows / minRows);
+    return static_cast<int>(std::clamp<long long>(k, 1, std::max(1, most)));
+}
+
+/** Whether @p times (ascending) holds a value within @p window of @p t. */
+template <class T>
+inline bool presentNear(const std::vector<T>& times, T t, T window)
+{
+    const auto it = std::lower_bound(times.begin(), times.end(), t - window);
+    return it != times.end() && *it <= t + window;
+}
+
 /** A candidate partner: a template with its energy at every lag searched. */
 struct Candidate {
     int                 unit = -1;
