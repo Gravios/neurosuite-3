@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Docs: the in-app handbook is the generator's output again](#2026-11-26--docs-the-in-app-handbook-is-the-generators-output-again) |
 | 2026-11-26 | [Self-test: Quit's key is the platform's](#2026-11-26--self-test-quits-key-is-the-platforms) |
 | 2026-11-26 | [Windows build: the realign refine search reduces on local counters](#2026-11-26--windows-build-the-realign-refine-search-reduces-on-local-counters) |
 | 2026-11-25 | [Super-sample mode asks before it builds the waveforms](#2026-11-25--super-sample-mode-asks-before-it-builds-the-waveforms) |
@@ -304,6 +305,22 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Docs: the in-app handbook is the generator's output again
+
+The docs check failed on one re-wrapped paragraph of the NeuroScope handbook.
+
+<details>
+<summary>Details</summary>
+
+- The docs workflow regenerates `src/neuroscope/doc/en/handbook.html` and fails when the result is
+  not the committed file. The paragraph on Reset and Unbind had been edited in the HTML by hand and
+  was wrapped differently from what pandoc writes.
+- The file is `doc/site/gen.sh`'s output again; the text is unchanged.
+
+</details>
 
 ---
 
