@@ -3,9 +3,11 @@
  ***************************************************************************/
 #include "neurofileio.h"
 #include "custody.hpp"   // single source of truth for composition/parsing
+#include "fileops.hpp"   // replaceFile / processId (ReplacingFile)
 
 #include <charconv>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <algorithm>
@@ -766,6 +768,60 @@ std::vector<WtlNode> wtlChildren(const WtlForest& f, int nodeId)
     return out;
 }
 
+// ── a file written whole, or not at all ──────────────────────────────────────
+// The .eap, .tcl and .spkc are rewritten many times in a session's life (every Klusters Save
+// rewrites the offsets and the corrected rows).  Written through std::ofstream(path) they were
+// truncated first: a crash or a full disk left half a table, and a second name of the same file
+// (a hard link -- fiber-unmix-children made the hierarchical stage's files that way) was
+// rewritten with it.  So: the bytes go to a temporary file beside the target, which is moved
+// onto it once everything is written (rename: atomic on one file system; it gives the name a new
+// file, so another hard link keeps the old contents).  A SYMBOLIC link is followed: the file it
+// names is replaced, and the link stays (a fiber-kit sub-session links to the session's files).
+namespace {
+class ReplacingFile {
+public:
+    ReplacingFile(const std::string& path, std::ios::openmode mode)
+        : target(path)
+    {
+        std::error_code ec;
+        if (std::filesystem::is_symlink(std::filesystem::path(path), ec)) {
+            const std::filesystem::path real = std::filesystem::canonical(std::filesystem::path(path), ec);
+            if (!ec) target = real.string();
+        }
+        temporary = target + ".tmp" + std::to_string(neurosuite::core::processId());
+        out.open(temporary, mode | std::ios::out | std::ios::trunc);
+    }
+    ~ReplacingFile() { if (!done) discard(); }
+    ReplacingFile(const ReplacingFile&) = delete;
+    ReplacingFile& operator=(const ReplacingFile&) = delete;
+
+    std::ofstream out;
+
+    /** Everything was written: the temporary file takes the target's name.  False (and no
+     *  change to the target) when a write failed or the move did. */
+    bool commit()
+    {
+        out.flush();
+        const bool written = static_cast<bool>(out);
+        out.close();
+        if (!written || !neurosuite::core::replaceFile(temporary, target)) { discard(); return false; }
+        done = true;
+        return true;
+    }
+
+private:
+    void discard()
+    {
+        if (out.is_open()) out.close();
+        std::error_code ec;
+        std::filesystem::remove(std::filesystem::path(temporary), ec);
+        done = true;
+    }
+    std::string target, temporary;
+    bool done = false;
+};
+} // namespace
+
 // ── .eap — EAP membership + offset matrix (see neurofileio.h) ───────────────
 EapFile readEap(const std::string& path)
 {
@@ -814,7 +870,8 @@ bool writeEap(const std::string& path, int64_t nSpikes, int nClasses, int group,
     if (nSpikes < 0 || nClasses < 0) return false;
     if (cells.size() != static_cast<std::size_t>(nSpikes) * static_cast<std::size_t>(nClasses))
         return false;                                       // not a whole N×T matrix
-    std::ofstream out(path, std::ios::binary);
+    ReplacingFile file(path, std::ios::binary);
+    std::ofstream& out = file.out;
     if (!out) return false;
     const unsigned char magic[4] = {'E', 'A', 'P', static_cast<unsigned char>(kEapVersion)};
     out.write(reinterpret_cast<const char*>(magic), 4);
@@ -827,7 +884,7 @@ bool writeEap(const std::string& path, int64_t nSpikes, int nClasses, int group,
     if (!cells.empty())
         out.write(reinterpret_cast<const char*>(cells.data()),
                   static_cast<std::streamsize>(cells.size()));
-    return static_cast<bool>(out);
+    return file.commit();
 }
 
 bool initEap(const std::string& path, int64_t nSpikes, int nClasses, int group)
@@ -905,7 +962,8 @@ bool writeSpkc(const std::string& path, const SpkcFile& f)
     const std::size_t rec = static_cast<std::size_t>(f.nSamples) * static_cast<std::size_t>(f.nChannels);
     if (f.waveforms.size() != f.rows.size() * rec) return false;
     if (!spkcIndexValid(f.rows, f.nSpikes)) return false;
-    std::ofstream out(path, std::ios::binary);
+    ReplacingFile file(path, std::ios::binary);
+    std::ofstream& out = file.out;
     if (!out) return false;
     const unsigned char magic[4] = {'S', 'P', 'C', static_cast<unsigned char>(kSpkcVersion)};
     out.write(reinterpret_cast<const char*>(magic), 4);
@@ -920,7 +978,7 @@ bool writeSpkc(const std::string& path, const SpkcFile& f)
     if (!f.waveforms.empty())
         out.write(reinterpret_cast<const char*>(f.waveforms.data()),
                   static_cast<std::streamsize>(f.waveforms.size() * 2));
-    return static_cast<bool>(out);
+    return file.commit();
 }
 
 int64_t spkcFind(const SpkcFile& f, int64_t row)
@@ -1070,7 +1128,8 @@ TclRegistry readTcl(const std::string& path)
 
 bool writeTcl(const std::string& path, const TclRegistry& reg)
 {
-    std::ofstream out(path);
+    ReplacingFile file(path, std::ios::openmode{});
+    std::ofstream& out = file.out;
     if (!out) return false;
     out << "tcl " << reg.version << "\n";
     out << "nClasses " << reg.nClasses << "\n";
@@ -1081,7 +1140,7 @@ bool writeTcl(const std::string& path, const TclRegistry& reg)
             << (e.provenanceClu < 0 ? std::string("-") : std::to_string(e.provenanceClu)) << '\t'
             << dash(e.provenanceStage) << '\t' << dash(e.created) << "\n";
     }
-    return static_cast<bool>(out);
+    return file.commit();
 }
 
 TclRegistry initTcl(int nClasses)

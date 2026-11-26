@@ -13,7 +13,9 @@
 #include <cstdint>
 #include <iterator>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -368,6 +370,76 @@ static void testCountHeaderDetection()
     std::remove(p.c_str());
 }
 
+// ── .eap / .tcl / .spkc are written whole or not at all, and to their own name only ──
+static std::string slurp(const std::string& path) {
+    std::ifstream is(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(is)), std::istreambuf_iterator<char>());
+}
+
+static void testReplacingWrites()
+{
+    using namespace neurofileio;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path dir = fs::temp_directory_path() / ("nfio_replace_" + std::to_string(std::rand()));
+    fs::create_directories(dir, ec);
+    const std::string eap = (dir / "s.eap.1.st").string(), twin = (dir / "s.eap.1.st_h").string();
+    const std::string tcl = (dir / "s.tcl.1").string(), spkc = (dir / "s.spkc.standard.1.st").string();
+
+    const std::vector<int8_t> first = {0, EAP_ABSENT, EAP_ABSENT, 0}, second = {0, 5, EAP_ABSENT, 0};
+    check(writeEap(eap, 2, 2, 1, 0u, first), "replace: the first .eap is written");
+    const std::string before = slurp(eap);
+    // A second name of the same file (what fiber-unmix-children made until 0.71.21).
+    fs::create_hard_link(eap, twin, ec);
+    const bool linked = !ec;
+    check(writeEap(eap, 2, 2, 1, 0u, second), "replace: the .eap is written again");
+    const EapFile now = readEap(eap);
+    check(now.ok && now.cells == second, "replace: the name written holds the new table");
+    if (linked)
+        check(slurp(twin) == before, "replace: another hard link of the old file keeps the old table");
+    // A symbolic link is followed: its target is replaced, the link stays a link.
+    const std::string via = (dir / "link.eap.1").string();
+    fs::create_symlink(fs::path(eap), fs::path(via), ec);
+    if (!ec) {
+        check(writeEap(via, 2, 2, 1, 0u, first), "replace: written through a symbolic link");
+        check(fs::is_symlink(fs::path(via)) && readEap(eap).cells == first,
+              "replace: the link is still a link, and the file it names holds the new table");
+    }
+    // A write that cannot be made leaves what was there (cells of the wrong size: refused
+    // before anything is opened), and nothing is left beside it.
+    check(!writeEap(eap, 3, 2, 1, 0u, first) && readEap(eap).ok, "replace: a refused write leaves the table");
+
+    TclRegistry reg = initTcl(2);
+    reg.entries[0].status = TclStatus::Active; reg.entries[0].provenanceClu = 7;
+    check(writeTcl(tcl, reg), "replace: the .tcl is written");
+    const std::string tclTwin = (dir / "other.tcl.1").string();
+    fs::create_hard_link(tcl, tclTwin, ec);
+    const bool tclLinked = !ec;
+    const std::string tclBefore = slurp(tcl);
+    reg.entries[1].status = TclStatus::Active; reg.entries[1].provenanceClu = 9;
+    check(writeTcl(tcl, reg) && readTcl(tcl).ok && readTcl(tcl).entries[1].provenanceClu == 9,
+          "replace: the .tcl is written again and read back");
+    if (tclLinked) check(slurp(tclTwin) == tclBefore, "replace: another hard link of the old .tcl keeps the old text");
+
+    SpkcFile f;
+    f.nSpikes = 4; f.nSamples = 2; f.nChannels = 1; f.group = 1;
+    f.rows = {1}; f.waveforms = {3, 4};
+    check(writeSpkc(spkc, f), "replace: the .spkc is written");
+    const std::string spkcTwin = (dir / "s.spkc.standard.1.st_h").string();
+    fs::create_hard_link(spkc, spkcTwin, ec);
+    const bool spkcLinked = !ec;
+    const std::string spkcBefore = slurp(spkc);
+    f.rows.clear(); f.waveforms.clear();
+    check(writeSpkc(spkc, f) && readSpkc(spkc).ok && readSpkc(spkc).rows.empty(), "replace: an empty .spkc is written over it");
+    if (spkcLinked) check(slurp(spkcTwin) == spkcBefore, "replace: another hard link of the old .spkc keeps its rows");
+
+    int stray = 0;
+    for (const fs::directory_entry& e : fs::directory_iterator(dir, ec))
+        if (e.path().filename().string().find(".tmp") != std::string::npos) ++stray;
+    check(stray == 0, "replace: no temporary file is left behind");
+    fs::remove_all(dir, ec);
+}
+
 int main()
 {
     testResDetection();
@@ -377,6 +449,7 @@ int main()
     testCraftedHeaders();
     testEmptyFetBinary();
     testTcl();
+    testReplacingWrites();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);

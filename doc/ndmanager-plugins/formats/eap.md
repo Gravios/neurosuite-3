@@ -37,6 +37,11 @@ Body
 
 `readEap` rejects a bad magic or a body shorter than `nSpikes × nClasses`.
 
+`writeEap` (and `writeTcl`, `writeSpkc`) writes a temporary file beside the target and renames it
+over it: a reader never sees half a table, a failed write leaves the old one, and a second hard
+link of the old file keeps the old contents. A symbolic link is followed — the file it names is
+replaced and the link stays. fiber-kit's writers do the same.
+
 ## Cells
 
 - `cell[i][j]` in [−127, +127] — class *j* is present in spike *i*; the value

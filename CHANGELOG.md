@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [The .eap, .tcl and .spkc are written whole or not at all](#2026-11-26--the-eap-tcl-and-spkc-are-written-whole-or-not-at-all) |
 | 2026-11-26 | [Klusters: Mark Collisions](#2026-11-26--klusters-mark-collisions) |
 | 2026-11-26 | [Docs workflow: the deploy is a job of its own](#2026-11-26--docs-workflow-the-deploy-is-a-job-of-its-own) |
 | 2026-11-26 | [A recluster leaves no KlustaKwik model file](#2026-11-26--a-recluster-leaves-no-klustakwik-model-file) |
@@ -309,6 +310,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — The .eap, .tcl and .spkc are written whole or not at all
+
+The three collision-layer files are written to a temporary file and renamed over the target, so a failed Save leaves the old table and a hard-linked twin is no longer rewritten with it.
+
+<details>
+<summary>Details</summary>
+
+`neurofileio::writeEap`, `writeTcl` and `writeSpkc` opened the target with `std::ofstream`, which
+truncates it first. Two consequences, both met by a fiber-kit session in Klusters:
+
+- a crash or a full disk during a Save left half a table;
+- a second name of the same file was rewritten with it. `fiber-unmix-children` put the stage's
+  `.eap` and `.spkc` under `<tag>_h` as hard links (until fiber-kit 0.71.21), so saving the
+  hierarchical stage from Klusters rewrote the flat stage's offsets and corrected rows.
+
+They now write `<target>.tmp<pid>` and rename it over the target (`ReplacingFile` in
+`neurofileio.cpp`, on `fileops.hpp`'s `replaceFile`). A symbolic link is followed: the file it names
+is replaced and the link stays, so a sub-session that links to the session's `.eap` still writes
+the session's. Every caller goes through these three functions (`initEap`, the plugins, Klusters'
+Save, the template-class store, Mark Collisions).
+
+`core_test_neurofileio_robust`: for each of the three files, a second hard link of the old file
+keeps the old contents after a rewrite; a write through a symbolic link replaces its target and
+leaves the link; a refused write leaves the table; no temporary file is left.
+
+Found while checking the `.eap` contract with fiber-kit
+(`claude/eap-contract-fk-ns3-2026-11-26.md`, item 2).
+
+</details>
 
 ---
 
