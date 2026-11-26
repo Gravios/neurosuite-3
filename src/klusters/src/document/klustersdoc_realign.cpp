@@ -1136,7 +1136,10 @@ static void realignPcaRefineSearch(FILE* filFp82, const RealignRefineInput& in,
                 if (!fh[static_cast<size_t>(t)]) { allOpen = false; break; }
             }
             if (allOpen) {
-                #pragma omp parallel reduction(+:nRefined, nClamped)
+                // nRefined and nClamped are reference parameters, and a reduction variable may not
+                // have reference type (MSVC C3030; GCC and Clang accept it): reduce on locals.
+                int refinedHere = 0, clampedHere = 0;
+                #pragma omp parallel reduction(+:refinedHere, clampedHere)
                 {
                     const int tid = omp_get_thread_num();
                     FILE* filT = fh[static_cast<size_t>(tid)];
@@ -1146,10 +1149,12 @@ static void realignPcaRefineSearch(FILE* filFp82, const RealignRefineInput& in,
                     for (int64_t i = 0; i < N; ++i) {
                         const RefineResult r =
                             refineSpike(i, filT, rawT, candT);
-                        if (r == RefineResult::Refined)      ++nRefined;
-                        else if (r == RefineResult::Clamped) ++nClamped;
+                        if (r == RefineResult::Refined)      ++refinedHere;
+                        else if (r == RefineResult::Clamped) ++clampedHere;
                     }
                 }
+                nRefined += refinedHere;
+                nClamped += clampedHere;
                 ranParallel = true;
             }
             for (FILE* h : fh) if (h) fclose(h);
