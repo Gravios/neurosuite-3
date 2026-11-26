@@ -585,6 +585,7 @@ void KlustersApp::createMenus()
     connect(mNextFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(+1); });
     mPreviousFeatureSpace = addCommand(nullptr, "action.previousFeatureSpace");
     connect(mPreviousFeatureSpace, &QAction::triggered, this, [this]() { slotCycleFeatureSpace(-1); });
+    mLocalPcaSpace = addCommand(nullptr, "action.localPcaSpace");
 
     mSortSpikesByTime = addCommand(nullptr, "action.sortSpikesByTime");
 
@@ -793,7 +794,7 @@ void KlustersApp::createMenus()
                       mNextSpike, mPreviousSpike, nullptr, showHideLabels });
     fill(toolbarsMenu, { viewMainToolBar, viewActionBar, viewToolBar, viewParameterBar, viewClusterInfo, mViewStatusBar });
     fill(viewMenu, { mShowReservedClusters, nullptr, mShowChildPalette, mFollowSelectionInMatrices, mShowTemplatePalette, nullptr,
-                     mChunkMode, mPrevChunk, mNextChunk, nullptr, mNextFeatureSpace, mPreviousFeatureSpace, nullptr,
+                     mChunkMode, mPrevChunk, mNextChunk, nullptr, mNextFeatureSpace, mPreviousFeatureSpace, mLocalPcaSpace, nullptr,
                      mUpdateDisplay, mUpdateErrorMatrix, nullptr });
     viewMenu->addMenu(waveFormsMenu);
     viewMenu->addMenu(correlationsMenu);

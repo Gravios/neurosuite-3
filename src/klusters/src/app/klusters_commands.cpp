@@ -402,6 +402,13 @@ QList<CommandSpec> KlustersApp::commandTable()
     t << CommandSpec("action.previousFeatureSpace", "View", tr("Previous Feature Spa&ce"))
             .shortcut(Qt::CTRL | Qt::SHIFT | Qt::Key_Backtab)
             .toolTip(tr("Show the previous feature space in the Space box.")).editing();
+    t << CommandSpec("action.localPcaSpace", "View", tr("&Local PCA of the Selection"), ON(triggered, slotToggleLocalPca))
+            .shortcut(Qt::SHIFT | Qt::Key_Y)
+            .toolTip(tr("Show the selected clusters in a feature space of their own: a per-channel PCA\n"
+                     "fitted on their spikes alone (parents, or the children selected in the child view)\n"
+                     "and applied to every spike.  It replaces the features on screen until you press\n"
+                     "the key again or pick another space; nothing is written, and realign and nudge\n"
+                     "leave it first.")).editing();
     t << CommandSpec("action.sortSpikesByTime", "", tr("Sort Spikes by &Time"), ON(triggered, slotSortSpikesByTime))
             .toolTip(tr("Realign and nudge keep each spike in its own row, so the .res can drift "
                      "out of time order.  This sorts the saved .res by time and moves the same "

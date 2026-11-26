@@ -117,6 +117,19 @@ space; pick the `(.clu)` entry to go back.
   (View → Next / Previous Feature Space; rebindable in Preferences →
   Input). Spaces that cannot be loaded are skipped. Plain Tab / Shift+Tab
   still move keyboard focus around the window.
+- **Shift+Y** (View → Local PCA of the Selection) shows the selected
+  clusters in a space of their own: a per-channel PCA fitted on their spikes
+  alone — the parents shown, or the children selected in the child view —
+  and applied to every spike. The axes are then the directions in which
+  those clusters differ, channel by channel, not the directions of the whole
+  group, so sub-groups that the session's features overlay can come apart.
+  It takes the place of the features on screen, with the same number of
+  dimensions (the window and the components per channel are the shown
+  space's; the time column stays), and appears in the *Space* box as
+  *local PCA*. **Shift+Y** again, or any other space, leaves it. Nothing is
+  written. Cutting, grouping and **Recluster** work in it; **Realign** and
+  **nudge** leave it first and run where they would have. A new selection
+  needs a new fit: leave and press the key again.
 - The box is locked while saving, realigning or reclustering.
 - Every base-rate space is held in memory: its `.fet` table and its `.spk`
   waveforms are loaded when the document opens (and refreshed after a switch,
@@ -468,6 +481,7 @@ The defaults for the most-used actions:
 | `O` / `M` / `I` / `D` | Waveforms: overlay / mean and SD / amplitude up / down |
 | `=` / `-` | Point size up / down |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | Next / previous feature space |
+| `Shift+Y` | Local PCA of the selection, in place of the shown features (again to leave) |
 | `Tab` / `Shift+Tab` | Move focus: cluster palette → child palette → toolbar fields |
 | `P` | Preferences |
 | `F1` | This handbook |
@@ -1121,6 +1135,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Split ▸ Split Off Spurious Spikes | Ctrl+Space | For each selected cluster, keeps its core and splits the spikes that are not it into a new cluster; see [below](#split-off-spurious-spikes--a-clusters-core-and-the-rest) |
 | View ▸ Time-Chunk Mode | — | Steps through the session one chunk of the length you enter at a time, with only that chunk's clusters active; **Previous Chunk** / **Next Chunk** move between chunks |
 | Spikes ▸ Sync Feature Spaces, View ▸ Next / Previous Feature Space, Spikes ▸ Sort Spikes by Time | — / `Ctrl+Tab` / `Ctrl+Shift+Tab` / — | See [Feature spaces](#feature-spaces--one-clu-through-another-method) |
+| View ▸ Local PCA of the Selection | `Shift+Y` | A per-channel PCA fitted on the selected clusters alone, shown in place of the features; see [Feature spaces](#feature-spaces--one-clu-through-another-method) |
 
 ### Split Burst Followers — two similar cells, told apart by their bursts
 

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [A local PCA of the selected clusters on Shift+Y](#2026-11-26--a-local-pca-of-the-selected-clusters-on-shifty) |
 | 2026-11-26 | [Docs: the in-app handbook is the generator's output again](#2026-11-26--docs-the-in-app-handbook-is-the-generators-output-again) |
 | 2026-11-26 | [Self-test: Quit's key is the platform's](#2026-11-26--self-test-quits-key-is-the-platforms) |
 | 2026-11-26 | [Windows build: the realign refine search reduces on local counters](#2026-11-26--windows-build-the-realign-refine-search-reduces-on-local-counters) |
@@ -305,6 +306,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — A local PCA of the selected clusters on Shift+Y
+
+A feature space fitted on the selection alone, in place of the session's features until the key is pressed again.
+
+<details>
+<summary>Details</summary>
+
+- **View > Local PCA of the Selection (Shift+Y).** Fits a per-channel PCA on the spikes of the
+  selected clusters alone and projects every spike on it. The parents shown are the selection, or
+  the children selected in the child view. The result takes the place of the features on screen:
+  same dimension count, the shown space's window and components per channel, the time column kept.
+- It is a borrowed space named *local PCA* in the Space box, held in memory; no file is written.
+  Shift+Y again, or any other space, leaves it for the space it was entered from.
+- Cutting, grouping and Recluster work in it. Realign and nudge leave it first and run where they
+  would have. Save As is off, as in any borrowed space.
+- The fit uses at most 20,000 of the selection's spikes, evenly thinned; the selection needs 20.
+  The waveforms are the shown `.spk` as it is in memory.
+- `KlustersDoc::showLocalPcaSpace`, `KlustersApp::slotToggleLocalPca`; the child layer loads the
+  table in memory when the hierarchy is rebuilt while the space is shown.
+- `test_local_pca_space.py`: the features equal a basis fitted in numpy on the selection's rows
+  (parent, and one child in the child view), the key toggles back value for value, a realign
+  leaves the space, nothing is written. `commands.golden.json`: one command more.
+
+</details>
 
 ---
 

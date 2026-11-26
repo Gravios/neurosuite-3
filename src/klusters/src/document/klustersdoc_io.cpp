@@ -145,6 +145,7 @@ void KlustersDoc::closeDocument(){
     baseName.clear();
     originMethod.clear();
     activeMethod.clear();
+    localPcaTable.reset(); localPcaReturn.clear(); localPcaFittedOn.clear(); localPcaChildLayer = false;
     activeFetPath.clear();
     activeSpkPath.clear();
     discardSyncedFeatureSpaces();

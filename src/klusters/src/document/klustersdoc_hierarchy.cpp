@@ -291,8 +291,11 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
     }
     // The child initialises from the .clu space's siblings; if another feature
     // space is loaded, bring the child into it so both layers match.
+    // (The local PCA space has no file: its table is the one in memory.)
     if (isBorrowedSpace()
-        && !childData->replaceFeatureSpace(activeFetPath, activeSpkPath, errorInformation)){
+        && !((isLocalPcaSpace() && localPcaTable)
+                 ? childData->replaceFeatureSpace(*localPcaTable, localPcaMethod(), activeSpkPath, errorInformation)
+                 : childData->replaceFeatureSpace(activeFetPath, activeSpkPath, errorInformation))){
         delete childData; childData = nullptr;
         return false;
     }

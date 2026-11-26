@@ -16,6 +16,7 @@
 #include "klustersdoc.h"
 #include "klustersdoc_internal.h"   // featureMethod: the token of a .pending working copy
 #include "klustersview.h"
+#include "clusterpalette.h"            // the child palette's selection (the local PCA space)
 #include "data.h"
 #include "configuration.h"
 #include "savethread.h"
@@ -67,6 +68,19 @@ void KlustersApp::populateFeatureSpaceCombo()
         featureSpaceCombo->setItemData(row, tip, Qt::ToolTipRole);
         if (!s.usable && model)
             if (QStandardItem* item = model->item(row)) item->setEnabled(false);
+    }
+    // The local PCA space has no file: it is in the box only while it is shown.
+    if (doc->isLocalPcaSpace()) {
+        QStringList ids;
+        for (int c : doc->localPcaClusters()) ids << QString::number(c);
+        const QString shownIds = ids.size() > 4 ? QStringList(ids.mid(0, 4)).join(QStringLiteral(", ")) + QStringLiteral(", …")
+                                                : ids.join(QStringLiteral(", "));
+        featureSpaceCombo->addItem(tr("local PCA  (%1)").arg(shownIds), KlustersDoc::localPcaMethod());
+        featureSpaceCombo->setItemData(featureSpaceCombo->count() - 1,
+            tr("A per-channel PCA fitted on %1 %2 alone and applied to every spike.\n"
+               "In memory only; pick another space, or press the key again, to leave it.")
+                .arg(doc->localPcaOnChildren() ? tr("children") : tr("clusters"), ids.join(QStringLiteral(", "))),
+            Qt::ToolTipRole);
     }
     const int current = featureSpaceCombo->findData(doc->activeFeatureMethod());
     if (current >= 0) featureSpaceCombo->setCurrentIndex(current);
@@ -128,6 +142,55 @@ void KlustersApp::slotFeatureSpaceActivated(int index)
                        ? tr("realign and nudge work from here; Save As is off")
                        : tr("realign, nudge and Save As are off"))
         : tr("Back in the .clu's own %1 feature space.").arg(method));
+}
+
+void KlustersApp::slotToggleLocalPca()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish before changing the feature space."), 5000);
+        return;
+    }
+    // Shown: the key leaves it, for the space it was entered from.
+    if (doc->isLocalPcaSpace()) {
+        const QString back = doc->localPcaReturnMethod();
+        if (showFeatureSpace(back, /*syncFirst*/ false))
+            slotStatusMsg(tr("Left the local PCA space: the %1 features are shown again.").arg(back));
+        return;
+    }
+    KlustersView* view = activeView();
+    if (!view) return;
+    // The selection, in the layer on screen: the child palette's while the child view is
+    // active, the parent clusters shown otherwise.
+    const bool childScope = doc->isChildClusteringActive();
+    QList<int> selected = (childScope && childPaletteA) ? childPaletteA->selectedClusters() : view->clusters();
+    if (selected.isEmpty()) {
+        statusBar()->showMessage(tr("Local PCA: select the clusters to fit it on first."), 5000);
+        return;
+    }
+    const int oldDims = doc->nbDimensions();
+    const QString from = doc->activeFeatureMethod();
+    QString log, err;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    slotStatusMsg(tr("Fitting a per-channel PCA on the selection…"));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const bool ok = doc->showLocalPcaSpace(selected, childScope, log, &err);
+    QApplication::restoreOverrideCursor();
+    if (!ok) {
+        statusBar()->showMessage(tr("Local PCA: %1").arg(err), 8000);
+        // A refusal after the views' jobs were stopped: ask for what they showed again.
+        KlustersView* active = activeView();
+        for (KlustersView* v : doc->viewListCopy())
+            if (v) v->reloadWaveformsAndCorrelograms(v == active);
+        return;
+    }
+    if (!log.trimmed().isEmpty()) qInfo().noquote() << "[local PCA]" << log.trimmed();
+    refreshAfterFeatureSpaceSwitch(oldDims);
+    populateFeatureSpaceCombo();
+    applyFeatureSpaceLocks();
+    slotStatusMsg(tr("Local PCA of %1 %2 (fitted on them, every spike projected), in place of the %3 features.  "
+                     "Shift+Y or another space leaves it; nothing is written.")
+                      .arg(selected.size()).arg(childScope ? tr("children") : tr("clusters"), from));
 }
 
 void KlustersApp::slotCycleFeatureSpace(int step)
@@ -413,6 +476,15 @@ void KlustersApp::applySupersampleMode()
 bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)
 {
     if (!doc || !doc->isBorrowedSpace()) return true;
+    // The local PCA space is a view of the selection, not a space with files: realign and
+    // nudge leave it for the space it was entered from, and run as they would have there.
+    if (doc->isLocalPcaSpace()) {
+        const QString back = doc->localPcaReturnMethod();
+        if (!showFeatureSpace(back, /*syncFirst*/ false)) return false;
+        if (!silent)
+            statusBar()->showMessage(tr("%1: left the local PCA space for %2.").arg(what, back), 6000);
+        if (!doc->isBorrowedSpace()) return true;
+    }
     if (!configuration().getRealignFromAnySpace())
         return !refuseInBorrowedSpace(what, silent);
     // Realign and nudge run IN THE SHOWN SPACE: they align on its waveforms and
@@ -438,6 +510,7 @@ bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)
 bool KlustersApp::realignBlockedHere(const QString& what, bool silent)
 {
     if (!doc || !doc->isBorrowedSpace() || configuration().getRealignFromAnySpace()) return false;
+    if (doc->isLocalPcaSpace()) return false;                // left by enterClusterSpaceForRealign
     return refuseInBorrowedSpace(what, silent);
 }
 
@@ -557,7 +630,8 @@ void KlustersApp::applyFeatureSpaceLocks()
     featureSpaceLocking = true;
     for (QAction* a : actions) {
         if (!a) continue;
-        const bool locked = borrowed && (a == mSaveAsAction || !anySpace);
+        // (Realign and nudge stay on in the local PCA space: they leave it first.)
+        const bool locked = borrowed && (a == mSaveAsAction || (!anySpace && !doc->isLocalPcaSpace()));
         a->setEnabled(!locked && featureSpaceDesiredEnabled.value(a, a->isEnabled()));
     }
     featureSpaceLocking = false;

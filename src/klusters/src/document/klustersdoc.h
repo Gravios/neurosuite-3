@@ -2186,6 +2186,25 @@ public:
      *  On failure nothing changes and @p errorInformation says why. */
     bool switchFeatureSpace(const QString& method, QString& errorInformation);
 
+    /** The local PCA space: a per-channel PCA fitted on the spikes of @p clusters alone (parents,
+     *  or children when @p childLayer) and applied to every spike, shown in place of the features
+     *  of the space on screen.  Its axes are the directions in which THOSE clusters vary, channel
+     *  by channel, so what separates them is not diluted by the rest of the group.
+     *
+     *  The waveforms, the window of the basis and the number of components per channel are the
+     *  shown space's; the columns after the PCA ones (and the time) are kept, so the dimension
+     *  count does not change.  Nothing is written: the table lives in memory and the space is a
+     *  borrowed one under the name localPcaMethod(), which no file carries.  Leaving it is a
+     *  switch to any other space (localPcaReturnMethod() is the one it was entered from).
+     *  Realign and nudge do not run in it. */
+    bool showLocalPcaSpace(const QList<int>& clusters, bool childLayer, QString& logOut, QString* error);
+    static QString localPcaMethod() { return QStringLiteral("local PCA"); }   // a space: never a custody token
+    bool isLocalPcaSpace() const { return activeMethod == localPcaMethod(); }
+    QString localPcaReturnMethod() const { return localPcaReturn; }
+    /** The clusters the shown local PCA was fitted on, and whether they are children. */
+    QList<int> localPcaClusters() const { return localPcaFittedOn; }
+    bool localPcaOnChildren() const { return localPcaChildLayer; }
+
     /** Bring another method space up to date with this session's spike times.
      *  Realign / nudge only rewrite the .clu space's .spk/.fet, so another
      *  space's waveforms and features drift from the shared .res.  This
@@ -2661,6 +2680,12 @@ private:
      *  .spk.  Set at open, reset at close. */
     QString originMethod;
     QString activeMethod;
+    // The local PCA space while it is shown (showLocalPcaSpace): its table, the space it was
+    // entered from and what it was fitted on.  Dropped by the switch that leaves it.
+    std::shared_ptr<const neurofileio::FetBinaryFile> localPcaTable;
+    QString    localPcaReturn;
+    QList<int> localPcaFittedOn;
+    bool       localPcaChildLayer = false;
     QString activeFetPath;
     QString activeSpkPath;
     /** Synced working copies of other spaces (syncFeatureSpace): committed

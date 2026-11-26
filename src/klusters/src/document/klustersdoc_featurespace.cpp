@@ -223,8 +223,138 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
     activeMethod  = method;
     activeFetPath = target.fetPath;
     activeSpkPath = target.spkPath;
+    // Left the local PCA space, if that was shown: its table is gone with it.
+    localPcaTable.reset(); localPcaReturn.clear(); localPcaFittedOn.clear(); localPcaChildLayer = false;
     if (neurosuite::custody::supersampleOf(method.toStdString()) > 1)
         shownOnDemand.insert(method);              // preloadFeatureSpaces keeps it from now on
+    return true;
+}
+
+// ───────────────────────────────────────────────────────────
+// The local PCA space
+// ───────────────────────────────────────────────────────────
+bool KlustersDoc::showLocalPcaSpace(const QList<int>& clusters, bool childLayer, QString& logOut, QString* error)
+{
+    QTextStream log(&logOut);
+    auto fail = [&](const QString& why) { if (error) *error = why; return false; };
+    if (!clusteringData) return fail(tr("No document is open."));
+    if (isLocalPcaSpace()) return fail(tr("The local PCA space is already shown."));
+    Data* layer = (childLayer && childData) ? childData : clusteringData;
+    const int     nChan   = clusteringData->nbOfChannels();
+    const int     nSamp   = clusteringData->nbSamplesPerWaveform();
+    const int64_t nSpikes = static_cast<int64_t>(clusteringData->totalNbOfSpikes());
+    const size_t  rowElems = static_cast<size_t>(nChan) * static_cast<size_t>(nSamp);
+
+    // The spikes the basis is fitted on: the feature rows (1-based) of the clusters given.
+    std::vector<int64_t> fitRows;
+    for (int c : clusters) {
+        SortableTable pos;
+        if (!layer->spikePositions(c, pos)) continue;
+        const long n = static_cast<long>(layer->nbOfSpikes(static_cast<dataType>(c)));
+        for (long s = 0; s < n; ++s) {
+            const int64_t row = static_cast<int64_t>(pos(1, s + 1));
+            if (row >= 1 && row <= nSpikes) fitRows.push_back(row - 1);
+        }
+    }
+    if (fitRows.size() < 20)
+        return fail(tr("The selection holds %1 spikes; a local PCA needs at least 20.").arg(fitRows.size()));
+    std::sort(fitRows.begin(), fitRows.end());
+
+    // The table shown now: its dimension count and its columns after the PCA ones are kept.
+    const std::shared_ptr<neurofileio::FetBinaryFile> shownTable = clusteringData->featureTableCopy();
+    if (!shownTable || shownTable->nSpikes != nSpikes || shownTable->nFeatures < 2)
+        return fail(tr("The feature table shown cannot be copied."));
+
+    // The window and the number of components: the shown space's basis when it has one.
+    neurosuite::core::PcaBasis shown;
+    {
+        const QString dir = QFileInfo(docUrl).absolutePath();
+        const std::string stem = (dir + QDir::separator() + baseName).toStdString();
+        const int group = electrodeGroupID.toInt();
+        const std::string cands[3] = {
+            neurosuite::custody::methodPath(stem, "pca", neurosuite::custody::waveformToken(activeMethod.toStdString()), group),
+            neurosuite::custody::methodPath(stem, "pca", activeMethod.toStdString(), group),
+            neurosuite::custody::untaggedPath(stem, "pca", group) };
+        for (const std::string& p : cands) {
+            if (neurosuite::core::loadPca(p, shown) && shown.valid()) break;
+            shown = neurosuite::core::PcaBasis{};
+        }
+        if (shown.valid() && (shown.recShift < 0 || shown.recShift + shown.data2use > nSamp))
+            shown = neurosuite::core::PcaBasis{};           // not this .spk's geometry
+    }
+    const int nComp    = shown.valid() ? shown.nComp : std::max(1, clusteringData->nbOfFeaturesByChannel());
+    const int nCh      = shown.valid() ? std::min(shown.nCh, nChan) : nChan;
+    const int recShift = shown.valid() ? shown.recShift : 0;
+    const int data2use = shown.valid() ? shown.data2use : nSamp;
+    const int nPca     = nCh * nComp;
+
+    const std::shared_ptr<const QByteArray> spk = SpkMemoryCache::instance().get(activeSpkPath);
+    if (!spk || static_cast<qint64>(spk->size()) != static_cast<qint64>(nSpikes) * static_cast<qint64>(rowElems * sizeof(int16_t)))
+        return fail(tr("The shown waveforms (%1) cannot be held in memory.").arg(QFileInfo(activeSpkPath).fileName()));
+    const int16_t* waveforms = reinterpret_cast<const int16_t*>(spk->constData());
+
+    // Fit on the selection (evenly thinned beyond 20,000 spikes), project every spike.
+    const int64_t fitN = std::min<int64_t>(static_cast<int64_t>(fitRows.size()), 20000);
+    const double  step = static_cast<double>(fitRows.size()) / static_cast<double>(fitN);
+    neurosuite::core::PcaBasis pca;
+    const bool fitted = neurosuite::core::fitPca(
+        static_cast<int>(fitN), nCh, data2use, recShift, nComp,
+        [&](int i, int ch, int s) {
+            const int64_t row = fitRows[static_cast<size_t>(static_cast<double>(i) * step)];
+            const int16_t* r = waveforms + static_cast<size_t>(row) * rowElems;
+            return static_cast<double>(r[static_cast<size_t>(recShift + s) * nChan + ch]);
+        },
+        pca, shown.valid() ? shown.method : neurosuite::core::Method::Standard,
+        shown.valid() ? shown.nInputChannels : 0);
+    if (!fitted) return fail(tr("The local PCA could not be fitted."));
+
+    // The new table: the local PCA columns, then the shown table's columns from the same
+    // position on (its extra features and the time); with fewer columns there, only its time.
+    const int srcF  = shownTable->nFeatures;
+    const int tailFrom = std::min(nPca, srcF - 1);
+    const int nDims = nPca + (srcF - tailFrom);
+    auto table = std::make_shared<neurofileio::FetBinaryFile>();
+    table->nFeatures = nDims;
+    table->nSpikes   = nSpikes;
+    table->values.assign(static_cast<size_t>(nSpikes) * static_cast<size_t>(nDims), 0);
+#ifdef _OPENMP
+    #pragma omp parallel for schedule(static)
+#endif
+    for (int64_t i = 0; i < nSpikes; ++i) {
+        const int16_t* r = waveforms + static_cast<size_t>(i) * rowElems;
+        int64_t* row = table->values.data() + static_cast<size_t>(i) * static_cast<size_t>(nDims);
+        klusters::projectSpikeOntoPca(
+            pca, [&](int ch, int j) { return static_cast<double>(r[static_cast<size_t>(recShift + j) * nChan + ch]); }, row);
+        const int64_t* src = shownTable->values.data() + static_cast<size_t>(i) * static_cast<size_t>(srcF);
+        for (int k = tailFrom; k < srcF; ++k) row[nPca + (k - tailFrom)] = src[k];
+    }
+    table->ok = true;
+
+    // Leaving the .clu's own space: hold its live table, as a switch does, so that the way
+    // back reads nothing from disk.
+    if (activeMethod == originMethod && !activeFetPath.isEmpty())
+        holdFeatures(activeFetPath, shownTable);
+
+    if (viewList)
+        for (KlustersView* v : *viewList) v->stopAllViewThreads();
+    QString why;
+    if (!clusteringData->replaceFeatureSpace(*table, localPcaMethod(), activeSpkPath, why))
+        return fail(why);
+    if (childData && !childData->replaceFeatureSpace(*table, localPcaMethod(), activeSpkPath, why)) {
+        QString rollback;
+        if (!clusteringData->replaceFeatureSpace(*shownTable, activeFetPath, activeSpkPath, rollback))
+            why += tr("\nRestoring the %1 space also failed: %2  Close and reopen the document.").arg(activeMethod, rollback);
+        return fail(why);
+    }
+    localPcaReturn     = activeMethod;
+    localPcaFittedOn   = clusters;
+    localPcaChildLayer = childLayer && childData;
+    localPcaTable      = table;
+    activeMethod       = localPcaMethod();
+    log << "local PCA: " << nCh << " ch x " << nComp << " components over samples " << recShift << "+" << data2use
+        << " of " << nSamp << ", fitted on " << fitN << " of the " << fitRows.size() << " spikes of "
+        << clusters.size() << (localPcaChildLayer ? " children" : " clusters") << "; " << nSpikes << " spikes projected, "
+        << nDims << " columns\n";
     return true;
 }
 
@@ -234,6 +364,7 @@ bool KlustersDoc::switchFeatureSpace(const QString& method, QString& errorInform
 // table for the origin's and hold it under its name.
 bool KlustersDoc::reloadShownSpace(QString& error)
 {
+    if (isLocalPcaSpace()) return true;                     // no file behind it: what is in memory is the space
     const QString shown = activeMethod;
     activeMethod = QStringLiteral("\u0001reload");          // never a real token
     if (!switchFeatureSpace(shown, error)) { activeMethod = shown; return false; }

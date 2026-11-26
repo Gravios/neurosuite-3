@@ -628,6 +628,9 @@ public:
     /** Show the next (@p step +1) or previous (-1) usable space of the Space
      *  box, wrapping around; same path as picking it in the box. */
     void slotCycleFeatureSpace(int step);
+    /** View > Local PCA of the Selection (Shift+Y): show, or leave, the per-channel PCA space
+     *  fitted on the selected clusters (KlustersDoc::showLocalPcaSpace). */
+    void slotToggleLocalPca();
     /** Spikes > Sort Spikes by Time: put the group's spike rows back in time
      *  order in every row-indexed file, then reopen (KlustersDoc::planTimeSort). */
     void slotSortSpikesByTime();
@@ -1642,6 +1645,7 @@ private:
     QAction *mSortSpikesByTime  = nullptr;   ///< Spikes > Sort Spikes by Time
     QAction *mNextFeatureSpace     = nullptr;   ///< View > Next Feature Space (Ctrl+Tab)
     QAction *mPreviousFeatureSpace = nullptr;   ///< View > Previous Feature Space (Ctrl+Shift+Tab)
+    QAction *mLocalPcaSpace        = nullptr;   ///< View > Local PCA of the Selection (Shift+Y)
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;
