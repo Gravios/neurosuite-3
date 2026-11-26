@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Self-test: Quit's key is the platform's](#2026-11-26--self-test-quits-key-is-the-platforms) |
 | 2026-11-26 | [Windows build: the realign refine search reduces on local counters](#2026-11-26--windows-build-the-realign-refine-search-reduces-on-local-counters) |
 | 2026-11-25 | [Super-sample mode asks before it builds the waveforms](#2026-11-25--super-sample-mode-asks-before-it-builds-the-waveforms) |
 | 2026-11-25 | [Self-test: the command table does not depend on the Qt version](#2026-11-25--self-test-the-command-table-does-not-depend-on-the-qt-version) |
@@ -303,6 +304,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Self-test: Quit's key is the platform's
+
+The command table test compared the key of File > Quit, which differs with the Qt version.
+
+<details>
+<summary>Details</summary>
+
+- `test_command_table` failed on the Ubuntu 26.04 runner: `file.quit` had no key in the snapshot
+  and the Exit key there. The command takes `QKeySequence::Quit`, which is what the Qt version and
+  the platform theme make of it.
+- The test no longer compares Quit's key or its registry default. Every other key is compared as
+  before.
+
+</details>
 
 ---
 

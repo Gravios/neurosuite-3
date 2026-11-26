@@ -11,6 +11,8 @@ A change of a menu, a key, a tip or a command id is a change of that file: run t
 the commands are declared (the command table, 2026-11-24): the snapshot must not move.
 
 The snapshot was taken on Linux; elsewhere the keys are not compared (the standard ones differ).
+Quit's key is not compared anywhere: QKeySequence::Quit is what the Qt version and the platform
+theme make of it (none on Qt 6.4 without a desktop theme, the Exit key on a later Qt).
 Commands of the Plugins menu and recluster engines that plugins add are not compared: they
 depend on what is installed.
 """
@@ -29,6 +31,7 @@ GOLDEN = os.path.join(HERE, "commands.golden.json")
 LINUX = sys.platform.startswith("linux")       # the snapshot's keys were taken there
 H = lambda **k: {"hierarchy": k}   # noqa: E731
 KEYS = ("commands", "registry", "editLocked")
+PLATFORM_KEY = {"file.quit"}       # QKeySequence::Quit: differs with the Qt version and the platform theme
 
 
 def dump(klusters):
@@ -81,7 +84,7 @@ def differences(got, want):
         wd = {c["id"]: c for c in wc}
         for c in gc:
             for k, v in c.items():
-                if k == "keys" and not LINUX:
+                if k == "keys" and (not LINUX or c["id"] in PLATFORM_KEY):
                     continue                    # the standard keys (Open, Quit, Undo) are the platform's
                 if c["id"] in wd and wd[c["id"]].get(k) != v:
                     diffs.append(f"{state}: {c['id']}: {k}: {wd[c['id']].get(k)!r} -> {v!r}")
@@ -92,8 +95,8 @@ def differences(got, want):
             if sorted(gi) != sorted(wi):
                 diffs.append(f"{state}: registry ids: gone {sorted(set(wi) - set(gi))}, new {sorted(set(gi) - set(wi))}")
             wr = {c["id"]: c for c in w["registry"]}
-            if not LINUX:
-                for c in list(wr.values()) + g.get("registry", []):
+            for c in list(wr.values()) + g.get("registry", []):
+                if not LINUX or c["id"] in PLATFORM_KEY:
                     c.pop("default", None)
             diffs += [f"{state}: registry {c['id']}: {wr[c['id']]} -> {c}" for c in g.get("registry", []) if c["id"] in wr and wr[c["id"]] != c]
         if sorted(g.get("editLocked", [])) != sorted(w["editLocked"]):
