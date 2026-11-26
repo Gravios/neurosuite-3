@@ -37,13 +37,16 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# Two jobs, not one.  deploy-pages looks the artifact up by name through the
+# API; in the same job as the upload it asked a fraction of a second after the
+# artifact was finalized and was told there was none ("No artifacts named
+# github-pages were found for this workflow run", actions/deploy-pages#451).
+# With the upload in an earlier job the listing has it.  Re-running a failed
+# single-job run did not help either: it uploaded a second artifact.
 jobs:
-  build-deploy:
-    name: build + deploy (GitHub Pages)
+  build:
+    name: build (MkDocs site)
     runs-on: ubuntu-24.04
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -68,5 +71,13 @@ jobs:
         with:
           path: doc/site/site
 
+  deploy:
+    name: deploy (GitHub Pages)
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
       - id: deploy
         uses: actions/deploy-pages@v5

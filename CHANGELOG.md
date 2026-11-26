@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Docs workflow: the deploy is a job of its own](#2026-11-26--docs-workflow-the-deploy-is-a-job-of-its-own) |
 | 2026-11-26 | [A recluster leaves no KlustaKwik model file](#2026-11-26--a-recluster-leaves-no-klustakwik-model-file) |
 | 2026-11-26 | [A local PCA of the selected clusters on Shift+Y](#2026-11-26--a-local-pca-of-the-selected-clusters-on-shifty) |
 | 2026-11-26 | [Docs: the in-app handbook is the generator's output again](#2026-11-26--docs-the-in-app-handbook-is-the-generators-output-again) |
@@ -307,6 +308,23 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Docs workflow: the deploy is a job of its own
+
+The Pages deploy could not find the artifact the same job had just uploaded.
+
+<details>
+<summary>Details</summary>
+
+- The docs workflow built the site, uploaded it and deployed it in one job. `deploy-pages` looks
+  the artifact up by name; asked a fraction of a second after the upload finalized, the listing was
+  empty: "No artifacts named github-pages were found for this workflow run"
+  (actions/deploy-pages issue 451). A re-run uploads a second artifact and fails differently.
+- Two jobs now: `build` (convert, check, build, upload) and `deploy` (`needs: build`).
+
+</details>
 
 ---
 
