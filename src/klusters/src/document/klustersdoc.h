@@ -41,6 +41,7 @@
 #include <QFileInfo>
 #include <functional>
 #include <neurosuite/core/custody.hpp>        // header-only method-token policy
+namespace neurofileio { struct EapFile; }       // currentEap(): the type is only named here
 #include <neurosuite/core/pca_projection.hpp>  // header-only PcaBasis/loadPca/pcaProjectionEnergy
 #include <neurosuite/core/stderiv_transform.hpp> // header-only spatialOrder/applyStderivTransform
 #include <neurosuite/core/spike_extract.hpp>     // header-only SpikeWindowSpec (re-extract / follow)
@@ -2076,7 +2077,9 @@ public:
      *  a stage that read the base .eap gets its own) and takes the times as they are now as
      *  the ones those offsets hold for.  Called at Save.  @p changed: cells rewritten.
      *  False when there is nothing to write or the file cannot be written. */
-    bool writeCollisionOffsets(int* changed = nullptr, QString* error = nullptr);
+    /** @p marksOnly: write only the marks not yet saved (markCollisions), and nothing when
+     *  there are none -- what Save does while the preference is off. */
+    bool writeCollisionOffsets(int* changed = nullptr, QString* error = nullptr, bool marksOnly = false);
     /** The stage's .eap, else (a stage without one) the untagged base .eap; @p inherited says which. */
     QString stageEapPath(bool* inherited = nullptr) const;
     /** Writes the corrected rows shown now as a sparse .spkc at @p path (an empty one when there are none). */
@@ -2088,6 +2091,49 @@ public:
     QVector<double> spikeFeatures(qint64 row) const;
     /** <base>.spkc.<method>.<group>[.<stage>] of the open stage. */
     QString spkcPathFor(const QString& method) const;
+
+    // ── collisions no sorter named (klustersdoc_collisionscan.cpp) ──
+    /** One collision the scan found: row @p row (0-based) of cluster @p cluster holds a spike of
+     *  cluster @p partner as well, @p tau samples after the row's own. */
+    struct CollisionHit { qint64 row = 0; int cluster = 0; int partner = 0; int tau = 0; double amp = 0.0; double gain = 0.0; };
+    /** What scanCollisions() found.  Nothing is changed by the scan. */
+    struct CollisionScan {
+        bool    ok = false;
+        QString reason;                      ///< why nothing was scanned
+        qint64  scanned = 0;                 ///< rows searched
+        qint64  alreadyNamed = 0;            ///< rows left out: their .eap row names a partner already
+        qint64  candidates = 0;              ///< rows over the threshold
+        qint64  controlOver = 0;             ///< rows whose CONTROL (negated templates) is over it
+        double  threshold = 0.0;             ///< residual energy a partner must remove
+        int     partnerUnits = 0;            ///< clusters with a template that were tried
+        QList<int> withoutTemplate;          ///< selected clusters with too few rows for a template
+        QHash<int, QList<int>> lookAlikes;   ///< per selected cluster: clusters not tried, too like it
+        std::vector<CollisionHit> hits;      ///< confirmed by the joint fit, ascending row
+        QHash<int, qint64> rowsOf;           ///< per selected cluster (or child): rows searched
+        QHash<int, qint64> hitsOf;           ///< ... and collisions found
+        QHash<int, qint64> controlOf;        ///< ... and rows whose control is over the threshold
+        qint64  milliseconds = 0;
+    };
+    /** Searches the rows of @p clusters (children of the child layer when @p children) for another
+     *  cluster's spike: collisionscan.h on every row, the threshold taken where the control
+     *  reaches @p falseRate of the rows, each candidate confirmed by the joint fit the corrected
+     *  rows are made with (decollide_fit::fitPartner).  A row's own unit is its PARENT cluster. */
+    CollisionScan scanCollisions(const QList<int>& clusters, bool children, double falseRate = 0.01);
+    /** What markCollisions() did. */
+    struct CollisionMarks {
+        bool    ok = false;
+        QString error;
+        int     marked = 0;                  ///< rows that now name their partner
+        int     classesCreated = 0;          ///< template classes made for clusters that had none
+        int     strayRows = 0;               ///< hits left: the row names a class of another cluster
+        int     withoutClass = 0;            ///< hits left: one of the two clusters could be given no class
+    };
+    /** Names the partner of every hit in the stage's membership (.eap), IN MEMORY: the rows are
+     *  shown corrected from the next rebuild on, and the table (with the .tcl classes made for
+     *  clusters that had none) is written at Save.  Closing without saving drops the marks. */
+    CollisionMarks markCollisions(const std::vector<CollisionHit>& hits);
+    /** Rows marked since the last Save. */
+    qint64 pendingCollisionMarkCount() const { return static_cast<qint64>(pendingMarks.rows.size()); }
 
     /** The .spk the shown space reads (a pending copy when there is one). */
     const QString& activeSpkFilePath() const { return activeSpkPath; }
@@ -3259,6 +3305,32 @@ private:
     struct CollisionFit { qint64 row; int classId; int tau; };
     QHash<int, qint64>   collisionClassShift;        // per partner class: its unit's time change, at the last rebuild
     std::vector<CollisionFit> collisionFits;         // accepted fits of the last rebuild (row, partner class, fitted offset)
+    // Marks made by markCollisions() and not yet saved: membership cells, the classes made for
+    // them and the rows marked.  Every read of the .eap applies them (currentEap), so until
+    // Save the file on disk is as the last Save left it.
+    struct PendingClass { int col = -1; int cluster = -1; };
+    struct PendingCell  { qint64 row = 0; int col = 0; int value = 0; };
+    struct PendingMarks {
+        std::vector<PendingCell>  cells;
+        std::vector<PendingClass> classes;
+        std::vector<qint64>       rows;
+        bool empty() const { return cells.empty() && classes.empty(); }
+        void clear() { cells.clear(); classes.clear(); rows.clear(); }
+    };
+    PendingMarks pendingMarks;
+    /** The stage's membership as it is now: the .eap read from @p path with the pending marks
+     *  applied; a table of @p nSpikes rows naming nobody when there is no file but there are marks. */
+    neurofileio::EapFile currentEap(const QString& path, qint64 nSpikes) const;
+    /** Per class of @p eap: the cluster it is now (decollide_fit::homeClusters, the .tcl's
+     *  provenance preferred while that cluster still holds the class), or -1. */
+    std::vector<int> collisionClassHomes(const neurofileio::EapFile& eap, const std::vector<int>& clu) const;
+    /** <base>.eap.<group>[.<stage>]: the stage's OWN .eap, whether or not it exists. */
+    QString stageOwnEapPath() const;
+    /** <base>.tcl.<group>, the session's class registry. */
+    QString groupTclPath() const;
+    /** Writes the classes the pending marks made to the .tcl; false (with @p error) when a
+     *  column they took is no longer free there. */
+    bool writePendingClasses(QString* error);
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
     QVector<dataType>    reclusterSubsessionRows;   // the last sub-session's feature rows, in its spike order

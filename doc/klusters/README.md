@@ -1128,6 +1128,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Entry | Key | What it does |
 |---|---|---|
 | Split ▸ Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
+| Clusters ▸ Mark Collisions… | — | Searches the selected clusters (in the child view: the selected children) for rows that hold a second cluster's spike and, after a confirmation, names the partner in the `.eap`: the rows are then shown with the partner subtracted. See [Mark Collisions](#mark-collisions--the-collisions-no-sorter-named) |
 | Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
 | Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artifact (0), after a confirmation |
 | Split ▸ Strip Waveform Outliers… | `Shift+X` | Moves each selected cluster's worst-fitting spikes (residual to its median waveform) into a new cluster, after a confirmation |
@@ -1268,6 +1269,54 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   whose basis does not fit the records, keeps the raw features (reported as skipped).
 
 Not done yet: a super-sampled space shows the raw records.
+
+#### Mark Collisions — the collisions no sorter named
+
+The corrected rows are made from what the `.eap` names. A sort that did not look for collisions
+names none, and its clusters then hold the rows with a second unit's spike in them as they were
+cut. **Clusters → Mark Collisions…** finds those rows in the selected clusters — or, in the child
+view, in the children selected in the child palette — and names their partners. It has no key of
+its own; bind one in **Preferences → Input**.
+
+- **The search.** For each row its own cluster's template is taken out (best whole-sample shift
+  within 2, gain 0.6–1.5). In what is left, the template of every other cluster with at least 200
+  rows is tried at every lag that keeps its peak 6 samples inside the window, at 0.5–1.6 of its
+  size. A row of a child is searched as a row of its parent cluster.
+- **The control and the threshold.** The same search is made with the partners' templates
+  *negated*. No spike is the negative of a unit's, so what that finds is what noise and misfit
+  give. The threshold is the residual energy the control reaches in 1 % of the rows searched; a
+  row is a candidate when its best partner removes more than that, and more than its own control.
+- **The confirmation.** Each candidate is fitted jointly with the row's own template — the fit
+  the corrected rows are made with — and kept when the partner comes out at 0.5–1.6 of its
+  template and removes at least a fifth of what the own template leaves.
+- **Templates** follow the session: a cluster's rows are cut into stretches of about 3000 and a
+  template is the mean of up to 300 rows spread over one. A row is searched with its own
+  cluster's stretch and each partner's stretch at the same place in time.
+- **Not tried as partners:** a cluster whose template is too like the row's own (cosine 0.85 or
+  more at some shift within 3 samples, between any two of their templates along the session) — it
+  would take the row's own spike for itself; the
+  artefact and noise clusters; reserved chunk clusters. Rows that already name a partner are left
+  out of the search.
+- **The dialog** shows, for each selected cluster or child, the rows found and the rows the
+  control puts over the threshold, and the partners by count. Nothing is changed before *Yes*.
+- **What a mark is.** The row's `.eap` row gets its own cluster's class at offset 0 (when it names
+  none) and the partner's class at the fitted offset. A cluster without a class is given one,
+  named by every row of the cluster that names no class, with the cluster as its provenance in
+  the `.tcl`. A session without an `.eap` gets one. The clustering, the `.spk` and the `.fet` are
+  not changed, and a marked row is from then on a collision row like any other: shown, averaged
+  and realigned with the partner subtracted, its offset following realign and nudge.
+- **When it is written.** The marks are held in memory and applied to every read of the `.eap`;
+  Save writes the `.eap` and the `.tcl`, with the preference on or off. Closing without saving
+  drops them. Undo does not take a mark back.
+- **Left as they are:** a row that names a class of another cluster (it was moved by hand), and
+  a hit one of whose clusters can be given no class (fewer than 30 rows naming none).
+- With the preference off the rows are marked and written but shown as they are.
+
+Limits. A partner is found only where the partner's cluster has a template: a unit the sort
+missed, or one with fewer than 200 rows, is not found. A partner whose peak lies in the outer 6
+samples of the window, or outside it, is not searched for. Two spikes of look-alike clusters are
+not told apart. The marks add nothing to the partner's cluster: its own spike in that row is
+still missing from its train.
 
 ### Plugins
 

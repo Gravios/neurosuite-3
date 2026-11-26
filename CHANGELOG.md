@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: Mark Collisions](#2026-11-26--klusters-mark-collisions) |
 | 2026-11-26 | [Docs workflow: the deploy is a job of its own](#2026-11-26--docs-workflow-the-deploy-is-a-job-of-its-own) |
 | 2026-11-26 | [A recluster leaves no KlustaKwik model file](#2026-11-26--a-recluster-leaves-no-klustakwik-model-file) |
 | 2026-11-26 | [A local PCA of the selected clusters on Shift+Y](#2026-11-26--a-local-pca-of-the-selected-clusters-on-shifty) |
@@ -308,6 +309,55 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: Mark Collisions
+
+Clusters → Mark Collisions finds the rows of the selected clusters that hold a second cluster's spike and names the partner in the `.eap`, so they are shown with it subtracted. Nothing changes on disk before Save.
+
+<details>
+<summary>Details</summary>
+
+**Clusters → Mark Collisions…** (`action.markCollisions`, no key) works on the selected clusters,
+or in the child view on the children selected in the child palette.
+
+- **Scan** (`KlustersDoc::scanCollisions`, `document/collisionscan.h`): the row's own cluster's
+  template is taken out; every other cluster with at least 200 rows is tried in the residual at
+  every lag that keeps its peak 6 samples inside the window, at 0.5–1.6 of its template. The same
+  search with the templates negated is the control, and the threshold is what the control reaches
+  in 1 % of the rows. A candidate is confirmed by `decollide_fit::fitPartner` (partner at 0.5–1.6,
+  removing at least a fifth of what the own template leaves). Templates are per stretch of about
+  3000 rows of a cluster. Clusters too like the row's own (cosine ≥ 0.85 between any two of their
+  templates) are not tried.
+- **Mark** (`KlustersDoc::markCollisions`): the row's `.eap` row gets its own cluster's class and
+  the partner's at the fitted offset; a cluster without a class is given one. The marks are held
+  in memory (`PendingMarks`) and applied to every read of the `.eap` (`currentEap`), so the rows
+  are corrected at once by the existing collision-row code; Save writes the `.eap` and the `.tcl`
+  (`writeCollisionOffsets`, now also with the preference off, marks only). Closing without saving
+  drops them. Not on the undo stack.
+- `rebuildCollisionRows` reads the table through `currentEap` and takes the class homes from
+  `collisionClassHomes` (the block it had inline, plus the classes not yet saved).
+
+Measured.
+
+- `test_mark_collisions` (synthetic, 2 units of 400 rows): 39 of 40 planted rows found in cluster
+  2 and 30 of 30 in cluster 3, the partner within a sample of where it was planted; the 17–19 rows
+  per cluster where the generator itself put both units at one time are found as well; no other
+  row is called, in the planted session or in the one with nothing planted. Marked rows are served
+  with a median error of 2 % of the raw row's against the record before the partner was added.
+  Marks survive a nudge before Save and are written for the saved times; marks made after a nudge
+  on a session that has an `.eap` are stored where found.
+- sirotaA-jg-000005-20120312 group 8 (815,728 spikes, 139 clusters, no `.eap`), cluster 78 (193,558 rows): 110 s
+  on two cores; 6,741 rows marked (3.5 %), 3,300 of them with cluster 64; the control is over the
+  threshold in 1,935 rows. 59 classes made; the rebuild corrected all 6,741 rows in 0.5 s. An
+  independent numpy search of the same cluster (one template per cluster, no joint fit) called
+  6,316 rows; 5,273 are in both.
+
+Not tested: a session whose `.eap` was written by fiber-kit; Save on the real group; more than two
+cores.
+
+</details>
 
 ---
 

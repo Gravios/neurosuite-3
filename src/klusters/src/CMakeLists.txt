@@ -73,6 +73,7 @@ set(klusters_SRCS
     app/klusters_hierarchy.cpp      # KlustersApp hierarchical (.clc child) view + child-palette slots (split from klusters.cpp)
     app/klusters_dipdrift.cpp       # KlustersApp dip-split / probe-drift / timestamp-nudge (split from klusters.cpp)
     app/klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)
+    app/klusters_collisions.cpp     # KlustersApp Mark Collisions (scan the selection, confirm, mark)
     app/klusters_selftest.cpp       # headless self-test driver (NS3_KLUSTERS_SELFTEST=<spec.json>)
     app/klusters_radialmenu.cpp     # KlustersApp radial context menu (Right-click; proof of concept)
     app/radialmenu.cpp              # hierarchical radial / marking menu widget over a QMenu tree
@@ -101,6 +102,7 @@ set(klusters_SRCS
     document/klustersdoc_dipsplit.cpp    # KlustersDoc bimodality / KNN splitting (split from klustersdoc.cpp)
     document/klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
     document/klustersdoc_spkc.cpp        # KlustersDoc collision rows with the .eap partner subtracted
+    document/klustersdoc_collisionscan.cpp # KlustersDoc collisions no sorter named: scan and mark
     document/klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)
     views/klustersview.cpp
     document/klustersyamlreader.cpp

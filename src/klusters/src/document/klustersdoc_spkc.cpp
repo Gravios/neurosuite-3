@@ -46,6 +46,7 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QSet>
+#include <QDate>
 #include <QDebug>
 #include <cstring>
 
@@ -83,6 +84,113 @@ QString KlustersDoc::stageEapPath(bool* inherited) const
     if (QFileInfo::exists(staged)) return staged;
     if (inherited) *inherited = true;                 // a stage without its own .eap reads the base one
     return QString::fromStdString(plain);
+}
+
+QString KlustersDoc::stageOwnEapPath() const
+{
+    std::string base, stage; int group = 0;
+    if (!sessionAnchor(url(), base, group, stage)) return QString();
+    std::string own = neurosuite::custody::untaggedPath(base, "eap", group);
+    if (!stage.empty()) own += "." + stage;
+    return QString::fromStdString(own);
+}
+
+QString KlustersDoc::groupTclPath() const
+{
+    std::string base, stage; int group = 0;
+    if (!sessionAnchor(url(), base, group, stage)) return QString();
+    return QString::fromStdString(neurosuite::custody::untaggedPath(base, "tcl", group));
+}
+
+neurofileio::EapFile KlustersDoc::currentEap(const QString& path, qint64 nSpikes) const
+{
+    namespace nf = neurofileio;
+    nf::EapFile eap = path.isEmpty() ? nf::EapFile{} : nf::readEap(path.toStdString());
+    if (pendingMarks.empty()) return eap;
+    int columns = 0;
+    for (const PendingCell& c : pendingMarks.cells) columns = std::max(columns, c.col + 1);
+    for (const PendingClass& c : pendingMarks.classes) columns = std::max(columns, c.col + 1);
+    if (!eap.ok) {                                    // no file yet: a table that names nobody
+        std::string base, stage; int group = 0;
+        sessionAnchor(url(), base, group, stage);
+        eap = nf::EapFile{};
+        eap.nSpikes = nSpikes;
+        eap.nClasses = std::max(128, columns);
+        eap.group = group;
+        eap.cells.assign(static_cast<std::size_t>(nSpikes) * eap.nClasses, nf::EAP_ABSENT);
+        eap.ok = true;
+    }
+    if (eap.nSpikes != nSpikes) return eap;           // not this session's rows: the caller says so
+    if (eap.nClasses < columns) eap = nf::growEap(eap, columns);
+    for (const PendingCell& c : pendingMarks.cells)
+        if (c.row >= 0 && c.row < eap.nSpikes && c.col >= 0 && c.col < eap.nClasses)
+            eap.cells[static_cast<std::size_t>(c.row) * eap.nClasses + c.col] =
+                static_cast<int8_t>(std::clamp(c.value, -127, 127));
+    return eap;
+}
+
+std::vector<int> KlustersDoc::collisionClassHomes(const neurofileio::EapFile& eap, const std::vector<int>& clu) const
+{
+    namespace nf = neurofileio;
+    namespace df = neurosuite::decollide_fit;
+    std::vector<int> home = df::homeClusters(eap, clu);
+    QSet<int> exists;
+    for (const int c : clu) exists.insert(c);
+    std::vector<int> provenance(home.size(), -1);
+    const QString tclPath = groupTclPath();
+    const nf::TclRegistry tcl = tclPath.isEmpty() ? nf::TclRegistry{} : nf::readTcl(tclPath.toStdString());
+    if (tcl.ok)
+        for (const nf::TclEntry& t : tcl.entries)
+            if (t.col >= 0 && t.col < static_cast<int>(home.size()) && t.provenanceClu > 1
+                && exists.contains(t.provenanceClu))
+                provenance[static_cast<std::size_t>(t.col)] = t.provenanceClu;
+    std::vector<int> stated = provenance;             // what the .tcl on disk says
+    // A class made by a mark not yet saved is in no .tcl: the cluster it was made for.
+    for (const PendingClass& c : pendingMarks.classes)
+        if (c.col >= 0 && c.col < static_cast<int>(home.size()) && c.cluster > 1 && exists.contains(c.cluster))
+            provenance[static_cast<std::size_t>(c.col)] = c.cluster;
+    // The cluster a class was made from, while it still holds the class's rows -- even when a
+    // larger, mixed cluster holds more of them; and for a class of the .tcl with no row of its
+    // own, while that cluster exists.
+    df::preferProvenance(home, eap, clu, provenance);
+    for (std::size_t j = 0; j < home.size(); ++j)
+        if (home[j] < 0) home[j] = stated[j];
+    return home;
+}
+
+bool KlustersDoc::writePendingClasses(QString* error)
+{
+    namespace nf = neurofileio;
+    if (pendingMarks.classes.empty()) return true;
+    auto fail = [&](const QString& why) { if (error) *error = why; return false; };
+    const QString path = groupTclPath();
+    if (path.isEmpty()) return fail(QStringLiteral("the session's name does not parse"));
+    nf::TclRegistry reg = nf::readTcl(path.toStdString());
+    if (!reg.ok && QFileInfo::exists(path)) return fail(QStringLiteral("%1 is not a valid .tcl registry").arg(path));
+    int columns = 128;
+    for (const PendingClass& c : pendingMarks.classes) columns = std::max(columns, c.col + 1);
+    if (!reg.ok) reg = nf::initTcl(columns);
+    while (static_cast<int>(reg.entries.size()) < columns) {
+        nf::TclEntry t; t.col = static_cast<int>(reg.entries.size()); t.status = nf::TclStatus::Free;
+        reg.entries.push_back(t);
+    }
+    reg.nClasses = static_cast<int>(reg.entries.size());
+    for (const PendingClass& c : pendingMarks.classes)
+        if (reg.entries[static_cast<std::size_t>(c.col)].status != nf::TclStatus::Free)
+            return fail(QStringLiteral("class %1 of %2 was taken since the collisions were marked").arg(c.col).arg(path));
+    std::string base, stage; int group = 0;
+    sessionAnchor(url(), base, group, stage);
+    const std::string today = QDate::currentDate().toString(Qt::ISODate).toStdString();
+    for (const PendingClass& c : pendingMarks.classes) {
+        nf::TclEntry& t = reg.entries[static_cast<std::size_t>(c.col)];
+        t.status = nf::TclStatus::Active;
+        t.provenanceClu = c.cluster;
+        t.provenanceStage = stage;
+        t.created = today;
+        t.mergedInto = -1;
+    }
+    if (!nf::writeTcl(path.toStdString(), reg)) return fail(QStringLiteral("could not write %1").arg(path));
+    return true;
 }
 
 bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
@@ -125,7 +233,7 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
         publish(nullptr, {});
         return finish(false);
     }
-    const nf::EapFile eap = rep.eapPath.isEmpty() ? nf::EapFile{} : nf::readEap(rep.eapPath.toStdString());
+    const nf::EapFile eap = currentEap(rep.eapPath, nSpikes);   // the file, with the marks not yet saved
     if (!eap.ok || eap.nClasses <= 0) {
         publish(nullptr, {});
         return finish(false);                         // no .eap: nothing to correct
@@ -161,26 +269,7 @@ bool KlustersDoc::rebuildCollisionRows(CollisionRowsReport* report)
     auto moved = [&](qint64 row) { return timeNow(row) - collisionRefTimes[static_cast<std::size_t>(row)]; };
 
     // ── which cluster each class is ──
-    std::vector<int> home = df::homeClusters(eap, clu);
-    {
-        std::string base, stage; int group = 0;
-        if (sessionAnchor(url(), base, group, stage)) {
-            const nf::TclRegistry tcl = nf::readTcl(neurosuite::custody::untaggedPath(base, "tcl", group));
-            if (tcl.ok) {
-                std::vector<int> provenance(home.size(), -1);
-                for (const nf::TclEntry& t : tcl.entries)
-                    if (t.col >= 0 && t.col < static_cast<int>(home.size()) && t.provenanceClu > 1
-                        && rowsOf.contains(t.provenanceClu))
-                        provenance[static_cast<std::size_t>(t.col)] = t.provenanceClu;
-                // The cluster a class was made from, while it still holds the class's rows -- even
-                // when a larger, mixed cluster holds more of them; and for a class with no row of
-                // its own, while that cluster exists.
-                df::preferProvenance(home, eap, clu, provenance);
-                for (std::size_t j = 0; j < home.size(); ++j)
-                    if (home[j] < 0) home[j] = provenance[j];
-            }
-        }
-    }
+    const std::vector<int> home = collisionClassHomes(eap, clu);
 
     // ── the collision rows ──
     std::vector<char> isCollision(static_cast<std::size_t>(nSpikes), 0);
@@ -344,6 +433,7 @@ void KlustersDoc::resetCollisionRows()
     collisionRefEap.clear();
     collisionClassShift.clear();
     collisionFits.clear();
+    pendingMarks.clear();
     collisionRowsBuiltOn.reset();
     lastCollisionReport = CollisionRowsReport();
 }
@@ -438,17 +528,20 @@ void KlustersDoc::applyCollisionFeatures(const std::shared_ptr<const SpkOverlay>
     for (const int c : clusters) notifyClusterFeaturesReprojected(c);
 }
 
-bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error)
+bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error, bool marksOnly)
 {
     namespace nf = neurofileio;
     if (changed) *changed = 0;
     auto fail = [&](const QString& why) { if (error) *error = why; return false; };
     if (!clusteringData || collisionRefEap.isEmpty()) return false;
-    nf::EapFile eap = nf::readEap(collisionRefEap.toStdString());
     const qint64 nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    const bool marks = !pendingMarks.empty();
+    if (marksOnly && !marks) return true;
+    nf::EapFile eap = currentEap(collisionRefEap, nSpikes);   // the file, with the marks not yet saved
     if (!eap.ok || eap.nSpikes != nSpikes) return fail(QStringLiteral("%1 no longer fits the session").arg(collisionRefEap));
     int n = 0;
     for (const CollisionFit& f : collisionFits) {
+        if (marksOnly) break;                        // the fits are of a rebuild the preference has since turned off
         if (f.row < 0 || f.row >= nSpikes || f.classId < 0 || f.classId >= eap.nClasses) continue;
         int8_t& cell = eap.cells[static_cast<std::size_t>(f.row) * eap.nClasses + f.classId];
         const int8_t v = static_cast<int8_t>(std::clamp(f.tau, -127, 127));
@@ -466,7 +559,7 @@ bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error)
     auto timeNow = [&](qint64 row) { return static_cast<qint64>(clusteringData->featureValue(static_cast<dataType>(row + 1), timeDim)); };
     std::vector<char> fitted(static_cast<std::size_t>(nSpikes), 0);
     for (const CollisionFit& f : collisionFits) if (f.row >= 0 && f.row < nSpikes) fitted[static_cast<std::size_t>(f.row)] = 1;
-    if (static_cast<qint64>(collisionRefTimes.size()) == nSpikes) {
+    if (!marksOnly && static_cast<qint64>(collisionRefTimes.size()) == nSpikes) {
         for (qint64 i = 0; i < nSpikes; ++i) {
             if (fitted[static_cast<std::size_t>(i)]) continue;
             const qint64 moved = timeNow(i) - collisionRefTimes[static_cast<std::size_t>(i)];
@@ -489,12 +582,26 @@ bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error)
     }
     // Nothing differs from the file: it is left alone (a stage reading the base .eap does not get
     // a copy for nothing), and the times it holds for stay the ones it was read at.
-    if (n == 0) return true;
+    if (n == 0 && !marks) return true;
+    // The classes first: a table naming a class the registry does not hold is worse than marks
+    // that stay pending.
+    if (marks) {
+        QString why;
+        if (!writePendingClasses(&why)) return fail(why);
+    }
     if (!nf::writeEap(target, eap.nSpikes, eap.nClasses, eap.group, eap.flags, eap.cells))
         return fail(QStringLiteral("could not write %1").arg(QString::fromStdString(target)));
-    // The offsets on disk now hold for the times as they are.
-    collisionRefTimes.resize(static_cast<std::size_t>(nSpikes));
-    for (qint64 i = 0; i < nSpikes; ++i) collisionRefTimes[static_cast<std::size_t>(i)] = timeNow(i);
+    if (marks) {
+        qInfo().noquote() << "[collision rows]" << pendingMarks.rows.size() << "marked rows written to"
+                          << QFileInfo(QString::fromStdString(target)).fileName();
+        pendingMarks.clear();
+    }
+    // The offsets on disk now hold for the times as they are -- unless only the marks were
+    // written: those were stored for the times the file already holds for.
+    if (!marksOnly) {
+        collisionRefTimes.resize(static_cast<std::size_t>(nSpikes));
+        for (qint64 i = 0; i < nSpikes; ++i) collisionRefTimes[static_cast<std::size_t>(i)] = timeNow(i);
+    }
     collisionRefEap = QString::fromStdString(target);
     if (changed) *changed = n;
     return true;

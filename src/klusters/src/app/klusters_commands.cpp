@@ -106,6 +106,15 @@ QList<CommandSpec> KlustersApp::commandTable()
     // Purge: move every cluster smaller than a user-entered spike count into the
     // noise cluster (1).  Bulk analogue of "Delete Noisy Cluster(s)"; asks for N
     // then a Yes/No confirmation (default Yes) before moving.
+    // Rows of the selected clusters that hold a second cluster's spike, found on the waveforms
+    // and named in the stage's membership: the corrected collision rows for a sort that named
+    // none.  Scan -> confirm -> mark; unbound, like the residual strip: bind it in the input
+    // registry if it earns a chord.
+    t << CommandSpec("action.markCollisions", "Clusters", tr("Mark &Collisions…"), ON(triggered, slotMarkCollisions))
+            .toolTip(tr("Search the selected clusters (or the children selected in the child view) for rows\n"
+                     "that hold a second cluster's spike, and name the partner in the membership (.eap):\n"
+                     "the rows are then shown with the partner's template subtracted.  The clustering and\n"
+                     "the .spk are not changed; the marks are written at Save.")).editing();
     t << CommandSpec("action.purgeSmallClusters", "Clusters", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
             .editing();
     // Bulk artifact removal: move every spike more than 5 sigma from its cluster's

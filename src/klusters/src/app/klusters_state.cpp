@@ -185,6 +185,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNextFeatureSpace->setEnabled(false);
         mPreviousFeatureSpace->setEnabled(false);
         mLocalPcaSpace->setEnabled(false);
+        mMarkCollisions->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         mGenerateProbeDrift->setEnabled(false);
@@ -260,6 +261,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mNextFeatureSpace->setEnabled(true);
         mPreviousFeatureSpace->setEnabled(true);
         mLocalPcaSpace->setEnabled(true);
+        mMarkCollisions->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
         mGenerateProbeDrift->setEnabled(true);

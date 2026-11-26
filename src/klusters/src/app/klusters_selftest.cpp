@@ -777,6 +777,80 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         return true;
     }
+    if (step.contains(QStringLiteral("markCollisions"))) {
+        // {"markCollisions": {"clusters": [..], "children": bool, "falseRate": 0.01, "apply": bool}}:
+        // Clusters > Mark Collisions without its dialog -- the scan, and with "apply" the marks.
+        // "childOfRow": r (with "children") adds the child that holds row r: a child's id is
+        // given on load, so a test names it by a row it knows.
+        const QJsonObject o = step.value(QStringLiteral("markCollisions")).toObject();
+        QList<int> ids;
+        for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
+        const bool children = o.value(QStringLiteral("children")).toBool(false);
+        if (children) {
+            QString err;
+            if (!doc->loadChildClustering(err)) {
+                result.insert(QStringLiteral("error"), QStringLiteral("no child layer: ") + err);
+                return false;
+            }
+        }
+        if (children && o.contains(QStringLiteral("childOfRow"))) {
+            const int row = o.value(QStringLiteral("childOfRow")).toInt();
+            for (const dataType id : doc->childClusterData().clusterIds())
+                if (doc->childClusterData().clusterSpkIndices(static_cast<int>(id)).contains(row)) ids.append(static_cast<int>(id));
+        }
+        QJsonArray searched;
+        for (const int id : ids) searched.append(id);
+        result.insert(QStringLiteral("searched"), searched);
+        const KlustersDoc::CollisionScan scan = doc->scanCollisions(ids, children, o.value(QStringLiteral("falseRate")).toDouble(0.01));
+        result.insert(QStringLiteral("ok"), scan.ok);
+        result.insert(QStringLiteral("reason"), scan.reason);
+        result.insert(QStringLiteral("scanned"), static_cast<double>(scan.scanned));
+        result.insert(QStringLiteral("alreadyNamed"), static_cast<double>(scan.alreadyNamed));
+        result.insert(QStringLiteral("candidates"), static_cast<double>(scan.candidates));
+        result.insert(QStringLiteral("controlOver"), static_cast<double>(scan.controlOver));
+        result.insert(QStringLiteral("threshold"), scan.threshold);
+        result.insert(QStringLiteral("partnerUnits"), scan.partnerUnits);
+        result.insert(QStringLiteral("milliseconds"), static_cast<double>(scan.milliseconds));
+        QJsonArray hits;
+        for (const KlustersDoc::CollisionHit& h : scan.hits) {
+            QJsonObject j;
+            j.insert(QStringLiteral("row"), static_cast<double>(h.row));
+            j.insert(QStringLiteral("cluster"), h.cluster);
+            j.insert(QStringLiteral("partner"), h.partner);
+            j.insert(QStringLiteral("tau"), h.tau);
+            j.insert(QStringLiteral("amp"), h.amp);
+            hits.append(j);
+        }
+        result.insert(QStringLiteral("hits"), hits);
+        QJsonObject per;
+        for (auto it = scan.rowsOf.constBegin(); it != scan.rowsOf.constEnd(); ++it) {
+            QJsonObject j;
+            j.insert(QStringLiteral("rows"), static_cast<double>(it.value()));
+            j.insert(QStringLiteral("hits"), static_cast<double>(scan.hitsOf.value(it.key())));
+            j.insert(QStringLiteral("control"), static_cast<double>(scan.controlOf.value(it.key())));
+            per.insert(QString::number(it.key()), j);
+        }
+        result.insert(QStringLiteral("perCluster"), per);
+        QJsonObject alike;
+        for (auto it = scan.lookAlikes.constBegin(); it != scan.lookAlikes.constEnd(); ++it) {
+            QJsonArray a;
+            for (const int c : it.value()) a.append(c);
+            alike.insert(QString::number(it.key()), a);
+        }
+        result.insert(QStringLiteral("lookAlikes"), alike);
+        if (scan.ok && o.value(QStringLiteral("apply")).toBool(false)) {
+            const KlustersDoc::CollisionMarks m = doc->markCollisions(scan.hits);
+            result.insert(QStringLiteral("markOk"), m.ok);
+            result.insert(QStringLiteral("markError"), m.error);
+            result.insert(QStringLiteral("marked"), m.marked);
+            result.insert(QStringLiteral("classesCreated"), m.classesCreated);
+            result.insert(QStringLiteral("strayRows"), m.strayRows);
+            result.insert(QStringLiteral("withoutClass"), m.withoutClass);
+        }
+        result.insert(QStringLiteral("pending"), static_cast<double>(doc->pendingCollisionMarkCount()));
+        result.insert(QStringLiteral("modified"), doc->isModified());
+        return scan.ok;
+    }
     if (step.contains(QStringLiteral("waveformQuality"))) {
         // {"waveformQuality": {...}}: the quality dots of every waveform view of the active display.
         //   "show": [ids]      shows those clusters first ("children": true reads them as children);

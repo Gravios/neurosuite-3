@@ -1045,9 +1045,11 @@ void KlustersDoc::finishSave(bool ok){
             carryEapToSavedName();                   // a Save As: the membership table follows
             // The times just saved are the ones the .eap must hold for: write the offsets the
             // last rebuild fitted (they are relative to these times), then rebuild from the file.
-            if (configuration().getCorrectCollisionRows()) {
+            // Marks not yet saved (markCollisions) are written whatever the preference says.
+            const bool corrected = configuration().getCorrectCollisionRows();
+            if (corrected || pendingCollisionMarkCount() > 0) {
                 int changed = 0; QString why;
-                if (writeCollisionOffsets(&changed, &why)) {
+                if (writeCollisionOffsets(&changed, &why, !corrected)) {
                     if (changed > 0)
                         qInfo().noquote() << "[collision rows]" << changed << "fitted offsets written to"
                                           << QFileInfo(collisionRefEap).fileName();

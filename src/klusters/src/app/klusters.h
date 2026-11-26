@@ -631,6 +631,10 @@ public:
     /** View > Local PCA of the Selection (Shift+Y): show, or leave, the per-channel PCA space
      *  fitted on the selected clusters (KlustersDoc::showLocalPcaSpace). */
     void slotToggleLocalPca();
+    /** Clusters > Mark Collisions: search the selected clusters (or the children selected in the
+     *  child view) for rows holding a second cluster's spike and, on confirmation, name the
+     *  partners in the stage's membership (KlustersDoc::scanCollisions / markCollisions). */
+    void slotMarkCollisions();
     /** Spikes > Sort Spikes by Time: put the group's spike rows back in time
      *  order in every row-indexed file, then reopen (KlustersDoc::planTimeSort). */
     void slotSortSpikesByTime();
@@ -1648,6 +1652,7 @@ private:
     QAction *mNextFeatureSpace     = nullptr;   ///< View > Next Feature Space (Ctrl+Tab)
     QAction *mPreviousFeatureSpace = nullptr;   ///< View > Previous Feature Space (Ctrl+Shift+Tab)
     QAction *mLocalPcaSpace        = nullptr;   ///< View > Local PCA of the Selection (Shift+Y)
+    QAction *mMarkCollisions       = nullptr;   ///< Clusters > Mark Collisions
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;
