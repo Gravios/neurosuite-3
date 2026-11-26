@@ -635,6 +635,10 @@ public:
      *  child view) for rows holding a second cluster's spike and, on confirmation, name the
      *  partners in the stage's membership (KlustersDoc::scanCollisions / markCollisions). */
     void slotMarkCollisions();
+    /** Waveforms > Residual of Collision Rows (checkable): the rows that name a partner are shown
+     *  as the PARTNER's spike -- re-cut around the partner, the row's own unit subtracted
+     *  (KlustersDoc::showResiduals, formats/spkr.md) -- every other row as it is. */
+    void slotResidualWaveforms();
     /** Clusters > Collision Rows to a Child: the rows of the selection that name a partner become
      *  one child of their parent, to be looked at beside the cluster's other spikes. */
     void slotCollisionRowsToChild();
@@ -1661,6 +1665,7 @@ private:
     QAction *mPreviousFeatureSpace = nullptr;   ///< View > Previous Feature Space (Ctrl+Shift+Tab)
     QAction *mLocalPcaSpace        = nullptr;   ///< View > Local PCA of the Selection (Shift+Y)
     QAction *mMarkCollisions       = nullptr;   ///< Clusters > Mark Collisions
+    QAction *mResidualWaveforms    = nullptr;   ///< Waveforms > Residual of Collision Rows (checkable)
     QAction *mCollisionRowsToChild = nullptr;   ///< Clusters > Collision Rows to a Child
     QAction *mRemoveCollisionMarks = nullptr;   ///< Clusters > Remove Collision Marks
     QAction *mDipSplit;

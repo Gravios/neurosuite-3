@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: the residual of a collision row, shown and saved as .spkr](#2026-11-26--klusters-the-residual-of-a-collision-row-shown-and-saved-as-spkr) |
 | 2026-11-26 | [Formats: .spkr, the residual spike of a collision row](#2026-11-26--formats-spkr-the-residual-spike-of-a-collision-row) |
 | 2026-11-26 | [Klusters: Mark Collisions shows what chance would give for each partner](#2026-11-26--klusters-mark-collisions-shows-what-chance-would-give-for-each-partner) |
 | 2026-11-26 | [Klusters: collision rows as a child, and marks taken back](#2026-11-26--klusters-collision-rows-as-a-child-and-marks-taken-back) |
@@ -317,6 +318,55 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: the residual of a collision row, shown and saved as .spkr
+
+A waveform-view toggle draws each collision row as its partner's spike: re-cut from the recording around the partner, the row's own unit (the median of its neighbours in time and waveform) subtracted. Each says whether the spike is a row already.
+
+<details>
+<summary>Details</summary>
+
+**Waveforms → Residual of Collision Rows** (`waveforms.residual`, a toggle, no key): every row
+with a fitted partner is drawn as the partner's spike; every other row as it is.
+
+- **The record** (`KlustersDoc::rebuildResiduals`, `klustersdoc_residuals.cpp`): the window the
+  recording holds centred on the partner (row time + fitted lag), cut in the `.spk`'s own domain
+  (`spikeCutSpecFor`, `extractSpikeWindows`), less the median of the row's neighbours' windows cut
+  at the same displacement. Neighbours: of the 400 clean spikes of the row's cluster nearest in
+  time, the 50 nearest in waveform to the row's corrected record. Not detrended.
+- **Duplicates** (`residualtwins.h`): each record is *recovered*, *detected* (a row lies within 6
+  samples of the residual's time; the partner's own by preference) or *repeated* (another
+  residual of the same partner within 6 samples; the lowest row keeps it).
+- **Shown** through `Data::setResidualRecords`, which only the waveform tables read
+  (`WaveformData::read`): templates, features and tools never see a residual.
+- **Kept** per row with what it was made for (time, cluster, partner, fitted lag): only changed
+  rows are made again. While the display is on they follow every rebuild of the corrected rows.
+- **Saved** as `<base>.spkr.<method>.<group>[.<stage>]` and read back at open. Sort Spikes by Time
+  removes the group's `.spkr` (rows renumbered); the next Save rebuilds it.
+- Without a recording the record is made from the `.spk` (the row's own window, offset 0).
+
+Measured.
+
+- `test_collision_residuals` (synthetic, `.fil` present): against the spike that was added to the
+  recording, the residual's error is 3.9 % of that spike's energy (median of 39 rows, worst 5 %),
+  the same for lags that put part of the partner outside the row's window. Edge level of the
+  records 4.8 against 9.3 for the same rows' `.spk` records: no trend. The 18 rows whose partner
+  spike is a row of its own are all *detected* with the right twin; with both clusters marked 15
+  of 18 pairs name each other. The table the view draws holds the residual for marked rows and
+  the `.spk` record for the others; Save, reopen (57 kept, 0 made again), unmark and the
+  no-recording path are covered. `klusters_test_residualtwins` covers the verdicts, *repeated*
+  included.
+- sirotaA-jg-000005-20120312 group 8, cluster 78, 6,911 marked rows, **from the `.spk`** (no `.fil`
+  in this copy): 3.3 s; edge level 68 against 70 for the `.spk` records. Only 68 of the 6,911
+  residual spikes (1 %) have another row within 6 samples, 21 of them in the partner named: the
+  partners' spikes in these collisions are, almost all, rows of no cluster.
+
+Not tested: the cut from a real `.fil` (timing, and the stderiv domain); *repeated* end to end
+(the synthetic session has no spike in two rows' windows).
+
+</details>
 
 ---
 

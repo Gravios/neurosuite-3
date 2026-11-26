@@ -1130,6 +1130,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Split ▸ Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
 | Clusters ▸ Collision Rows to a Child | — | Makes the rows of the selected clusters (or children) that name a partner one child of their cluster, to be looked at beside its other spikes. No row leaves its cluster |
 | Clusters ▸ Remove Collision Marks… | — | Takes the partners out of the rows of the selected clusters (or children) that name one, after a confirmation; written at Save |
+| Waveforms ▸ Residual of Collision Rows | — | Toggle: rows that name a partner are drawn as the partner's spike — re-cut from the recording around the partner, the row's own unit subtracted — and written as `.spkr` at Save |
 | Clusters ▸ Mark Collisions… | — | Searches the selected clusters (in the child view: the selected children) for rows that hold a second cluster's spike and, after a confirmation, names the partner in the `.eap`: the rows are then shown with the partner subtracted. See [Mark Collisions](#mark-collisions--the-collisions-no-sorter-named) |
 | Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
 | Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artifact (0), after a confirmation |
@@ -1347,6 +1348,41 @@ its own; bind one in **Preferences → Input**.
   exactly the rows you looked at.
 
 Neither has a key of its own.
+
+**Looking at the collided spike: the residual.**
+
+A corrected row shows the row's own spike. **Waveforms → Residual of Collision Rows** (a toggle,
+no key) shows the other one: every row that names a fitted partner is drawn as the *partner's*
+spike, every other row as it is.
+
+- **What is drawn.** The window the recording (`.fil`, else `.dat`) holds centred on the partner
+  — the row's time plus the fitted lag — less the row's own unit there. The partner is whole,
+  also the part of it that lies outside the row's own record, and its peak is at the group's
+  peak sample: it lines up with the spikes of the partner's cluster. Select the collision-rows
+  child and the partner's cluster in **Overlay** to compare them.
+- **The own unit that is subtracted** is the median of the row's neighbours in its own cluster:
+  of the 400 clean spikes of the cluster nearest to it in time, the 50 nearest in waveform to
+  the row's own part (its corrected record) — fewer in a small cluster, at least 10. Their
+  windows are cut from the recording at the same displacement as the row's.
+- **Not detrended.** The recording is high-passed; a line fitted over a spike's window would
+  take part of the spike. The log gives the records' edge level beside that of the same rows'
+  `.spk` records, where a trend would show.
+- **Duplicates.** A partner's spike may be a row already. Each residual is one of: *recovered*
+  — no row holds the spike; *detected* — a row lies within 6 samples of it: the partner's own (the
+  two rows are one collision seen from both sides), else another cluster's (the spike is a row,
+  but not where the partner named says); *repeated* — another collision
+  row's residual is the same spike. The status line counts them. Nothing here adds a row; the
+  kinds are written so that a tool that does adds each spike once.
+- **Only the waveform view** reads a residual. The mean and median templates, the features and
+  every tool keep reading the row.
+- **Kept up to date.** A record is made again when its row's time, cluster, partner or fitted
+  lag has changed; while the display is on that happens with every rebuild of the corrected
+  rows. Save writes them as [`.spkr`](../ndmanager-plugins/formats/spkr.md), and they are read
+  back when the session opens. Sort Spikes by Time removes the file (its rows are renumbered);
+  the next Save rebuilds it.
+- **It needs** the preference *Subtract the partner from collision rows* (no partner is fitted
+  without it), and a recording to be whole: without one a record is made from the `.spk` — the
+  row's own window, the partner as far as it lies in it.
 
 Limits. A partner is found only where the partner's cluster has a template and spikes of its
 own nearby in time: a unit the sort missed, one with fewer than 200 rows, or one whose spikes of

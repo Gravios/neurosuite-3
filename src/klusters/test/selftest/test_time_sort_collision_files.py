@@ -10,6 +10,8 @@ fet, eap, and the .spkc's index), and the `timeSort` step is run on that session
     named as "not reordered" and the .spkc was not known at all);
   - afterwards every file is byte for byte the time-ordered one, the .eap and the .spkc included;
   - reopened by the sort, the same 40 rows are corrected and served as before the shuffle;
+  - the group's .spkr (residual waveforms) are removed: their index names the old rows and they
+    are rebuilt from the recording at the next Save; another group's is left;
   - NEGATIVE CONTROLS: an .eap of a stage with another spike count and a .spkc over another spike
     count are reported as skipped and left byte for byte; another group's .spkc is not touched
     and not listed;
@@ -147,6 +149,12 @@ def main():
         group2 = f"{base}.spkc.standard.2"
         write_spkc(group2, rows0, wav0, n, S.NSAMP, nch, group=2)
         alone = {p: open(p, "rb").read() for p in (other_eap, other_spkc, group2)}
+        # A .spkr (residual waveforms) names rows too, but is rebuilt from the recording at any
+        # Save: the sort removes this group's and leaves another group's alone.
+        spkr_mine, spkr_staged, spkr_group2 = f"{base}.spkr.standard.1", f"{base}.spkr.standard.1.st", f"{base}.spkr.standard.2"
+        for path in (spkr_mine, spkr_staged, spkr_group2):
+            with open(path, "wb") as fh:
+                fh.write(b"SPR\x01" + b"\x00" * 28)
 
         out = R.run(klusters, f"{base}.clu.standard.1", [{"timeSort": {}}, {"collisionRows": {"rows": [int(at[i]) for i in coll]}}], d)
         t, r1 = (out.get("results") or [{}, {}])[:2]
@@ -163,6 +171,8 @@ def main():
               "NEGATIVE CONTROL: the .eap and the .spkc over another spike count are reported as skipped", str(t.get("skipped")))
         check(all(open(p, "rb").read() == v for p, v in alone.items()) and os.path.basename(group2) not in files,
               "NEGATIVE CONTROL: ... and are byte for byte as they were; another group's .spkc is not touched")
+        check(not os.path.exists(spkr_mine) and not os.path.exists(spkr_staged) and os.path.exists(spkr_group2),
+              "the group's .spkr files are removed (their rows were renumbered; Save rebuilds them); another group's is left")
         check(r1.get("corrected") == 40 and all(x["served"] == served0[int(final[x["row"]])] for x in r1.get("records", []))
               and len(r1.get("records", [])) == 40,
               "reopened by the sort: the same 40 rows are corrected and served as before the shuffle",

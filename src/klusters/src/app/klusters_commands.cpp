@@ -490,6 +490,13 @@ QList<CommandSpec> KlustersApp::commandTable()
             .checkable();
     t << CommandSpec("waveforms.overlay", "Waveforms", tr("&Overlay"), ON(triggered, setOverLayPresentation))
             .shortcut(Qt::Key_O).checkable();
+    // The partner's spike of each collision row, in place of the row: for looking at the
+    // collision itself.  The waveform view only -- nothing else reads a residual.  Unbound.
+    t << CommandSpec("waveforms.residual", "Waveforms", tr("&Residual of Collision Rows"), ON(triggered, slotResidualWaveforms))
+            .toolTip(tr("Show each row that names a partner as the PARTNER's spike: the window the recording\n"
+                     "holds around the partner, less the row's own unit (the median of its neighbours in its\n"
+                     "cluster, in time and in waveform).  Other rows are shown as they are, so a child of\n"
+                     "collision rows overlaid on the partner's cluster lines up with it.  Written as .spkr at Save.")).checkable();
     t << CommandSpec("waveforms.meanStd", "Waveforms", tr("&Mean and Standard Deviation"), ON(triggered, slotMeanPresentation))
             .shortcut(Qt::Key_M).checkable();
     t << CommandSpec("waveforms.increaseAmplitude", "Waveforms", tr("&Increase Amplitude"), ON(triggered, slotIncreaseAmplitude))

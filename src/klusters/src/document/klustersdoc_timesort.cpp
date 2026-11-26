@@ -216,6 +216,21 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
             }
             continue;
         }
+        // Sparse residual waveforms (<base>.spkr.<method>.<group>[.<stage>]): the index names
+        // rows too, but the file is rebuilt from the recording at any Save, so it is not
+        // carried: it is removed once the sort is in.
+        const QString spkrPrefix = baseName + QStringLiteral(".spkr.");
+        if (name.startsWith(spkrPrefix)) {
+            const QStringList toks = name.mid(spkrPrefix.size()).split(QLatin1Char('.'));
+            int gi = -1;
+            for (int i = 0; i < toks.size() && gi < 0; ++i) {
+                bool isNumber = false;
+                toks[i].toInt(&isNumber);
+                if (isNumber) gi = i;
+            }
+            if (gi >= 0 && toks[gi] == electrodeGroupID) plan.removedAfter << dir.absoluteFilePath(name);
+            continue;
+        }
         neurosuite::custody::Anchor a;
         try {
             a = neurosuite::custody::parseAnchor(name.toStdString());
@@ -339,6 +354,9 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
     }
     for (const RowFile& f : plan.files)
         QFile::remove(f.path + QStringLiteral(".timesort.bak"));
+    // Derived files whose index named the old rows: gone, and rebuilt at the next Save.
+    for (const QString& path : plan.removedAfter)
+        if (QFile::remove(path)) log << tr("Removed %1: its rows were renumbered; it is rebuilt at the next Save.").arg(QFileInfo(path).fileName()) << "\n";
 
     log << tr("%1 spike(s) were out of time order; %2 file(s) rewritten in time order:")
                .arg(plan.nOutOfOrder).arg(plan.files.size()) << "\n";

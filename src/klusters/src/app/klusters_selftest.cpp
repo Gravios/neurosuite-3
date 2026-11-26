@@ -777,6 +777,68 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         return true;
     }
+    if (step.contains(QStringLiteral("residuals"))) {
+        // {"residuals": {"show": bool, "rows": [..], "table": cluster, "tableSpikes": n}}:
+        // Waveforms > Residual of Collision Rows.  "show" switches the display (omitted: only
+        // rebuild); "rows" returns those rows' residual records with their offset, class, kind
+        // and twin; "table" returns the waveform TABLE the view draws cluster `table` from, as
+        // the first tableSpikes spikes in sample mode (all of them when there are fewer).
+        const QJsonObject o = step.value(QStringLiteral("residuals")).toObject();
+        const KlustersDoc::ResidualReport R = o.contains(QStringLiteral("show"))
+            ? doc->showResiduals(o.value(QStringLiteral("show")).toBool()) : doc->rebuildResiduals();
+        result.insert(QStringLiteral("ok"), R.ok);
+        result.insert(QStringLiteral("reason"), R.reason);
+        result.insert(QStringLiteral("wanted"), static_cast<double>(R.wanted));
+        result.insert(QStringLiteral("computed"), static_cast<double>(R.computed));
+        result.insert(QStringLiteral("kept"), static_cast<double>(R.kept));
+        result.insert(QStringLiteral("dropped"), static_cast<double>(R.dropped));
+        result.insert(QStringLiteral("withoutNeighbours"), static_cast<double>(R.withoutNeighbours));
+        result.insert(QStringLiteral("outOfRecording"), static_cast<double>(R.outOfRecording));
+        result.insert(QStringLiteral("recovered"), static_cast<double>(R.recovered));
+        result.insert(QStringLiteral("detected"), static_cast<double>(R.detected));
+        result.insert(QStringLiteral("repeated"), static_cast<double>(R.repeated));
+        result.insert(QStringLiteral("fromRecording"), R.fromRecording);
+        result.insert(QStringLiteral("source"), R.source);
+        result.insert(QStringLiteral("edgeOfResiduals"), R.edgeOfResiduals);
+        result.insert(QStringLiteral("edgeOfRecords"), R.edgeOfRecords);
+        result.insert(QStringLiteral("count"), static_cast<double>(doc->residualCount()));
+        result.insert(QStringLiteral("shown"), doc->residualsShown());
+        QJsonArray records;
+        for (const QJsonValue& v : o.value(QStringLiteral("rows")).toArray()) {
+            std::vector<int16_t> rec;
+            int offset = 0, cls = -1, kind = 0; qint64 twin = -1;
+            QJsonObject j;
+            j.insert(QStringLiteral("row"), v.toInt());
+            const bool has = doc->residualRecord(v.toInt(), rec, &offset, &cls, &kind, &twin);
+            j.insert(QStringLiteral("has"), has);
+            if (has) {
+                QJsonArray values;
+                for (const int16_t x : rec) values.append(static_cast<int>(x));
+                j.insert(QStringLiteral("record"), values);
+                j.insert(QStringLiteral("offset"), offset);
+                j.insert(QStringLiteral("class"), cls);
+                j.insert(QStringLiteral("kind"), kind);
+                j.insert(QStringLiteral("twin"), static_cast<double>(twin));
+            }
+            records.append(j);
+        }
+        result.insert(QStringLiteral("records"), records);
+        if (o.contains(QStringLiteral("table"))) {
+            Data& data = doc->data();
+            const int cluster = o.value(QStringLiteral("table")).toInt();
+            const dataType n = static_cast<dataType>(o.value(QStringLiteral("tableSpikes")).toInt(100000));
+            data.loadSampleWaveformTable(cluster, n);
+            std::unique_ptr<Data::WaveformIterator> it(data.sampleWaveformIterator(static_cast<dataType>(cluster), n));
+            QJsonArray table;
+            if (it && it->areSpikesAvailable()) {
+                const qint64 values = static_cast<qint64>(it->nbOfSpikes()) * data.nbSamplesPerWaveform() * data.nbOfChannels();
+                for (qint64 i = 0; i < values; ++i) table.append(static_cast<int>(it->nextSpike()));
+                result.insert(QStringLiteral("tableSpikes"), static_cast<double>(it->nbOfSpikes()));
+            }
+            result.insert(QStringLiteral("tableValues"), table);
+        }
+        return R.ok;
+    }
     if (step.contains(QStringLiteral("collisionChild")) || step.contains(QStringLiteral("unmarkCollisions"))) {
         // {"collisionChild": {"clusters": [..], "children": bool}}: Clusters > Collision Rows to a Child.
         // {"unmarkCollisions": {"clusters": [..], "children": bool}}: Clusters > Remove Collision Marks,

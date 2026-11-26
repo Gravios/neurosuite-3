@@ -355,6 +355,31 @@ void Data::setSpkcOverlay(std::shared_ptr<const SpkOverlay> overlay, const QList
     for(const int id : clusters) invalidateWaveformCache(id);
 }
 
+void Data::setResidualRecords(std::shared_ptr<const SpkOverlay> overlay){
+    {
+        QMutexLocker lk(&mutex);
+        residualShown = (overlay && !overlay->records.isEmpty()) ? std::move(overlay) : nullptr;
+    }
+    // The tables hold records read under the previous setting: every cluster's is dropped.
+    for(const dataType id : clusterIds()) dropWaveformEntry(static_cast<int>(id));
+}
+
+std::shared_ptr<const SpkOverlay> Data::residualRecords() const{
+    QMutexLocker lk(&mutex);
+    return residualShown;
+}
+
+namespace {
+/**With the residual display on, a row that has a residual record is shown as it: @p dst (one
+ * record already read at @p offset) is overwritten.*/
+inline void serveResidual(const SpkOverlay* residual, void* dst, qint64 bytes, qint64 offset){
+    if(!residual) return;
+    const auto it = residual->records.constFind(offset);
+    if(it != residual->records.constEnd() && static_cast<qint64>((*it)->size()) == bytes)
+        memcpy(dst, (*it)->constData(), static_cast<size_t>(bytes));
+}
+}
+
 qint64 Data::spkcActiveRecordCount() const{
     QMutexLocker lk(&mutex);
     const std::shared_ptr<const SpkOverlay> o = spkcForSnapshot();
@@ -5784,6 +5809,9 @@ template <class T>
 void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpikesOfCluster,const Data::ClusteringSnapshot& snap,dataType nbSpkToDisplay){
     // Capacity of sampleSpikesTable in elements (set by setSize() before this call).
     const dataType bufCap = static_cast<dataType>(sampleSpikesTable.size());
+    // The residual display (Data::setResidualRecords): rows that have a residual show it.
+    const std::shared_ptr<const SpkOverlay> residual = data.residualRecords();
+    const qint64 recordBytes = static_cast<qint64>(nbPtsBySpike) * static_cast<qint64>(sizeof(T));
 
     //Show nbSpkToDisplay spikes or all the spikes if nbSpikesOfCluster < nbSpkToDisplay
     if(nbSpikesOfCluster < nbSpkToDisplay){
@@ -5806,6 +5834,8 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
                 qWarning("WaveformData::read: short read — spike data may be truncated");
                 break;
             }
+            serveResidual(residual.get(), &(sampleSpikesTable[position]), recordBytes,
+                          static_cast<qint64>(currentSpikePosition) * sizeof(T));
             position += nbPtsBySpike;
             ++nbSampleSpikes;
         }
@@ -5816,8 +5846,11 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
         dataType currentSpikePosition = (positionOfSpikes(1,1) - 1) * nbPtsBySpike ;
         if (snap.readSpk(&(sampleSpikesTable[0]),
                            static_cast<qint64>(nbPtsBySpike) * sizeof(T),
-                           static_cast<qint64>(currentSpikePosition) * sizeof(T)))
+                           static_cast<qint64>(currentSpikePosition) * sizeof(T))){
+            serveResidual(residual.get(), &(sampleSpikesTable[0]), recordBytes,
+                          static_cast<qint64>(currentSpikePosition) * sizeof(T));
             nbSampleSpikes = 1;
+        }
         else
             qWarning("WaveformData::read: short read — spike data may be truncated");
     }
@@ -5842,6 +5875,8 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
                 qWarning("WaveformData::read: short read — spike data may be truncated");
                 break;
             }
+            serveResidual(residual.get(), &(sampleSpikesTable[position]), recordBytes,
+                          static_cast<qint64>(currentSpikePosition) * sizeof(T));
             position += nbPtsBySpike;
             ++nbSampleSpikes;
             floatSpkIndice += factor;
@@ -5854,6 +5889,8 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
     dataType max = nbSpikesOfCluster +1;
     dataType position = 0;
     dataType startPositionInSpk;
+    const std::shared_ptr<const SpkOverlay> residual = data.residualRecords();
+    const qint64 recordBytes = static_cast<qint64>(nbPtsBySpike) * static_cast<qint64>(sizeof(T));
 
     for(; currentSpikeIndex < max; ++currentSpikeIndex){
         dataType currentPositionInFeatures = positionOfSpikes(1,currentSpikeIndex);
@@ -5869,6 +5906,8 @@ void Data::WaveformData<T>::read(SortableTable& positionOfSpikes,dataType nbSpik
             qWarning("WaveformData::read: short read — spike data may be truncated");
             break;
         }
+        serveResidual(residual.get(), &(timeFrameSpikesTable[position]), recordBytes,
+                      static_cast<qint64>(startPositionInSpk));
         position += nbPtsBySpike;
         ++nbTimeFrameSpikes;
     }

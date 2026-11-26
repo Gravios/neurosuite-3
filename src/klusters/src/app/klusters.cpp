@@ -629,6 +629,7 @@ void KlustersApp::createMenus()
     timeFrameMode = addCommand(nullptr, "waveforms.timeFrame");
 
     overlayPresentation = addCommand(nullptr, "waveforms.overlay");
+    mResidualWaveforms = addCommand(nullptr, "waveforms.residual");
 
     meanPresentation = addCommand(nullptr, "waveforms.meanStd");
 
@@ -789,7 +790,7 @@ void KlustersApp::createMenus()
     };
     fill(editMenu, { mUndo, mRedo, mUndoChildEdit, mRedoChildEdit, nullptr, mCancelJob, nullptr,
                      mSelectAllAction, mSelectAllExceptAction, nullptr, mPreferenceAction });
-    fill(waveFormsMenu, { timeFrameMode, overlayPresentation, meanPresentation, nullptr,
+    fill(waveFormsMenu, { timeFrameMode, overlayPresentation, meanPresentation, mResidualWaveforms, nullptr,
                           mIncreaseAmplitude, mDecreaseAmplitude });
     fill(correlationsMenu, { scaleByMax, scaleByShouler, noScale, nullptr, shoulderLine, nullptr,
                              mIncreaseAmplitudeCorrelation, mDecreaseAmplitudeCorrelation });

@@ -1706,6 +1706,20 @@ public:
     bool isSpkcShown() const { return spkcShown; }
     /**Corrected rows a read is served from now (0 when hidden or stale).*/
     qint64 spkcActiveRecordCount() const;
+    /**The RESIDUAL records of collision rows (KlustersDoc::rebuildResiduals: the partner's spike of
+    * each, .spkr) for the waveform view to show in place of those rows' records.  Read by the
+    * waveform TABLES only (WaveformData::read) -- never by the mean and median templates, the
+    * features or any tool: a residual is another unit's spike and must not be taken for the row's.
+    * Null turns the display off.  Drops every cluster's waveform table so the views reload.*/
+    void setResidualRecords(std::shared_ptr<const SpkOverlay> overlay);
+    /**Fills cluster @p clusterId's sample waveform table (up to @p nbSpkToDisplay spikes) on the
+    * calling thread, as the waveform view's worker does: for the self-tests, which then walk
+    * it with sampleWaveformIterator().  True when the table is ready.*/
+    bool loadSampleWaveformTable(int clusterId, dataType nbSpkToDisplay){
+        return getSampleWaveformPoints(currentSnapshot(), clusterId, nbSpkToDisplay) == READY;
+    }
+    /**The residual records now shown, or null.*/
+    std::shared_ptr<const SpkOverlay> residualRecords() const;
     /**True when corrected rows are held but were built against another
     * .spk than the one read now (a space switch, a re-opened file).*/
     bool spkcIsStale() const;
@@ -2020,6 +2034,7 @@ private:
 
     /**Boolean use to inform the MinMaxThread that an undo or a redo is in process and that it has to stop.*/
     std::atomic_bool undoRedoInProcess;
+    std::shared_ptr<const SpkOverlay> residualShown;   // guarded by mutex; see setResidualRecords
 
     /**Boolean use to inform the MinMaxThread that the cluster 0 has changed and that it has to stop.*/
     std::atomic_bool clusterZeroJustModified;

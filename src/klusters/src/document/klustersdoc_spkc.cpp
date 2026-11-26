@@ -437,6 +437,9 @@ void KlustersDoc::resetCollisionRows()
     collisionClassShift.clear();
     collisionFits.clear();
     pendingMarks.clear();
+    residuals.clear();
+    residualsOn = false;
+    residualsRead = false;
     collisionRowsBuiltOn.reset();
     lastCollisionReport = CollisionRowsReport();
 }
@@ -632,6 +635,8 @@ void KlustersDoc::refreshCollisionRows()
     }
     for (const int c : collisionRowClusters) if (!before.contains(c)) before.append(c);
     for (const int c : before) forceClusterRefresh(c);
+    // The residuals are of the partners just fitted: while they are shown, they follow.
+    if (residualsOn) { rebuildResiduals(); pushResiduals(); }
 }
 
 bool KlustersDoc::collisionRowsOutdated() const

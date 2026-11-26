@@ -1066,6 +1066,16 @@ void KlustersDoc::finishSave(bool ok){
                 QString why;
                 if (!writeSpkc(path, &why)) qWarning().noquote() << "[collision rows]" << why;
             }
+            // The partners' spikes of the same rows (formats/spkr.md), brought up to the saved
+            // times first.  Like the .spkc: with the preference off the file is left alone.
+            const QString residualPath = spkrPathFor(activeFeatureMethod());
+            if (configuration().getCorrectCollisionRows() && !residualPath.isEmpty()
+                && (collisionRowsActive() > 0 || QFileInfo::exists(residualPath))) {
+                QString why;
+                rebuildResiduals();
+                if (!writeSpkr(residualPath, &why)) qWarning().noquote() << "[residuals]" << why;
+                else if (residualsOn) pushResiduals();
+            }
         });
         unitsInfoModified = false;
         removeRescueFiles();               // the real files now hold what they protected

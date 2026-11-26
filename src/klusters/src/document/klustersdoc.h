@@ -2092,6 +2092,45 @@ public:
     /** <base>.spkc.<method>.<group>[.<stage>] of the open stage. */
     QString spkcPathFor(const QString& method) const;
 
+    // ── the partner's spike of a collision row (klustersdoc_residuals.cpp, formats/spkr.md) ──
+    /** What rebuildResiduals() did. */
+    struct ResidualReport {
+        bool    ok = false;
+        QString reason;                 ///< why nothing was built
+        qint64  wanted = 0;             ///< rows with a fitted partner
+        qint64  computed = 0;           ///< records made now
+        qint64  kept = 0;               ///< records still valid (same time, cluster, partner and offset)
+        qint64  dropped = 0;            ///< records of rows that no longer have a fitted partner
+        qint64  withoutNeighbours = 0;  ///< rows left out: their cluster has too few clean spikes
+        qint64  outOfRecording = 0;     ///< windows that fall outside the recording (zeros)
+        qint64  recovered = 0;          ///< residual spikes no row holds
+        qint64  detected = 0;           ///< ... that the partner's cluster already has as a row of its own
+        qint64  repeated = 0;           ///< ... that an earlier collision row's residual already holds
+        bool    fromRecording = false;  ///< cut from the .fil, centred on the partner; else from the .spk, offset 0
+        QString source;                 ///< the file the windows were cut from
+        double  edgeOfResiduals = 0.0;  ///< median |mean of a record's first and last 4 samples|, the records made now
+        double  edgeOfRecords = 0.0;    ///< ... and the same rows' .spk records: a trend would show as a larger edge
+        qint64  milliseconds = 0;
+    };
+    /** Brings the residual records up to date: one per row with a fitted partner, the window
+     *  the recording holds centred on the partner less the median of the row's neighbours in
+     *  its own cluster -- near in time and, of those, nearest in waveform -- cut at the same
+     *  displacement.  Rows whose time, cluster, partner and offset are as when their record
+     *  was made keep it.  Read from the stage's .spkr the first time. */
+    ResidualReport rebuildResiduals();
+    /** Shows the residual records in the waveform view in place of their rows' (rebuilding
+     *  them first), or the rows as they are. */
+    ResidualReport showResiduals(bool on);
+    bool residualsShown() const { return residualsOn; }
+    qint64 residualCount() const { return residuals.size(); }
+    /** The residual record of @p row (0-based): false when it has none. */
+    bool residualRecord(qint64 row, std::vector<int16_t>& record, int* offset = nullptr, int* classId = nullptr,
+                        int* kind = nullptr, qint64* twin = nullptr) const;
+    /** <base>.spkr.<method>.<group>[.<stage>] of the open stage. */
+    QString spkrPathFor(const QString& method) const;
+    /** Writes the residual records as they are to @p path (formats/spkr.md). */
+    bool writeSpkr(const QString& path, QString* error = nullptr) const;
+
     // ── collisions no sorter named (klustersdoc_collisionscan.cpp) ──
     /** One collision the scan found: row @p row (0-based) of cluster @p cluster holds a spike of
      *  cluster @p partner as well, @p tau samples after the row's own. */
@@ -2348,6 +2387,7 @@ public:
         QStringList  skipped;           ///< group files without this spike count (left as is)
         QStringList  notReordered;      ///< row-indexed files this cannot permute (.col)
         QStringList  otherGroupFiles;   ///< other files naming this group, left as is
+        QStringList  removedAfter;      ///< derived files whose rows the sort renames: deleted, rebuilt at the next Save (.spkr)
     };
     /** Read the saved .res and list every row-indexed file of this group: each
      *  method's .res/.spk/.fet and every .clu/.clc (stage-tagged copies too), the
@@ -3341,6 +3381,18 @@ private:
         void clear() { cells.clear(); classes.clear(); rows.clear(); }
     };
     PendingMarks pendingMarks;
+    // The residual records (rebuildResiduals): per row, the record and what it was made for.
+    struct Residual {
+        qint64 time = 0; int cluster = 0; int madeFor = 0; int classId = -1;  // what the record was made for (madeFor: the fitted offset)
+        int offset = 0;                                                       // where it is centred: madeFor, or 0 when cut from the .spk
+        int kind = 0; qint64 twin = -1;                                       // neurofileio::SpkrKind, the row already holding the spike
+        std::shared_ptr<const QByteArray> bytes;
+    };
+    QHash<qint64, Residual> residuals;
+    bool residualsOn = false;        // shown in the waveform view
+    bool residualsRead = false;      // the stage's .spkr was looked for
+    /** Hands the residual records (or nothing) to both Data layers and refreshes the views. */
+    void pushResiduals();
     /** The stage's membership as it is now: the .eap read from @p path with the pending marks
      *  applied; a table of @p nSpikes rows naming nobody when there is no file but there are marks. */
     neurofileio::EapFile currentEap(const QString& path, qint64 nSpikes) const;

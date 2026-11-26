@@ -361,6 +361,7 @@ bool KlustersDoc::loadChildClustering(QString& errorInformation){
     }
     // Curation log: the session IS hierarchical from here (SESSION_OPEN was written
     // before the child layer existed).
+    if (residualsOn) pushResiduals();                  // the new layer reads the same records
     noteLogContext({ { QStringLiteral("hierarchical"), true },
                      { QStringLiteral("n_parents"),  static_cast<int>(clusteringData->clusterIds().size()) },
                      { QStringLiteral("n_children"), static_cast<int>(childData->clusterIds().size()) },

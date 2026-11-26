@@ -228,3 +228,27 @@ void KlustersApp::slotRemoveCollisionMarks()
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Removed the partners of %1 row(s).  Written at Save.").arg(changed));
 }
+
+void KlustersApp::slotResidualWaveforms()
+{
+    if (!doc || doc->url().isEmpty()) { if (mResidualWaveforms) mResidualWaveforms->setChecked(false); return; }
+    const bool on = mResidualWaveforms && mResidualWaveforms->isChecked();
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::ResidualReport R = doc->showResiduals(on);
+    QApplication::restoreOverrideCursor();
+    if (!on) { slotStatusMsg(tr("Residual display off: every row is shown as it is.")); return; }
+    if (!R.ok || doc->residualCount() == 0) {
+        mResidualWaveforms->setChecked(false);
+        doc->showResiduals(false);
+        slotStatusMsg(tr("Residual display: %1").arg(!R.reason.isEmpty() ? R.reason
+                         : tr("no row has a fitted partner (Clusters > Mark Collisions finds them).")));
+        return;
+    }
+    slotStatusMsg(tr("Residual display on: %1 collision rows shown as their partner's spike (%2).  %3 are spikes no row "
+                     "holds, %4 the partner's cluster already has, %5 repeat another row's.%6")
+                      .arg(doc->residualCount())
+                      .arg(R.fromRecording ? tr("cut from %1, centred on the partner").arg(R.source)
+                                           : tr("from %1, the row's own window: no recording to cut").arg(R.source))
+                      .arg(R.recovered).arg(R.detected).arg(R.repeated)
+                      .arg(R.withoutNeighbours > 0 ? tr("  %1 rows have too few clean neighbours.").arg(R.withoutNeighbours) : QString()));
+}
