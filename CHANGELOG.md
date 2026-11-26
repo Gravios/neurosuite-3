@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [A recluster leaves no KlustaKwik model file](#2026-11-26--a-recluster-leaves-no-klustakwik-model-file) |
 | 2026-11-26 | [A local PCA of the selected clusters on Shift+Y](#2026-11-26--a-local-pca-of-the-selected-clusters-on-shifty) |
 | 2026-11-26 | [Docs: the in-app handbook is the generator's output again](#2026-11-26--docs-the-in-app-handbook-is-the-generators-output-again) |
 | 2026-11-26 | [Self-test: Quit's key is the platform's](#2026-11-26--self-test-quits-key-is-the-platforms) |
@@ -306,6 +307,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — A recluster leaves no KlustaKwik model file
+
+Klusters turns the model file off for a KlustaKwik recluster and removes one left under the temporary name.
+
+<details>
+<summary>Details</summary>
+
+- KlustaKwik writes `<base>.model.<group>` (the fitted Gaussians, as text) with `-fSaveModel 1`;
+  the classic KlustaKwik does so by default. A recluster runs under a temporary base name, so the
+  file was left in the session folder under a name nothing refers to.
+- A KlustaKwik recluster now carries `-fSaveModel 0` unless the Arguments (Preferences >
+  Reclustering) name the flag, and a model file under the temporary name is removed with the other
+  temporary files, also when the Arguments asked for one.
+- `KlustersApp::reclusterModelArguments`; `test_recluster_klustakwik.py` checks the flag and that no
+  `.model.` file is left, by default and with `-fSaveModel 1` in the Arguments.
+- Not changed: `ndm_klustakwik`, whose `fSaveModel` parameter still defaults to 1 for a pipeline run.
+
+</details>
 
 ---
 

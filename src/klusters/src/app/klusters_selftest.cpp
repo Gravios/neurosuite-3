@@ -574,6 +574,9 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
                                                         o.value(QStringLiteral("minutes")).toDouble(7.0)))
             out.append(a);
         result.insert(QStringLiteral("chunkArgs"), out);
+        QJsonArray model;                                   // and the model-file flag for the same command line
+        for (const QString& a : reclusterModelArguments(o.value(QStringLiteral("exe")).toString(), args)) model.append(a);
+        result.insert(QStringLiteral("modelArgs"), model);
         return true;
     }
     if (step.contains(QStringLiteral("reclusterLog"))) {

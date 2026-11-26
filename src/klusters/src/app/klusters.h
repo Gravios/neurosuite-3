@@ -781,6 +781,8 @@ public:
      *  @p chunking is a Configuration::ReclusterChunking. */
     static QStringList reclusterChunkArguments(const QString& executable, const QStringList& args,
                                                int chunking, double minutes);
+    /** "-fSaveModel 0" for a KlustaKwik recluster whose @p args do not name the flag (empty: none). */
+    static QStringList reclusterModelArguments(const QString& executable, const QStringList& args);
 
     /** Recluster the selected cluster(s) forcing the raw-waveform
      *  median-residual feature path (pooled median) for this run only (Shift+M). */

@@ -1786,6 +1786,9 @@ installed, its fallback command. The program is
 `KiloKlustaKwik_cpu` (KiloKlustaKwik's CPU build, installed by every build;
 set `KiloKlustaKwik` for a GPU build) by default, with the arguments
 `%fileBaseName %electrodeGroupID -MinClusters 2 -MaxClusters 12 -UseFeatures %features`.
+Klusters adds `-fSaveModel 0` to a KlustaKwik recluster unless the Arguments name the flag,
+and removes a model file left under the temporary name: a recluster leaves no
+`*.model.*` file behind.
 Settings saved by earlier versions name `KlustaKwik`, which neurosuite-3 does
 not install; when no `KlustaKwik` is on the PATH, Klusters uses
 `KiloKlustaKwik_cpu` instead.

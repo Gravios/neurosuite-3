@@ -189,6 +189,10 @@ static void patch81_cleanupTempYaml(const QString& reclusteringFetFileName)
     const QString ymlPath  = base + QLatin1String(".yml");
     if (QFile::exists(yamlPath)) QFile::remove(yamlPath);
     if (QFile::exists(ymlPath))  QFile::remove(ymlPath);
+    // KlustaKwik's model file under the temporary name (<base>.model.<group>, written with
+    // -fSaveModel 1): nothing reads it and the name it carries is gone with the run.
+    QFile::remove(base + QLatin1String(".model.")
+                  + reclusteringFetFileName.mid(reclusteringFetFileName.lastIndexOf(QLatin1Char('.')) + 1));
 }
 
 int KlustersDoc::integrateReclusteredClusters(QList<int>& clustersToRecluster,QList<int>& reclusteredClusterList,QString reclusteringFetFileName){

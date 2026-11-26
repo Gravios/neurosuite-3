@@ -56,6 +56,11 @@ def sorter():
     return ""
 
 
+def ends(cmd, flag):
+    """The command line ends in `flag`, before the -fSaveModel 0 every KlustaKwik recluster adds."""
+    return cmd.endswith(flag + " -fSaveModel 0")
+
+
 def n_chunks(log):
     """The number of chunks the sorter cut the session into, from its "[Stage 1] Chunking (.., N
     chunks, ..)" line; 0 when the line is not there.  Not `"1 chunks" in log`: other lines hold a
@@ -107,13 +112,13 @@ def main():
     cmd, log, _ = recluster(klusters, kkk, args=F, chunking=0)
     check("-ChunkMinutes" not in cmd and "mode: chunked" in log, "as the sorter decides: no flag, chunked")
     cmd, log, sz = recluster(klusters, kkk, args=F, chunking=1)
-    check(cmd.endswith("-ChunkMinutes 1000000") and n_chunks(log) == 1 and sz[:2] == [381, 381], "one chunk: -ChunkMinutes 1000000, 1 chunk, the two units", cmd[-60:])
+    check(ends(cmd, "-ChunkMinutes 1000000") and n_chunks(log) == 1 and sz[:2] == [381, 381], "one chunk: -ChunkMinutes 1000000, 1 chunk, the two units", cmd[-60:])
     cmd, log, _ = recluster(klusters, kkk, args=F, chunking=2, chunkMinutes=0.1)
-    check(cmd.endswith("-ChunkMinutes 0.1") and "mode: chunked" in log and n_chunks(log) >= 2, "chunks of 0.1 min: the flag, and several chunks over 20 s", cmd[-60:])
+    check(ends(cmd, "-ChunkMinutes 0.1") and "mode: chunked" in log and n_chunks(log) >= 2, "chunks of 0.1 min: the flag, and several chunks over 20 s", cmd[-60:])
     cmd, log, _ = recluster(klusters, kkk, args=F, chunking=3)
-    check(cmd.endswith("-ChunkMinutes 0") and "two-phase" in log, "off: -ChunkMinutes 0, the two-phase pass", cmd[-60:])
+    check(ends(cmd, "-ChunkMinutes 0") and "two-phase" in log, "off: -ChunkMinutes 0, the two-phase pass", cmd[-60:])
     cmd, log, _ = recluster(klusters, kkk, args=F + " -ChunkMinutes 0.2", chunking=3)
-    check(cmd.count("-ChunkMinutes") == 1 and cmd.endswith("-ChunkMinutes 0.2") and "two-phase" not in log, "a -ChunkMinutes in the Arguments wins over the preference", cmd[-60:])
+    check(cmd.count("-ChunkMinutes") == 1 and ends(cmd, "-ChunkMinutes 0.2") and "two-phase" not in log, "a -ChunkMinutes in the Arguments wins over the preference", cmd[-60:])
 
     # ── the flag itself, without running anything ───────────────────────────
     with tempfile.TemporaryDirectory() as d:
@@ -125,6 +130,30 @@ def main():
         got = [r["chunkArgs"] for r in rep.get("results", []) if "chunkArgs" in r]
         check(got == [[], [], ["-ChunkMinutes", "12.5"], ["-ChunkMinutes", "0"], []],
               "flag only for KiloKlustaKwik*: none for the classic program, none over -ChunkFile, N as typed, 0 for off", str(got))
+
+        # the model file: off for any KlustaKwik unless the Arguments name the flag; nothing for another program
+        rep = R.run(klusters, f"{base}.clu.standard.1", [
+            q("/usr/bin/KlustaKwik", ["a", "1"], 0), q("KiloKlustaKwik_cpu", ["a", "1"], 0),
+            q("KiloKlustaKwik_cpu", ["a", "1", "-fSaveModel", "1"], 0), q("/usr/bin/other-sorter", ["a"], 0)], d)
+        got = [r["modelArgs"] for r in rep.get("results", []) if "modelArgs" in r]
+        check(got == [["-fSaveModel", "0"], ["-fSaveModel", "0"], [], []],
+              "-fSaveModel 0 for a KlustaKwik recluster, unless the Arguments name the flag", str(got))
+
+    # ── and on a real run: the command says so, and no model file is left even when one is asked for ──
+    for extra, what in (("", "by default"), (" -fSaveModel 1", "with -fSaveModel 1 in the Arguments")):
+        with tempfile.TemporaryDirectory() as d:
+            base, m = S.make_session(d, "kk", n_per_unit=400)
+            with open(f"{base}.clu.standard.1", "wb") as fh:
+                np.array([3], np.int32).tofile(fh)
+                np.full_like(m["clu"], 2).astype(np.int32).tofile(fh)
+            rep = R.run(klusters, f"{base}.clu.standard.1",
+                        [{"select": [2]}, {"recluster": "", "opts": dict(exe=kkk, autoSelect=False, args=F + extra)},
+                         {"reclusterLog": True}], d, timeout=600)
+            lines = next((r["lines"] for r in rep.get("results", []) if "lines" in r), [""])
+            left = [f for f in os.listdir(d) if ".model." in f]
+            want = "-fSaveModel 1" if extra else "-fSaveModel 0"
+            check(lines[0].count("-fSaveModel") == 1 and want in lines[0] and not left,
+                  f"{what}: the command carries {want} and no .model file is left", f"{lines[0][-90:]} {left}")
 
     print(f"test_recluster_klustakwik: {'PASS' if not fails else 'FAIL'} ({fails} failed)")
     return 1 if fails else 0

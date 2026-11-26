@@ -117,6 +117,19 @@
 
 extern int nbUndo;
 
+// KlustaKwik's model file (<base>.model.<group>: the fitted Gaussians as text, with
+// -fSaveModel 1) is of no use to a recluster: it is written under the temporary base name
+// and nothing reads it.  The classic KlustaKwik writes it by default.  A recluster says
+// -fSaveModel 0 unless the argument template names the flag itself.
+QStringList KlustersApp::reclusterModelArguments(const QString& executable, const QStringList& args)
+{
+    if (!QFileInfo(executable).completeBaseName().contains(QLatin1String("KlustaKwik"), Qt::CaseInsensitive))
+        return {};
+    for (const QString& a : args)
+        if (a.compare(QLatin1String("-fSaveModel"), Qt::CaseInsensitive) == 0) return {};
+    return {QStringLiteral("-fSaveModel"), QStringLiteral("0")};
+}
+
 void KlustersApp::slotReclusterMedianResidual(){
     // Mirror recluster availability (no document / job in flight); the guard
     // also protects slotRecluster's activeView() access when invoked by key.
@@ -731,9 +744,11 @@ void KlustersApp::slotRecluster(){
             arg.replace(QLatin1String("%electrodeGroupID"), electrodeGroupID);
         }
         // KlustaKwik: the time chunking chosen in Preferences > Reclustering.
-        if (!fiberKit)
+        if (!fiberKit) {
             argList += reclusterChunkArguments(reclusteringExecutable, argList, configuration().getReclusterChunking(),
                                                configuration().getReclusterChunkMinutes());
+            argList += reclusterModelArguments(reclusteringExecutable, argList);   // no <base>.model.<group>
+        }
     }
 
     // The temporary feature file goes where the reclustering program reads it.
@@ -1063,6 +1078,9 @@ void KlustersApp::removeReclusterTempFiles(){
     const QString base = reclusteringFetFileName.left(dotFet);
     QFile::remove(base + QLatin1String(".yaml"));
     QFile::remove(base + QLatin1String(".yml"));
+    // A model file under the temporary name (a template that asks for one, or a sorter that
+    // writes it regardless): the name it was written under is gone with the run.
+    QFile::remove(base + QLatin1String(".model.") + reclusteringFetFileName.mid(reclusteringFetFileName.lastIndexOf(QLatin1Char('.')) + 1));
 }
 
 void KlustersApp::showHeldReclusterOutput(){
