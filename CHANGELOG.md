@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Formats: the .eap and .tcl pages say what the two implementations do](#2026-11-26--formats-the-eap-and-tcl-pages-say-what-the-two-implementations-do) |
 | 2026-11-26 | [Klusters: the .tcl Mark Collisions writes is as wide as the .eap](#2026-11-26--klusters-the-tcl-mark-collisions-writes-is-as-wide-as-the-eap) |
 | 2026-11-26 | [Klusters: Mark Collisions gives a moved row its own cluster's class](#2026-11-26--klusters-mark-collisions-gives-a-moved-row-its-own-clusters-class) |
 | 2026-11-26 | [The .eap, .tcl and .spkc are written whole or not at all](#2026-11-26--the-eap-tcl-and-spkc-are-written-whole-or-not-at-all) |
@@ -312,6 +313,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Formats: the .eap and .tcl pages say what the two implementations do
+
+tcl.md described a lenient reader the code no longer has; eap.md listed one of fiber-kit's writers. Both corrected, with the limits the contract check found.
+
+<details>
+<summary>Details</summary>
+
+- `tcl.md` described a lenient reader (rows with too few fields skipped, an unknown status read as
+  `free`). `readTcl` has failed the whole file on either since the registry was indexed by column;
+  the page says so, and says that fiber-kit's reader is the lenient one.
+- `eap.md` named `fiber-decollide` as fiber-kit's only writer and said every access goes through
+  `neurofileio`. It lists the writers and readers of both sides, says the two implementations are
+  held together by the shared golden files, and says which tools read the base table when the
+  stage has none.
+- New in `eap.md`: one `.res` per group against one `.eap` per stage (a realign saved from one
+  stage leaves the other stages' offsets behind), and what a class is across stages (a column is
+  found by `provenance_clu` alone, so it is one unit within a stage's table and not across them).
+
+No code. From `claude/eap-contract-fk-ns3-2026-11-26.md`, items 3, 5, 6, 7 and 10.
+
+</details>
 
 ---
 
