@@ -3328,9 +3328,9 @@ private:
     QString stageOwnEapPath() const;
     /** <base>.tcl.<group>, the session's class registry. */
     QString groupTclPath() const;
-    /** Writes the classes the pending marks made to the .tcl; false (with @p error) when a
-     *  column they took is no longer free there. */
-    bool writePendingClasses(QString* error);
+    /** Writes the classes the pending marks made to the .tcl, widened to the @p eapColumns of
+     *  the table it goes with; false (with @p error) when a column they took is no longer free. */
+    bool writePendingClasses(int eapColumns, QString* error);
     QList<int>           pendingParentSelection;     // parent parents to select after the post-edit realign+renumber (first = primary)
     QList<int>           pendingChildSelection;     // children to select after the child palette rebuild
     QVector<dataType>    reclusterSubsessionRows;   // the last sub-session's feature rows, in its spike order

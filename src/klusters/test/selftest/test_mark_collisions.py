@@ -29,6 +29,7 @@ at 30 spikes of unit 3; the .spk is cut again.  Through the `markCollisions` ste
     cluster 3's class and ten a second class of cluster 3.  Marked, each has that class taken out
     (or, when it is the partner's, turned into the partner's offset) and names cluster 2's; rows
     that are not marked keep what they name; no class is made;
+  - an .eap wider than the default with no .tcl beside it: the .tcl written at Save is as wide;
   - with the preference off the rows are marked and written at Save all the same, and served raw;
   - in the child view the scan takes the rows of the selected CHILD and searches them as rows of
     their parent cluster.
@@ -327,6 +328,28 @@ def main():
             check(sum(near) >= len(mk) - 2, "saved: the partner where it was found, also where the row named it before")
             rest = np.setdiff1d(np.arange(len(clu)), mk)
             check(np.array_equal(saved[rest], cells[rest]), "saved: rows that were not marked keep what they named")
+
+    # ── an .eap wider than the default and no .tcl: the registry written is as wide as the table ──
+    with tempfile.TemporaryDirectory() as d:
+        base, clu, plan, before, raw = build(d, "wide")
+        cells = np.full((len(clu), 256), ABSENT, np.int8)
+        cells[clu == 2, 0] = 0                                    # cluster 3 names no class
+        with open(f"{base}.eap.1", "wb") as fh:
+            fh.write(b"EAP\x01" + struct.pack("<IIII", len(clu), 256, 1, 0) + b"\x00" * 12)
+            cells.tofile(fh)
+        ok, st = run(klusters, base, [{"markCollisions": {"clusters": [2], "apply": True}}, {"save": True}, {"collisionRows": {}}], d)
+        check(ok, "wide table: every step ran")
+        if ok:
+            _, saved = read_eap(f"{base}.eap.1")
+            tcl_lines = [ln for ln in open(f"{base}.tcl.1") if ln.startswith("nClasses")]
+            width = int(tcl_lines[0].split()[1]) if tcl_lines else -1
+            tcl = read_tcl(f"{base}.tcl.1")
+            print(f"      a 256-column .eap and no .tcl: the saved .eap has {saved.shape[1]} columns, the .tcl {width}")
+            check(st[0].get("classesCreated") == 1 and saved.shape[1] == 256, "a class is made for cluster 3; the .eap keeps its width",
+                  str(st[0].get("classesCreated")))
+            check(width == 256 and len(tcl) == 256, "the .tcl written is as wide as the .eap", f"{width} vs {saved.shape[1]}")
+            check(st[2].get("corrected") == st[0].get("marked") and st[0].get("marked") >= 34,
+                  "the marked rows are corrected from the saved files", str({k: st[2].get(k) for k in ("collisionRows", "corrected")}))
 
     # ── the preference off ──
     with tempfile.TemporaryDirectory() as d:

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: the .tcl Mark Collisions writes is as wide as the .eap](#2026-11-26--klusters-the-tcl-mark-collisions-writes-is-as-wide-as-the-eap) |
 | 2026-11-26 | [Klusters: Mark Collisions gives a moved row its own cluster's class](#2026-11-26--klusters-mark-collisions-gives-a-moved-row-its-own-clusters-class) |
 | 2026-11-26 | [The .eap, .tcl and .spkc are written whole or not at all](#2026-11-26--the-eap-tcl-and-spkc-are-written-whole-or-not-at-all) |
 | 2026-11-26 | [Klusters: Mark Collisions](#2026-11-26--klusters-mark-collisions) |
@@ -311,6 +312,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: the .tcl Mark Collisions writes is as wide as the .eap
+
+With no .tcl beside a wide .eap, Save wrote a 128-slot registry. It now has the table's width.
+
+<details>
+<summary>Details</summary>
+
+When Mark Collisions made a class and the session had no `.tcl`, Save wrote a registry of 128
+slots (or up to the new class), whatever the width of the `.eap`. `formats/tcl.md`: a writer that
+finds no `.tcl` next to an `.eap` starts from all-free slots of the `.eap`'s width. Every reader
+reconciles the two widths, so nothing misread the files; the registry was simply narrower than
+the table it describes.
+
+`writePendingClasses` takes the `.eap`'s width and writes at least that many slots.
+`test_mark_collisions`: a 256-column `.eap` with no `.tcl` -> the `.tcl` written has 256 slots
+(128 before).
+
+The contract note (`claude/eap-contract-fk-ns3-2026-11-26.md`, item 9) described this as the two
+growing by different steps. That was wrong: the table saved grows only to the columns in use, and
+so did the registry. The case that differed is the one above.
+
+</details>
 
 ---
 

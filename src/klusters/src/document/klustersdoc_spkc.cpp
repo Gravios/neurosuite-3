@@ -159,7 +159,7 @@ std::vector<int> KlustersDoc::collisionClassHomes(const neurofileio::EapFile& ea
     return home;
 }
 
-bool KlustersDoc::writePendingClasses(QString* error)
+bool KlustersDoc::writePendingClasses(int eapColumns, QString* error)
 {
     namespace nf = neurofileio;
     if (pendingMarks.classes.empty()) return true;
@@ -168,7 +168,9 @@ bool KlustersDoc::writePendingClasses(QString* error)
     if (path.isEmpty()) return fail(QStringLiteral("the session's name does not parse"));
     nf::TclRegistry reg = nf::readTcl(path.toStdString());
     if (!reg.ok && QFileInfo::exists(path)) return fail(QStringLiteral("%1 is not a valid .tcl registry").arg(path));
-    int columns = 128;
+    // As wide as the .eap it goes with (formats/eap.md: the two are widened together), and
+    // never narrower than it was.
+    int columns = std::max(128, eapColumns);
     for (const PendingClass& c : pendingMarks.classes) columns = std::max(columns, c.col + 1);
     if (!reg.ok) reg = nf::initTcl(columns);
     while (static_cast<int>(reg.entries.size()) < columns) {
@@ -588,7 +590,7 @@ bool KlustersDoc::writeCollisionOffsets(int* changed, QString* error, bool marks
     // that stay pending.
     if (marks) {
         QString why;
-        if (!writePendingClasses(&why)) return fail(why);
+        if (!writePendingClasses(eap.nClasses, &why)) return fail(why);
     }
     if (!nf::writeEap(target, eap.nSpikes, eap.nClasses, eap.group, eap.flags, eap.cells))
         return fail(QStringLiteral("could not write %1").arg(QString::fromStdString(target)));
