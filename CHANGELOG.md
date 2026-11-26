@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Formats: .spkr, the residual spike of a collision row](#2026-11-26--formats-spkr-the-residual-spike-of-a-collision-row) |
 | 2026-11-26 | [Klusters: Mark Collisions shows what chance would give for each partner](#2026-11-26--klusters-mark-collisions-shows-what-chance-would-give-for-each-partner) |
 | 2026-11-26 | [Klusters: collision rows as a child, and marks taken back](#2026-11-26--klusters-collision-rows-as-a-child-and-marks-taken-back) |
 | 2026-11-26 | [Klusters: Mark Collisions tries a cluster only where it is firing](#2026-11-26--klusters-mark-collisions-tries-a-cluster-only-where-it-is-firing) |
@@ -316,6 +317,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Formats: .spkr, the residual spike of a collision row
+
+A new sparse file beside the .spkc: where the .spkc holds a collision row less its partner, the .spkr holds the partner's spike, re-cut from the recording around the partner with the own unit subtracted.
+
+<details>
+<summary>Details</summary>
+
+`neurofileio::SpkrFile`, `readSpkr`, `writeSpkr`, `spkrFind`; `formats/spkr.md`.
+
+The `.spkc` holds a collision row with the partner taken out (the own spike). The `.spkr` holds the
+partner's spike: a window re-cut from the recording centred on the partner, less the own unit's
+waveform as it lies there. The layout is the `.spkc`'s with its own magic (`SPR\x01`) and two
+tables of one int32 a row: the offset from the row's `.res` time to the record's centre, and the
+`.eap` class it is centred on. Written through the temporary-file-and-rename path.
+
+**Duplicates.** The partner's spike may be a row already, so each record carries a kind and a
+twin row: *recovered* (no row holds the spike), *detected* (the partner's unit has it as its own
+row) or *repeated* (an earlier record of the file is the same spike). A tool that turns residual
+spikes into rows takes the recovered ones only.
+
+`core_test_neurofileio_robust`: round trip; a `.spkc` is not read as a `.spkr` nor the reverse;
+tables of the wrong length, an unsorted index, a row beyond the `.spk`, a twin that does not fit
+its kind, an unknown kind and a header naming more rows than the file holds are refused.
+
+Nothing writes the file yet: the next patch has Klusters build and show the records. fiber-kit
+does not know the format; no golden file is shared for it.
+
+</details>
 
 ---
 

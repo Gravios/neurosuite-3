@@ -440,6 +440,66 @@ static void testReplacingWrites()
     fs::remove_all(dir, ec);
 }
 
+// ── .spkr: the residual spikes of collision rows ──
+static void testSpkr()
+{
+    using namespace neurofileio;
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const fs::path dir = fs::temp_directory_path() / ("nfio_spkr_" + std::to_string(std::rand()));
+    fs::create_directories(dir, ec);
+    const std::string path = (dir / "s.spkr.standard.1").string();
+
+    SpkrFile f;
+    f.nSpikes = 10; f.nSamples = 3; f.nChannels = 2; f.group = 1;
+    f.rows = {2, 7}; f.offsets = {-9, 14}; f.classes = {4, -1};
+    f.kinds = {static_cast<int32_t>(SpkrKind::Detected), static_cast<int32_t>(SpkrKind::Recovered)};
+    f.twins = {5, -1};
+    f.waveforms = {1, 2, 3, 4, 5, 6,  -1, -2, -3, -4, -5, -6};
+    check(writeSpkr(path, f), "spkr: written");
+    const SpkrFile g = readSpkr(path);
+    check(g.ok && g.nSpikes == 10 && g.nSamples == 3 && g.nChannels == 2 && g.group == 1, "spkr: the header reads back");
+    check(g.rows == f.rows && g.offsets == f.offsets && g.classes == f.classes && g.waveforms == f.waveforms,
+          "spkr: rows, offsets, classes and records read back");
+    check(g.kinds == f.kinds && g.twins == f.twins, "spkr: kinds and twins read back");
+    check(spkrFind(g, 7) == 1 && spkrFind(g, 3) == -1, "spkr: a row is found by its index, another is not");
+    check(fs::file_size(fs::path(path)) == 32u + 2u * (8u + 4u + 4u + 4u + 8u + 3u * 2u * 2u), "spkr: 32-byte header, then 40 bytes a row here");
+    check(!readSpkc(path).ok, "spkr: not read as a .spkc (the magics differ)");
+
+    SpkcFile c;
+    c.nSpikes = 10; c.nSamples = 3; c.nChannels = 2; c.group = 1; c.rows = {2}; c.waveforms = {1, 2, 3, 4, 5, 6};
+    const std::string cPath = (dir / "s.spkc.standard.1").string();
+    check(writeSpkc(cPath, c) && !readSpkr(cPath).ok, "spkr: a .spkc is not read as a .spkr");
+
+    SpkrFile bad = f; bad.offsets.pop_back();
+    check(!writeSpkr(path, bad) && readSpkr(path).ok, "spkr: an offsets table of the wrong length is refused, the file kept");
+    bad = f; bad.twins = {-1, -1};
+    check(!writeSpkr(path, bad), "spkr: a detected spike without its twin is refused");
+    bad = f; bad.twins = {5, 3};
+    check(!writeSpkr(path, bad), "spkr: a recovered spike with a twin is refused");
+    bad = f; bad.twins = {2, -1};
+    check(!writeSpkr(path, bad), "spkr: a row cannot be its own twin");
+    bad = f; bad.twins = {10, -1};
+    check(!writeSpkr(path, bad), "spkr: a twin beyond the .spk is refused");
+    bad = f; bad.kinds[0] = 9;
+    check(!writeSpkr(path, bad), "spkr: an unknown kind is refused");
+    bad = f; bad.rows = {7, 2};
+    check(!writeSpkr(path, bad), "spkr: an index that is not ascending is refused");
+    bad = f; bad.rows = {2, 10};
+    check(!writeSpkr(path, bad), "spkr: a row beyond the .spk is refused");
+    {   // a header that promises more rows than the file holds
+        std::string bytes = slurp(path);
+        const uint32_t many = 1000;
+        std::memcpy(&bytes[4], &many, 4);
+        writeBytes(path, bytes);
+        check(!readSpkr(path).ok, "spkr: a header naming more rows than the file holds is rejected");
+    }
+    SpkrFile none;
+    none.nSpikes = 10; none.nSamples = 3; none.nChannels = 2; none.group = 1;
+    check(writeSpkr(path, none) && readSpkr(path).ok && readSpkr(path).rows.empty(), "spkr: an empty one is valid");
+    fs::remove_all(dir, ec);
+}
+
 int main()
 {
     testResDetection();
@@ -450,6 +510,7 @@ int main()
     testEmptyFetBinary();
     testTcl();
     testReplacingWrites();
+    testSpkr();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);

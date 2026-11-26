@@ -476,6 +476,60 @@ NEUROSUITE_CORE_EXPORT bool     writeSpkc(const std::string& path, const SpkcFil
 // in f.waveforms), or -1 when the row is not listed.
 NEUROSUITE_CORE_EXPORT int64_t  spkcFind(const SpkcFile& f, int64_t row);
 
+// ── .spkr — sparse RESIDUAL waveforms: the other spike of a collision row ────
+// The complement of the .spkc.  A collision row holds its own unit's spike and a
+// partner's; the .spkc record is the row less the partner (the own spike), the
+// .spkr record is the PARTNER'S spike: a window cut from the recording centred on
+// the partner (the row's .res time + offset) less the own unit's waveform as it
+// lies in that window.  So a record is laid out like any .spk record of the
+// partner's unit, peak at the group's peak sample.
+//   Header 32 B: magic 'S','P','R',version(1); nRows, nSamples, nChannels,
+//               nSpikes (rows of the .spk it belongs to), group, flags (0): u32 each; pad[4]
+//   Index:      nRows × int64, the 0-based .spk rows, STRICTLY ASCENDING
+//   Offsets:    nRows × int32, samples from the row's .res time to the record's
+//               centre (positive = later): the residual spike is at res + offset
+//   Classes:    nRows × int32, the .eap class the record is centred on, -1 if none
+//   Kinds:      nRows × int32, whether the residual spike is known elsewhere (SpkrKind)
+//   Twins:      nRows × int64, the .spk row that already holds this spike, or -1
+//   Body:       nRows × nSamples × nChannels int16, the .spk record layout
+// Derived data, like the .spkc: rebuilt from the recording, the .eap and the
+// clustering.  One record per row -- the row's first partner.
+//
+// DUPLICATES.  A residual spike is the partner's spike, and the partner's spike
+// may be a row already: detected on its own (in the partner's cluster the two
+// rows are one collision seen from both sides; in another cluster the spike is a
+// row, but not where the partner named says), or the residual of another
+// collision row.  kinds/twins
+// say so, so that a tool turning residual spikes into rows adds each spike once:
+// only SpkrKind::Recovered records are spikes no row holds.
+enum class SpkrKind : int32_t {
+    Recovered = 0,   ///< no row holds this spike: twin = -1
+    Detected  = 1,   ///< a row already holds it -- the partner's unit's own, else another cluster's: twin = that row
+    Repeated  = 2    ///< an earlier row of this file holds the same residual spike: twin = that row
+};
+struct SpkrFile {
+    int64_t              nSpikes   = 0;
+    int                  nSamples  = 0;
+    int                  nChannels = 0;
+    int                  group     = 0;
+    uint32_t             flags     = 0;
+    std::vector<int64_t> rows;            ///< strictly ascending 0-based .spk rows
+    std::vector<int32_t> offsets;         ///< rows.size(): record centre - the row's .res time
+    std::vector<int32_t> classes;         ///< rows.size(): the .eap class centred on, or -1
+    std::vector<int32_t> kinds;           ///< rows.size(): SpkrKind
+    std::vector<int64_t> twins;           ///< rows.size(): the row already holding the spike, or -1
+    std::vector<int16_t> waveforms;       ///< rows.size() * nSamples * nChannels
+    bool                 ok = false;
+};
+// readSpkr rejects what readSpkc rejects (magic, version, short file, index not
+// strictly ascending or beyond nSpikes), an unknown kind, and a twin that is not
+// a row of the .spk (or not -1 where the kind is Recovered); writeSpkr refuses
+// the same and tables of the wrong length.  A .spkc is not a .spkr and the reverse: the magics differ.
+NEUROSUITE_CORE_EXPORT SpkrFile readSpkr(const std::string& path);
+NEUROSUITE_CORE_EXPORT bool     writeSpkr(const std::string& path, const SpkrFile& f);
+// Position of @p row in f.rows, or -1.
+NEUROSUITE_CORE_EXPORT int64_t  spkrFind(const SpkrFile& f, int64_t row);
+
 // ── .tcl — template-class registry (see claude/eap-template-class-design) ────
 // Session+group, STAGE-INDEPENDENT (a class id means the same .eap column across
 // a session's stages).  One entry per column: its lifecycle status and the
