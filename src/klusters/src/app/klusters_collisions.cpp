@@ -115,7 +115,7 @@ void KlustersApp::slotMarkCollisions()
         return;
     }
     QString left;
-    if (M.strayRows > 0) left += tr("  %1 rows naming another cluster's class were left.").arg(M.strayRows);
+    if (M.strayRows > 0) left += tr("  %1 of them named another cluster's class and now name their own.").arg(M.strayRows);
     if (M.withoutClass > 0) left += tr("  %1 had a cluster that could be given no class.").arg(M.withoutClass);
     slotStatusMsg(tr("Marked %1 collision rows (%2 template classes made).  Written at Save.%3")
                       .arg(M.marked).arg(M.classesCreated).arg(left));

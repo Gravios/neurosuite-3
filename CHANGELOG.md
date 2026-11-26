@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: Mark Collisions gives a moved row its own cluster's class](#2026-11-26--klusters-mark-collisions-gives-a-moved-row-its-own-clusters-class) |
 | 2026-11-26 | [The .eap, .tcl and .spkc are written whole or not at all](#2026-11-26--the-eap-tcl-and-spkc-are-written-whole-or-not-at-all) |
 | 2026-11-26 | [Klusters: Mark Collisions](#2026-11-26--klusters-mark-collisions) |
 | 2026-11-26 | [Docs workflow: the deploy is a job of its own](#2026-11-26--docs-workflow-the-deploy-is-a-job-of-its-own) |
@@ -310,6 +311,37 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: Mark Collisions gives a moved row its own cluster's class
+
+A row that still names the class of the cluster it was moved out of is no longer skipped: marking it takes that class out and names the row's own cluster's.
+
+<details>
+<summary>Details</summary>
+
+A sorter that writes an `.eap` names every spike's class (fiber-unmix `--eap all`: every kept
+spike, its own class at offset 0). Nothing renames that class when the spike is moved to another
+cluster in Klusters, so after curation a cluster holds rows naming other clusters' classes. Mark
+Collisions left such rows unmarked.
+
+- A marked row that names one class of another cluster has that class taken out and gets its own
+  cluster's at offset 0; when the class it named is the partner's, the cell becomes the partner's
+  offset. The `.clu` is the authority on whose spike a row is.
+- Rows that are not marked keep what they name. The corrected-row code already copes with them
+  (a class's cluster is read off the membership vote).
+- `PendingCell` value -128 takes a class out of a row; `CollisionMarks::strayRows` now counts the
+  rows re-owned, and the status line says so.
+
+`test_mark_collisions`: on a session whose `.eap` gives every row a class, 19 of 20 planted rows
+that named cluster 3's class (ten its first, ten its second) are marked, name cluster 2's class
+and cluster 3's and no other in the saved `.eap`; unmarked rows are saved as they were.
+
+Not measured on a real fiber-kit `.eap`: how many rows of a curated stage this applies to.
+(`claude/eap-contract-fk-ns3-2026-11-26.md`, item 4.)
+
+</details>
 
 ---
 

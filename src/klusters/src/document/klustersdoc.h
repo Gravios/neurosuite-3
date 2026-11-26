@@ -2125,7 +2125,7 @@ public:
         QString error;
         int     marked = 0;                  ///< rows that now name their partner
         int     classesCreated = 0;          ///< template classes made for clusters that had none
-        int     strayRows = 0;               ///< hits left: the row names a class of another cluster
+        int     strayRows = 0;               ///< marked rows that named a class of another cluster: given their own
         int     withoutClass = 0;            ///< hits left: one of the two clusters could be given no class
     };
     /** Names the partner of every hit in the stage's membership (.eap), IN MEMORY: the rows are
@@ -3309,7 +3309,7 @@ private:
     // them and the rows marked.  Every read of the .eap applies them (currentEap), so until
     // Save the file on disk is as the last Save left it.
     struct PendingClass { int col = -1; int cluster = -1; };
-    struct PendingCell  { qint64 row = 0; int col = 0; int value = 0; };
+    struct PendingCell  { qint64 row = 0; int col = 0; int value = 0; };   // value -128: the class is taken out
     struct PendingMarks {
         std::vector<PendingCell>  cells;
         std::vector<PendingClass> classes;

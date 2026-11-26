@@ -125,7 +125,8 @@ neurofileio::EapFile KlustersDoc::currentEap(const QString& path, qint64 nSpikes
     for (const PendingCell& c : pendingMarks.cells)
         if (c.row >= 0 && c.row < eap.nSpikes && c.col >= 0 && c.col < eap.nClasses)
             eap.cells[static_cast<std::size_t>(c.row) * eap.nClasses + c.col] =
-                static_cast<int8_t>(std::clamp(c.value, -127, 127));
+                c.value <= -128 ? nf::EAP_ABSENT                  // a class taken out of the row
+                                : static_cast<int8_t>(std::clamp(c.value, -127, 127));
     return eap;
 }
 

@@ -1308,8 +1308,12 @@ its own; bind one in **Preferences → Input**.
 - **When it is written.** The marks are held in memory and applied to every read of the `.eap`;
   Save writes the `.eap` and the `.tcl`, with the preference on or off. Closing without saving
   drops them. Undo does not take a mark back.
-- **Left as they are:** a row that names a class of another cluster (it was moved by hand), and
-  a hit one of whose clusters can be given no class (fewer than 30 rows naming none).
+- **A row that names another cluster's class.** A sorter names every spike's class, and nothing
+  renames it when the spike is moved to another cluster. The `.clu` says whose spike a row is, so
+  a marked row that names one class of another cluster has that class taken out and gets its own
+  cluster's. Rows that are not marked keep what they name.
+- **Left as it is:** a hit one of whose clusters can be given no class (fewer than 30 rows naming
+  none).
 - With the preference off the rows are marked and written but shown as they are.
 
 Limits. A partner is found only where the partner's cluster has a template: a unit the sort

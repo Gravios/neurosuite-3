@@ -52,6 +52,7 @@ constexpr double kLookAlike       = 0.85;   ///< a partner this like the row's o
 constexpr int    kLookAlikeReach  = 3;
 constexpr double kMinGain         = 0.20;   ///< share of what the own template leaves a partner must remove
 constexpr int    kBatch           = 2048;
+constexpr int    kCellAbsent      = -128;   ///< a PendingCell that takes a class OUT of a row (EAP_ABSENT)
 
 /** A cluster's templates along the session. */
 struct UnitTemplates {
@@ -426,15 +427,23 @@ KlustersDoc::CollisionMarks KlustersDoc::markCollisions(const std::vector<Collis
         const int own = classFor(h.cluster), partner = classFor(h.partner);
         if (own < 0 || partner < 0 || own == partner) { ++M.withoutClass; continue; }
         // The row as it is: it may name its own cluster's class (any of them, after a merge),
-        // or none.  A row naming another cluster's class was moved by hand; it is left.
-        const int8_t* cells = &eap.cells[static_cast<std::size_t>(h.row) * eap.nClasses];
-        bool stray = false, ownNamed = false;
+        // or none -- or ONE class of another cluster.  That row was put in this cluster after
+        // its class was written (a sorter names every spike's class; nothing renames it when
+        // the spike is moved), and the .clu is the authority on whose spike it is: the old
+        // class is taken out and the row gets its cluster's.  The scan leaves out rows naming
+        // two classes or more, so a hit never names more than one.
+        int8_t* cells = &eap.cells[static_cast<std::size_t>(h.row) * eap.nClasses];
+        bool ownNamed = false;
+        int strays = 0;
         for (int j = 0; j < eap.nClasses; ++j) {
             if (!nf::eapPresent(cells[j])) continue;
-            if (home[static_cast<std::size_t>(j)] == h.cluster && j != partner) ownNamed = true;
-            else stray = true;
+            if (home[static_cast<std::size_t>(j)] == h.cluster && j != partner) { ownNamed = true; continue; }
+            ++strays;
+            if (j == partner) continue;                       // it gets the partner's offset below
+            cells[j] = nf::EAP_ABSENT;
+            add.cells.push_back(PendingCell{h.row, j, kCellAbsent});
         }
-        if (stray) { ++M.strayRows; continue; }
+        if (strays > 0) ++M.strayRows;
         if (!ownNamed) {
             eap.cells[static_cast<std::size_t>(h.row) * eap.nClasses + own] = 0;
             add.cells.push_back(PendingCell{h.row, own, 0});
@@ -454,8 +463,8 @@ KlustersDoc::CollisionMarks KlustersDoc::markCollisions(const std::vector<Collis
     setModified(true);
     refreshCollisionRows();
     qInfo().noquote() << "[mark collisions]" << M.marked << "rows marked," << M.classesCreated << "classes made;"
-                      << M.strayRows << "rows naming another cluster's class and" << M.withoutClass
-                      << "hits without a class left as they are";
+                      << M.strayRows << "of the rows named another cluster's class and were given their own;"
+                      << M.withoutClass << "hits without a class left as they are";
     M.ok = true;
     return M;
 }
