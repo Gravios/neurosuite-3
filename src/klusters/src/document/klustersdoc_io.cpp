@@ -286,6 +286,20 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "spk", electrodeGroupID, sessionMethod);
 
+    // A stage that holds its OWN rows.  Most stages are another labelling of the group's rows
+    // and share its .spk/.fet/.res; a stage that adds rows (decollide's <stage>_dc, Add Residual
+    // Spikes' <stage>_rs) writes its own, under its tag.  Those are the files the tagged .clu
+    // belongs to: without this the tagged .clu was read against the untagged .spk and refused
+    // ("holds N entries but the spike file implies M").
+    const QString stageTag = neurosuite::custody::isClusterIdType(anchorType.toStdString())
+                                 ? QString::fromStdString(anchor.suffix) : QString();
+    const auto ownOfStage = [&stageTag](const QString& shared) {
+        if (stageTag.isEmpty()) return shared;
+        const QString own = shared + QLatin1Char('.') + stageTag;
+        return QFileInfo::exists(own) ? own : shared;
+    };
+    spkFileUrl = ownOfStage(spkFileUrl);
+
     // cluFileUrl: if a cluster-id file itself was opened (.clu parents or .clc
     // microfiber children -- same writeClu format), use it verbatim (this
     // preserves a post-group suffix such as .merged / .microfiber).  Otherwise
@@ -332,6 +346,7 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     QString fetFileUrl = resolveFeature(
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
         "fet", electrodeGroupID, sessionMethod);
+    fetFileUrl = ownOfStage(fetFileUrl);
     //Parameter files
     // Parameter file: YAML only
     const QString yamlParFileUrl = urlFileInfo.absolutePath() + QDir::separator() + baseName + ".yaml";
@@ -630,9 +645,9 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
     origSpkPath = spkFileUrl;
     // .res is shared across methods -- resolve it across all of them, or opening a
     // session whose detection ran under a different token fails at the pending copy.
-    origResPath = resolveFeatureAny(
+    origResPath = ownOfStage(resolveFeatureAny(
         urlFileInfo.absolutePath() + QDir::separator() + baseName,
-        "res", electrodeGroupID, sessionMethod);
+        "res", electrodeGroupID, sessionMethod));
     origFetPath = fetFileUrl;
     // clu original == docUrl (set above); clu pending set in initPendingFiles.
     if (!initPendingFiles()) {

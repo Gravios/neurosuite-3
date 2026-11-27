@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: a stage that holds its own rows opens on them](#2026-11-27--klusters-a-stage-that-holds-its-own-rows-opens-on-them) |
 | 2026-11-26 | [Decollide does not grow a spike that is a row already](#2026-11-26--decollide-does-not-grow-a-spike-that-is-a-row-already) |
 | 2026-11-26 | [Klusters: Remove Duplicate Spikes](#2026-11-26--klusters-remove-duplicate-spikes) |
 | 2026-11-26 | [Klusters: the residual of a collision row, shown and saved as .spkr](#2026-11-26--klusters-the-residual-of-a-collision-row-shown-and-saved-as-spkr) |
@@ -320,6 +321,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: a stage that holds its own rows opens on them
+
+A stage that adds rows — a decollide's — writes its own `.spk`, `.fet` and `.res`; opening its `.clu` read the shared ones and was refused. It now opens on its own.
+
+<details>
+<summary>Details</summary>
+
+- **The fault.** Klusters resolved the `.spk`, `.fet` and `.res` of an opened `.clu` by base,
+  method and group, never by stage. A stage that adds rows writes its own under its tag
+  (decollide: `<stage>_dc`), so its `.clu` was read against the shared `.spk` and refused:
+  "it holds N entries but the spike file implies M". The stage a decollide had just written
+  did not open.
+- **Now** a tagged `.clu` (or `.clc`) opens on `<shared name>.<stage>` for each of the three
+  when that file exists, and on the shared file otherwise — the case of every stage that only
+  relabels.
+- **Checked** by `test_stage_own_rows.py`: a stage that is a `.clu` alone opens on the shared
+  files (the control), a stage with ten rows more opens with all of them at the times of its
+  own `.res`, and the untagged session beside both is unaffected. Not checked: a decollide run
+  end to end.
+- `formats/naming.md` states the rule.
+
+</details>
 
 ---
 
