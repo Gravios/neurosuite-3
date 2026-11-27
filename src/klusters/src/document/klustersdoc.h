@@ -2889,6 +2889,12 @@ private:
     /** Window cutting for a .spk of one method (see spikeCutSpecFor).  The spec
      *  points into the vectors below, so it is filled in place, never copied. */
     struct SpikeCutSpec {
+        // `window` points into the members below (groupChannels, partner, setOff, setMem,
+        // expr): a copy would keep pointing at the original's, so there is none.  Fill one
+        // in place (spikeCutSpecFor) and keep it where it is; hold several by pointer.
+        SpikeCutSpec() = default;
+        SpikeCutSpec(const SpikeCutSpec&) = delete;
+        SpikeCutSpec& operator=(const SpikeCutSpec&) = delete;
         neurosuite::core::SpikeWindowSpec window;
         QList<int>       groupChannels;
         std::vector<int> partner, setOff, setMem;

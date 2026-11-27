@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: Add Residual Spikes no longer crashes on a stderiv session](#2026-11-27--klusters-add-residual-spikes-no-longer-crashes-on-a-stderiv-session) |
 | 2026-11-27 | [Klusters: the residual spikes' features, saved as .fetr](#2026-11-27--klusters-the-residual-spikes-features-saved-as-fetr) |
 | 2026-11-27 | [Klusters: Add Residual Spikes grows every feature space](#2026-11-27--klusters-add-residual-spikes-grows-every-feature-space) |
 | 2026-11-27 | [Formats: .fetr, the residual spikes in a feature space](#2026-11-27--formats-fetr-the-residual-spikes-in-a-feature-space) |
@@ -325,6 +326,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: Add Residual Spikes no longer crashes on a stderiv session
+
+The action ended in a segmentation fault when the shown waveforms were stderiv with a session pattern: a cut specification was copied and its copy pointed into the original.
+
+<details>
+<summary>Details</summary>
+
+- **The crash.** Clusters → Add Residual Spikes as Clusters… ended in a segmentation fault on a
+  session whose shown waveforms are stderiv with a session pattern (`stderiv_C5`): right after
+  the residuals were brought up to date, before anything was written.
+- **Why.** The specification a window is cut with (`SpikeCutSpec`) holds a `SpikeWindowSpec`
+  that points into the specification's own vectors (the pattern's reference sets, its
+  expressions). The residual code filled one per `.spk` method and then *copied* it into a
+  table: the copy's pointers still named the original, which was gone. A `standard` `.spk` has
+  no such vectors, so the self-tests — and the re-cut in `standard` at Save — ran.
+- **Now** the specifications are filled where they stay (held by pointer), and `SpikeCutSpec`
+  can no longer be copied: code that tries does not compile. No other place copied one.
+- **Checked:** the residual self-tests pass as before. **Not checked:** the action on a stderiv
+  session with a pattern — the self-test session cannot build one, and I have no recording of
+  the session it crashed on. The guard is the compile-time one.
+- Nothing had been written when it crashed: the open stage's files are as they were.
+
+</details>
 
 ---
 

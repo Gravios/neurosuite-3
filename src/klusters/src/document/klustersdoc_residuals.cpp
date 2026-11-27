@@ -56,6 +56,7 @@
 #include <QTextStream>
 
 #include <algorithm>
+#include <map>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -637,7 +638,7 @@ KlustersDoc::FetrReport KlustersDoc::writeFetrFiles()
     const QString recording = rawRecordingPath();
     bool fromRecording = QFileInfo::exists(recording);
     for (const qint64 row : rows) fromRecording = fromRecording && residuals[row].offset == residuals[row].madeFor;
-    QHash<QString, SpikeCutSpec> cutOf;
+    std::map<QString, std::unique_ptr<SpikeCutSpec>> cutOf;      // filled in place: a spec is not copied
     QStringList methods{shownMethod};
     if (fromRecording) {
         for (const FeatureSpace& fs : availableFeatureSpaces()) {
@@ -645,12 +646,12 @@ KlustersDoc::FetrReport KlustersDoc::writeFetrFiles()
             if (!fs.usable || methods.contains(m)) continue;
             const auto token = neurosuite::custody::parseMethodToken(m.toStdString());
             if (!(methodIsStderiv(m) || (token.family == "standard" && token.kind == '\0' && token.lag == 0))) continue;
-            SpikeCutSpec cut;
+            auto cut = std::make_unique<SpikeCutSpec>();
             QString cutLog;
             QTextStream log(&cutLog);
-            spikeCutSpecFor(m, nullptr, cut, log);
-            if (cut.window.nSamp != nSamp || cut.window.nChan != nChan) continue;
-            cutOf.insert(m, cut);
+            spikeCutSpecFor(m, nullptr, *cut, log);
+            if (cut->window.nSamp != nSamp || cut->window.nChan != nChan) continue;
+            cutOf[m] = std::move(cut);
             methods << m;
         }
     }
@@ -701,7 +702,7 @@ KlustersDoc::FetrReport KlustersDoc::writeFetrFiles()
                 }
                 WindowSet ws;
                 int64_t outOfRange = 0;
-                cutWindows(fil, cutOf[m].window, rec, times, ws, &outOfRange);
+                cutWindows(fil, cutOf.at(m)->window, rec, times, ws, &outOfRange);
                 for (std::size_t k = c0; k < c1; ++k) targetLessMedian(ws, k - c0, rec, &out[k * rec]);
             }
             std::fclose(fil);
@@ -777,15 +778,15 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
     const QString shownMethod = featureMethod(clusteringData->getSpkFileName());
     QStringList methods = spkMethods;
     if (!methods.contains(shownMethod)) methods.prepend(shownMethod);
-    QHash<QString, SpikeCutSpec> cutOf;
+    std::map<QString, std::unique_ptr<SpikeCutSpec>> cutOf;      // filled in place: a spec is not copied
     for (const QString& m : methods) {
         const auto token = neurosuite::custody::parseMethodToken(m.toStdString());
         const bool cuttable = methodIsStderiv(m) || (token.family == "standard" && token.kind == '\0' && token.lag == 0);
-        SpikeCutSpec cut;
+        auto cut = std::make_unique<SpikeCutSpec>();
         QString cutLog;
         QTextStream log(&cutLog);
-        if (cuttable) spikeCutSpecFor(m, nullptr, cut, log);
-        if (!cuttable || cut.window.nSamp != nSamp || cut.window.nChan != nChan) {
+        if (cuttable) spikeCutSpecFor(m, nullptr, *cut, log);
+        if (!cuttable || cut->window.nSamp != nSamp || cut->window.nChan != nChan) {
             if (m != shownMethod) {
                 S.methodsSkipped << tr("%1: cannot be cut from the recording").arg(m);
                 continue;
@@ -794,9 +795,10 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
                           "spaces can), so the new rows would have no record.").arg(m);
             return S;
         }
-        cutOf.insert(m, cut);
+        cutOf[m] = std::move(cut);
     }
-    methods = cutOf.keys();
+    methods.clear();
+    for (const auto& entry : cutOf) methods << entry.first;
     methods.sort();
     S.methods = methods;
 
@@ -931,7 +933,7 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
             }
             WindowSet ws;
             int64_t outOfRange = 0;
-            cutWindows(fil, cutOf[m].window, rec, times, ws, &outOfRange);
+            cutWindows(fil, cutOf.at(m)->window, rec, times, ws, &outOfRange);
             for (std::size_t j = c0; j < c1; ++j) {
                 std::vector<int16_t>& record = S.spikes[j].records[m];
                 record.resize(rec);
