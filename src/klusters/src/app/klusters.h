@@ -1294,6 +1294,11 @@ private:
      *  generation, post-edit realign): true (and a status message unless
      *  @p silent) when another space is loaded. */
     bool refuseInBorrowedSpace(const QString& what, bool silent = false);
+    /** For an action that works in the .clu's own feature space whatever is shown (Add Residual
+     *  Spikes, Rebuild Extended Records): shows that space first when another one is shown -- a
+     *  projection, a super-sampled or a lag space, the local PCA -- and says so.  @p shownBefore
+     *  gets the space to return to ("" when nothing was switched).  False when the switch failed. */
+    bool enterCluSpace(const QString& what, QString* shownBefore = nullptr, bool silent = false);
     /** Entry guard for the drift actions, which take over processWidget: true,
      *  with a message titled @p title, while a recluster, a drift job or a
      *  plugin runs. */

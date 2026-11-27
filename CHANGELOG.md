@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: Add Residual Spikes from any feature space](#2026-11-27--klusters-add-residual-spikes-from-any-feature-space) |
 | 2026-11-27 | [Formats: a fiber-kit dedup sets the .spkx, .spkr and .fetr aside](#2026-11-27--formats-a-fiber-kit-dedup-sets-the-spkx-spkr-and-fetr-aside) |
 | 2026-11-27 | [README: the CI badges, the GPU table, Klusters' collision tools](#2026-11-27--readme-the-ci-badges-the-gpu-table-klusters-collision-tools) |
 | 2026-11-27 | [Klusters: a failed realign check in a residual stage names the rebuild](#2026-11-27--klusters-a-failed-realign-check-in-a-residual-stage-names-the-rebuild) |
@@ -343,6 +344,29 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: Add Residual Spikes from any feature space
+
+The residual actions no longer refuse in a borrowed space.
+
+<details>
+<summary>Details</summary>
+
+- **Add Residual Spikes as Clusters** and **Rebuild Residual Spikes' Extended
+  Records** work from any shown feature space.  They run in the `.clu`'s own
+  space and refused in any other; they now show it first (the status line says
+  so) and come back to the shown space when nothing new is opened
+  (`KlustersApp::enterCluSpace`).  In a super-sampled space the residuals
+  themselves are not made, so the switch is what makes the action possible
+  there.
+- Self-test `test_residual_spikes_spaces.py`: from a projection space, a
+  super-sampled space and the local PCA the stage is the same, file for file,
+  as from the `.clu`'s own space (negative control: in the super-sampled space
+  the residuals are refused).
+
+</details>
 
 ---
 

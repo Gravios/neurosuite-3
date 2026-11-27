@@ -330,7 +330,6 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
 void KlustersApp::slotAddResidualSpikes()
 {
     if (!doc || doc->url().isEmpty()) return;
-    if (refuseInBorrowedSpace(tr("Add residual spikes"))) return;
     if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
         statusBar()->showMessage(tr("Wait for the running job to finish first."), 5000);
         return;
@@ -347,6 +346,14 @@ void KlustersApp::slotAddResidualSpikes()
     selected.removeAll(0);
     selected.removeAll(1);
     if (selected.isEmpty()) { slotStatusMsg(tr("Add residual spikes: select one or more clusters first.")); return; }
+    // From any shown space: the residuals are made, and the stage written, in the .clu's own; back to
+    // the shown one when nothing is written (the new stage opens in its own space).
+    QString shownBefore;
+    if (!enterCluSpace(tr("Add residual spikes"), &shownBefore)) return;
+    struct Back {
+        KlustersApp* app; QString method;
+        ~Back() { if (!method.isEmpty() && app->doc && app->doc->activeFeatureMethod() != method) app->showFeatureSpace(method, false); }
+    } back{this, shownBefore};
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     slotStatusMsg(tr("Cutting the residual spikes of the selection…"));
@@ -398,6 +405,7 @@ void KlustersApp::slotAddResidualSpikes()
     const bool ok = writeResidualStage(R, outCluPath, summary);
     QApplication::restoreOverrideCursor();
     if (!ok) { QMessageBox::warning(this, tr("Add Residual Spikes as Clusters"), summary); return; }
+    back.method.clear();                                         // the new stage opens on its own space
     slotFileClose();
     if (!mainDock) openDocumentFile(outCluPath);
     statusBar()->showMessage(summary, 15000);
@@ -406,7 +414,6 @@ void KlustersApp::slotAddResidualSpikes()
 void KlustersApp::slotRebuildExtendedRecords()
 {
     if (!doc || doc->url().isEmpty()) return;
-    if (refuseInBorrowedSpace(tr("Rebuild extended records"))) return;
     if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
         statusBar()->showMessage(tr("Wait for the running job to finish first."), 5000);
         return;
@@ -416,6 +423,13 @@ void KlustersApp::slotRebuildExtendedRecords()
         QMessageBox::information(this, title, tr("The session has changes that are not saved.  The records are rebuilt from the files on disk: save first."));
         return;
     }
+    // From any shown space: the records are rebuilt in the .clu's own, then the shown one comes back.
+    QString shownBefore;
+    if (!enterCluSpace(tr("Rebuild extended records"), &shownBefore)) return;
+    struct Back {
+        KlustersApp* app; QString method;
+        ~Back() { if (!method.isEmpty() && app->doc && app->doc->activeFeatureMethod() != method) app->showFeatureSpace(method, false); }
+    } back{this, shownBefore};
     QApplication::setOverrideCursor(Qt::WaitCursor);
     slotStatusMsg(tr("Looking for the rows of residual spikes…"));
     QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);

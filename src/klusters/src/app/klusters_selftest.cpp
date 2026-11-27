@@ -783,7 +783,15 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // {"rebuildExtended": {"apply": bool}}: Clusters > Rebuild Residual Spikes' Extended Records
         // without its dialog; with "apply" the .spkx written.
         const bool apply = step.value(QStringLiteral("rebuildExtended")).toObject().value(QStringLiteral("apply")).toBool(false);
+        QString shownBefore;                                  // as the command: in the .clu's own space, then back
+        if (!enterCluSpace(tr("Rebuild extended records"), &shownBefore, /*silent*/ true)) {
+            result.insert(QStringLiteral("error"), QStringLiteral("could not show the .clu's own space"));
+            return false;
+        }
         const KlustersDoc::ExtendedRebuild X = doc->rebuildExtendedRecords(availableSpkVariants(), apply);
+        result.insert(QStringLiteral("switchedFrom"), shownBefore);
+        if (!shownBefore.isEmpty()) showFeatureSpace(shownBefore, false);
+        result.insert(QStringLiteral("activeAfter"), doc->activeFeatureMethod());
         result.insert(QStringLiteral("ok"), X.ok);
         result.insert(QStringLiteral("reason"), X.reason);
         result.insert(QStringLiteral("residuals"), static_cast<double>(X.residuals));
@@ -807,6 +815,12 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
         const bool children = o.value(QStringLiteral("children")).toBool(false);
         if (children) { QString err; if (!doc->loadChildClustering(err)) { result.insert(QStringLiteral("error"), err); return false; } }
+        QString shownBefore;                                  // as the command: in the .clu's own space
+        if (!enterCluSpace(tr("Add residual spikes"), &shownBefore, /*silent*/ true)) {
+            result.insert(QStringLiteral("error"), QStringLiteral("could not show the .clu's own space"));
+            return false;
+        }
+        result.insert(QStringLiteral("switchedFrom"), shownBefore);
         const KlustersDoc::ResidualSpikes R = doc->alignedResidualSpikes(ids, children, availableSpkVariants());
         result.insert(QStringLiteral("ok"), R.ok);
         result.insert(QStringLiteral("reason"), R.reason);
@@ -863,6 +877,8 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             for (auto it = made.constBegin(); it != made.constEnd(); ++it) clusters.insert(QString::number(it.key()), it.value());
             result.insert(QStringLiteral("newClusters"), clusters);
         }
+        if (!shownBefore.isEmpty()) showFeatureSpace(shownBefore, false);   // the stage is written, not opened
+        result.insert(QStringLiteral("activeAfter"), doc->activeFeatureMethod());
         return R.ok;
     }
     if (step.contains(QStringLiteral("duplicates"))) {

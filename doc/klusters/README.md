@@ -1516,7 +1516,12 @@ from the files on disk.
 - **Left as they are:** a `.spk` method the recording cannot be cut in (a super-sampled one),
   and the feature spaces over it; a space whose basis does not fit. Their files keep the old
   rows and are listed as not usable in the new stage. The status line names them.
-- **It needs** a recording, and the shown `.spk` of the standard or stderiv kind.
+- **It needs** a recording, and the `.clu`'s own `.spk` of the standard or stderiv kind.
+- **From any shown feature space.** It runs in the `.clu`'s own space: from another one — a
+  projection, a super-sampled or lag space, the local PCA — it shows the `.clu`'s own first (the
+  status line says so) and the shown one again when nothing is written; the new stage opens in its
+  own space. The stage is the same, file for file, whichever space it was started from.
+  **Rebuild Residual Spikes' Extended Records** does the same, and always comes back.
 - **Does a spike look like its partner?** The name comes from a template fit in the collision
   row. As a second look, each new spike's row in the session's own feature space is scored
   against every cluster's clean spikes there (a Gaussian per cluster with independent columns:

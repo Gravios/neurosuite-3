@@ -637,6 +637,27 @@ void KlustersApp::applyFeatureSpaceLocks()
     featureSpaceLocking = false;
 }
 
+bool KlustersApp::enterCluSpace(const QString& what, QString* shownBefore, bool silent)
+{
+    if (shownBefore) shownBefore->clear();
+    if (!doc || !doc->isBorrowedSpace()) return true;
+    // (the local PCA is a view of the selection: the space to come back to is the one it was entered from)
+    const QString was = doc->isLocalPcaSpace() ? doc->localPcaReturnMethod() : doc->activeFeatureMethod();
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const bool ok = showFeatureSpace(doc->cluMethod(), /*syncFirst*/ false) && !doc->isBorrowedSpace();
+    QApplication::restoreOverrideCursor();
+    if (!ok) {
+        if (!silent)
+            statusBar()->showMessage(tr("%1: could not show the .clu's own %2 feature space, where it runs.")
+                                         .arg(what, doc->cluMethod()), 6000);
+        return false;
+    }
+    if (shownBefore) *shownBefore = was;
+    if (!silent)
+        slotStatusMsg(tr("%1 runs in the .clu's own %2 feature space: switched from %3.").arg(what, doc->cluMethod(), was));
+    return true;
+}
+
 bool KlustersApp::refuseInBorrowedSpace(const QString& what, bool silent)
 {
     if (!doc || !doc->isBorrowedSpace()) return false;
