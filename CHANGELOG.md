@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: closing with three displays or more no longer crashes](#2026-11-27--klusters-closing-with-three-displays-or-more-no-longer-crashes) |
 | 2026-11-27 | [Klusters: Add Residual Spikes from any feature space](#2026-11-27--klusters-add-residual-spikes-from-any-feature-space) |
 | 2026-11-27 | [Formats: a fiber-kit dedup sets the .spkx, .spkr and .fetr aside](#2026-11-27--formats-a-fiber-kit-dedup-sets-the-spkx-spkr-and-fetr-aside) |
 | 2026-11-27 | [README: the CI badges, the GPU table, Klusters' collision tools](#2026-11-27--readme-the-ci-badges-the-gpu-table-klusters-collision-tools) |
@@ -344,6 +345,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: closing with three displays or more no longer crashes
+
+File > Close (and every reload) crashed when three displays or more were open: the tabs went one by one and each removal ran the tab change on displays already half gone.
+
+<details>
+<summary>Details</summary>
+
+**What crashed.**  `slotFileClose` removed the display tabs one at a time.  Each removal moved the
+current tab, so `QTabWidget::currentChanged` reached `slotTabChange` on a display that was still
+there, whose palette update called `followMatrixSelection` -- which reached the matrix docks of the
+Overview, already deleted on the previous turn of the loop (SIGSEGV in
+`QDockWidgetLayout::widgetForRole`).  An open makes two displays (the Overview and the Template
+Library), so a third one was enough: File > Close, opening another session, and every reload
+(Add Residual Spikes, decollide, Sort Spikes by Time, a plugin's rewrite) crashed with three
+displays or more open.
+
+**The fix.**  The tabs go with `tabsParent`'s signals blocked (`QSignalBlocker`); `resetState()`
+after the loop leaves nothing for `slotTabChange` to do.
+
+**Test.**  `test_close_many_displays.py`: a session opened, a cluster display and a waveform display
+added (four in all), closed and opened again -- the run ends normally with the document open.  Before
+the fix the same steps ended on SIGSEGV (checked by hand on the build before it; no negative control
+in the run itself).
+
+</details>
 
 ---
 

@@ -3739,13 +3739,16 @@ void KlustersApp::slotFileClose(){
                     mPluginProcess = nullptr;
                     mPluginRunning = false;
                 }
-                while(true){
-                    DockArea* current = static_cast<DockArea*>(tabsParent->widget(0));
-                    tabsParent->removeTab(tabsParent->indexOf(current));
-                    delete current;
-                    if(tabsParent->count()==0)
-                        break;
-
+                {
+                    // Quiet while the displays go: each removal moves the current tab, and
+                    // slotTabChange on a display left would reach the matrix docks of the
+                    // ones already deleted (a crash with three displays or more).
+                    const QSignalBlocker quiet(tabsParent);
+                    while(tabsParent->count() > 0){
+                        QWidget* current = tabsParent->widget(0);
+                        tabsParent->removeTab(0);
+                        delete current;
+                    }
                 }
                 //reset the cluster palette and hide the cluster panel
                 clusterPalette->reset();
