@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Formats: .fetr, the residual spikes in a feature space](#2026-11-27--formats-fetr-the-residual-spikes-in-a-feature-space) |
 | 2026-11-27 | [Klusters: Add Residual Spikes as Clusters](#2026-11-27--klusters-add-residual-spikes-as-clusters) |
 | 2026-11-27 | [Klusters: a stage that holds its own rows opens on them](#2026-11-27--klusters-a-stage-that-holds-its-own-rows-opens-on-them) |
 | 2026-11-26 | [Decollide does not grow a spike that is a row already](#2026-11-26--decollide-does-not-grow-a-spike-that-is-a-row-already) |
@@ -322,6 +323,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Formats: .fetr, the residual spikes in a feature space
+
+The companion of the `.spkr`, as the `.fet` is of the `.spk`: each residual record's features, one file per feature space.
+
+<details>
+<summary>Details</summary>
+
+- **What it is.** The `.spkr` holds the partner's spike of a collision row as a waveform
+  record. The `.fetr` holds that record in a feature space: one file per space,
+  `<base>.fetr.<method>.<group>[.<stage>]`, a row laid out like a row of the space's `.fet`
+  (the same columns, the time last — the residual spike's time).
+- **Layout.** 32-byte header (`FTR\x01`; nRows, nFeatures, nSpikes, group, flags), the index
+  of `.fet` rows (int64, strictly ascending — the `.spkr`'s rows), then nRows × nFeatures
+  int64. Offset, class, kind and twin of a row stay in the `.spkr`.
+- `neurofileio::readFetr` / `writeFetr` / `fetrFind`, written whole or not at all like the
+  `.spkr`; `formats/fetr.md`. Nothing writes the file yet.
+- **Checked** in `core_test_neurofileio_robust`: round trip, file size, the refusals (table
+  length, index order, row beyond the `.fet`, a single column, a header naming more rows than
+  the file holds), an empty file, and that it is not read as a `.spkr` or `.spkc`.
+
+</details>
 
 ---
 

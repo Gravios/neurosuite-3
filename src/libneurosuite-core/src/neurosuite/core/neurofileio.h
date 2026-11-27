@@ -530,6 +530,38 @@ NEUROSUITE_CORE_EXPORT bool     writeSpkr(const std::string& path, const SpkrFil
 // Position of @p row in f.rows, or -1.
 NEUROSUITE_CORE_EXPORT int64_t  spkrFind(const SpkrFile& f, int64_t row);
 
+// ── .fetr — sparse RESIDUAL features: the .spkr's records in a feature space ──
+// The .fet beside a .spk holds each record's features; the .fetr beside a .spkr
+// holds each RESIDUAL record's: the partner's spike of a collision row, projected
+// through the feature space's own basis (.pca.<method>).  One file per feature
+// space, <base>.fetr.<method>.<group>[.<stage>]; a row is laid out like a row of
+// that space's .fet -- the same columns, the time LAST -- so it can be put beside
+// the partner's cluster in that space.
+//   Header 32 B: magic 'F','T','R',version(1); nRows, nFeatures (columns, the time
+//               included), nSpikes (rows of the .fet it belongs to), group, flags (0):
+//               u32 each; pad[8]
+//   Index:      nRows × int64, the 0-based .fet rows, STRICTLY ASCENDING
+//   Body:       nRows × nFeatures int64, the .fet row layout.  The last column is the
+//               residual spike's time: the row's .res time + the .spkr's offset.
+// Derived data, like the .spkr, and indexed like it: the rows are the .spkr's rows
+// (offset, class, kind and twin of a row are read there).
+struct FetrFile {
+    int64_t              nSpikes   = 0;
+    int                  nFeatures = 0;   ///< columns of a row, the time included
+    int                  group     = 0;
+    uint32_t             flags     = 0;
+    std::vector<int64_t> rows;            ///< strictly ascending 0-based .fet rows
+    std::vector<int64_t> values;          ///< rows.size() * nFeatures
+    bool                 ok = false;
+};
+// readFetr rejects a wrong magic or version, a short file, fewer than 2 columns and an
+// index that is not strictly ascending or names a row beyond nSpikes; writeFetr refuses
+// the same and a table of the wrong length.
+NEUROSUITE_CORE_EXPORT FetrFile readFetr(const std::string& path);
+NEUROSUITE_CORE_EXPORT bool     writeFetr(const std::string& path, const FetrFile& f);
+// Position of @p row in f.rows, or -1.
+NEUROSUITE_CORE_EXPORT int64_t  fetrFind(const FetrFile& f, int64_t row);
+
 // ── .tcl — template-class registry (see claude/eap-template-class-design) ────
 // Session+group, STAGE-INDEPENDENT (a class id means the same .eap column across
 // a session's stages).  One entry per column: its lifecycle status and the

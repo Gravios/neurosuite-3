@@ -440,6 +440,48 @@ static void testReplacingWrites()
     fs::remove_all(dir, ec);
 }
 
+// ── .fetr: the residual spikes' features ──
+static void testFetr()
+{
+    using namespace neurofileio;
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / ("nfio_fetr_" + std::to_string(std::rand()));
+    fs::create_directories(dir);
+    const std::string path = (dir / "s.fetr.standard.1").string();
+
+    FetrFile f;
+    f.nSpikes = 10; f.nFeatures = 3; f.group = 1;
+    f.rows = {2, 7};
+    f.values = {11, -12, 1000, 21, 22, 2000};
+    check(writeFetr(path, f), "fetr: written");
+    const FetrFile g = readFetr(path);
+    check(g.ok && g.nSpikes == 10 && g.nFeatures == 3 && g.group == 1, "fetr: the header reads back");
+    check(g.rows == f.rows && g.values == f.values, "fetr: rows and feature rows read back");
+    check(fetrFind(g, 7) == 1 && fetrFind(g, 3) == -1, "fetr: a row is found by its index, another is not");
+    check(fs::file_size(fs::path(path)) == 32u + 2u * (8u + 3u * 8u), "fetr: 32-byte header, then 32 bytes a row here");
+    check(!readSpkr(path).ok && !readSpkc(path).ok, "fetr: not read as a .spkr or a .spkc (the magics differ)");
+
+    FetrFile bad = f; bad.values.pop_back();
+    check(!writeFetr(path, bad) && readFetr(path).ok, "fetr: a table of the wrong length is refused, the file kept");
+    bad = f; bad.rows = {7, 2};
+    check(!writeFetr(path, bad), "fetr: an index that is not ascending is refused");
+    bad = f; bad.rows = {2, 10};
+    check(!writeFetr(path, bad), "fetr: a row beyond the .fet is refused");
+    bad = f; bad.nFeatures = 1; bad.values = {1, 2};
+    check(!writeFetr(path, bad), "fetr: a row needs a feature besides its time");
+    {
+        std::fstream io(path, std::ios::in | std::ios::out | std::ios::binary);
+        const uint32_t many = 1000000;
+        io.seekp(4);
+        io.write(reinterpret_cast<const char*>(&many), 4);
+    }
+    check(!readFetr(path).ok, "fetr: a header naming more rows than the file holds is rejected");
+    FetrFile none;
+    none.nSpikes = 10; none.nFeatures = 3;
+    check(writeFetr(path, none) && readFetr(path).ok && readFetr(path).rows.empty(), "fetr: an empty one is valid");
+    fs::remove_all(dir);
+}
+
 // ── .spkr: the residual spikes of collision rows ──
 static void testSpkr()
 {
@@ -511,6 +553,7 @@ int main()
     testTcl();
     testReplacingWrites();
     testSpkr();
+    testFetr();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);
