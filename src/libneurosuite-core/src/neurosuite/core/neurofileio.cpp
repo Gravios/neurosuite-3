@@ -831,7 +831,8 @@ EapFile readEap(const std::string& path)
 
     unsigned char magic[4] = {0, 0, 0, 0};
     in.read(reinterpret_cast<char*>(magic), 4);
-    if (!in || magic[0] != 'E' || magic[1] != 'A' || magic[2] != 'P' || magic[3] != kEapVersion)
+    if (!in || magic[0] != 'E' || magic[1] != 'A' || magic[2] != 'P'
+        || magic[3] < 1 || magic[3] > kEapVersion)              // every version from 1 up (contract.yaml)
         return e;
     uint32_t nSpikes = 0, nClasses = 0, group = 0, flags = 0;
     auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
@@ -913,7 +914,8 @@ SpkcFile readSpkc(const std::string& path)
     if (!in) return f;
     unsigned char magic[4] = {0, 0, 0, 0};
     in.read(reinterpret_cast<char*>(magic), 4);
-    if (!in || magic[0] != 'S' || magic[1] != 'P' || magic[2] != 'C' || magic[3] != kSpkcVersion)
+    if (!in || magic[0] != 'S' || magic[1] != 'P' || magic[2] != 'C'
+        || magic[3] < 1 || magic[3] > kSpkcVersion)             // every version from 1 up (contract.yaml)
         return f;
     uint32_t nRows = 0, nSamples = 0, nChannels = 0, nSpikes = 0, group = 0, flags = 0;
     auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };

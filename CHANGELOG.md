@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Core: the .eap and .spkc readers take every version from 1 up](#2026-11-27--core-the-eap-and-spkc-readers-take-every-version-from-1-up) |
 | 2026-11-27 | [Formats: the .tcl and .wtl pages say what fiber-kit reads](#2026-11-27--formats-the-tcl-and-wtl-pages-say-what-fiber-kit-reads) |
 | 2026-11-27 | [Klusters: rebuild the extended records of an existing residual stage](#2026-11-27--klusters-rebuild-the-extended-records-of-an-existing-residual-stage) |
 | 2026-11-27 | [Klusters: a residual spike's row is re-cut from its extended record](#2026-11-27--klusters-a-residual-spikes-row-is-re-cut-from-its-extended-record) |
@@ -339,6 +340,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Core: the .eap and .spkc readers take every version from 1 up
+
+`readEap` and `readSpkc` check the version byte as a range, as `contract.yaml` states.
+
+<details>
+<summary>Details</summary>
+
+- **Before,** both readers accepted only a version byte equal to the current version, while
+  `contract.yaml` declares that a reader takes every version from 1 up to the one it lists (and
+  fiber-kit's readers do). With version 1 the only one, the two rules accept the same files.
+- **Now** the check is `1 <= version <= kEapVersion` / `kSpkcVersion`: a future version 2 reader
+  keeps reading version-1 files without a further change.
+- **Checked:** the 35 libneurosuite-core tests pass (golden files, `core_test_contract`,
+  `core_shared_contract` among them).
+
+</details>
 
 ---
 
