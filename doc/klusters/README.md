@@ -1504,6 +1504,9 @@ from the files on disk.
   nudge or a re-extract has already cut from the recording (that one cannot be rebuilt; its
   record is the collision). The confirmation gives the count of each, and how far the rebuilt
   records are from the rows (they differ where the unit's neighbours have changed since).
+  A realign whose raw-source check fails in a stage with rows of its own and no usable `.spkx`
+  — none, one of other rows, or one fiber-kit's dedup set aside (`<file>.stalebkp`, the rows
+  having been renumbered) — says so and names this command.
 - **Every feature space.** In each space that is a projection (it has a `.pca.<method>`) a new
   row is its record — of that space's waveform method — through that space's basis; the
   columns the basis does not give are copied from the source row, the time is the spike's own.

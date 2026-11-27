@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: a failed realign check in a residual stage names the rebuild](#2026-11-27--klusters-a-failed-realign-check-in-a-residual-stage-names-the-rebuild) |
 | 2026-11-27 | [Core: the .eap and .spkc readers take every version from 1 up](#2026-11-27--core-the-eap-and-spkc-readers-take-every-version-from-1-up) |
 | 2026-11-27 | [Formats: the .tcl and .wtl pages say what fiber-kit reads](#2026-11-27--formats-the-tcl-and-wtl-pages-say-what-fiber-kit-reads) |
 | 2026-11-27 | [Klusters: rebuild the extended records of an existing residual stage](#2026-11-27--klusters-rebuild-the-extended-records-of-an-existing-residual-stage) |
@@ -340,6 +341,25 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: a failed realign check in a residual stage names the rebuild
+
+The check's advice points at the missing extended records.
+
+<details>
+<summary>Details</summary>
+
+- A realign whose raw-source check fails in a stage with rows of its own and no
+  usable `.spkx` (none; one of other rows; one fiber-kit's dedup set aside as
+  `<file>.stalebkp`) now says so and names Clusters → Rebuild Residual Spikes'
+  Extended Records, before the usual "different raw source" advice, which would
+  otherwise send a curator to re-extract the waveforms -- the residual rows with
+  them.  Test: `test_residual_spikes_recut.py` (negative control: a failed check
+  in a session without such a stage names no rebuild).
+
+</details>
 
 ---
 

@@ -165,7 +165,14 @@ def main():
               "NEGATIVE CONTROL: without the .spkx the realign of cluster 4 stops at the raw-source check",
               r.get("log", "")[-500:])
         check(all(open(p, "rb").read() == v for p, v in snap.items()), "... and changes nothing")
-        shutil.move(hidden, spkx)
+        check("Rebuild Residual Spikes'" in r.get("log", "") and "has no " + os.path.basename(spkx) in r.get("log", ""),
+              "... and its log says the stage has no .spkx and to rebuild it", r.get("log", "")[-700:])
+        # a .spkx a dedup set aside (fiber-kit renames it <file>.stalebkp)
+        shutil.move(hidden, spkx + ".stalebkp")
+        r = realign_log(R.run(klusters, stage_clu, [{"realign": 4}], d, realignFromAnySpace=True))
+        check(r.get("realignDone") is False and "were set aside" in r.get("log", "") and "Rebuild Residual Spikes'" in r.get("log", ""),
+              "a .spkx set aside by a dedup: the failed check says so, and to rebuild it", r.get("log", "")[-700:])
+        shutil.move(spkx + ".stalebkp", spkx)
 
         # ── a nudge of cluster 4: from the extended records ──
         ok, _ = run_on(klusters, stage_clu, [{"nudge": [4, 3]}, {"save": True}], d)
@@ -242,6 +249,17 @@ def main():
             check(len(added) > 0 and np.array_equal(x6["rows"], np.sort(np.concatenate([carried, added])))
                   and good == tot, "its .spkx holds the carried rows (renumbered) and the new ones, each its extended record",
                   f"{good} of {tot}")
+
+    # ── NEGATIVE CONTROL: a failed check of a session without a stage names no rebuild ──
+    with tempfile.TemporaryDirectory() as d:
+        base, _ = S.make_session(d, "nh")
+        fil = np.fromfile(base + ".fil", np.int16)
+        (fil // 2).astype(np.int16).tofile(base + ".fil")        # the .spk is no longer of this recording
+        r = realign_log(R.run(klusters, f"{base}.clu.standard.1", [{"realign": 2}], d, realignFromAnySpace=True))
+        check(r.get("realignDone") is False and "raw source verification FAILED" in r.get("log", "")
+              and "Rebuild Residual Spikes'" not in r.get("log", ""),
+              "NEGATIVE CONTROL: a failed check in a session without a stage of its own rows names no rebuild",
+              r.get("log", "")[-700:])
 
     print("FAILED" if M.fails else "PASSED", f"({M.fails} failure(s))" if M.fails else "")
     return 1 if M.fails else 0

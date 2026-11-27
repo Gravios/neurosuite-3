@@ -1258,6 +1258,10 @@ struct RealignCut {
     // row is cut from there, never from the recording.  Null: no such rows.
     // (Base rate only: a super-sampled space's rows are not cut from it.)
     const neurofileio::SpkxFile* ext = nullptr;
+    // Why the stage's rows of residual spikes may have no extended record (a .spkx set
+    // aside by a dedup, one of other rows, none in a stage with rows of its own): the
+    // check's failure then says to rebuild it.  Empty: nothing to say.
+    QString extendedHint;
 };
 
 // The group's window starting at `startSample`, read from the raw file and
@@ -1568,7 +1572,9 @@ static bool realignVerifyStoredRows(const RealignCut& c, const std::vector<int64
                 << "  on Preferences > Refinement > \"Re-extract spike waveforms from\n"
                 << "  .fil on save\", Save, then re-project those .fet files from the\n"
                 << "  rebuilt .spk.\n";
-        else
+        else if (!c.extendedHint.isEmpty())
+            log << c.extendedHint;
+        if (nExplained == 0)
             log << "  Likely cause: .spk was extracted from a different raw source\n"
                 << "  than the one on disk (e.g. .fil deleted and .dat used, or the\n"
                 << "  raw file overwritten by a later stage), or with a different\n"
@@ -2628,6 +2634,25 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     cut.stderivPartner = stderivPartnerPtr; cut.stderivSetOff = stderivSetOffPtr;
     cut.stderivSetMem = stderivSetMemPtr; cut.stderivExpr = stderivExprPtr;
     cut.ext = extRecords.get();
+    if (!extRecords) {
+        const QString spkMethod = featureMethod(ws.spkCommitted);
+        const QString spkx = spkxPathFor(spkMethod);
+        const neurosuite::custody::Anchor own = neurosuite::custody::parseAnchor(QFileInfo(ws.spkCommitted).fileName().toStdString());
+        QString why;
+        if (QFileInfo::exists(spkx + QStringLiteral(".stalebkp")))
+            why = QStringLiteral("its extended records were set aside (%1.stalebkp: the rows were\n"
+                                 "  renumbered, by a dedup)").arg(QFileInfo(spkx).fileName());
+        else if (QFileInfo::exists(spkx))
+            why = QStringLiteral("%1 is not of these rows (another spike count or geometry)").arg(QFileInfo(spkx).fileName());
+        else if (own.ok && !own.suffix.empty())
+            why = QStringLiteral("the stage holds rows of its own and has no %1").arg(QFileInfo(spkx).fileName());
+        if (!why.isEmpty())
+            cut.extendedHint = QStringLiteral(
+                "  If this stage was made by Add Residual Spikes, its rows of residual spikes are not\n"
+                "  windows of the recording and are checked against their extended records -- but\n"
+                "  %1.  Rebuild them first: Clusters > Rebuild Residual Spikes'\n"
+                "  Extended Records (then realign again).  Otherwise:\n").arg(why);
+    }
 
     // -----------------------------------------------------------------------
     // Write realignment results directly into the persistent .pending files.
