@@ -2162,6 +2162,8 @@ public:
         qint64 time = 0;                  ///< its own time: the row's + the fitted lag + the alignment
         int    partner = 0;               ///< the cluster of the partner named
         int    shift = 0;                 ///< samples the alignment moved it from the fitted lag
+        int    looksLike = -1;            ///< the cluster its features fit best (the .clu's own space), -1: not scored
+        int    partnerRank = -1;          ///< clusters that fit it better than the partner named (0: the partner fits best)
         QHash<QString, std::vector<qint64>> features;   ///< per feature space: its .fet row, projected, the time last
         QHash<QString, std::vector<int16_t>> records;   ///< per .spk method: the record, centred on its peak
     };
@@ -2171,6 +2173,17 @@ public:
         QString reason;
         std::vector<ResidualSpike> spikes;   ///< ascending time
         QHash<int, qint64> perPartner;       ///< per partner cluster: spikes
+        /** How the spikes named for a partner look in the .clu's own feature space, scored
+         *  against every cluster's clean rows (a Gaussian per cluster, independent columns). */
+        struct Match {
+            qint64 scored = 0;               ///< spikes scored
+            qint64 best = 0;                 ///< ... the partner named fits best
+            qint64 near = 0;                 ///< ... the partner named is among the 3 best
+            int    looksLike = -1;           ///< the cluster that fits most of them best
+            qint64 looksLikeCount = 0;
+        };
+        QHash<int, Match> matchOf;           ///< per partner cluster
+        QList<int> doubtful;                 ///< partners (>= 20 spikes) that fit best for fewer than 1 in 5 of theirs
         qint64  candidates = 0;              ///< residuals of the selection
         qint64  known = 0;                   ///< left: the spike is a row already, or repeats another residual (rebuildResiduals)
         qint64  unmatched = 0;               ///< left: the partner's class has no cluster

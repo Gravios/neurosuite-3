@@ -812,9 +812,24 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             j.insert(QStringLiteral("time"), static_cast<double>(s.time));
             j.insert(QStringLiteral("partner"), s.partner);
             j.insert(QStringLiteral("shift"), s.shift);
+            j.insert(QStringLiteral("looksLike"), s.looksLike);
+            j.insert(QStringLiteral("partnerRank"), s.partnerRank);
             spikes.append(j);
         }
         result.insert(QStringLiteral("spikes"), spikes);
+        QJsonObject match;
+        for (auto it = R.matchOf.constBegin(); it != R.matchOf.constEnd(); ++it) {
+            QJsonObject m;
+            m.insert(QStringLiteral("scored"), static_cast<double>(it->scored));
+            m.insert(QStringLiteral("best"), static_cast<double>(it->best));
+            m.insert(QStringLiteral("near"), static_cast<double>(it->near));
+            m.insert(QStringLiteral("looksLike"), it->looksLike);
+            match.insert(QString::number(it.key()), m);
+        }
+        result.insert(QStringLiteral("match"), match);
+        QJsonArray doubtful;
+        for (const int partner : R.doubtful) doubtful.append(partner);
+        result.insert(QStringLiteral("doubtful"), doubtful);
         result.insert(QStringLiteral("modified"), doc->isModified());
         if (R.ok && o.value(QStringLiteral("apply")).toBool(false)) {
             QString stage, summary;

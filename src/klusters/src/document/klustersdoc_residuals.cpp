@@ -75,6 +75,10 @@ constexpr int kTwin          = 6;     ///< samples within which two spike times 
 constexpr int kChunk         = 64;    ///< rows cut from the recording in one pass
 constexpr int kEdge          = 4;     ///< samples at either end of a record that make its edge level
 constexpr int kAlign         = 6;     ///< samples a residual may be moved to bring its peak to the template's
+constexpr int kMatchMinRows  = 50;    ///< clean rows a cluster needs to be scored against
+constexpr int kMatchSample   = 5000;  ///< rows a cluster's spread is taken from
+constexpr int kDoubtfulSpikes = 20;   ///< a partner with fewer spikes is not called doubtful
+constexpr int kDoubtfulOneIn = 5;     ///< doubtful: the partner fits best for fewer than 1 in this many
 constexpr int kTemplateRows  = 200;   ///< rows of the partner's cluster its local template is the mean of
 
 /** |mean| of a record's first and last kEdge samples, over the channels. */
@@ -1011,9 +1015,86 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
             }
         }
     }
+    // ── does a spike look like the partner it is named for?  Its row in the .clu's own space
+    // against every cluster's clean rows there: a Gaussian per cluster with independent columns
+    // (the squared distance in units of the cluster's spread, plus the log of that spread, so
+    // that a broad cluster is not the best fit of everything). ──
+    {
+        const ResidualSpace& space = S.spaces.front();
+        const int nd = space.nDims - 1;                           // the time is no feature
+        struct Model { int cluster; std::vector<double> mean, spread; double logSpread = 0.0; };
+        std::vector<Model> models;
+        for (auto it = rowsOfCluster.constBegin(); it != rowsOfCluster.constEnd(); ++it) {
+            if (it.key() <= 1) continue;
+            const QVector<int>& clean = cleanRows(it.key());
+            if (clean.size() < kMatchMinRows) continue;
+            const int step = std::max(1, static_cast<int>(clean.size()) / kMatchSample);
+            std::vector<qint64> sample;
+            for (int k = 0; k < clean.size(); k += step) sample.push_back(clean[k]);
+            std::vector<int64_t> values;
+            if (!readFetRows(space.fetPath, sample, space.nDims, nSpikes, values)) { models.clear(); break; }
+            Model m;
+            m.cluster = it.key();
+            m.mean.assign(static_cast<std::size_t>(nd), 0.0);
+            m.spread.assign(static_cast<std::size_t>(nd), 0.0);
+            const double count = static_cast<double>(sample.size());
+            for (std::size_t r = 0; r < sample.size(); ++r)
+                for (int d = 0; d < nd; ++d) m.mean[static_cast<std::size_t>(d)] += static_cast<double>(values[r * static_cast<std::size_t>(space.nDims) + d]) / count;
+            for (std::size_t r = 0; r < sample.size(); ++r)
+                for (int d = 0; d < nd; ++d) {
+                    const double v = static_cast<double>(values[r * static_cast<std::size_t>(space.nDims) + d]) - m.mean[static_cast<std::size_t>(d)];
+                    m.spread[static_cast<std::size_t>(d)] += v * v / count;
+                }
+            for (int d = 0; d < nd; ++d) {
+                m.spread[static_cast<std::size_t>(d)] = std::max(1.0, m.spread[static_cast<std::size_t>(d)]);   // a variance; a feature is an integer
+                m.logSpread += std::log(m.spread[static_cast<std::size_t>(d)]);
+            }
+            models.push_back(std::move(m));
+        }
+        if (models.size() >= 2) {
+            QHash<int, QHash<int, qint64>> bestOf;                 // partner -> best-fitting cluster -> spikes
+            std::vector<double> score(models.size());
+            for (ResidualSpike& spike : S.spikes) {
+                const std::vector<qint64>& row = spike.features[space.method];
+                int partnerAt = -1;
+                std::size_t best = 0;
+                for (std::size_t q = 0; q < models.size(); ++q) {
+                    double sum = models[q].logSpread;
+                    for (int d = 0; d < nd; ++d) {
+                        const double v = static_cast<double>(row[static_cast<std::size_t>(d)]) - models[q].mean[static_cast<std::size_t>(d)];
+                        sum += v * v / models[q].spread[static_cast<std::size_t>(d)];
+                    }
+                    score[q] = sum;
+                    if (sum < score[best]) best = q;
+                    if (models[q].cluster == spike.partner) partnerAt = static_cast<int>(q);
+                }
+                spike.looksLike = models[best].cluster;
+                if (partnerAt < 0) continue;                       // the partner has too few clean rows to be scored
+                int better = 0;
+                for (std::size_t q = 0; q < models.size(); ++q) if (score[q] < score[static_cast<std::size_t>(partnerAt)]) ++better;
+                spike.partnerRank = better;
+                ResidualSpikes::Match& m = S.matchOf[spike.partner];
+                ++m.scored;
+                if (better == 0) ++m.best;
+                if (better < 3) ++m.near;
+                ++bestOf[spike.partner][spike.looksLike];
+            }
+            for (auto it = S.matchOf.begin(); it != S.matchOf.end(); ++it) {
+                const QHash<int, qint64>& counts = bestOf[it.key()];
+                for (auto c = counts.constBegin(); c != counts.constEnd(); ++c)
+                    if (c.value() > it->looksLikeCount || (c.value() == it->looksLikeCount && c.key() < it->looksLike)) { it->looksLike = c.key(); it->looksLikeCount = c.value(); }
+                if (it->scored >= kDoubtfulSpikes && it->best * kDoubtfulOneIn < it->scored) S.doubtful << it.key();
+            }
+            std::sort(S.doubtful.begin(), S.doubtful.end());
+        }
+    }
+
     S.ok = true;
     qInfo().noquote() << "[residual spikes]" << S.candidates << "residuals in the selection:" << S.spikes.size() << "spikes ready ("
                       << S.moved << "moved by the alignment);" << S.known << "known already," << S.unmatched << "without a partner cluster,"
                       << S.alreadyRow << "on a row once aligned," << S.repeated << "repeated," << S.withoutNeighbours << "without neighbours";
+    for (const int partner : S.doubtful)
+        qInfo().noquote() << "[residual spikes] doubtful: of the" << S.matchOf[partner].scored << "spikes named for cluster" << partner
+                          << "it fits" << S.matchOf[partner].best << "best;" << S.matchOf[partner].looksLikeCount << "fit cluster" << S.matchOf[partner].looksLike << "best";
     return S;
 }

@@ -316,7 +316,16 @@ void KlustersApp::slotAddResidualSpikes()
     QStringList per;
     QList<int> partners = R.perPartner.keys();
     std::sort(partners.begin(), partners.end(), [&](int a, int b) { return R.perPartner.value(a) > R.perPartner.value(b); });
-    for (int i = 0; i < partners.size() && i < 12; ++i) per << tr("%1: %2").arg(partners[i]).arg(R.perPartner.value(partners[i]));
+    for (int i = 0; i < partners.size() && i < 12; ++i) {
+        const KlustersDoc::ResidualSpikes::Match m = R.matchOf.value(partners[i]);
+        per << (m.scored > 0 ? tr("%1: %2 (%3 % fit)").arg(partners[i]).arg(R.perPartner.value(partners[i])).arg(qRound(100.0 * m.best / m.scored))
+                             : tr("%1: %2").arg(partners[i]).arg(R.perPartner.value(partners[i])));
+    }
+    QStringList doubt;
+    for (const int partner : R.doubtful) {
+        const KlustersDoc::ResidualSpikes::Match m = R.matchOf.value(partner);
+        doubt << tr("%1 (%2 of %3 fit it best; %4 fit cluster %5)").arg(partner).arg(m.best).arg(m.scored).arg(m.looksLikeCount).arg(m.looksLike);
+    }
     if (partners.size() > 12) per << tr("… and %1 more").arg(partners.size() - 12);
     QMessageBox box(QMessageBox::Question, tr("Add Residual Spikes as Clusters"),
         tr("%1 residual spike(s) of %2 partner(s) are rows of no cluster.  Add them as %2 new cluster(s)?")
@@ -326,8 +335,12 @@ void KlustersApp::slotAddResidualSpikes()
         tr("Each is cut from %1 around its own peak (%2 were moved by the alignment), the row's own unit "
            "subtracted, and becomes a row of a NEW cluster -- one per partner named -- so that it can be "
            "looked at beside that partner before the two are merged.  A new stage is written and opened; "
-           "the open stage is not changed.\n\nPartners (cluster: spikes): %3.\n\n%4")
-            .arg(R.source).arg(R.moved).arg(per.join(QStringLiteral(", ")), left));
+           "the open stage is not changed.\n\nPartners (cluster: spikes, and the share whose features fit that "
+           "cluster better than any other): %3.\n\n%4%5")
+            .arg(R.source).arg(R.moved).arg(per.join(QStringLiteral(", ")), left,
+                 doubt.isEmpty() ? QString()
+                                 : tr("\n\nDOUBTFUL -- the spikes named for these clusters mostly do not look like them; "
+                                      "their new clusters are probably not that unit: %1.").arg(doubt.join(QStringLiteral("; ")))));
     box.setDefaultButton(QMessageBox::No);
     if (box.exec() != QMessageBox::Yes) return;
 

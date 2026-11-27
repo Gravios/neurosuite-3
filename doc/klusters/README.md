@@ -1466,6 +1466,18 @@ from the files on disk.
   and the feature spaces over it; a space whose basis does not fit. Their files keep the old
   rows and are listed as not usable in the new stage. The status line names them.
 - **It needs** a recording, and the shown `.spk` of the standard or stderiv kind.
+- **Does a spike look like its partner?** The name comes from a template fit in the collision
+  row. As a second look, each new spike's row in the session's own feature space is scored
+  against every cluster's clean spikes there (a Gaussian per cluster with independent columns:
+  the squared distance in units of the cluster's spread, plus the log of that spread, so that a
+  broad cluster is not the best fit of everything; clusters with fewer than 50 clean spikes are
+  not scored). The confirmation gives, per partner, the share of its spikes that this partner
+  fits better than any other cluster. A partner with 20 or more spikes of which fewer than one
+  in five fit it best is listed as **doubtful**, with the cluster most of them fit instead: its
+  new cluster is probably not that unit. The spikes are added all the same — as a new cluster,
+  which is where a doubtful one is looked at. The score is not independent of the fit (both
+  read the same waveform): a high share says the residuals have the partner's shape, not that
+  each is that unit's spike.
 - The confirmation lists the spikes per partner and how many were left out, by reason.
 
 Limits. A partner is found only where the partner's cluster has a template and spikes of its

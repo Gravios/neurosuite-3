@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: Add Residual Spikes says whether the spikes look like their partner](#2026-11-27--klusters-add-residual-spikes-says-whether-the-spikes-look-like-their-partner) |
 | 2026-11-27 | [Klusters: a .spkr for every .spk method at Save](#2026-11-27--klusters-a-spkr-for-every-spk-method-at-save) |
 | 2026-11-27 | [Klusters: Add Residual Spikes no longer crashes on a stderiv session](#2026-11-27--klusters-add-residual-spikes-no-longer-crashes-on-a-stderiv-session) |
 | 2026-11-27 | [Klusters: the residual spikes' features, saved as .fetr](#2026-11-27--klusters-the-residual-spikes-features-saved-as-fetr) |
@@ -327,6 +328,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: Add Residual Spikes says whether the spikes look like their partner
+
+Each residual spike is scored against every cluster in feature space; the dialog shows the share that fits the partner named and lists the partners most of whose spikes fit another cluster.
+
+<details>
+<summary>Details</summary>
+
+- **Why.** On jg05-20120312 group 8 the saved marks named some small clusters more often than
+  those clusters have spikes, and of the residuals named for clusters 9, 8 and 59 only 5 %, 1 %
+  and 3 % lay with that cluster in feature space (51 % over all partners; 1 % for a random
+  cluster named). Adding such spikes as "the partner's" would mislead.
+- **Now** each spike found is scored, in the session's own feature space, against every cluster
+  with 50 or more clean spikes: a Gaussian per cluster with independent columns (squared
+  distance over the cluster's variance plus the log variance). Per partner the dialog shows the
+  share of its spikes that the partner fits best; a partner with 20 or more spikes and fewer
+  than one in five fitting it best is listed as doubtful, with the cluster most of them fit.
+- Nothing is left out because of it: the spikes become new clusters as before.
+  `ResidualSpikes::matchOf`, `doubtful`; per spike `looksLike`, `partnerRank`.
+- **Checked** in `test_residual_spikes.py`: 39 of 39 planted spikes fit the partner best and it
+  is not doubtful; with the partner's own spikes moved elsewhere in feature space 0 of 39 fit
+  it, it is listed as doubtful and the other cluster is named. **Not checked:** the dialog
+  text itself; the in-app score on the real session (the numbers above are from the same
+  score computed outside Klusters on the saved `.fetr`).
+
+</details>
 
 ---
 

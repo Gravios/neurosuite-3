@@ -24,6 +24,9 @@ written but not opened):
   - the open stage's files are not changed;
   - the new stage opens (on its own rows), and asked again adds nothing: every residual of
     cluster 2 is now a row;
+  - FIT: the spikes named for cluster 3 fit cluster 3 better than any other cluster in feature
+    space, and it is not called doubtful; with cluster 3's own spikes moved elsewhere in feature
+    space it IS called doubtful, with the cluster the spikes fit instead;
   - with BOTH clusters marked there are two new clusters, one per partner;
   - a hierarchical session: the new cluster is one child, its self child, in the stage's
     .clc / .clp, and the old children are kept.
@@ -136,6 +139,11 @@ def main():
         check(not any(m in by_row for m in nat) and r.get("known") + r.get("alreadyRow") >= len(nat) and len(nat) >= 10,
               "a spike of unit 3 that is a row already is not added", f"known {r.get('known')}, natural {len(nat)}")
         check(r.get("source", "").endswith(".fil") and r.get("methods") == ["standard"], "cut from the .fil", str(r.get("source")))
+        m3 = r.get("match", {}).get("3", {})
+        print(f"      fit: of {m3.get('scored')} spikes named for cluster 3, it is the best-fitting cluster for {m3.get('best')}")
+        check(m3.get("scored") == len(spikes) and m3.get("best", 0) >= 0.9 * len(spikes) and m3.get("looksLike") == 3
+              and r.get("doubtful") == [], "the spikes look like the partner they are named for, and it is not called doubtful",
+              str((m3, r.get("doubtful"))))
         check(r.get("newClusters") == {"3": 4}, "partner 3 gets the new cluster 4", str(r.get("newClusters")))
         check(r.get("stage", "").endswith(".clu.standard.1.rs"), "the stage is <name>.rs", str(r.get("stage")))
         check(digest(own) == was and r.get("modified") is False, "the open stage's files are not changed")
@@ -217,6 +225,28 @@ def main():
                   and all(x["spk"].split(".pending")[0].endswith(".spk.standard.1.rs") for x in sp.values()),
                   "in the new stage every feature space is usable, on the stage's own .fet and .spk",
                   str([(m, x["usable"], os.path.basename(x["fet"]), os.path.basename(x["spk"]), x["reason"]) for m, x in sp.items()]))
+
+    # ── a partner the spikes do NOT look like is called doubtful ──
+    with tempfile.TemporaryDirectory() as d:
+        base, clu, plan, before, raw = M.build(d, "dbt")
+        ok, st = M.run(klusters, base, [{"markCollisions": {"clusters": [2], "apply": True}}, {"save": True}], d)
+        if ok:
+            # cluster 3's own spikes are moved far away in feature space: the residuals named
+            # for it (which still have unit 3's shape) no longer lie with it
+            fet = S.read_fet(f"{base}.fet.standard.1").copy()
+            fet[clu == 3, :-1] += 5000
+            with open(f"{base}.fet.standard.1", "wb") as fh:
+                np.array([fet.shape[1]], np.int32).tofile(fh)
+                fet.tofile(fh)
+        ok2, st2 = M.run(klusters, base, [{"residualSpikes": {"clusters": [2]}}], d) if ok else (False, [])
+        check(ok and ok2, "a session whose cluster 3 lies elsewhere in feature space")
+        if ok and ok2:
+            m3 = st2[0].get("match", {}).get("3", {})
+            print(f"      fit: of {m3.get('scored')} spikes named for cluster 3 it is the best-fitting cluster for {m3.get('best')}; "
+                  f"most fit cluster {m3.get('looksLike')}")
+            check(m3.get("scored", 0) >= 35 and m3.get("best") == 0 and m3.get("looksLike") == 2 and st2[0].get("doubtful") == [3],
+                  "the partner is called doubtful, with the cluster its spikes fit instead", str((m3, st2[0].get("doubtful"))))
+            check(len(st2[0].get("spikes", [])) == m3.get("scored"), "... and its spikes are still offered (the curator decides)")
 
     # ── both marked: a new cluster per partner ──
     with tempfile.TemporaryDirectory() as d:
