@@ -144,6 +144,14 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "align each at its peak, and add them as rows of new clusters -- one new cluster per\n"
                      "partner named.  Written as a new stage (<stage>_rs), which is then opened; the open\n"
                      "stage is not changed.  Save first.")).editing();
+    // A stage Add Residual Spikes wrote before it kept extended records: rebuild them, so that
+    // realign, nudge and re-extract cut those rows from them and not from the recording.
+    t << CommandSpec("action.rebuildExtendedRecords", "Clusters", tr("Rebuild Residual Spikes' E&xtended Records…"),
+                     ON(triggered, slotRebuildExtendedRecords))
+            .toolTip(tr("In a stage made by Add Residual Spikes before it kept them: find the rows of residual spikes\n"
+                     "(a row at a collision row's residual time that the recording does not hold) and write their\n"
+                     "extended records (.spkx), so that realign, nudge and re-extract on save cut them from there.\n"
+                     "Save first.")).editing();
     t << CommandSpec("action.purgeSmallClusters", "Clusters", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
             .editing();
     // Bulk artifact removal: move every spike more than 5 sigma from its cluster's

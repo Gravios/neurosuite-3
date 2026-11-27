@@ -588,6 +588,7 @@ void KlustersApp::createMenus()
     mLocalPcaSpace = addCommand(nullptr, "action.localPcaSpace");
     mMarkCollisions = addCommand(nullptr, "action.markCollisions");
     mAddResidualSpikes = addCommand(nullptr, "action.addResidualSpikes");
+    mRebuildExtendedRecords = addCommand(nullptr, "action.rebuildExtendedRecords");
     mRemoveDuplicateSpikes = addCommand(nullptr, "action.removeDuplicateSpikes");
     mCollisionRowsToChild = addCommand(nullptr, "action.collisionRowsToChild");
     mRemoveCollisionMarks = addCommand(nullptr, "action.removeCollisionMarks");
@@ -811,7 +812,7 @@ void KlustersApp::createMenus()
     fill(viewMenu, { mIncreasePointSize, mDecreasePointSize, nullptr, mImmediateSelection, mDelaySelection });
 
     fill(clustersMenu, { mGroupeClusters, mDeleteArtifact, mDeleteNoisy, nullptr,
-                         mRenumberClusters, mPurgeSmallClusters, mRemoveDuplicateSpikes, mAutoMerge, nullptr, mMarkCollisions, mCollisionRowsToChild, mRemoveCollisionMarks, mRemoveUnconfirmedMarks, mAddResidualSpikes, nullptr,
+                         mRenumberClusters, mPurgeSmallClusters, mRemoveDuplicateSpikes, mAutoMerge, nullptr, mMarkCollisions, mCollisionRowsToChild, mRemoveCollisionMarks, mRemoveUnconfirmedMarks, mAddResidualSpikes, mRebuildExtendedRecords, nullptr,
                          mMarkAsTemplate, mGenerateTemplate, nullptr });
     clustersMenu->addMenu(mClusterSortMenu);
     fill(splitMenu, { mWatershed, mDipSplit, mSplitByKnn, mPartitionByTime, nullptr,

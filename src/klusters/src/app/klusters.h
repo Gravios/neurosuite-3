@@ -640,6 +640,9 @@ public:
      *  NEW clusters, one per partner named, in a new stage that is then opened
      *  (KlustersDoc::alignedResidualSpikes, writeResidualStage). */
     void slotAddResidualSpikes();
+    /** Clusters > Rebuild Residual Spikes' Extended Records: the .spkx of a stage Add Residual
+     *  Spikes wrote before it kept one, after a confirmation (KlustersDoc::rebuildExtendedRecords). */
+    void slotRebuildExtendedRecords();
     /** Writes @p found as a new stage beside the open one: every existing row as it is and the
      *  residual spikes as rows of new clusters (res, clu, clc/clp when hierarchical, every .spk
      *  method, the shown .fet, the .eap).  Nothing of the open stage is changed.  Returns the
@@ -1686,6 +1689,7 @@ private:
     QAction *mLocalPcaSpace        = nullptr;   ///< View > Local PCA of the Selection (Shift+Y)
     QAction *mMarkCollisions       = nullptr;   ///< Clusters > Mark Collisions
     QAction *mAddResidualSpikes    = nullptr;   ///< Clusters > Add Residual Spikes as Clusters
+    QAction *mRebuildExtendedRecords = nullptr; ///< Clusters > Rebuild Residual Spikes' Extended Records
     QAction *mRemoveDuplicateSpikes = nullptr;  ///< Clusters > Remove Duplicate Spikes
     QAction *mResidualWaveforms    = nullptr;   ///< Waveforms > Residual of Collision Rows (checkable)
     QAction *mCollisionRowsToChild = nullptr;   ///< Clusters > Collision Rows to a Child

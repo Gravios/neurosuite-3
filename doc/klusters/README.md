@@ -1140,6 +1140,7 @@ line says how many were left.
 | Clusters ▸ Remove Collision Marks… | — | Takes the partners out of the rows of the selected clusters (or children) that name one, after a confirmation; written at Save |
 | Waveforms ▸ Residual of Collision Rows | — | Toggle: rows that name a partner are drawn as the partner's spike — re-cut from the recording around the partner, the row's own unit subtracted — and written as `.spkr` at Save |
 | Clusters ▸ Add Residual Spikes as Clusters… | — | The residual spikes of the selected clusters' collision rows that no row holds, each aligned at its own peak, become rows of new clusters — one per partner named — in a new stage (`<stage>_rs`) that is then opened. See [Adding the residual spikes](#adding-the-residual-spikes) |
+| Clusters ▸ Rebuild Residual Spikes' Extended Records… | — | In a stage Add Residual Spikes wrote before it kept extended records: finds the rows of residual spikes and writes their `.spkx`, after a confirmation. See [Adding the residual spikes](#adding-the-residual-spikes) |
 | Clusters ▸ Mark Collisions… | — | Searches the selected clusters (in the child view: the selected children) for rows that hold a second cluster's spike and, after a confirmation, names the partner in the `.eap`: the rows are then shown with the partner subtracted. See [Mark Collisions](#mark-collisions--the-collisions-no-sorter-named) |
 | Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
 | Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artifact (0), after a confirmation |
@@ -1493,6 +1494,16 @@ from the files on disk.
   features of another space than the `.spk` (a raw `.spk` under stderiv features): there the
   rows stay where they are, and a re-extract with such rows leaves the `.spk` as it is. A stage made from a `_rs` stage carries its records;
   **Sort Spikes by Time** reorders them with the rows.
+- **A stage made before (2026-11-27).** It has no `.spkx`: a realign of its new clusters stops at
+  the raw-source check. **Clusters → Rebuild Residual Spikes' Extended Records…** (save first)
+  finds the rows: a row within 6 samples of a collision row's residual time (its time plus the
+  fitted lag) that is *not* the recording's window there. Its record is cut as Add Residual
+  Spikes cut it — the wider window at the row's time less the collision row's own unit (the
+  median of its neighbours), displaced as the row is — and its middle set to the row as it is.
+  A row that is the recording's window is left out: the partner's own row, or a residual row a
+  nudge or a re-extract has already cut from the recording (that one cannot be rebuilt; its
+  record is the collision). The confirmation gives the count of each, and how far the rebuilt
+  records are from the rows (they differ where the unit's neighbours have changed since).
 - **Every feature space.** In each space that is a projection (it has a `.pca.<method>`) a new
   row is its record — of that space's waveform method — through that space's basis; the
   columns the basis does not give are copied from the source row, the time is the spike's own.

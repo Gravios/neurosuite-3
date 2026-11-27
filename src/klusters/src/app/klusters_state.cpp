@@ -187,6 +187,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mLocalPcaSpace->setEnabled(false);
         mMarkCollisions->setEnabled(false);
         mAddResidualSpikes->setEnabled(false);
+        mRebuildExtendedRecords->setEnabled(false);
         mRemoveDuplicateSpikes->setEnabled(false);
         mResidualWaveforms->setEnabled(false);
         mResidualWaveforms->setChecked(false);       // a new session shows its rows as they are
@@ -270,6 +271,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mLocalPcaSpace->setEnabled(true);
         mMarkCollisions->setEnabled(true);
         mAddResidualSpikes->setEnabled(true);
+        mRebuildExtendedRecords->setEnabled(true);
         mRemoveDuplicateSpikes->setEnabled(true);
         mResidualWaveforms->setEnabled(true);
         mResidualWaveforms->setChecked(doc && doc->residualsShown());

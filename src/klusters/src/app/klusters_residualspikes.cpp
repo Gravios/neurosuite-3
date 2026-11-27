@@ -402,3 +402,50 @@ void KlustersApp::slotAddResidualSpikes()
     if (!mainDock) openDocumentFile(outCluPath);
     statusBar()->showMessage(summary, 15000);
 }
+
+void KlustersApp::slotRebuildExtendedRecords()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if (refuseInBorrowedSpace(tr("Rebuild extended records"))) return;
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish first."), 5000);
+        return;
+    }
+    const QString title = tr("Rebuild Residual Spikes' Extended Records");
+    if (doc->isModified()) {
+        QMessageBox::information(this, title, tr("The session has changes that are not saved.  The records are rebuilt from the files on disk: save first."));
+        return;
+    }
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    slotStatusMsg(tr("Looking for the rows of residual spikes…"));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    const QStringList methods = availableSpkVariants();
+    const KlustersDoc::ExtendedRebuild X = doc->rebuildExtendedRecords(methods, /*write*/ false);
+    QApplication::restoreOverrideCursor();
+    if (!X.ok) { slotStatusMsg(tr("Rebuild extended records: %1").arg(X.reason)); return; }
+    const QString found = tr("Of %1 collision row(s) with a residual: %2 row(s) at the residual's time are not the recording's "
+                             "window there (residual spikes made into rows); %3 are the recording's (the partner's own row, "
+                             "or a residual row cut again from the recording: it cannot be rebuilt); %4 have a record already; "
+                             "%5 without neighbours.")
+                              .arg(X.residuals).arg(X.found).arg(X.inRecording).arg(X.had).arg(X.withoutNeighbours);
+    const qint64 rebuilt = X.found - X.withoutNeighbours;
+    if (rebuilt <= 0) { slotStatusMsg(tr("Rebuild extended records: nothing to rebuild.  %1").arg(found)); return; }
+    QMessageBox box(QMessageBox::Question, title,
+        tr("Rebuild the extended records of %1 residual spike row(s)?").arg(rebuilt), QMessageBox::Yes | QMessageBox::No, this);
+    box.setInformativeText(
+        tr("%1\n\nEach record is the row's window and %2 samples either side, cut from the recording less the "
+           "source row's own unit as Add Residual Spikes cut it, its middle the row as it is.  Rebuilt against "
+           "the rows: %3 % RMS difference (median), %4 row(s) more than 20 % off (their unit's neighbours have "
+           "changed since).  Written for: %5.%6")
+            .arg(found).arg(X.margin).arg(QString::number(100.0 * X.medianMismatch, 'f', 1)).arg(X.unlike)
+            .arg(X.methods.join(QStringLiteral(", ")),
+                 X.methodsSkipped.isEmpty() ? QString() : tr("  Not: %1.").arg(X.methodsSkipped.join(QStringLiteral("; ")))));
+    box.setDefaultButton(QMessageBox::Yes);
+    if (box.exec() != QMessageBox::Yes) return;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::ExtendedRebuild W = doc->rebuildExtendedRecords(methods, /*write*/ true);
+    QApplication::restoreOverrideCursor();
+    if (!W.ok) { QMessageBox::warning(this, title, W.reason); return; }
+    statusBar()->showMessage(tr("Extended records of %1 residual spike row(s) written (.spkx: %2).")
+                                 .arg(W.found - W.withoutNeighbours).arg(W.methods.join(QStringLiteral(", "))), 15000);
+}

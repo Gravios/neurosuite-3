@@ -779,6 +779,25 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         return true;
     }
+    if (step.contains(QStringLiteral("rebuildExtended"))) {
+        // {"rebuildExtended": {"apply": bool}}: Clusters > Rebuild Residual Spikes' Extended Records
+        // without its dialog; with "apply" the .spkx written.
+        const bool apply = step.value(QStringLiteral("rebuildExtended")).toObject().value(QStringLiteral("apply")).toBool(false);
+        const KlustersDoc::ExtendedRebuild X = doc->rebuildExtendedRecords(availableSpkVariants(), apply);
+        result.insert(QStringLiteral("ok"), X.ok);
+        result.insert(QStringLiteral("reason"), X.reason);
+        result.insert(QStringLiteral("residuals"), static_cast<double>(X.residuals));
+        result.insert(QStringLiteral("found"), static_cast<double>(X.found));
+        result.insert(QStringLiteral("inRecording"), static_cast<double>(X.inRecording));
+        result.insert(QStringLiteral("withoutNeighbours"), static_cast<double>(X.withoutNeighbours));
+        result.insert(QStringLiteral("had"), static_cast<double>(X.had));
+        result.insert(QStringLiteral("unlike"), static_cast<double>(X.unlike));
+        result.insert(QStringLiteral("medianMismatch"), X.medianMismatch);
+        result.insert(QStringLiteral("margin"), X.margin);
+        result.insert(QStringLiteral("methods"), QJsonArray::fromStringList(X.methods));
+        result.insert(QStringLiteral("methodsSkipped"), X.methodsSkipped.join(QStringLiteral("; ")));
+        return X.ok;
+    }
     if (step.contains(QStringLiteral("residualSpikes"))) {
         // {"residualSpikes": {"clusters": [..], "children": bool, "apply": bool}}: Clusters > Add
         // Residual Spikes as Clusters without its dialog and WITHOUT opening the new stage -- the

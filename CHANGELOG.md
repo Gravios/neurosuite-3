@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: rebuild the extended records of an existing residual stage](#2026-11-27--klusters-rebuild-the-extended-records-of-an-existing-residual-stage) |
 | 2026-11-27 | [Klusters: a residual spike's row is re-cut from its extended record](#2026-11-27--klusters-a-residual-spikes-row-is-re-cut-from-its-extended-record) |
 | 2026-11-27 | [Klusters: the method of a stage's own .spk](#2026-11-27--klusters-the-method-of-a-stages-own-spk) |
 | 2026-11-27 | [Formats: .spkx, the extended records of rows the recording does not hold](#2026-11-27--formats-spkx-the-extended-records-of-rows-the-recording-does-not-hold) |
@@ -337,6 +338,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: rebuild the extended records of an existing residual stage
+
+A stage made before .spkx can be given one.
+
+<details>
+<summary>Details</summary>
+
+- **Clusters → Rebuild Residual Spikes' Extended Records…**: the `.spkx` of a
+  stage Add Residual Spikes wrote before it kept one (without it a realign of
+  the new clusters stops at the raw-source check).  A row within 6 samples of a
+  collision row's residual time that is not the recording's window there is
+  that residual's row; its record is cut as Add Residual Spikes cut it, the
+  middle set to the row as it is.  Rows that are the recording's window (the
+  partner's own, or a residual row already cut again from the recording) are
+  left out and counted.  `KlustersDoc::rebuildExtendedRecords`, self-test step
+  `rebuildExtended`.
+- Test: `test_residual_spikes_recut.py` (the rebuilt records are byte for byte
+  those Add Residual Spikes wrote; none found in the stage the residuals were
+  found in).  `commands.golden.json` updated.
+
+</details>
 
 ---
 

@@ -12,6 +12,10 @@ cluster 4 in the stage <name>.rs):
 
   - the stage's .spkx names the new rows, with their times and the rows they were found in, a
     margin of half a window, and the middle of each record is the row's .spk record;
+  - Rebuild Extended Records, on the stage without its .spkx (a stage made before it was kept),
+    finds every new row and not the partner's own rows at a residual's time (they are the
+    recording's windows), and writes the records Add Residual Spikes wrote, byte for byte;
+    NEGATIVE CONTROL: on the stage the residuals were found in it finds none;
   - NEGATIVE CONTROL: without the .spkx a realign of cluster 4 stops at the raw-source check and
     changes nothing;
   - a nudge of cluster 4 by 3 samples: each new row is its extended record 3 samples on, the old
@@ -125,6 +129,31 @@ def main():
         good, tot = as_extended(x, g0)
         check(good == tot == len(new), "the middle of each record is the row's .spk record", f"{good} of {tot}")
         print(f"      {len(new)} new rows (cluster 4), margin {x['margin']} samples")
+
+        # ── a stage made before the .spkx was kept: its records rebuilt ──
+        ok, st = run_on(klusters, f"{base}.clu.standard.1", [{"rebuildExtended": {}}], d)
+        check(ok and st[0].get("found") == 0, "NEGATIVE CONTROL: the stage the residuals were found in has no residual rows to rebuild",
+              str({k: st[0].get(k) for k in ("ok", "reason", "found", "inRecording")}) if st else "")
+        kept = spkx + ".kept"
+        shutil.move(spkx, kept)
+        ok, st = run_on(klusters, stage_clu, [{"rebuildExtended": {"apply": True}}], d)
+        rb = st[0] if st else {}
+        print(f"      rebuild: {rb.get('residuals')} residuals, {rb.get('found')} rows not in the recording, "
+              f"{rb.get('inRecording')} in it, mismatch {rb.get('medianMismatch')}")
+        check(ok and rb.get("found") == len(new) and rb.get("withoutNeighbours") == 0 and os.path.exists(spkx),
+              "Rebuild Extended Records finds every new row (a row at a residual's time the recording does not hold)",
+              str({k: rb.get(k) for k in ("ok", "reason", "residuals", "found", "inRecording", "withoutNeighbours")}))
+        check(rb.get("inRecording", 0) >= 10, "... and not the partner's own rows at a residual's time (they are the recording's)",
+              str(rb.get("inRecording")))
+        if os.path.exists(spkx):
+            xr = read_spkx(spkx)
+            same = np.array_equal(xr["rows"], x["rows"]) and np.array_equal(xr["times"], x["times"]) \
+                and np.array_equal(xr["sources"], x["sources"]) and xr["margin"] == x["margin"]
+            check(same and np.array_equal(xr["body"], x["body"]),
+                  "... and its records are the ones Add Residual Spikes wrote, byte for byte",
+                  f"index same: {same}; records differing: "
+                  f"{int((xr['body'] != x['body']).any(axis=(1, 2)).sum()) if same else '-'}")
+        shutil.move(kept, spkx)
 
         # ── NEGATIVE CONTROL: without it a realign stops at the raw-source check ──
         hidden = spkx + ".hidden"

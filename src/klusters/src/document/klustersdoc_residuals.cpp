@@ -48,6 +48,7 @@
 #include "neurosuite/core/custody.hpp"
 #include "neurosuite/core/neurofileio.h"
 #include "neurosuite/core/spike_extract.hpp"
+#include "neurosuite/core/fileio64.hpp"
 #include "pca_row_projection.h"
 
 #include <QDebug>
@@ -1133,4 +1134,223 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
         qInfo().noquote() << "[residual spikes] doubtful: of the" << S.matchOf[partner].scored << "spikes named for cluster" << partner
                           << "it fits" << S.matchOf[partner].best << "best;" << S.matchOf[partner].looksLikeCount << "fit cluster" << S.matchOf[partner].looksLike << "best";
     return S;
+}
+
+KlustersDoc::ExtendedRebuild KlustersDoc::rebuildExtendedRecords(const QStringList& spkMethods, bool write)
+{
+    namespace nf = neurofileio;
+    ExtendedRebuild X;
+    if (!clusteringData) { X.reason = tr("No session is open."); return X; }
+    const ResidualReport built = rebuildResiduals();
+    if (!built.ok) { X.reason = built.reason; return X; }
+    if (residuals.isEmpty()) { X.reason = tr("No row has a fitted partner: there are no residual spikes to find."); return X; }
+    const QString recording = rawRecordingPath();
+    if (!QFileInfo::exists(recording)) { X.reason = tr("There is no recording (%1).").arg(QFileInfo(recording).fileName()); return X; }
+    const qint64 nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    const int nSamp = clusteringData->nbSamplesPerWaveform();
+    const int nChan = clusteringData->nbOfChannels();
+    const std::size_t rec = static_cast<std::size_t>(nSamp) * nChan;
+    const int timeDim = clusteringData->nbOfDimensionsTotal();
+    auto timeOf = [&](qint64 row) { return static_cast<qint64>(clusteringData->featureValue(static_cast<dataType>(row + 1), timeDim)); };
+    X.margin = nSamp / 2;
+    const std::size_t extRec = static_cast<std::size_t>(nSamp + 2 * X.margin) * nChan;
+
+    // ── the methods: cut as Add Residual Spikes cuts them; each one's .spk of this stage ──
+    const QString shownMethod = featureMethod(clusteringData->getSpkFileName());
+    QStringList methods = spkMethods;
+    if (!methods.contains(shownMethod)) methods.prepend(shownMethod);
+    const QString stem = QFileInfo(docUrl).absolutePath() + QLatin1Char('/') + documentBaseName();
+    std::map<QString, std::unique_ptr<SpikeCutSpec>> cutOf;          // filled in place: a spec is not copied
+    std::map<QString, QString> spkOf;
+    for (const QString& m : methods) {
+        const auto token = neurosuite::custody::parseMethodToken(m.toStdString());
+        const bool cuttable = methodIsStderiv(m) || (token.family == "standard" && token.kind == '\0' && token.lag == 0);
+        auto cut = std::make_unique<SpikeCutSpec>();
+        QString cutLog;
+        QTextStream log(&cutLog);
+        if (cuttable) spikeCutSpecFor(m, nullptr, *cut, log);
+        const QString spk = m == shownMethod ? clusteringData->getSpkFileName()
+                                             : ownOfStage(QString::fromStdString(neurosuite::custody::methodPath(
+                                                   stem.toStdString(), "spk", m.toStdString(), electrodeGroupID.toInt())));
+        if (!cuttable || cut->window.nSamp != nSamp || cut->window.nChan != nChan || cut->window.supersample > 1) {
+            if (m == shownMethod) { X.reason = tr("The shown .spk (method %1) is not cut from the recording at its rate.").arg(m); return X; }
+            X.methodsSkipped << tr("%1: cannot be cut from the recording").arg(m);
+            continue;
+        }
+        if (QFileInfo(spk).size() != nSpikes * static_cast<qint64>(rec * sizeof(int16_t))) {
+            if (m == shownMethod) { X.reason = tr("%1 is not of the open rows.").arg(QFileInfo(spk).fileName()); return X; }
+            X.methodsSkipped << tr("%1: %2 is not of the open rows").arg(m, QFileInfo(spk).fileName());
+            continue;
+        }
+        cutOf[m] = std::move(cut);
+        spkOf[m] = spk;
+    }
+    for (const auto& entry : cutOf) X.methods << entry.first;
+    X.methods.sort();
+
+    // ── the clean rows of every cluster (as the residuals take their neighbours) ──
+    std::vector<int> clu(static_cast<std::size_t>(nSpikes), 0);
+    QHash<int, QVector<int>> cleanOf;
+    for (const dataType id : clusteringData->clusterIds()) {
+        QVector<int> rows = clusteringData->clusterSpkIndices(static_cast<int>(id));
+        std::sort(rows.begin(), rows.end());
+        QVector<int> clean;
+        for (const int r : rows) {
+            if (r >= 0 && r < nSpikes) clu[static_cast<std::size_t>(r)] = static_cast<int>(id);
+            if (!residuals.contains(r)) clean.append(r);
+        }
+        cleanOf.insert(static_cast<int>(id), clean);
+    }
+    residualtwins::Rows allRows;
+    allRows.reserve(static_cast<std::size_t>(nSpikes));
+    for (qint64 i = 0; i < nSpikes; ++i) allRows.emplace_back(timeOf(i), i);
+    std::sort(allRows.begin(), allRows.end());
+
+    // ── the rows at a residual's time: (row, source collision row), nearest to the time first ──
+    struct Pair { qint64 row; qint64 source; qint64 gap; };
+    std::vector<Pair> pairs;
+    for (auto it = residuals.constBegin(); it != residuals.constEnd(); ++it) {
+        if (!it->bytes) continue;
+        ++X.residuals;
+        const qint64 c = it.key();
+        const qint64 t0 = timeOf(c) + it->madeFor;
+        auto at = std::lower_bound(allRows.begin(), allRows.end(), std::make_pair(static_cast<long long>(t0 - kAlign), -1LL));
+        for (; at != allRows.end() && at->first <= t0 + kAlign; ++at)
+            if (at->second != c && !residuals.contains(at->second)) pairs.push_back(Pair{at->second, c, std::llabs(at->first - t0)});
+    }
+    std::sort(pairs.begin(), pairs.end(), [](const Pair& a, const Pair& b) { return a.row != b.row ? a.row < b.row : a.gap < b.gap; });
+    pairs.erase(std::unique(pairs.begin(), pairs.end(), [](const Pair& a, const Pair& b) { return a.row == b.row; }), pairs.end());
+
+    // ── which of them the recording does not hold (in the shown method) ──
+    const std::shared_ptr<const nf::SpkxFile> already = extendedRecords(shownMethod);
+    std::vector<Pair> rows;
+    {
+        FILE* fil = std::fopen(recording.toLocal8Bit().constData(), "rb");
+        FILE* spk = std::fopen(spkOf.at(shownMethod).toLocal8Bit().constData(), "rb");
+        if (!fil || !spk) {
+            if (fil) std::fclose(fil);
+            if (spk) std::fclose(spk);
+            X.reason = tr("Could not open the recording or the .spk.");
+            return X;
+        }
+        std::vector<int16_t> stored(rec);
+        for (std::size_t c0 = 0; c0 < pairs.size(); c0 += kChunk) {
+            const std::size_t c1 = std::min(pairs.size(), c0 + kChunk);
+            std::vector<std::vector<qint64>> times(c1 - c0);
+            for (std::size_t j = c0; j < c1; ++j) times[j - c0].push_back(timeOf(pairs[j].row));
+            WindowSet ws;
+            int64_t outOfRange = 0;
+            cutWindows(fil, cutOf.at(shownMethod)->window, rec, times, ws, &outOfRange);
+            for (std::size_t j = c0; j < c1; ++j) {
+                if (already && nf::spkxFind(*already, pairs[j].row) >= 0) { ++X.had; continue; }
+                if (neurosuite::core::fseek64(spk, pairs[j].row * static_cast<qint64>(rec * sizeof(int16_t)), SEEK_SET) != 0
+                    || std::fread(stored.data(), sizeof(int16_t), rec, spk) != rec) continue;
+                const int16_t* cut = &ws.windows[ws.first[j - c0] * rec];
+                bool same = true;
+                for (std::size_t i = static_cast<std::size_t>(nChan); i < rec && same; ++i)      // (sample 0: the seed convention)
+                    same = std::abs(static_cast<int>(cut[i]) - static_cast<int>(stored[i])) <= 1;
+                if (same) { ++X.inRecording; continue; }
+                rows.push_back(pairs[j]);
+            }
+        }
+        std::fclose(fil);
+        std::fclose(spk);
+    }
+    X.found = static_cast<qint64>(rows.size());
+
+    // ── their neighbours: the source row's own unit, displaced as the row is ──
+    struct Job { Pair p; std::vector<int> neighbours; };
+    std::vector<Job> jobs;
+    for (const Pair& p : rows) {
+        Job j{p, residualNeighbours(p.source, cleanOf.value(clu[static_cast<std::size_t>(p.source)]))};
+        if (static_cast<int>(j.neighbours.size()) < kMinNeighbours) { ++X.withoutNeighbours; continue; }
+        jobs.push_back(std::move(j));
+    }
+
+    // ── the records, per method; the middle the row's own ──
+    std::vector<double> mismatch;
+    for (const QString& m : X.methods) {
+        neurosuite::core::SpikeWindowSpec wide = cutOf.at(m)->window;
+        wide.nSamp      += 2 * X.margin;
+        wide.peakSample += X.margin;
+        nf::SpkxFile x;
+        x.nSpikes = nSpikes; x.nSamples = nSamp; x.nChannels = nChan; x.margin = X.margin;
+        x.group = electrodeGroupID.toInt();
+        std::vector<std::pair<qint64, std::size_t>> order;              // (row, entry) for the ascending index
+        std::vector<int64_t> times, sources;
+        std::vector<int16_t> body;
+        const std::shared_ptr<const nf::SpkxFile> had = extendedRecords(m);
+        if (had && had->margin == X.margin)
+            for (std::size_t k = 0; k < had->rows.size(); ++k) {
+                order.emplace_back(had->rows[k], times.size());
+                times.push_back(had->times[k]);
+                sources.push_back(had->sources[k]);
+                body.insert(body.end(), had->records.begin() + static_cast<std::ptrdiff_t>(k * extRec),
+                            had->records.begin() + static_cast<std::ptrdiff_t>((k + 1) * extRec));
+            }
+        FILE* fil = std::fopen(recording.toLocal8Bit().constData(), "rb");
+        FILE* spk = std::fopen(spkOf.at(m).toLocal8Bit().constData(), "rb");
+        if (!fil || !spk) {
+            if (fil) std::fclose(fil);
+            if (spk) std::fclose(spk);
+            X.methodsSkipped << tr("%1: could not open the recording or the .spk").arg(m);
+            continue;
+        }
+        std::vector<int16_t> ext(extRec), stored(rec);
+        for (std::size_t c0 = 0; c0 < jobs.size(); c0 += kChunk) {
+            const std::size_t c1 = std::min(jobs.size(), c0 + kChunk);
+            std::vector<std::vector<qint64>> wt(c1 - c0);
+            for (std::size_t j = c0; j < c1; ++j) {
+                const qint64 t = timeOf(jobs[j].p.row), d = t - timeOf(jobs[j].p.source);
+                wt[j - c0].push_back(t);
+                for (const int nb : jobs[j].neighbours) wt[j - c0].push_back(timeOf(nb) + d);
+            }
+            WindowSet ws;
+            int64_t outOfRange = 0;
+            cutWindows(fil, wide, extRec, wt, ws, &outOfRange);
+            for (std::size_t j = c0; j < c1; ++j) {
+                if (had && nf::spkxFind(*had, jobs[j].p.row) >= 0) continue;
+                if (neurosuite::core::fseek64(spk, jobs[j].p.row * static_cast<qint64>(rec * sizeof(int16_t)), SEEK_SET) != 0
+                    || std::fread(stored.data(), sizeof(int16_t), rec, spk) != rec) continue;
+                targetLessMedian(ws, j - c0, extRec, ext.data());
+                int16_t* middle = ext.data() + static_cast<std::size_t>(X.margin) * nChan;
+                if (m == shownMethod) {
+                    double d2 = 0.0, s2 = 0.0;
+                    for (std::size_t i = 0; i < rec; ++i) {
+                        const double v = static_cast<double>(middle[i]) - stored[i];
+                        d2 += v * v;
+                        s2 += static_cast<double>(stored[i]) * stored[i];
+                    }
+                    mismatch.push_back(s2 > 0.0 ? d2 / s2 : 0.0);
+                }
+                std::copy(stored.begin(), stored.end(), middle);         // the row as it is
+                order.emplace_back(jobs[j].p.row, times.size());
+                times.push_back(timeOf(jobs[j].p.row));
+                sources.push_back(jobs[j].p.source);
+                body.insert(body.end(), ext.begin(), ext.end());
+            }
+        }
+        std::fclose(fil);
+        std::fclose(spk);
+        std::sort(order.begin(), order.end());
+        for (const auto& [row, k] : order) {
+            x.rows.push_back(row);
+            x.times.push_back(times[k]);
+            x.sources.push_back(sources[k]);
+            x.records.insert(x.records.end(), body.begin() + static_cast<std::ptrdiff_t>(k * extRec),
+                             body.begin() + static_cast<std::ptrdiff_t>((k + 1) * extRec));
+        }
+        if (write && !x.rows.empty() && !nf::writeSpkx(spkxPathFor(m).toStdString(), x)) {
+            X.reason = tr("Could not write %1.").arg(QFileInfo(spkxPathFor(m)).fileName());
+            return X;
+        }
+    }
+    for (const double v : mismatch) X.unlike += v > 0.2 * 0.2;
+    X.medianMismatch = std::sqrt(medianOf(mismatch));
+    X.ok = true;
+    qInfo().noquote() << "[extended records]" << X.found << "row(s) not in the recording at" << X.residuals << "residual(s);"
+                      << X.inRecording << "in it," << X.withoutNeighbours << "without neighbours," << X.had << "had one;"
+                      << "rebuilt against the rows: median" << X.medianMismatch << "," << X.unlike << "more than 0.2 off;"
+                      << (write ? "written for" : "for") << X.methods.join(QStringLiteral(", "));
+    return X;
 }

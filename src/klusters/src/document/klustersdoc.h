@@ -2208,6 +2208,31 @@ public:
      *  another spike of the set, is left out: nothing is made that a row already holds.
      *  Changes nothing; KlustersApp::addResidualSpikes writes them as a new stage. */
     ResidualSpikes alignedResidualSpikes(const QList<int>& clusters, bool children, const QStringList& spkMethods);
+    /** What rebuildExtendedRecords() found (and wrote). */
+    struct ExtendedRebuild {
+        bool        ok = false;
+        QString     reason;               ///< why nothing could be done
+        qint64      residuals = 0;        ///< collision rows with a residual
+        qint64      found = 0;            ///< rows at a residual's time that the recording does not hold
+        qint64      inRecording = 0;      ///< rows at a residual's time that are the recording's window there
+        qint64      withoutNeighbours = 0;///< ... not in the recording, but the source row's unit has too few clean spikes
+        qint64      had = 0;              ///< rows that had an extended record already (kept)
+        qint64      unlike = 0;           ///< rows whose rebuilt record differs from the row's by more than a fifth
+        double      medianMismatch = 0.0; ///< the rebuilt record against the row's, relative (the middle is the row's)
+        int         margin = 0;
+        QStringList methods;              ///< .spk methods given records (written, with @c write)
+        QStringList methodsSkipped;       ///< "method: why"
+    };
+    /** The extended records (.spkx) of a stage Add Residual Spikes wrote before it kept them: a
+     *  row at a collision row's residual time (time + the fitted lag, within the alignment's
+     *  6 samples) that is NOT the recording's window there is that residual's row.  Its record
+     *  is rebuilt as Add Residual Spikes cut it -- the wider window at the row's time less the
+     *  source row's own unit, displaced as the row is -- and its middle set to the row's own
+     *  record, so a realign's check finds the row as it is.  A row that is the recording's
+     *  window (the partner's own row, or a residual row a nudge cut from the recording) is not
+     *  one.  Rows that have a record keep it.  In every method of @p spkMethods; writes the
+     *  .spkx of each with @p write.  Save first. */
+    ExtendedRebuild rebuildExtendedRecords(const QStringList& spkMethods, bool write);
     /** @p shared (a .spk / .fet / .res named without a stage) as the open stage holds it:
      *  "<shared>.<stage>" when the stage has rows of its own and that file exists, else
      *  @p shared.  (formats/naming.md, "A stage's rows".) */
