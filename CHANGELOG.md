@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Formats: the .tcl and .wtl pages say what fiber-kit reads](#2026-11-27--formats-the-tcl-and-wtl-pages-say-what-fiber-kit-reads) |
 | 2026-11-27 | [Klusters: rebuild the extended records of an existing residual stage](#2026-11-27--klusters-rebuild-the-extended-records-of-an-existing-residual-stage) |
 | 2026-11-27 | [Klusters: a residual spike's row is re-cut from its extended record](#2026-11-27--klusters-a-residual-spikes-row-is-re-cut-from-its-extended-record) |
 | 2026-11-27 | [Klusters: the method of a stage's own .spk](#2026-11-27--klusters-the-method-of-a-stages-own-spk) |
@@ -338,6 +339,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Formats: the .tcl and .wtl pages say what fiber-kit reads
+
+The fiber-kit notes in `tcl.md` and `wtl.md` were out of date.
+
+<details>
+<summary>Details</summary>
+
+- **`tcl.md`** said fiber-kit's `.tcl` reader is lenient (skips a row it cannot parse, keeps any
+  status, does not check the columns). From fiber-kit 0.71.23 (fk-0040) `read_tcl` applies
+  `readTcl`'s rules, and `write_eap_membership` leaves the `.eap` and `.tcl` alone when a `.tcl` is
+  there but refused, as Klusters does. The page says so.
+- **`wtl.md`** said fiber-kit's reader uses version 1 only and that reading version 2 needs a
+  fiber-kit change. `read_wtl` has read versions 1 and 2 since fiber-kit 0.42.0, as both
+  `contract.yaml` files state (`wtl: {read: 2, write: 1}` on the fiber-kit side).
+- **Checked:** against fiber-kit's `neuro_io.read_tcl` / `read_wtl` at 0.71.23.
+
+</details>
 
 ---
 

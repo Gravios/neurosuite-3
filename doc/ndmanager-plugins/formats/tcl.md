@@ -43,9 +43,10 @@ fewer than two fields, a column or `provenance_clu` that is not an integer, an u
 duplicate, missing or out-of-range column, or a `merged:<col>` that names itself or no column. A
 row is never skipped: every later entry would sit on the wrong column.
 
-fiber-kit's reader is lenient: it skips a row it cannot parse, keeps any status token, and does
-not check the columns. Its writers always emit a complete table in column order, so a file
-written by either side reads in both; a hand-edited one can read in fiber-kit and not here.
+fiber-kit's `neuro_io.read_tcl` applies the same rules (fiber-kit 0.71.23 on; before, it skipped
+a row it could not parse, kept any status token and did not check the columns), and its
+`write_eap_membership` likewise leaves the `.eap` and the `.tcl` alone when a `.tcl` is there but
+refused. Only a missing `.tcl` starts a fresh registry, on both sides.
 
 ## Fields
 

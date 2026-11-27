@@ -71,8 +71,9 @@ Version 1 stored the spike indices on the node line:
 `mean`/`std` lines. The reader discards the indices and keeps
 `count = nSpikes` with empty mean and std; repopulate the nodes to fill them.
 
-> **fiber-kit note.** fiber-kit's `neuro_io` `.wtl` reader/writer still uses
-> version 1. Reading version-2 files there needs a fiber-kit change.
+> **fiber-kit note.** fiber-kit's `neuro_io.read_wtl` reads versions 1 and 2
+> (since fiber-kit 0.42.0); its `write_wtl` writes version 1, which this reader
+> accepts (`contract.yaml`: `wtl: {read: 2, write: 1}` on the fiber-kit side).
 
 ---
 
