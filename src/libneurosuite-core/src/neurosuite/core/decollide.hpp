@@ -44,6 +44,81 @@ struct Component { int unit = 0; int tau = 0; double amp = 0.0; };
 // and its two constituents.
 struct Decomp { int64_t spikeIndex = -1; Component c1; Component c2; };
 
+// ── spikes that are rows already ─────────────────────────────────────────────
+// Growing a decomposition replaces its row by one row per constituent.  A
+// constituent that IS a row already -- the partner was detected on its own, a few
+// samples from where the fit puts it -- would then be in the stage twice.  This
+// leaves such a decomposition out: its row stays as it is.
+//
+// A decomposition is dropped when one of its constituents lies within
+// `tolerance` samples of
+//   - a row that stays (one no decomposition replaces, or the row of a
+//     decomposition already dropped), or
+//   - a constituent of the same unit of an EARLIER kept decomposition (one spike
+//     in the windows of two rows: it is grown once).
+// Dropping one puts its row back among those that stay, which can drop another:
+// repeated until nothing changes.  Two rows that are one collision seen from both
+// sides, both selected, are thus both left -- there is no spike to add.
+//
+// `res` need not be sorted.  Returns the decompositions kept, in the order given;
+// `dropped` (optional) gets how many were left out.  A decomposition whose
+// spikeIndex is out of range is kept: applyMethod ignores it.
+inline std::vector<Decomp> dropKnownConstituents(const std::vector<int64_t>& res,
+                                                 const std::vector<Decomp>& decomps,
+                                                 int64_t tolerance, int* dropped = nullptr)
+{
+    const std::size_t n = res.size();
+    std::vector<char> keep(decomps.size(), 1);
+    auto valid = [&](const Decomp& d) { return d.spikeIndex >= 0 && static_cast<std::size_t>(d.spikeIndex) < n; };
+    auto near = [&](const std::vector<int64_t>& sorted, int64_t t) {
+        const auto it = std::lower_bound(sorted.begin(), sorted.end(), t - tolerance);
+        return it != sorted.end() && *it <= t + tolerance;
+    };
+    for (bool changed = true; changed;) {
+        changed = false;
+        // The rows that stay: every row no kept decomposition replaces.
+        std::vector<char> replaced(n, 0);
+        for (std::size_t j = 0; j < decomps.size(); ++j)
+            if (keep[j] && valid(decomps[j])) replaced[static_cast<std::size_t>(decomps[j].spikeIndex)] = 1;
+        std::vector<int64_t> staying;
+        staying.reserve(n);
+        for (std::size_t i = 0; i < n; ++i) if (!replaced[i]) staying.push_back(res[i]);
+        std::sort(staying.begin(), staying.end());
+        for (std::size_t j = 0; j < decomps.size(); ++j) {
+            if (!keep[j] || !valid(decomps[j])) continue;
+            const int64_t det = res[static_cast<std::size_t>(decomps[j].spikeIndex)];
+            if (near(staying, det + decomps[j].c1.tau) || near(staying, det + decomps[j].c2.tau)) { keep[j] = 0; changed = true; }
+        }
+        if (changed) continue;                             // the rows that stay have changed: look again
+        // One spike in two kept decompositions: per unit, the constituents by time.
+        std::map<int, std::vector<std::pair<int64_t, std::size_t>>> byUnit;   // unit -> (time, decomposition)
+        for (std::size_t j = 0; j < decomps.size(); ++j) {
+            if (!keep[j] || !valid(decomps[j])) continue;
+            const int64_t det = res[static_cast<std::size_t>(decomps[j].spikeIndex)];
+            byUnit[decomps[j].c1.unit].emplace_back(det + decomps[j].c1.tau, j);
+            byUnit[decomps[j].c2.unit].emplace_back(det + decomps[j].c2.tau, j);
+        }
+        for (auto& unit : byUnit) {
+            auto& v = unit.second;
+            std::sort(v.begin(), v.end());
+            for (std::size_t i = 1; i < v.size(); ++i) {
+                if (v[i].first - v[i - 1].first > tolerance || v[i].second == v[i - 1].second) continue;
+                const std::size_t later = std::max(v[i].second, v[i - 1].second);
+                if (keep[later]) { keep[later] = 0; changed = true; }
+            }
+        }
+    }
+    std::vector<Decomp> out;
+    out.reserve(decomps.size());
+    int gone = 0;
+    for (std::size_t j = 0; j < decomps.size(); ++j) {
+        if (keep[j]) out.push_back(decomps[j]);
+        else ++gone;
+    }
+    if (dropped) *dropped = gone;
+    return out;
+}
+
 // Grown single-method result.  res/clu are method-independent (identical across
 // methods); spk is this method's int16 waveforms in the SpkFile layout
 // (nSpikes * nSamples * nChannels, channel-fastest).

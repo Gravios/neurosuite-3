@@ -1078,6 +1078,12 @@ In the oblique view a New Cluster lasso waits for confirmation: `Enter`
 cuts the new cluster, `Esc` discards the lasso, and `D` instead
 *decollides* the lassoed spikes against a pinned two-cluster basis.
 
+A decollide writes a new stage in which each resolved collision is two rows, one in each unit.
+A collision one of whose two spikes is a row already — the partner was detected on its own,
+within 0.2 ms of where the fit puts it — is left as it is: growing it would hold that spike
+twice. So are two collisions that put the same spike in the same unit (one is grown). The status
+line says how many were left.
+
 ### Overlays
 
 - `Shift+H` shows a point-density heatmap over the scatter, the oblique view

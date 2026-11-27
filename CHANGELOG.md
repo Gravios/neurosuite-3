@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Decollide does not grow a spike that is a row already](#2026-11-26--decollide-does-not-grow-a-spike-that-is-a-row-already) |
 | 2026-11-26 | [Klusters: Remove Duplicate Spikes](#2026-11-26--klusters-remove-duplicate-spikes) |
 | 2026-11-26 | [Klusters: the residual of a collision row, shown and saved as .spkr](#2026-11-26--klusters-the-residual-of-a-collision-row-shown-and-saved-as-spkr) |
 | 2026-11-26 | [Formats: .spkr, the residual spike of a collision row](#2026-11-26--formats-spkr-the-residual-spike-of-a-collision-row) |
@@ -319,6 +320,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Decollide does not grow a spike that is a row already
+
+A decollided stage held the partner's spike twice when the partner had also been detected on its own. Such collisions are now left as they are.
+
+<details>
+<summary>Details</summary>
+
+The lasso decollide (`D`) and the batch apply replace a collision row by one row per constituent
+in a new stage. When the partner had been detected on its own, a few samples from where the fit
+puts it, the grown stage held that spike twice.
+
+- `decollide::dropKnownConstituents(res, decomps, tolerance)` (core, header-only) leaves out a
+  decomposition one of whose constituents lies within the tolerance of a row that stays, or of a
+  constituent of the same unit of an earlier kept decomposition. Dropping one puts its row back
+  among those that stay, so it repeats until nothing changes: two rows that are one collision
+  seen from both sides, both selected, are both left.
+- `KlustersApp::decollideCommit` applies it with 0.2 ms (the tolerance of Remove Duplicate Spikes)
+  after the reserved-cluster filter, and the status line counts the collisions left.
+- The grow engine itself (`planGrow`, `applyMethod`) is unchanged, so its parity with fiber-kit's
+  twin stands. fiber-kit's own decollide does not have this filter.
+
+`core_test_decollide`: a decomposition whose partner is a row 2 samples from the fitted place is
+dropped, one 9 samples away is kept; a constituent near its own row is not a duplicate of it; a
+collision selected from both sides is left whole (as given, the plan held two rows more than
+there are spikes); order and out-of-range entries are preserved; tolerance 0.
+
+Not tested end to end: there is no self-test of the decollide commit, and none was added.
+
+</details>
 
 ---
 

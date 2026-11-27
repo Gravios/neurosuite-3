@@ -238,6 +238,58 @@ int main()
               "amplitude-percentile gate rejects an out-of-band component");
     }
 
+    // ── dropKnownConstituents: a constituent that is a row already is not grown ──
+    {
+        // Rows: 0 @100 (unit 2), 1 @500 (the collision, in 2), 2 @512 (unit 3: the partner, detected),
+        //       3 @900 (a collision, in 2), 4 @2000 (in 2), 5 @2010 (in 3), 6 @3000 and 7 @3004 (two rows near
+        //       one spike of unit 3).
+        const std::vector<int64_t> t = {100, 500, 512, 900, 2000, 2010, 3000, 3004};
+        auto dec = [](int64_t row, int tau2) { Decomp d; d.spikeIndex = row; d.c1 = {2, 0, 1.0}; d.c2 = {3, tau2, 1.0}; return d; };
+        int gone = -1;
+        {   // the partner is row 2, 12 samples on: within 6 of where the fit puts it (+10)
+            const std::vector<Decomp> k = dropKnownConstituents(t, {dec(1, 10)}, 6, &gone);
+            check(k.empty() && gone == 1, "a decomposition whose partner is a row already is dropped");
+            const std::vector<Decomp> far = dropKnownConstituents(t, {dec(1, 3)}, 6, &gone);
+            check(far.size() == 1 && gone == 0, "... and kept when the partner is put 9 samples from that row");
+        }
+        {   // no row near either constituent: kept
+            const std::vector<Decomp> k = dropKnownConstituents(t, {dec(3, 15)}, 6, &gone);
+            check(k.size() == 1 && gone == 0, "a decomposition that adds a spike no row holds is kept");
+        }
+        {   // the row's own constituent is not compared with the row it replaces
+            Decomp d; d.spikeIndex = 3; d.c1 = {2, 0, 1.0}; d.c2 = {3, 2, 1.0};
+            check(dropKnownConstituents(t, {d}, 6, &gone).size() == 1, "a constituent 2 samples from its own row is not a duplicate of it");
+        }
+        {   // one collision seen from both sides, both rows selected: neither is grown
+            Decomp a; a.spikeIndex = 4; a.c1 = {2, 0, 1.0}; a.c2 = {3, 10, 1.0};     // 2 @2000, 3 @2010
+            Decomp b; b.spikeIndex = 5; b.c1 = {3, 0, 1.0}; b.c2 = {2, -10, 1.0};    // 3 @2010, 2 @2000
+            const std::vector<Decomp> k = dropKnownConstituents(t, {a, b}, 6, &gone);
+            check(k.empty() && gone == 2, "two rows that are one collision, both selected: both left, there is no spike to add");
+            // grown as given they would make four rows of two spikes
+            std::vector<int> c8 = {2, 2, 3, 2, 2, 3, 3, 3};
+            check(planGrow(t, c8, {a, b}).size() == t.size() + 2, "(as given, the plan holds two rows more than there are spikes)");
+        }
+        {   // one partner spike in the windows of two rows: grown once
+            Decomp a; a.spikeIndex = 6; a.c1 = {2, 0, 1.0}; a.c2 = {3, 20, 1.0};     // 3 @3020
+            Decomp b; b.spikeIndex = 7; b.c1 = {2, 0, 1.0}; b.c2 = {3, 17, 1.0};     // 3 @3021
+            const std::vector<Decomp> k = dropKnownConstituents(t, {a, b}, 6, &gone);
+            // b is dropped for the repeat; its row (3004) then stays, 4 samples from a's own constituent (3000)
+            check(gone >= 1 && k.size() <= 1, "the same partner spike from two rows is not grown twice");
+            Decomp far = b; far.c2.tau = 60;                                          // another spike of unit 3
+            Decomp c; c.spikeIndex = 3; c.c1 = {2, 0, 1.0}; c.c2 = {3, 30, 1.0};
+            check(dropKnownConstituents(t, {c, far}, 6, &gone).size() == 1 && gone == 1,
+                  "(row 7 is 4 samples from row 6: its own constituent is a row already)");
+        }
+        {   // order kept, out-of-range kept, nothing in -> nothing out
+            Decomp bad; bad.spikeIndex = 99;
+            const std::vector<Decomp> k = dropKnownConstituents(t, {dec(3, 15), bad, dec(1, 10)}, 6, &gone);
+            check(k.size() == 2 && k[0].spikeIndex == 3 && k[1].spikeIndex == 99 && gone == 1, "the kept ones keep their order; an out-of-range one is passed on");
+            check(dropKnownConstituents(t, {}, 6, &gone).empty() && gone == 0, "no decompositions, none dropped");
+            check(dropKnownConstituents(t, {dec(1, 12)}, 0, &gone).empty() && dropKnownConstituents(t, {dec(1, 11)}, 0, &gone).size() == 1,
+                  "tolerance 0: only the very same time is the same spike");
+        }
+    }
+
     std::printf("%s: %d checks, %d failed\n", (g_fail ? "FAIL" : "OK"), g_ran, g_fail);
     return g_fail ? 1 : 0;
 }

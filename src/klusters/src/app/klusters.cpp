@@ -10013,9 +10013,20 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
         }
         decomps.push_back(d);
     }
-    const QString skippedNote = (skippedUnits + skippedSpikes == 0) ? QString()
+    // A constituent that is a row already -- the partner was detected on its own -- would be
+    // in the grown stage twice.  Such a collision is left as it is (dropKnownConstituents).
+    int alreadyRows = 0;
+    {
+        const double rate = doc->data().getSamplingRate() > 0.0 ? doc->data().getSamplingRate() : 20000.0;
+        const int64_t tolerance = std::max<int64_t>(1, std::llround(0.0002 * rate));     // 0.2 ms, as Remove Duplicate Spikes
+        decomps = dc::dropKnownConstituents(cr.times, decomps, tolerance, &alreadyRows);
+    }
+    const QString skippedNote = ((skippedUnits + skippedSpikes == 0) ? QString()
         : tr(" Skipped %1 collision(s) naming a reserved chunk cluster as a unit and %2 with "
-             "the spike in one.").arg(skippedUnits).arg(skippedSpikes);
+             "the spike in one.").arg(skippedUnits).arg(skippedSpikes))
+        + (alreadyRows == 0 ? QString()
+        : tr(" Left %1 collision(s) as they are: one of their two spikes is a row already, and "
+             "growing them would hold it twice.").arg(alreadyRows));
     if (decomps.empty()) {
         QApplication::restoreOverrideCursor();
         slotStatusMsg(tr("Decollide: nothing to apply.") + skippedNote);
