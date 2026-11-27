@@ -14,7 +14,12 @@ nSpikes × int64   little-endian, sample index of the peak
 fileSize = nSpikes × 8
 ```
 
-- Times are in ascending order.
+- Times are in ascending order (non-decreasing: two rows may share a sample). Rows are never
+  reordered by a realign or a nudge, so these keep the order by moving a spike only as far as the
+  spikes of the rows on either side of it: one that would pass a neighbour has slipped onto a
+  colliding spike and is left where it was (Klusters since 2026-11-27, fiber-kit's realign since
+  0.72.2). A `.res` written before
+  may hold such inversions; Klusters' **Sort Spikes by Time** puts it in order.
 - The waveform of spike `i` in the `.spk` starts at sample
   `res[i] − (peakSampleIndex − 1)` of the source file (`peakSampleIndex` is
   1-based, from the group's `spikeDetection` entry).

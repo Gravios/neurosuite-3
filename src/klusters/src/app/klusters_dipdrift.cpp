@@ -663,8 +663,13 @@ void KlustersApp::nudgeSelectedSingleCluster(int deltaSamples)
     nudgePlusAction->setEnabled(true);
     if (ok) {
         const QString sign = (deltaSamples >= 0) ? QStringLiteral("+") : QStringLiteral("");
+        const qint64 held = doc->lastNudgeHeldBack();
         statusBar()->showMessage(
-            tr("Cluster %1: %2%3 sample.").arg(clusterLabel(id), sign).arg(deltaSamples), 2000);
+            tr("Cluster %1: %2%3 sample.").arg(clusterLabel(id), sign).arg(deltaSamples)
+                + (held > 0 ? tr("  %n spike(s) left where they were: moved, they would have passed the spike "
+                                 "of the row before or after them.", "", static_cast<int>(held))
+                            : QString()),
+            held > 0 ? 6000 : 2000);
         populateFeatureSpaceCombo();     // synced spaces are now stale (tooltip)
     } else {
         statusBar()->showMessage(tr("Timestamp nudge failed."), 3000);

@@ -7,7 +7,8 @@ there, nudge cluster 3 by +1 there, Save.  Then, on the files:
     .fet.standard_U4.1 is not all 0 (the session places every spike at a random 16th-sample
     offset, so a x4 alignment finds non-zero quarter-sample lags);
   * the shared .res moved for (some of) cluster 2 by whole samples, and by exactly +1 for every
-    spike of cluster 3 (the nudge), nothing else;
+    spike of cluster 3 (the nudge) but those it held back -- moved, they would have passed the
+    spike of the row before or after them -- nothing else; and it is in time order;
   * .res.standard_U4.1 == 4 x .res + phase (the shared tick res, from the shown space);
   * .spk.standard_U4.1: tick 4k - phase == sample k of a fresh base-rate cut at the new .res
     (the spline is exact at the samples; a window with phase p starts p ticks after the sample);
@@ -66,7 +67,13 @@ def main():
         moved = res != made["res"]
         check(moved[c2].any() and not moved[~(c2 | c3)].any(),
               f"the realign moved {int(moved[c2].sum())} of cluster 2's spikes by whole samples; no other cluster but 3 moved")
-        check(np.array_equal(res[c3], made["res"][c3] + 1), "the nudge moved every spike of cluster 3 by exactly +1 sample")
+        nudge = next((r for r in results if "nudge" in r.get("step", {})), {})
+        held = int(nudge.get("heldBack", -1))
+        d3 = res[c3] - made["res"][c3]
+        check(bool(np.all((d3 == 1) | (d3 == 0))) and int(np.count_nonzero(d3 == 0)) == held
+              and int(np.count_nonzero(np.diff(res) < 0)) == 0,
+              f"the nudge moved every spike of cluster 3 by exactly +1 sample but the {held} it held back; the .res is in order",
+              str({"held": held, "stayed": int(np.count_nonzero(d3 == 0)), "inversions": int(np.count_nonzero(np.diff(res) < 0))}))
         fet_u = S.read_fet(f"{base}.fet.standard_U4.1")
         phase = fet_u[:, -2]
         check(np.array_equal(fet_u[:, -1], res), ".fet.standard_U4.1: the time column is the new .res")

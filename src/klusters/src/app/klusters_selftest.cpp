@@ -402,6 +402,7 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         nudgeInProgress = true;
         const bool ok = doc->nudgeClusterTimestamps(id, delta);
         nudgeInProgress = false;
+        result.insert(QStringLiteral("heldBack"), static_cast<double>(doc->lastNudgeHeldBack()));
         returnFromRealignSpace();                     // the follow, and back to the space shown
         return ok;
     }

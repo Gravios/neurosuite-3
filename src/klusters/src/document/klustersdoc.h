@@ -1887,6 +1887,9 @@ public:
     /** Shift all timestamps for @p clusterId by @p deltaSamples (±1 etc.).
      *  Updates .res and .fet (time feature column). Marks doc modified. */
     bool nudgeClusterTimestamps(int clusterId, int deltaSamples);
+    /** Spikes the last nudge left where they were: moved by the nudge they would have passed the
+     *  spike of the row before or after them, and the .res stays in time order (resorder.h). */
+    int64_t lastNudgeHeldBack() const { return nudgeHeldBack; }
 
     /** True iff @p clusterId is registered in clusterInfoMap with at
      *  least one spike.  Used by slotRecluster as a pre-launch
@@ -3344,6 +3347,7 @@ private:
     DirtyFlag modified;
     WorkingStage working;               // Add Residual Spikes' stage not saved yet (workingStage())
     bool noSeedOnNextOpen = false;      // openNextWithoutWorkingCopies
+    int64_t nudgeHeldBack = 0;          // lastNudgeHeldBack
 
     /** Cached PCA basis for realignSpikes.  A PCA-Center Align All batch shares
      *  one group's basis, so it is read from .pca/.pcaD once and reused for every

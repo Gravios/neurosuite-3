@@ -204,7 +204,14 @@ def main():
               "at most 2 of 40 fitted offsets are not the planted one",
               f"fitted - stored, -4..+4: {r0.get('offsetDeltas')}, planted: {want}")
         saved_spk = np.fromfile(spk_path, np.int16).reshape(-1, S.NSAMP * nch)
-        res_s = res.copy(); res_s[clu == 2] += 5; res_s[clu == 3] -= 2
+        # the saved times: unit 2 five samples on, unit 3 two back -- but for the spikes the nudges held
+        # back, which would have passed the spike of the row before or after them (the .res stays in order)
+        res_s = S.read_res(f"{base}.res.standard.1")
+        d2, d3 = res_s[clu == 2] - res[clu == 2], res_s[clu == 3] - res[clu == 3]
+        check(bool(np.all((d2 >= 0) & (d2 <= 5))) and bool(np.all((d3 <= 0) & (d3 >= -2)))
+              and int(np.count_nonzero(d2 == 5)) > 0.9 * d2.size and int(np.count_nonzero(np.diff(res_s) < 0)) == 0,
+              "the saved times: unit 2 up to five samples on, unit 3 up to two back (most all the way), in order",
+              str({"unit 2": np.bincount(d2.clip(0)).tolist(), "unit 3": np.bincount((-d3).clip(0)).tolist()}))
         with open(fet_path, "rb") as fh:
             nd = int(np.fromfile(fh, np.int32, 1)[0]); saved_fet = np.fromfile(fh, np.int64).reshape(-1, nd)
         check(np.array_equal(saved_fet[coll, :-1], proj(saved_spk[coll])),

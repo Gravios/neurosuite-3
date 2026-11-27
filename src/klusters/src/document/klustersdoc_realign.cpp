@@ -25,12 +25,14 @@
 #include <cerrno>          // patch63 — saveDocument errno diagnostics
 #include <cstring>         // patch63 — strerror
 #include <vector>
+#include <unordered_set>
 #include <filesystem>
 #include <system_error>
 #include "filecommit.h"
 #include "realign_pass.h"
 #include "realignio.h"
 #include "spkxcut.h"
+#include "resorder.h"
 #include <stdint.h>
 #ifdef _OPENMP
 #include <omp.h>            // CPU-fallback realign parallelisation
@@ -1361,13 +1363,13 @@ static bool realignCutRow(const RealignCut& c, int64_t row, int64_t startSample,
 //
 // No reordering: each spike is written back to its own row (gidx), so row
 // i of .res, of every method's .spk/.fet and of the .clu/.clc stays the
-// same spike.  A timestamp may pass another cluster's neighbour; that is
-// harmless.  Per-cluster code (correlograms, ISI, the spike table) reads a
-// cluster's rows in file order as time order, which normally still holds:
-// two spikes of one cluster are a refractory period apart, far beyond
-// maxShift.  A contaminated cluster or a raised shift cap can break that,
-// so it is checked below and reported (Sort Spikes by Time repairs it).
-static void realignNewTimes(const std::vector<int64_t>& clusterTs, const std::vector<int>& cumShift,
+// same spike -- and the .res stays in time order: a spike moves only as far
+// as the spikes of the rows on either side of it (resorder::keepInOrder,
+// against @p allRes, the session's times).  One that would pass a neighbour
+// has slipped -- locked onto another unit's spike colliding with it -- and is
+// left where it was (its shift and phase undone), and reported.
+static void realignNewTimes(const std::vector<int64_t>& clusterTs, std::vector<int>& cumShift,
+                            const std::vector<int64_t>& allRes,
                             const std::vector<int64_t>& gidx, int upFactor, int phaseCol, Data* clusteringData,
                             std::vector<int64_t>& newTs, std::vector<int64_t>& resTs,
                             std::vector<int>& oldPhase, std::vector<int>& newPhase,
@@ -1392,6 +1394,24 @@ static void realignNewTimes(const std::vector<int64_t>& clusterTs, const std::ve
         } else {
             newTs[static_cast<size_t>(i)]  = clusterTs[static_cast<size_t>(i)]
                 + static_cast<int64_t>(cumShift[static_cast<size_t>(i)]);
+        }
+    }
+    if (!allRes.empty()) {
+        // (whole samples: two spikes in one sample are in order whatever their phases)
+        const std::vector<std::size_t> slipped = resorder::keepInOrder(allRes, gidx, resTs, newTs);
+        for (const std::size_t i : slipped) {
+            cumShift[i] = 0;
+            newPhase[i] = oldPhase[i];
+        }
+        if (!slipped.empty()) {
+            QStringList rowsShown;
+            for (std::size_t k = 0; k < slipped.size() && k < 10; ++k)
+                rowsShown << QString::number(gidx[slipped[k]] + 1);
+            log << "NOTE: " << slipped.size() << " spike(s) would have moved past the spike of the row before or after "
+                   "them -- a slip onto a colliding spike --\n      and were left where they were (rows "
+                << rowsShown.join(QStringLiteral(", ")) << (slipped.size() > 10 ? QStringLiteral(", ...") : QString())
+                << ").\n";
+            emitFlush();
         }
     }
     {
@@ -2579,8 +2599,18 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     // Where each spike goes: its new time (and phase, in a super-sampled space).
     std::vector<int64_t> newTs, resTs;
     std::vector<int>     oldPhase, newPhase;
-    realignNewTimes(clusterTs, cumShift, gidx, upFactor, phaseCol, clusteringData,
+    // The session's times, which keep the .res in order (realignNewTimes).
+    bool allResOk = false;
+    const std::vector<int64_t> allRes = neurofileio::readResAuto(resPath.toLocal8Bit().toStdString(), &allResOk);
+    if (!allResOk || static_cast<qint64>(allRes.size()) != static_cast<qint64>(clusteringData->totalNbOfSpikes())) {
+        log << "ERROR: could not read the session's times (" << resPath << ") to keep them in order.  Nothing was changed.\n";
+        emitFlush();
+        return false;
+    }
+    realignNewTimes(clusterTs, cumShift, allRes, gidx, upFactor, phaseCol, clusteringData,
                     newTs, resTs, oldPhase, newPhase, log, emitFlush);
+    nShifted = 0;                                    // (less the spikes left where they were)
+    for (const int sh : cumShift) if (sh != 0) ++nShifted;
 
     // -----------------------------------------------------------------------
     // Project waveform onto per-channel PCA basis → full .fet row (timeDim values)
@@ -3983,6 +4013,31 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     const std::shared_ptr<const neurofileio::SpkxFile> extRecords = extendedRecords(featureMethod(ws.spkCommitted));
     const bool extUsable = upFactor == 1 && isStderivFet == isStderivSpk;
     int64_t extendedCut = 0, extendedLeft = 0;
+    // The .res stays in time order: a spike the nudge would move past the spike of the row
+    // before or after it stays where it is (resorder::keepInOrder; the realign does the same).
+    std::unordered_set<int64_t> heldBack;
+    nudgeHeldBack = 0;
+    {
+        bool okAll = false;
+        const std::vector<int64_t> allRes = neurofileio::readResAuto(pendingResPath.toLocal8Bit().toStdString(), &okAll);
+        if (okAll && static_cast<qint64>(allRes.size()) == static_cast<qint64>(d.totalNbOfSpikes())) {
+            std::vector<int64_t> rows, oldT, newT;
+            rows.reserve(static_cast<size_t>(N)); oldT.reserve(static_cast<size_t>(N)); newT.reserve(static_cast<size_t>(N));
+            for (int64_t i = 0; i < N; ++i) {
+                const int64_t pos0 = static_cast<int64_t>(spkTable(1, static_cast<dataType>(i + 1))) - 1;
+                if (pos0 < 0 || pos0 >= static_cast<int64_t>(allRes.size())) continue;
+                const int64_t t = allRes[static_cast<size_t>(pos0)];
+                int64_t nt = t + deltaSamples;
+                if (nt < 0) nt = 0;
+                if (maxValidTs > 0 && nt > maxValidTs) nt = maxValidTs;
+                rows.push_back(pos0); oldT.push_back(t); newT.push_back(nt);
+            }
+            for (const std::size_t k : resorder::keepInOrder(allRes, rows, oldT, newT)) heldBack.insert(rows[k]);
+            nudgeHeldBack = static_cast<int64_t>(heldBack.size());
+        } else {
+            qWarning() << "[nudge] could not read the session's times to keep them in order:" << pendingResPath;
+        }
+    }
     for (int64_t i = 0; i < N; ++i) {
         const dataType row  = static_cast<dataType>(
             spkTable(1, static_cast<dataType>(i + 1)));
@@ -4005,6 +4060,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         if (newTs < 0) newTs = 0;
         if (maxValidTs > 0 && newTs > static_cast<dataType>(maxValidTs))
             newTs = static_cast<dataType>(maxValidTs);
+        if (heldBack.count(pos0)) newTs = oldTs;          // would pass a neighbour: stays
         if (newTs != oldTs) nudgeMoved.push_back(pos0);
 
         const int64_t ts64 = static_cast<int64_t>(newTs);

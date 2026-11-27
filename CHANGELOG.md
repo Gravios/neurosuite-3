@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: a realign or nudge keeps the .res in time order](#2026-11-27--klusters-a-realign-or-nudge-keeps-the-res-in-time-order) |
 | 2026-11-27 | [Klusters: the residual-spike working stage is not copied again at open](#2026-11-27--klusters-the-residual-spike-working-stage-is-not-copied-again-at-open) |
 | 2026-11-27 | [Klusters: Add Residual Spikes saves into the open stage](#2026-11-27--klusters-add-residual-spikes-saves-into-the-open-stage) |
 | 2026-11-27 | [Klusters: a reload keeps the displays and selections](#2026-11-27--klusters-a-reload-keeps-the-displays-and-selections) |
@@ -348,6 +349,55 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: a realign or nudge keeps the .res in time order
+
+A spike that would move past the spike of the row before or after it has slipped onto a colliding spike: realign and nudge now leave it where it was, and say how many.
+
+<details>
+<summary>Details</summary>
+
+**The rule.**  The `.res` is in time order, and a realign or a nudge moves times, never rows: so a
+spike may move only as far as the spikes of the rows on either side of it.  One that would pass a
+neighbour has slipped -- the alignment locked onto another unit's spike colliding with it -- and is
+left where it was.  Before, "a spike's new time may pass a neighbouring spike's" was accepted, and
+the 0312 group 8 `.res` held 89 inversions after earlier realigns (pipeline audit M1).
+
+**Where.**  `document/resorder.h` (header-only): `resorder::keepInOrder(res, rows, oldTs, newTs)`
+puts back, until none is left, every moved spike whose new time is before the row before it or after
+the row after it -- each neighbour at the time it ends at, a neighbour that also moves included.  A
+neighbour the spike was already out of order with (a `.res` written before) does not hold it back.
+- **Realign** (`realignNewTimes`): the session's times are read from the working `.res`
+  (`readResAuto`); a spike put back gets its shift and phase undone, so `realignPlanRows` keeps its
+  stored window.  The log: "NOTE: N spike(s) would have moved past the spike of the row before or
+  after them -- a slip onto a colliding spike -- and were left where they were (rows ...)", the first
+  ten rows.  The shifted count is taken after.  A `.res` that cannot be read (or has another spike
+  count) stops the realign before anything is written.
+- **Nudge**: the same, before its loop; the status line gives the count
+  (`KlustersDoc::lastNudgeHeldBack`), the self-test's `nudge` step reports `heldBack`.
+
+Super-sampled spaces compare whole samples (two spikes in one sample are in order whatever their
+phases).  fiber-kit's realign applies the same rule from 0.72.2.  A `.res` written before keeps its
+inversions until **Sort Spikes by Time**.
+
+**Tests.**  `klusters_test_resorder` (10 checks of the rule).  `test_realign_res_order.py`, on
+session.py's two units on one grid of times, .res jittered by +-2: NEGATIVE CONTROL, the unit-2 rows
+whose true peak is past a neighbour exist and moved there the `.res` would be out of order; the
+realign of cluster 2 (saved) moves only cluster 2, the `.res` is in order, such rows stay where they
+were and the log says so.  A nudge of cluster 2 by +6: NEGATIVE CONTROL, all of it moved would be out
+of order; the `.res` after it is in order and the spikes left are the ones it counts.
+
+Three tests read the old behaviour and are changed: `test_collision_rows` (the saved `.spk` is
+compared with the cut at the saved `.res`, not at the times five nudges would give every spike; the
+saved times are checked to be at most that far, most all the way, and in order),
+`test_realign_in_shown_space` (the nudge of
+cluster 3 by +1 moves every spike but those it holds back, which it counts, and the `.res` is in
+order) and `test_residual_spikes_recut` (Sort Spikes by Time is tested on a `.res` out of order the
+test writes, as a session from before the rule may have; a nudge no longer makes one).
+
+</details>
 
 ---
 

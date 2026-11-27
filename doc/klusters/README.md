@@ -2146,7 +2146,7 @@ For each spike in the cluster:
 1. The cluster mean waveform is computed.
 2. The spike's waveform is cross-correlated against the mean template at each lag within ±*Max shift* samples — over the whole window by default, or under a **correlation window** (**Edit → Preferences → Curation → Realignment → Correlation window**): a Gaussian or Hann bell of the given half-width centred on the peak sample, or the template's own energy profile. Under a window the score is the normalised correlation of the template with the part of the spike the window admits, normalised by that part's energy, so a second spike in the tail or the lead-in of the window — a collision — neither feeds the score nor its normalisation and cannot pull the lag toward itself. *None* is the classic kernel (every GPU back end); a window runs on the CPU kernel. Argument form: `--kernel none|gauss|hann|template`, `--kernel-width N` (samples each side of the peak; 0 = half the peak position, like the automatic max shift; in a super-sampled space the width applies in ticks). The post-alignment pass runs under the same window. The **RMS circular recenter** takes the centroid of the windowed energy; a Gaussian or Hann bell is followed from the peak sample onto the energy lobe it finds there (measured once under a bell that sits on the target, the centroid is pulled toward the bell's centre and the shift comes out short), the template-energy window is used as it stands. The log gives the whole-window centroid beside it. The **PCA projection refine** projects through the basis under the window, Σ w·ev·(x − mean). It is not normalised by the windowed energy as the correlation is, so the window narrows what votes on a spike's position but does not make the refine a collision guard. The per-spike centroid mode is template-free and does not use the window.
 3. If the peak correlation exceeds the *Threshold*, the spike is shifted to the optimal lag: its timestamp is updated, the waveform snippet is re-extracted from `session.fil` or `session.dat` at the corrected sample offset, and PCA features are reprojected through the eigenvector basis matching the session method (`pca.stderiv.N` when the method is stderiv, else `pca.standard.N`). A spike whose snippet is all zeros (or a cluster whose mean is all zeros) has no defined correlation; it is never shifted, whatever the threshold is, and its score counts as 0.
-4. Each spike is written back to its own row; rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned. A spike's new time may pass a neighbouring spike's.
+4. Each spike is written back to its own row; rows are never reordered, so every method's `.spk`/`.fet` and the `.clu` stay aligned. The `.res` stays in time order: a spike moves only as far as the spikes of the rows on either side of it (each where it ends, when it moves too). One that would pass a neighbour has slipped -- the alignment locked onto another unit's spike colliding with it -- and is left where it was; the log gives the count and the first rows. A neighbour the spike was already out of order with (a `.res` written before this rule, 2026-11-27) does not hold it back; **Sort Spikes by Time** puts such a `.res` in order.
 
 ### Pipeline variant awareness
 
@@ -2242,7 +2242,9 @@ normalized cross-correlation, it applies a uniform known shift to every
 spike in the cluster, re-extracts the shifted waveform from `.fil`,
 reprojects through the PCA basis (using the same variant-aware logic as
 realign), and writes the update into the `.pending` files. Nothing is
-written to the session files until **Save**.
+written to the session files until **Save**. As in a realign, a spike the
+shift would move past the spike of the row before or after it stays where
+it is (the status line gives the count), so the `.res` stays in time order.
 
 Every spike moves the full step and keeps its row, even where that carries
 it past a spike of another cluster.

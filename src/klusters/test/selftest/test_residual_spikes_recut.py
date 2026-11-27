@@ -25,8 +25,8 @@ cluster 4 in the stage <name>.rs):
     record at its new time;
   - Re-extract on Save: the new rows are still their extended records -- NOT the recording's
     windows at their times (NEGATIVE CONTROL: those differ by far) -- the old rows the recording's;
-  - Sort Spikes by Time, after a nudge that puts new rows past the rows they were found in,
-    reorders the .spkx with the rows: each entry still names a row of cluster 4 whose record is
+  - Sort Spikes by Time, on a .res with new rows past the rows they were found in (written by the
+    test: a nudge keeps the .res in order since 2026-11-27), reorders the .spkx with the rows: each entry still names a row of cluster 4 whose record is
     its extended record at the row's time, and its source a row of cluster 2.
 """
 import os
@@ -214,13 +214,26 @@ def main():
         check(np.array_equal(g3["spk"][old], cut[old]), "... and the old rows are the recording's windows")
 
         # ── Sort Spikes by Time ──
-        ok, _ = run_on(klusters, stage_clu, [{"nudge": [4, 12]}, {"save": True}], d)
+        # (Klusters no longer moves a spike past its neighbours -- test_realign_res_order -- so the
+        # .res out of order a session written before that rule may have is written here: cluster 4's
+        # rows 12 samples on, each its extended record there, as the nudge of +12 used to leave them)
+        g3 = stage(base, "rs")
+        x3 = read_spkx(spkx)
+        res4, spk4 = g3["res"].copy(), g3["spk"].copy()
+        for k, r in enumerate(x3["rows"]):
+            cut12 = slice_at(x3, k, res4[r] + 12)
+            if cut12 is not None:
+                res4[r] += 12
+                spk4[r] = cut12
+        res4.astype(np.int64).tofile(f"{base}.res.standard.1.rs")
+        spk4.astype(np.int16).tofile(f"{base}.spk.standard.1.rs")
+        ok = True
         g4 = stage(base, "rs")
         disorder = int((np.diff(g4["res"]) < 0).sum())
         ok2, st = run_on(klusters, stage_clu, [{"timeSort": {}}], d) if ok else (False, [])
         ts = st[0] if st else {}
         check(ok and disorder > 0 and ok2 and ts.get("sorted") == 1 and os.path.basename(spkx) in ts.get("files", []),
-              "a nudge past the rows they were found in, then Sort Spikes by Time rewrites the .spkx with the rows",
+              "rows past the rows they were found in (a .res out of order), then Sort Spikes by Time rewrites the .spkx with the rows",
               str((disorder, {k: ts.get(k) for k in ("sorted", "files", "skipped", "error")})))
         g5 = stage(base, "rs")
         x5 = read_spkx(spkx)
