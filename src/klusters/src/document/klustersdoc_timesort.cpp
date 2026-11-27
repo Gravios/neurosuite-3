@@ -125,6 +125,37 @@ bool permuteSparse(const QString& src, const std::vector<int64_t>& order, const 
     return true;
 }
 
+/// Write the .spkx @p src to @p dst with every row and every source renamed to
+/// where @p order puts it and the entries in the new ascending order; each record
+/// keeps the time it was made for.
+bool permuteExtended(const QString& src, const std::vector<int64_t>& order, const QString& dst)
+{
+    const neurofileio::SpkxFile in = neurofileio::readSpkx(src.toStdString());
+    if (!in.ok || in.nSpikes != static_cast<int64_t>(order.size())) return false;
+    std::vector<int64_t> movedTo(order.size());
+    for (size_t k = 0; k < order.size(); ++k) movedTo[static_cast<size_t>(order[k])] = static_cast<int64_t>(k);
+    std::vector<size_t> by(in.rows.size());
+    std::iota(by.begin(), by.end(), size_t{0});
+    std::sort(by.begin(), by.end(), [&](size_t a, size_t b) {
+        return movedTo[static_cast<size_t>(in.rows[a])] < movedTo[static_cast<size_t>(in.rows[b])];
+    });
+    neurofileio::SpkxFile out = in;
+    const size_t rec = static_cast<size_t>(in.extendedSamples()) * static_cast<size_t>(in.nChannels);
+    for (size_t k = 0; k < by.size(); ++k) {
+        out.rows[k] = movedTo[static_cast<size_t>(in.rows[by[k]])];
+        out.times[k] = in.times[by[k]];
+        const int64_t source = in.sources[by[k]];
+        out.sources[k] = source >= 0 ? movedTo[static_cast<size_t>(source)] : source;
+        std::copy_n(in.records.begin() + static_cast<std::ptrdiff_t>(by[k] * rec), rec,
+                    out.records.begin() + static_cast<std::ptrdiff_t>(k * rec));
+    }
+    if (!neurofileio::writeSpkx(dst.toStdString(), out)) {
+        QFile::remove(dst);
+        return false;
+    }
+    return true;
+}
+
 } // namespace
 
 bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) const
@@ -210,6 +241,30 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
                 RowFile f;
                 f.path   = path;
                 f.sparse = true;
+                plan.files.push_back(f);
+            } else {
+                plan.skipped << name;
+            }
+            continue;
+        }
+        // Extended records (<base>.spkx.<method>.<group>[.<stage>]): rows and sources name
+        // rows.  Carried: they are not rebuilt from the recording (it does not hold them).
+        const QString spkxPrefix = baseName + QStringLiteral(".spkx.");
+        if (name.startsWith(spkxPrefix)) {
+            const QStringList toks = name.mid(spkxPrefix.size()).split(QLatin1Char('.'));
+            int gi = -1;
+            for (int i = 0; i < toks.size() && gi < 0; ++i) {
+                bool isNumber = false;
+                toks[i].toInt(&isNumber);
+                if (isNumber) gi = i;
+            }
+            if (gi < 0 || toks[gi] != electrodeGroupID) continue;          // another group's
+            const QString path = dir.absoluteFilePath(name);
+            const neurofileio::SpkxFile x = neurofileio::readSpkx(path.toStdString());
+            if (x.ok && x.nSpikes == n) {
+                RowFile f;
+                f.path     = path;
+                f.extended = true;
                 plan.files.push_back(f);
             } else {
                 plan.skipped << name;
@@ -308,8 +363,9 @@ bool KlustersDoc::applyTimeSort(const TimeSortPlan& plan, QString& logOut)
     auto dropTmps = [&]() { for (const QString& t : tmps) QFile::remove(t); };
     for (const RowFile& f : plan.files) {
         tmps.push_back(f.path + QStringLiteral(".timesort.tmp"));
-        if (!(f.sparse ? permuteSparse(f.path, plan.order, tmps.back())
-                       : permuteRows(f, plan.order, tmps.back()))) {
+        if (!(f.extended ? permuteExtended(f.path, plan.order, tmps.back())
+              : f.sparse ? permuteSparse(f.path, plan.order, tmps.back())
+                         : permuteRows(f, plan.order, tmps.back()))) {
             log << tr("Writing %1 in time order failed; no file was changed.")
                        .arg(QFileInfo(f.path).fileName()) << "\n";
             dropTmps();

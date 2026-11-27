@@ -41,7 +41,7 @@
 #include <QFileInfo>
 #include <functional>
 #include <neurosuite/core/custody.hpp>        // header-only method-token policy
-namespace neurofileio { struct EapFile; }       // currentEap(): the type is only named here
+namespace neurofileio { struct EapFile; struct SpkxFile; }  // currentEap(), extendedRecords(): the types are only named here
 #include <neurosuite/core/pca_projection.hpp>  // header-only PcaBasis/loadPca/pcaProjectionEnergy
 #include <neurosuite/core/stderiv_transform.hpp> // header-only spatialOrder/applyStderivTransform
 #include <neurosuite/core/spike_extract.hpp>     // header-only SpikeWindowSpec (re-extract / follow)
@@ -2165,6 +2165,9 @@ public:
         int    partnerRank = -1;          ///< clusters that fit it better than the partner named (0: the partner fits best)
         QHash<QString, std::vector<qint64>> features;   ///< per feature space: its .fet row, projected, the time last
         QHash<QString, std::vector<int16_t>> records;   ///< per .spk method: the record, centred on its peak
+        /** per .spk method: the record over the window and ResidualSpikes::margin samples
+         *  either side (the .spkx record; `records` is its middle) */
+        QHash<QString, std::vector<int16_t>> extended;
     };
     /** What alignedResidualSpikes() found. */
     struct ResidualSpikes {
@@ -2191,6 +2194,7 @@ public:
         qint64  withoutNeighbours = 0;       ///< left: its own unit has too few clean spikes now
         qint64  moved = 0;                   ///< spikes the alignment moved
         QStringList methods;                 ///< the .spk methods a record was cut for
+        int     margin = 0;                  ///< samples either side of the window the extended records hold
         QStringList methodsSkipped;          ///< .spk methods the recording cannot be cut in ("method: why")
         QList<ResidualSpace> spaces;         ///< the feature spaces every spike has a row in, the .clu's own first
         QStringList spacesSkipped;           ///< feature spaces left out ("method: why")
@@ -2214,6 +2218,13 @@ public:
     bool writeSpkr(const QString& path, QString* error = nullptr) const;
     /** <base>.fetr.<method>.<group>[.<stage>] of the open stage, @p method a feature space's token. */
     QString fetrPathFor(const QString& method) const;
+    /** <base>.spkx.<method>.<group>[.<stage>] of the open stage, @p method a .spk method. */
+    QString spkxPathFor(const QString& method) const;
+    /** The open stage's extended records of the .spk of @p method (formats/spkx.md), read
+     *  now: what a re-cut of a row the recording does not hold (a residual spike's) cuts
+     *  it from.  Null when there is none, or it is not of these rows (its spike count or
+     *  geometry differs from the open .spk's). */
+    std::shared_ptr<const neurofileio::SpkxFile> extendedRecords(const QString& method) const;
     /** What writeFetrFiles() did. */
     struct FetrReport {
         qint64      rows = 0;       ///< residual records
@@ -2514,6 +2525,9 @@ public:
         /// A sparse .spkc: its index names rows, so each is renamed to the row it
         /// moved to and the records put in the new ascending order.
         bool    sparse = false;
+        /// A .spkx (extended records, formats/spkx.md): its rows and their sources
+        /// renamed the same way, each record kept with its own time.
+        bool    extended = false;
     };
     /** What a full time sort would do.  @c order[k] is the 0-based row that
      *  moves to row k (a stable sort of the .res by time). */

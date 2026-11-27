@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: a residual spike's row is re-cut from its extended record](#2026-11-27--klusters-a-residual-spikes-row-is-re-cut-from-its-extended-record) |
 | 2026-11-27 | [Klusters: the method of a stage's own .spk](#2026-11-27--klusters-the-method-of-a-stages-own-spk) |
 | 2026-11-27 | [Formats: .spkx, the extended records of rows the recording does not hold](#2026-11-27--formats-spkx-the-extended-records-of-rows-the-recording-does-not-hold) |
 | 2026-11-27 | [NeuroScope: the GPU spectrogram on AMD GPUs (HIP, hipFFT)](#2026-11-27--neuroscope-the-gpu-spectrogram-on-amd-gpus-hip-hipfft) |
@@ -336,6 +337,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: a residual spike's row is re-cut from its extended record
+
+Realign, nudge and re-extract no longer cut a residual row from the recording.
+
+<details>
+<summary>Details</summary>
+
+- A row Add Residual Spikes makes is a window *less* another unit's spike: the
+  recording does not hold it.  Every tool that moves a spike cut it again from
+  the recording, so a realign of such a cluster stopped at its raw-source check,
+  and a nudge or Re-extract on Save would have put the collision back.
+- The stage now carries a `.spkx` per `.spk` method grown
+  (`formats/spkx.md`): each new row's record over the window and half a window
+  either side.  The realignment (its check included), nudge, Re-extract on Save
+  and a feature-space sync cut these rows from it; one moved more than half a
+  window stays.  The PCA refine leaves them (its candidates are recording cuts).
+  Not in a super-sampled space.  A stage made from a `_rs` stage carries the
+  records; Sort Spikes by Time reorders them.
+- A waveform method with no `.spkx` in such a stage: its re-cut takes these rows
+  from the recording, and says so.
+- Self-test `test_residual_spikes_recut.py` (with a negative control: without
+  the `.spkx` the realign stops at the check); new self-test pref
+  `reextractOnSave`.
+
+</details>
 
 ---
 

@@ -268,6 +268,31 @@ QString KlustersDoc::spkrPathFor(const QString& method) const
     return spkc.left(at) + QStringLiteral(".spkr.") + spkc.mid(at + marker.size());
 }
 
+QString KlustersDoc::spkxPathFor(const QString& method) const
+{
+    const QString spkc = spkcPathFor(method);          // <base>.spkc.<method>.<group>[.<stage>]
+    if (spkc.isEmpty()) return QString();
+    const QString marker = QStringLiteral(".spkc.");
+    const int at = spkc.lastIndexOf(marker);
+    if (at < 0) return QString();
+    return spkc.left(at) + QStringLiteral(".spkx.") + spkc.mid(at + marker.size());
+}
+
+std::shared_ptr<const neurofileio::SpkxFile> KlustersDoc::extendedRecords(const QString& method) const
+{
+    if (!clusteringData) return nullptr;
+    const QString path = spkxPathFor(method);
+    if (path.isEmpty() || !QFileInfo::exists(path)) return nullptr;
+    auto x = std::make_shared<neurofileio::SpkxFile>(neurofileio::readSpkx(path.toStdString()));
+    if (!x->ok || x->nSpikes != static_cast<int64_t>(clusteringData->totalNbOfSpikes())
+        || x->nSamples != clusteringData->nbSamplesPerWaveform() || x->nChannels != clusteringData->nbOfChannels()) {
+        qWarning().noquote() << "[extended records]" << QFileInfo(path).fileName()
+                             << (x->ok ? "is not of the open rows (spike count or geometry); not used" : "cannot be read; not used");
+        return nullptr;
+    }
+    return x;
+}
+
 bool KlustersDoc::residualRecord(qint64 row, std::vector<int16_t>& record, int* offset, int* classId,
                                  int* kind, qint64* twin) const
 {
@@ -961,7 +986,15 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
     }
 
     // ── the records, in every method: the window at the aligned time less the own unit there ──
+    // Cut over a window half a window wider either side (the .spkx record, formats/spkx.md):
+    // a tool that moves the row later -- realign, nudge, re-extract on save -- cuts it from
+    // there, as it would cut any other row from the recording.  The .spk record is the middle.
+    S.margin = nSamp / 2;
+    const std::size_t extRec = static_cast<std::size_t>(nSamp + 2 * S.margin) * nChan;
     for (const QString& m : methods) {
+        neurosuite::core::SpikeWindowSpec wide = cutOf.at(m)->window;   // (points into cutOf's spec, which stays)
+        wide.nSamp      += 2 * S.margin;
+        wide.peakSample += S.margin;
         FILE* fil = std::fopen(recording.toLocal8Bit().constData(), "rb");
         if (!fil) { S.reason = tr("Could not open %1.").arg(recording); S.spikes.clear(); return S; }
         for (std::size_t c0 = 0; c0 < jobs.size(); c0 += kChunk) {
@@ -973,11 +1006,14 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
             }
             WindowSet ws;
             int64_t outOfRange = 0;
-            cutWindows(fil, cutOf.at(m)->window, rec, times, ws, &outOfRange);
+            cutWindows(fil, wide, extRec, times, ws, &outOfRange);
             for (std::size_t j = c0; j < c1; ++j) {
+                std::vector<int16_t>& ext = S.spikes[j].extended[m];
+                ext.resize(extRec);
+                targetLessMedian(ws, j - c0, extRec, ext.data());
                 std::vector<int16_t>& record = S.spikes[j].records[m];
-                record.resize(rec);
-                targetLessMedian(ws, j - c0, rec, record.data());
+                const auto from = ext.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(S.margin) * nChan);
+                record.assign(from, from + static_cast<std::ptrdiff_t>(rec));
             }
         }
         std::fclose(fil);

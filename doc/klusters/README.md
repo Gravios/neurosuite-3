@@ -1478,6 +1478,21 @@ from the files on disk.
   beside the row it was found in, on the side its time says, so a time-sorted session stays
   sorted. Its `.eap` row names no class. The `.spkc` and `.spkr` are not carried: they are
   rebuilt.
+- **Extended records (`.spkx`).** A new row is a window *less* another unit's spike, so the
+  recording does not hold it: cut again from the recording it would be the collision it was
+  taken out of. The stage keeps each new row's record over the window and half a window either
+  side, in every `.spk` method grown ([`.spkx`](../ndmanager-plugins/formats/spkx.md)), and
+  every tool that would cut the row from the recording cuts it from there instead: the
+  realignment (and its raw-source check, which these rows would otherwise fail), a nudge, *Re-
+  extract spike waveforms on save* and a feature-space sync of a method the stage has records
+  for (a waveform method made later has none: its re-cut takes these rows from the recording,
+  and its log says so). A row moved more than half a window
+  from where it was made stays where it is (a nudge and the realignment count it as not
+  re-cut). The PCA refine of the realignment does not move these rows (its candidates are cuts
+  of the recording); the shift passes do. Not in a super-sampled space, and a nudge not under
+  features of another space than the `.spk` (a raw `.spk` under stderiv features): there the
+  rows stay where they are, and a re-extract with such rows leaves the `.spk` as it is. A stage made from a `_rs` stage carries its records;
+  **Sort Spikes by Time** reorders them with the rows.
 - **Every feature space.** In each space that is a projection (it has a `.pca.<method>`) a new
   row is its record — of that space's waveform method — through that space's basis; the
   columns the basis does not give are copied from the source row, the time is the spike's own.

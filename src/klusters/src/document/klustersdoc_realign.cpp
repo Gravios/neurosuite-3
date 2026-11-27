@@ -30,6 +30,7 @@
 #include "filecommit.h"
 #include "realign_pass.h"
 #include "realignio.h"
+#include "spkxcut.h"
 #include <stdint.h>
 #ifdef _OPENMP
 #include <omp.h>            // CPU-fallback realign parallelisation
@@ -776,7 +777,7 @@ struct RealignRefineInput {
     const int* stderivSetMem  = nullptr;
     const neurosuite::core::ChannelExprSet* stderivExpr = nullptr;
     const std::vector<int64_t>* clusterTs = nullptr;        // the spikes' times before the realign
-    const std::vector<char>*    measuredCorrected = nullptr; // collision rows: not refined
+    const std::vector<char>*    measuredCorrected = nullptr; // not refined: collision rows, rows with an extended record
     std::function<void()> computeStarts;                     // timing mark, may be empty
 };
 
@@ -1252,6 +1253,11 @@ struct RealignCut {
     const int* stderivSetOff  = nullptr;
     const int* stderivSetMem  = nullptr;
     const neurosuite::core::ChannelExprSet* stderivExpr = nullptr;
+    // The rows the recording does not hold (a residual spike's: a window less
+    // another unit's spike) and their extended records (formats/spkx.md): such a
+    // row is cut from there, never from the recording.  Null: no such rows.
+    // (Base rate only: a super-sampled space's rows are not cut from it.)
+    const neurofileio::SpkxFile* ext = nullptr;
 };
 
 // The group's window starting at `startSample`, read from the raw file and
@@ -1305,6 +1311,22 @@ static bool realignCutStored(const RealignCut& c, int64_t startSample, std::vect
             seed, stderivSetOffPtr, stderivSetMemPtr, stderivExprPtr);
     }
     return true;
+}
+
+// Row @p row's window starting at @p startSample, as realignCutStored cuts it,
+// but from the row's extended record when it has one (RealignCut::ext): the
+// recording does not hold that row.  False also when the start is more than
+// the record's margin from where it was made, and for the all-pairs cut (the
+// extended record is in the .spk's own space, it has no other transform).
+static bool realignCutRow(const RealignCut& c, int64_t row, int64_t startSample, std::vector<int16_t>& out,
+                          bool allPairs = false, int phase = 0)
+{
+    if (c.ext && neurofileio::spkxFind(*c.ext, row) >= 0) {
+        if (allPairs || c.upFactor > 1) return false;
+        out.assign(static_cast<size_t>(c.nChan) * static_cast<size_t>(c.nSamp), 0);
+        return spkxcut::cutChannelMajor(c.ext, row, startSample + c.peakSamp0, out.data()) == spkxcut::Cut::Done;
+    }
+    return realignCutStored(c, startSample, out, allPairs, phase);
 }
 
 // -----------------------------------------------------------------------
@@ -1413,7 +1435,8 @@ static void realignNewTimes(const std::vector<int64_t>& clusterTs, const std::ve
 //
 // (filF is always open here: realign stops earlier without a raw file.)
 // -----------------------------------------------------------------------
-static bool realignVerifyStoredRows(const RealignCut& c, const std::vector<int16_t>& storedWav,
+static bool realignVerifyStoredRows(const RealignCut& c, const std::vector<int64_t>& gidx,
+                                    const std::vector<int16_t>& storedWav,
                                     const std::vector<int64_t>& resTs, const std::vector<int>& oldPhase,
                                     QTextStream& log, const std::function<void()>& emitFlush)
 {
@@ -1422,8 +1445,10 @@ static bool realignVerifyStoredRows(const RealignCut& c, const std::vector<int16
     const int64_t N = static_cast<int64_t>(resTs.size());
     const bool spkIsTransformed = c.spkIsTransformed;
     const QString& filPath = c.path;
+    // (a row with an extended record is checked against it: realignCutRow)
+    int64_t rowOfCut = -1;
     const auto cutStoredSpace = [&](int64_t startSample, std::vector<int16_t>& out, bool allPairs = false, int phase = 0) {
-        return realignCutStored(c, startSample, out, allPairs, phase);
+        return realignCutRow(c, rowOfCut, startSample, out, allPairs, phase);
     };
     // Whether two channel-major rows are the same window: every element within
     // 1 of the other, except, in a stderiv .spk, sample `seedAt` of each channel
@@ -1459,6 +1484,7 @@ static bool realignVerifyStoredRows(const RealignCut& c, const std::vector<int16
     std::vector<int16_t> cut, rolled(static_cast<size_t>(spkElems));
     for (int64_t k = 0; k < nCheck; ++k) {
         const int64_t i = (nCheck == N) ? k : k * N / nCheck;
+        rowOfCut = gidx[static_cast<size_t>(i)];
         const int16_t* stored = storedWav.data()
             + static_cast<ptrdiff_t>(i) * static_cast<ptrdiff_t>(spkElems);
         // The window's first RAW sample (a super-sampled space's peak is in ticks).
@@ -1605,7 +1631,19 @@ static int64_t realignPlanRows(const RealignCut& c, Data* clusteringData,
         // cut is impossible (window outside the file, seek or read failure)
         // the spike stays where it was, with its stored window and time.
         bool recut = false;
-        if (cumShift[static_cast<size_t>(csIdx)] != 0 && upFactor > 1) {
+        // A row the recording does not hold is cut from its extended record (and,
+        // past its margin or in a super-sampled space, stays where it is).
+        const bool extended = c.ext && neurofileio::spkxFind(*c.ext, dest) >= 0;
+        if (cumShift[static_cast<size_t>(csIdx)] != 0 && extended) {
+            recut = upFactor == 1
+                 && spkxcut::cutChannelMajor(c.ext, dest, newTs[static_cast<size_t>(csIdx)], w) == spkxcut::Cut::Done;
+            if (!recut) {
+                cumShift[static_cast<size_t>(csIdx)] = 0;
+                newTs[static_cast<size_t>(csIdx)] = resTs[static_cast<size_t>(csIdx)];
+                newPhase[static_cast<size_t>(csIdx)] = oldPhase[static_cast<size_t>(csIdx)];
+                ++notRecut;
+            }
+        } else if (cumShift[static_cast<size_t>(csIdx)] != 0 && upFactor > 1) {
             // Super-sampled: through the extraction kernel at the new whole-sample
             // start and the new phase (margins, interpolation, transform in the
             // super-sampled domain), so the window is what a sync would cut.
@@ -2303,6 +2341,20 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             log << n << " collision row(s) measured on their corrected record (partner subtracted)\n";
         realignRowsMeasuredCorrected = static_cast<int>(n);
     }
+    // A row the recording does not hold (a residual spike's: a window less another
+    // unit's spike) is re-cut from its extended record (formats/spkx.md), never from
+    // the recording.  The PCA refine's candidates are cuts from the recording, so such
+    // a row keeps the lag the shift passes gave it, like a collision row.
+    const std::shared_ptr<const neurofileio::SpkxFile> extRecords = extendedRecords(featureMethod(ws.spkCommitted));
+    std::vector<char> notRefined = measuredCorrected;
+    if (extRecords) {
+        qint64 n = 0;
+        for (int64_t i = 0; i < N; ++i)
+            if (neurofileio::spkxFind(*extRecords, gidx[static_cast<size_t>(i)]) >= 0) { notRefined[static_cast<size_t>(i)] = 1; ++n; }
+        if (n > 0)
+            log << n << " row(s) not in the recording (residual spikes), re-cut from their extended record (.spkx, +-"
+                << extRecords->margin << " samples)\n";
+    }
 
     // Capture before-mean in channel-major order for the review dialog.
     if (meanBefore) realignMeanInto(wavBuf, N, spkElems, *meanBefore);
@@ -2427,7 +2479,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             refine.stderivSetMem  = stderivSetMemPtr;
             refine.stderivExpr    = stderivExprPtr;
             refine.clusterTs = &clusterTs;
-            refine.measuredCorrected = &measuredCorrected;
+            refine.measuredCorrected = &notRefined;
             refine.computeStarts = [&]() { timing.setupMs = timing.timer.elapsed(); };
             int nRefined = 0, nClamped = 0;
             realignPcaRefineSearch(filFp82, refine, cumShift, wavBuf, nRefined, nClamped, log, emitFlush);
@@ -2575,6 +2627,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
     cut.stderivOrder = stderivOrder;
     cut.stderivPartner = stderivPartnerPtr; cut.stderivSetOff = stderivSetOffPtr;
     cut.stderivSetMem = stderivSetMemPtr; cut.stderivExpr = stderivExprPtr;
+    cut.ext = extRecords.get();
 
     // -----------------------------------------------------------------------
     // Write realignment results directly into the persistent .pending files.
@@ -2609,7 +2662,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
 
     // The stored rows must be the windows at their .res in this recording: every moved
     // spike is re-cut from it and every other keeps its stored row.  (realignVerifyStoredRows)
-    if (!realignVerifyStoredRows(cut, storedWav, resTs, oldPhase, log, emitFlush)) {
+    if (!realignVerifyStoredRows(cut, gidx, storedWav, resTs, oldPhase, log, emitFlush)) {
         if (spkW) fclose(spkW);
         if (resW) fclose(resW);
         if (fetW) fclose(fetW);
@@ -3897,6 +3950,14 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
     QHash<qint64, std::shared_ptr<const QByteArray>> overlayBatch;
     std::vector<int64_t> nudgeMoved;   // rows whose time changed (followMovedSpikes)
     nudgeMoved.reserve(static_cast<size_t>(N));
+    // A row the recording does not hold (a residual spike's) is cut from its extended
+    // record (formats/spkx.md), which is in the .spk's own space: written as it is and
+    // projected as it is.  Not in a super-sampled space, and not when the features are
+    // of another space than the .spk (a raw .spk under stderiv features): such a row
+    // stays where it is, like one at the recording's edge.
+    const std::shared_ptr<const neurofileio::SpkxFile> extRecords = extendedRecords(featureMethod(ws.spkCommitted));
+    const bool extUsable = upFactor == 1 && isStderivFet == isStderivSpk;
+    int64_t extendedCut = 0, extendedLeft = 0;
     for (int64_t i = 0; i < N; ++i) {
         const dataType row  = static_cast<dataType>(
             spkTable(1, static_cast<dataType>(i + 1)));
@@ -3939,8 +4000,16 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         std::vector<int16_t> prevSample;
         const int spikePhase = (upFactor > 1 && phaseCol >= 0)
             ? static_cast<int>(clusteringData->featureValue(row, phaseCol + 1)) : 0;
-        const bool gotWav = extractWaveform(ts64, spikePhase, wav, prevSample);
-        if (!gotWav) ++boundarySkip;
+        const bool hasExtended = extRecords && neurofileio::spkxFind(*extRecords, pos0) >= 0;
+        bool gotWav = false;
+        if (hasExtended) {
+            wav.assign(static_cast<size_t>(nChan * nSamp), 0);
+            gotWav = extUsable && spkxcut::cutChannelMajor(extRecords.get(), pos0, ts64, wav.data()) == spkxcut::Cut::Done;
+            ++(gotWav ? extendedCut : extendedLeft);
+        } else {
+            gotWav = extractWaveform(ts64, spikePhase, wav, prevSample);
+            if (!gotWav) ++boundarySkip;
+        }
 
         // Write .spk at new position.  Use spkIsTransformed (via isStderivSpk),
         // not the feature-space flag: .spk format is independent of .fet format.
@@ -3949,7 +4018,7 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
             if (neurosuite::core::fseek64(spkW, static_cast<std::int64_t>(pos0) * static_cast<std::int64_t>(bytesPerSpike),
                        SEEK_SET) != 0) {
                 ++spkSeekFail;
-            } else if (isStderivSpk && upFactor == 1) {
+            } else if (isStderivSpk && upFactor == 1 && !hasExtended) {
                 // stderiv pipeline: .spk stores transformed waveform
                 // (all nChan channels, sample-major, matching ndm_extractspikes_stderiv)
                 applyStderivTransform(wav, prevSample, spkRowWritten);
@@ -3994,10 +4063,10 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         // preserve the existing feature values rather than zeroing them out.
         std::vector<int64_t> fetRowWritten;
         if (gotWav) {
-            if (upFactor > 1) {
+            if (upFactor > 1 || hasExtended) {
                 // The window is already in the .spk's space (the kernel applied
-                // the transform): project it as the realign does; extras and the
-                // phase column keep their in-memory values.
+                // the transform, or it is an extended record's): project it as the
+                // realign does; extras and the phase column keep their in-memory values.
                 fetRowWritten.assign(static_cast<size_t>(timeDim), 0LL);
                 if (pca.valid() && pca.nCh <= nChan) {
                     klusters::projectSpikeOntoPca(
@@ -4272,6 +4341,17 @@ bool KlustersDoc::nudgeClusterTimestamps(int clusterId, int deltaSamples)
         qInfo().noquote() << "[nudge]" << msg;
         if (auto* sb = app() ? app()->statusBar() : nullptr)
             sb->showMessage(msg, 8000);
+    }
+    if (extendedCut > 0 || extendedLeft > 0) {
+        QString msg = tr("Nudge: cluster %1 — %2 residual spike(s) cut from their extended record (.spkx)")
+                          .arg(clusterLabel(clusterId)).arg(static_cast<long long>(extendedCut));
+        if (extendedLeft > 0)
+            msg += tr("; %1 kept at their time (%2)").arg(static_cast<long long>(extendedLeft))
+                       .arg(extUsable ? tr("more than %1 samples from where the record was made").arg(extRecords->margin)
+                                      : tr("not in a super-sampled space, or under features of another space than the .spk"));
+        qInfo().noquote() << "[nudge]" << msg;
+        if (extendedLeft > 0)
+            if (auto* sb = app() ? app()->statusBar() : nullptr) sb->showMessage(msg, 8000);
     }
 
     // Recompute per-dimension min/max so the scatter view world-window
@@ -4579,17 +4659,49 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
             cut.window.interp = supersampleInterpFor(committed, spkMethod, cut.window.supersample, fallbackBasis);
     }
 
+    // The rows the recording does not hold (a residual spike's: a window less another
+    // unit's spike) are cut from their extended record (formats/spkx.md), not from the
+    // recording; one more than its margin from where it was made keeps the row it has.
+    // A super-sampled space is not cut from it: with such rows the .spk is left as it is.
+    const std::shared_ptr<const neurofileio::SpkxFile> ext = extendedRecords(spkMethod);
+    if (ext && cut.window.supersample > 1) {
+        std::fclose(filF);
+        log << "re-extract: " << ext->rows.size() << " row(s) of " << QFileInfo(targetSpkPath).fileName()
+            << " are not in the recording (residual spikes) and a super-sampled space is not cut from"
+               " their extended record — .spk left unchanged";
+        return false;
+    }
+    if (!ext) {
+        // Another space's .spkx names this stage's residual rows: this space has none, so
+        // they are cut from the recording here -- which holds the collision, not the residual.
+        const QFileInfo any(spkxPathFor(QStringLiteral("*")));
+        const QStringList others = QDir(any.absolutePath()).entryList(QStringList{ any.fileName() }, QDir::Files);
+        if (!others.isEmpty())
+            log << "re-extract: WARNING the stage has residual spikes (" << others.join(QStringLiteral(", "))
+                << ") but no extended records in " << spkMethod << ": their rows here are cut from the recording\n";
+    }
+    // (a row kept as it is is read from the target, or, for a sync's new copy, from the
+    // committed file it stands for)
+    FILE* keptFrom = nullptr;
+    if (ext) {
+        const qint64 want = static_cast<qint64>(nSpikes) * nChan * cut.window.outSamples() * 2;
+        for (const QString& from : { targetSpkPath, QString::fromStdString(neurosuite::custody::stripWorkingSuffix(targetSpkPath.toStdString())) })
+            if (!keptFrom && QFileInfo(from).size() == want) keptFrom = std::fopen(from.toLocal8Bit().constData(), "rb");
+    }
+
     const QString tmpPath = targetSpkPath + QStringLiteral(".reextract.tmp");
     FILE* out = std::fopen(tmpPath.toLocal8Bit().constData(), "wb");
     if (!out) {
         std::fclose(filF);
+        if (keptFrom) std::fclose(keptFrom);
         log << "re-extract: cannot open temp file " << tmpPath;
         return false;
     }
 
     const int spkElems = nChan * cut.window.outSamples();
-    int64_t written = 0, outOfRange = 0;
+    int64_t written = 0, outOfRange = 0, fromExtended = 0, keptExtended = 0;
     bool writeErr = false;
+    std::vector<int16_t> extRow(static_cast<size_t>(spkElems));
 
     // Cutting windows out of the .fil is shared with the extractor engines
     // (spike_extract.hpp): one implementation, so a session re-extracted here is
@@ -4602,8 +4714,22 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
         [&](int64_t i) {
             return static_cast<int64_t>(clusteringData->featureValue(i + 1, timeDim));
         },
-        [&](int64_t, const int16_t* rowData) {
+        [&](int64_t i, const int16_t* rowData) {
             if (writeErr) return;
+            if (ext) {
+                const int64_t t = static_cast<int64_t>(clusteringData->featureValue(i + 1, timeDim));
+                const spkxcut::Cut c = spkxcut::cutSampleMajor(ext.get(), i, t, extRow.data());
+                bool kept = false;
+                if (c == spkxcut::Cut::Beyond) {
+                    // the row as it is now
+                    kept = keptFrom && neurosuite::core::fseek64(keptFrom, i * static_cast<int64_t>(spkElems) * 2, SEEK_SET) == 0
+                        && std::fread(extRow.data(), sizeof(int16_t), extRow.size(), keptFrom) == extRow.size();
+                    if (!kept) { writeErr = true; return; }
+                    ++keptExtended;
+                }
+                if (c == spkxcut::Cut::Done) ++fromExtended;
+                if (c != spkxcut::Cut::None) rowData = extRow.data();
+            }
             if (std::fwrite(rowData, sizeof(int16_t),
                             static_cast<size_t>(spkElems), out)
                 != static_cast<size_t>(spkElems))
@@ -4614,6 +4740,7 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
         &outOfRange);
 
     std::fclose(filF);
+    if (keptFrom) std::fclose(keptFrom);
     if (std::fclose(out) != 0) writeErr = true;
 
     if (writeErr) {
@@ -4643,5 +4770,9 @@ bool KlustersDoc::reextractAllSpikesFromFil(const QString& targetSpkPath, QStrin
         << ") from " << filPath;
     if (outOfRange)
         log << "; " << outOfRange << " window(s) out of range → zeroed";
+    if (fromExtended || keptExtended)
+        log << "; " << fromExtended << " residual spike(s) from their extended record (.spkx)"
+            << (keptExtended ? QStringLiteral(", %1 kept as they were (more than %2 samples from it)").arg(keptExtended).arg(ext->margin)
+                             : QString());
     return true;
 }

@@ -18,8 +18,13 @@
     Adding rows changes every row-aligned file, so -- as decollide does -- a new
     stage is written beside the open one and opened:
 
-        <base>.res / .clu[.clc .clp] / .spk.<every method> / .fet.<every space> / .eap
+        <base>.res / .clu[.clc .clp] / .spk.<every method> / .spkx.<every method>
+              / .fet.<every space> / .eap
         under <stage>_rs ("rs" on an untagged session)
+
+    The .spkx (formats/spkx.md) holds each new row's record over a wider window:
+    the recording does not hold the row, so a realign, nudge or re-extract cuts
+    it from there.  The open stage's own .spkx rows are carried, renumbered.
 
     Existing rows keep their order and everything they hold.  A new row is put
     next to the row it was found in, on the side its time says, so a session in
@@ -192,7 +197,11 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
     // ── every .spk method: the rows as they are, the new rows' records ──
     QStringList spkMethods = availableSpkVariants();
     if (spkMethods.isEmpty()) spkMethods << QString::fromStdString(aSpk.method);
-    QStringList written, skipped;
+    QStringList written, skipped, carriedSkipped;
+    qint64 extendedRows = 0;
+    // old row -> its row in the new stage
+    std::vector<int64_t> newRowOf(n, -1);
+    for (std::size_t r = 0; r < total; ++r) if (source[r] >= 0) newRowOf[static_cast<std::size_t>(source[r])] = static_cast<int64_t>(r);
     for (const QString& m : spkMethods) {
         if (!found.spikes.front().records.contains(m)) { skipped << m; continue; }
         const SpkFile sm = readSpk(stagePath(base, "spk", m.toStdString(), grp, aSpk.suffix), nSamp, nChan);
@@ -210,6 +219,44 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
         if (!writeSpk(stagePath(base, "spk", m.toStdString(), grp, outTagS), nSamp, nChan, grown)) {
             summary = tr("Add residual spikes: could not write the new stage's .spk (%1).").arg(m);
             return false;
+        }
+        // The extended records (formats/spkx.md): the new rows', and those the open stage
+        // holds for its own added rows, renumbered.  What realign, nudge and re-extract
+        // on save cut these rows from instead of the recording.
+        {
+            SpkxFile x;
+            x.nSpikes = static_cast<int64_t>(total); x.nSamples = nSamp; x.nChannels = nChan;
+            x.margin = found.margin; x.group = grp;
+            const std::size_t extRec = static_cast<std::size_t>(x.extendedSamples()) * nChan;
+            const SpkxFile was = readSpkx(stagePath(base, "spkx", m.toStdString(), grp, aClu.suffix));
+            const bool carry = was.ok && was.nSpikes == static_cast<int64_t>(n) && was.nSamples == nSamp
+                               && was.nChannels == nChan && was.margin == found.margin;
+            if (was.ok && !carry) carriedSkipped << m;
+            for (std::size_t r = 0; r < total; ++r) {
+                if (source[r] >= 0) {
+                    const int64_t k = carry ? spkxFind(was, source[r]) : -1;
+                    if (k < 0) continue;
+                    x.rows.push_back(static_cast<int64_t>(r));
+                    x.times.push_back(was.times[static_cast<std::size_t>(k)]);
+                    const int64_t src = was.sources[static_cast<std::size_t>(k)];
+                    x.sources.push_back(src >= 0 ? newRowOf[static_cast<std::size_t>(src)] : -1);
+                    const auto from = was.records.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(k) * extRec);
+                    x.records.insert(x.records.end(), from, from + static_cast<std::ptrdiff_t>(extRec));
+                    continue;
+                }
+                const KlustersDoc::ResidualSpike& sp = found.spikes[static_cast<std::size_t>(-1 - source[r])];
+                const auto ext = sp.extended.constFind(m);
+                if (ext == sp.extended.constEnd() || ext->size() != extRec) continue;
+                x.rows.push_back(static_cast<int64_t>(r));
+                x.times.push_back(sp.time);
+                x.sources.push_back(newRowOf[static_cast<std::size_t>(sp.sourceRow)]);
+                x.records.insert(x.records.end(), ext->begin(), ext->end());
+            }
+            if (!writeSpkx(stagePath(base, "spkx", m.toStdString(), grp, outTagS), x)) {
+                summary = tr("Add residual spikes: could not write the new stage's .spkx (%1).").arg(m);
+                return false;
+            }
+            extendedRows = std::max(extendedRows, static_cast<qint64>(x.rows.size()));
         }
         written << m;
     }
@@ -272,6 +319,8 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
                   .arg(k).arg(clusterOf.size()).arg(per.join(QStringLiteral(", "))).arg(outTag)
                   .arg(hierarchical ? tr(", each new cluster its own child") : QString())
                   .arg((skipped.isEmpty() ? QString() : tr("; .spk not grown for: %1").arg(skipped.join(QStringLiteral(", "))))
+                       + tr("; %1 row(s) with an extended record (.spkx, +-%2 samples)").arg(extendedRows).arg(found.margin)
+                       + (carriedSkipped.isEmpty() ? QString() : tr("; the open stage's .spkx not carried for: %1").arg(carriedSkipped.join(QStringLiteral(", "))))
                        + tr("; feature spaces grown: %1").arg(spacesWritten.join(QStringLiteral(", ")))
                        + (spacesSkipped.isEmpty() ? QString() : tr("; not grown: %1").arg(spacesSkipped.join(QStringLiteral("; ")))));
     qInfo().noquote() << "[residual spikes]" << summary;

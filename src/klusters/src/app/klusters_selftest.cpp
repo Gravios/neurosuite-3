@@ -159,6 +159,8 @@ void KlustersApp::startSelfTest(const QString& specPath)
         return;
     }
     // The preference the steps assume unless the spec says otherwise.
+    if (spec.contains(QStringLiteral("reextractOnSave")))
+        configuration().setReextractSpikesOnSave(spec.value(QStringLiteral("reextractOnSave")).toBool());
     if (spec.contains(QStringLiteral("realignFromAnySpace")))
         configuration().setRealignFromAnySpace(spec.value(QStringLiteral("realignFromAnySpace")).toBool());
     // The realign preference's structured fields: the args string a realign runs with is
