@@ -1486,10 +1486,21 @@ bool KlustersDoc::canCloseView(){
     // from the files.
     if(isModified() && !differsFromDisk())
         modified = false;
-    if(isModified()){
+    // Add Residual Spikes' working stage: its rows are not in the stage until saved, edited or not.
+    const bool stageToKeep = inWorkingStage() && !working.answered;
+    if(isModified() || stageToKeep){
         QString saveURL;
-        switch(QMessageBox::question(nullptr, url(),tr("The current file has been modified.\n"
-                                                 "Do you want to save it?"),QMessageBox::Yes|QMessageBox::No|QMessageBox::Cancel))
+        const QString question = stageToKeep
+            ? tr("The residual spikes added are not saved: stage \"%1\" is unchanged until you save.\n"
+                 "Save them into \"%1\"?  (No drops them.)").arg(working.target)
+            : tr("The current file has been modified.\n"
+                 "Do you want to save it?");
+        const auto answer = QMessageBox::question(nullptr, url(), question, QMessageBox::Yes|QMessageBox::No|QMessageBox::Cancel,
+                                                  QMessageBox::Yes);
+        if (stageToKeep && answer != QMessageBox::Yes && answer != QMessageBox::No) return false;
+        if (stageToKeep) { working.answered = true; working.saved = (answer == QMessageBox::Yes); }
+        if (answer == QMessageBox::Yes && !isModified()) return true;    // the stage's files are saved already
+        switch(answer)
         {
         case QMessageBox::Yes:
             saveURL=url();
@@ -1510,6 +1521,7 @@ bool KlustersDoc::canCloseView(){
                     break;
                 case QMessageBox::No:
                     returnValue = false;
+                    if (stageToKeep) working.answered = false;   // asked again at the next close
                     break;
                 default:
                     break;

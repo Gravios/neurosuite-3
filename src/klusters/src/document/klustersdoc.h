@@ -128,6 +128,26 @@ public:
     void setModified(bool m = true){ modified=m; }
     /** Returns if the document is modified or not. Use this to determine if your document needs saving by the user on closing.*/
     bool isModified(){ return static_cast<bool>(modified); }
+
+    /** Add Residual Spikes' working stage (KlustersApp, klusters_workingstage.cpp): the open .clu
+     *  is @c workClu, a stage (@c work) written with the rows added; Save turns it into the stage
+     *  @c target, and closing without saving drops it.  canCloseView asks about it even when
+     *  nothing was edited since; @c answered: asked already (or not to be asked), @c saved
+     *  whether the rows are to be kept.  closeDocument leaves it: the app finishes it after. */
+    struct WorkingStage {
+        QString workClu, work, target;
+        bool saved = false;
+        bool answered = false;
+    };
+    const WorkingStage& workingStage() const { return working; }
+    bool inWorkingStage() const { return !working.work.isEmpty(); }
+    void setWorkingStage(const QString& workClu, const QString& work, const QString& target)
+    { working = WorkingStage{workClu, work, target, false, false}; }
+    /** Saved: the next close keeps the rows, without asking. */
+    void markWorkingStageSaved() { working.saved = true; working.answered = true; }
+    /** Replaced by another working stage (a second Add): the next close drops it, without asking. */
+    void dropWorkingStageOnClose() { working.saved = false; working.answered = true; }
+    void clearWorkingStage() { working = WorkingStage(); }
     /** Opens the document by filename and format.
     * @return an OpenSaveCreateReturnMessage enum giving the open status.
     */
@@ -3314,6 +3334,7 @@ private:
     /**The modified flag of the current document.  Assigned like a bool; a save
      * clears it only if no edit set it after the save's snapshot (DirtyFlag). */
     DirtyFlag modified;
+    WorkingStage working;               // Add Residual Spikes' stage not saved yet (workingStage())
 
     /** Cached PCA basis for realignSpikes.  A PCA-Center Align All batch shares
      *  one group's basis, so it is read from .pca/.pcaD once and reused for every

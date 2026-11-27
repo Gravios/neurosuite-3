@@ -1148,7 +1148,7 @@ line says how many were left.
 | Clusters ▸ Remove Collision Marks Not in Every Space… | — | Fits the marked rows of the selected clusters (or children) in every waveform space of the group and, after a confirmation, takes the partner out of those where it is not accepted in all of them; written at Save |
 | Clusters ▸ Remove Collision Marks… | — | Takes the partners out of the rows of the selected clusters (or children) that name one, after a confirmation; written at Save |
 | Waveforms ▸ Residual of Collision Rows | — | Toggle: rows that name a partner are drawn as the partner's spike — re-cut from the recording around the partner, the row's own unit subtracted — and written as `.spkr` at Save |
-| Clusters ▸ Add Residual Spikes as Clusters… | — | The residual spikes of the selected clusters' collision rows that no row holds, each aligned at its own peak, become rows of new clusters — one per partner named — in a new stage (`<stage>_rs`) that is then opened. See [Adding the residual spikes](#adding-the-residual-spikes) |
+| Clusters ▸ Add Residual Spikes as Clusters… | — | The residual spikes of the selected clusters' collision rows that no row holds, each aligned at its own peak, become rows of new clusters — one per partner named; the session reopens with them, the displays kept, and Save puts them in the open stage (`rs` for an untagged session). See [Adding the residual spikes](#adding-the-residual-spikes) |
 | Clusters ▸ Rebuild Residual Spikes' Extended Records… | — | In a stage Add Residual Spikes wrote before it kept extended records: finds the rows of residual spikes and writes their `.spkx`, after a confirmation. See [Adding the residual spikes](#adding-the-residual-spikes) |
 | Clusters ▸ Mark Collisions… | — | Searches the selected clusters (in the child view: the selected children) for rows that hold a second cluster's spike and, after a confirmation, names the partner in the `.eap`: the rows are then shown with the partner subtracted. See [Mark Collisions](#mark-collisions--the-collisions-no-sorter-named) |
 | Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
@@ -1481,13 +1481,22 @@ from the files on disk.
   cluster is that unit's is seen in its waveforms and features beside the partner's, and the
   two are then merged by hand (or the new cluster discarded). In a hierarchical session a new
   cluster is one child, its self child.
-- **A new stage.** Adding rows changes every row-aligned file, so nothing of the open stage is
-  touched: `<stage>_rs` (`rs` on an untagged session) gets its own `.res`, `.clu` (`.clc`,
+- **Saved into the open stage.** Adding rows changes every row-aligned file, so the rows are
+  written as a working stage beside the open one (`<stage>_rw`): its own `.res`, `.clu` (`.clc`,
   `.clp`), every `.spk` method that can be cut from the recording, the `.fet` of every feature
-  space and the `.eap`, and is opened. Old rows keep their order and content; a new row sits
-  beside the row it was found in, on the side its time says, so a time-sorted session stays
-  sorted. Its `.eap` row names no class. The `.spkc` and `.spkr` are not carried: they are
-  rebuilt.
+  space and the `.eap`, with the stage's `.cli`, curation log and template marks carried over.
+  The session reopens on it with the displays, selections and feature space as they were
+  ([a reload keeps the displays](#views)); the title names the stage as not saved. Nothing of
+  the open stage is touched until **Save**: then the working stage's files take the stage's
+  names, the stage's row-indexed files they do not replace (an old `.spkc`, `.spkr`, `.fetr`,
+  `.col`) are set aside as `.stalebkp`, and the stage is opened. **Closing without saving**
+  (answering No) removes the working stage. A second add before saving replaces the working
+  stage (`_rw2`). An untagged session's stage is `rs` (`rs2`, ... when taken), so the session's
+  own files never change. In a working stage, Save As, Sort Spikes by Time, decollide,
+  plugins and Promote to Hierarchical Session are refused: save first. Old rows keep their
+  order and content; a new row sits beside the row it was found in, on the side its time
+  says, so a time-sorted session stays sorted. Its `.eap` row names no class. The `.spkc` and
+  `.spkr` are rebuilt by the Save.
 - **Extended records (`.spkx`).** A new row is a window *less* another unit's spike, so the
   recording does not hold it: cut again from the recording it would be the collision it was
   taken out of. The stage keeps each new row's record over the window and half a window either
@@ -1501,7 +1510,7 @@ from the files on disk.
   re-cut). The PCA refine of the realignment does not move these rows (its candidates are cuts
   of the recording); the shift passes do. Not in a super-sampled space, and a nudge not under
   features of another space than the `.spk` (a raw `.spk` under stderiv features): there the
-  rows stay where they are, and a re-extract with such rows leaves the `.spk` as it is. A stage made from a `_rs` stage carries its records;
+  rows stay where they are, and a re-extract with such rows leaves the `.spk` as it is. Residual spikes added to a stage that has records carry them;
   **Sort Spikes by Time** reorders them with the rows.
 - **A stage made before (2026-11-27).** It has no `.spkx`: a realign of its new clusters stops at
   the raw-source check. **Clusters → Rebuild Residual Spikes' Extended Records…** (save first)

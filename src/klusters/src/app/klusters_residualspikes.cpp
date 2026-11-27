@@ -81,7 +81,7 @@ bool readFramed(const QString& path, int& header, std::vector<int>& values)
 } // namespace
 
 bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, QString& outCluPath, QString& summary,
-                                     QMap<int, int>* newClusters)
+                                     QMap<int, int>* newClusters, const QString& outStage)
 {
     using namespace neurofileio;
     outCluPath.clear();
@@ -102,7 +102,8 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
     const QString dir = QFileInfo(cluPath).absolutePath() + QDir::separator();
     const std::string base = (dir + QString::fromStdString(aClu.base)).toStdString();
     const int grp = aClu.group;
-    const QString outTag = aClu.suffix.empty() ? QStringLiteral("rs") : (QString::fromStdString(aClu.suffix) + QStringLiteral("_rs"));
+    const QString outTag = !outStage.isEmpty() ? outStage
+                         : aClu.suffix.empty() ? QStringLiteral("rs") : (QString::fromStdString(aClu.suffix) + QStringLiteral("_rs"));
     const std::string outTagS = outTag.toStdString();
 
     ClusterResData cr = readClusterRes(cluPath.toStdString(), resPath.toStdString());
@@ -390,25 +391,31 @@ void KlustersApp::slotAddResidualSpikes()
     box.setInformativeText(
         tr("Each is cut from %1 around its own peak (%2 were moved by the alignment), the row's own unit "
            "subtracted, and becomes a row of a NEW cluster -- one per partner named -- so that it can be "
-           "looked at beside that partner before the two are merged.  A new stage is written and opened; "
-           "the open stage is not changed.\n\nPartners (cluster: spikes, and the share whose features fit that "
+           "looked at beside that partner before the two are merged.  The session reopens with them, the "
+           "displays kept; nothing is written to %6 until you save, and closing without saving drops them."
+           "\n\nPartners (cluster: spikes, and the share whose features fit that "
            "cluster better than any other): %3.\n\n%4%5")
             .arg(R.source).arg(R.moved).arg(per.join(QStringLiteral(", ")), left,
                  doubt.isEmpty() ? QString()
                                  : tr("\n\nDOUBTFUL -- the spikes named for these clusters mostly do not look like them; "
-                                      "their new clusters are probably not that unit: %1.").arg(doubt.join(QStringLiteral("; ")))));
+                                      "their new clusters are probably not that unit: %1.").arg(doubt.join(QStringLiteral("; "))),
+                 doc->inWorkingStage() ? tr("stage \"%1\"").arg(doc->workingStage().target)
+                 : neurosuite::custody::parseAnchor(QFileInfo(doc->url()).fileName().toStdString()).suffix.empty()
+                     ? tr("a new stage \"rs\"")
+                     : tr("stage \"%1\"").arg(QString::fromStdString(
+                           neurosuite::custody::parseAnchor(QFileInfo(doc->url()).fileName().toStdString()).suffix))));
     box.setDefaultButton(QMessageBox::No);
     if (box.exec() != QMessageBox::Yes) return;
 
+    // written as a working stage, which opens with the displays and selections as they were, in
+    // the space shown before; Save makes the rows the open stage's
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    QString outCluPath, summary;
-    const bool ok = writeResidualStage(R, outCluPath, summary);
+    QString summary;
+    const QString shown = back.method, was = doc->url();
+    const bool ok = addResidualSpikesInWorkingStage(R, shown, summary);
     QApplication::restoreOverrideCursor();
+    if (!doc || doc->url() != was) back.method.clear();          // reopened: the space is shown again by the reopen
     if (!ok) { QMessageBox::warning(this, tr("Add Residual Spikes as Clusters"), summary); return; }
-    // the new stage opens with the displays and selections as they were, in the space shown before
-    const QString shown = back.method;
-    back.method.clear();
-    reopenKeepingState(outCluPath, shown);
     statusBar()->showMessage(summary, 15000);
 }
 

@@ -100,7 +100,7 @@ Manual: [doc/kiloklustakwik/README.md](doc/kiloklustakwik/README.md)
 - One electrode group at a time in synchronized views: inspect, split, merge and reassign clusters, every edit undoable.
 - [Hierarchical clustering](doc/klusters/hierarchical-clustering.md) into fibers and atoms, template curation, t-SNE and oblique views, multi-lasso, DipSplit and watershed splits, merge recommendations, drift / template / residual matrices, waveform realignment.
 - Rebindable keys and mouse, and a right-click radial menu.
-- Collisions: **Mark Collisions** finds the rows that also hold a second unit's spike (it must be there in every waveform space) and names that unit; the row is then shown with it subtracted, and **Add Residual Spikes as Clusters** makes rows of the partners' spikes that no row held, in a new stage.
+- Collisions: **Mark Collisions** finds the rows that also hold a second unit's spike (it must be there in every waveform space) and names that unit; the row is then shown with it subtracted, and **Add Residual Spikes as Clusters** makes rows of the partners' spikes that no row held, saved into the open stage.
 - All-or-nothing saves that skip unchanged files, autosave for crash recovery, and a curation log (`.cur`) that the curation and prior-training tools learn from.
 
 Manual: [doc/klusters/README.md](doc/klusters/README.md)

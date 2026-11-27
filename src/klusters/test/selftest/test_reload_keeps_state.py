@@ -13,8 +13,8 @@ The session of test_residual_spikes (cluster 2 marked), with the projection spac
     arrangement is gone;
   - a reopen that keeps the state: the same displays, in the same order, each with its clusters,
     its added views and its dimensions, the same current one, `alt` still shown;
-  - Add Residual Spikes from `alt`, opening the stage as the command does: the stage opens with the
-    same displays and clusters (the ids it had before are kept), and `alt` shown;
+  - Add Residual Spikes from `alt`, as the command does: its working stage opens with the same
+    displays and clusters (the ids it had before are kept), and `alt` shown;
   - the child view (a session with a child clustering, child 20001 of parent 2 clicked in the child
     palette): a plain reopen leaves it (NEGATIVE CONTROL); a reopen keeping the state shows the
     child palette and selects child 20001 again.

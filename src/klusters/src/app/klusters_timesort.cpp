@@ -22,6 +22,7 @@
 void KlustersApp::slotSortSpikesByTime()
 {
     if (!doc || doc->url().isEmpty()) return;
+    if (refuseInWorkingStage(tr("Sort Spikes by Time"))) return;
     // The feature-space combo is locked during save / realign / recluster.
     if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
         statusBar()->showMessage(tr("Wait for the running job to finish before sorting "

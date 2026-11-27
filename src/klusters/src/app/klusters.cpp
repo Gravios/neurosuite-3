@@ -3563,6 +3563,7 @@ bool KlustersApp::queryClose()
                     mPluginRunning = false;
                 }
                 doc->closeDocument();
+                finishWorkingStage();
                 QApplication::restoreOverrideCursor();
                 return true;
             } else
@@ -3613,8 +3614,24 @@ void KlustersApp::customEvent (QEvent* event){
             // A promotion waiting for this save reopens the session, which would
             // tear down a template run started now; the .wtf is regenerated on
             // the next save instead.
-            if(!mTemplateUnits.isEmpty() && !mPromoteAfterSave)
+            if(!mTemplateUnits.isEmpty() && !mPromoteAfterSave && !doc->inWorkingStage())
                 QTimer::singleShot(0, this, [this]() { runTemplateGeneration(); });
+            // Add Residual Spikes' working stage, saved: its files become the target stage's
+            // (finishWorkingStage, at the close), which is then opened with the displays kept.
+            // Edited during the save: the next Save does it.
+            if(doc->inWorkingStage() && !doc->isModified()){
+                doc->markWorkingStageSaved();
+                const KlustersDoc::WorkingStage w = doc->workingStage();
+                QString target = w.workClu;
+                target.chop(w.work.size());
+                target += w.target;
+                QTimer::singleShot(0, this, [this, target]() {
+                    if (!doc || !doc->inWorkingStage()) return;
+                    if (reopenKeepingState(target))
+                        statusBar()->showMessage(tr("The residual spikes are saved in stage \"%1\".")
+                                                     .arg(QFileInfo(target).fileName()), 8000);
+                });
+            }
         } else {
             // patch63 — show the actual error rather than a generic "I/O Error"
             // that left the user with no information about what failed.
@@ -3757,6 +3774,7 @@ void KlustersApp::slotFileClose(){
                 clusterPanel->hide();
                 mainDock = nullptr;
                 doc->closeDocument();
+                finishWorkingStage();            // Add Residual Spikes' stage: kept (saved) or dropped
                 realignReturnSpace.clear();      // nothing to return to any more
                 if (nudgeFollowTimer) nudgeFollowTimer->stop();
                 resetState();
@@ -3914,6 +3932,7 @@ void KlustersApp::slotFileRenumberAndSave(){
 void KlustersApp::slotFileSaveAs()
 {
     if (refuseInBorrowedSpace(tr("Save As"))) return;
+    if (refuseInWorkingStage(tr("Save As"))) return;
     slotStatusMsg(tr("Saving file with a new filename…"));
     // Start from the open cluster file: its directory, and a name to edit (a
     // hierarchical session's new name must keep its ".clu." -- see prepareSave).
@@ -9202,6 +9221,9 @@ void KlustersApp::runPlugin(const KlustersPlugin& plugin, const QMap<QString, QS
         return;
     }
 
+    // A plugin reads and may rewrite the session's files: not those of a stage not saved yet.
+    if (refuseInWorkingStage(tr("Plugins"))) return;
+
     // A `recluster` plugin runs on the selection's sub-session: the recluster path (its own checks,
     // the sub-session export, the integration of the final .clu as a recluster).
     if (plugin.runsOnSubsession()) {
@@ -9875,6 +9897,7 @@ void KlustersApp::slotTemplateClassesChanged()
 void KlustersApp::decollideLassoAgainstBasis(const QList<int>& rows, const QList<int>& basis)
 {
     if (refuseInBorrowedSpace(tr("Decollide"))) return;
+    if (refuseInWorkingStage(tr("Decollide"))) return;
     using namespace neurofileio;
     namespace dc = neurosuite::decollide;
 
@@ -9969,6 +9992,7 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
                                   bool fromLasso)
 {
     if (refuseInBorrowedSpace(tr("Decollide"))) return;
+    if (refuseInWorkingStage(tr("Decollide"))) return;
     using namespace neurofileio;
     namespace dc = neurosuite::decollide;
     if (requested.empty() || !doc || doc->url().isEmpty()) return;

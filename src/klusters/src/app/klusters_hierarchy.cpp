@@ -696,6 +696,7 @@ void KlustersApp::slotChildSelectionChanged(const QList<int>&){
 void KlustersApp::slotPromoteToHierarchy(){
     const QString title = tr("Promote to Hierarchical Session");
     if(!doc || doc->url().isEmpty()) return;
+    if(refuseInWorkingStage(title)) return;
     QString why;
     if(!doc->canPromoteToHierarchy(&why)){
         QMessageBox::information(this, title, why);

@@ -572,6 +572,8 @@ private:
     void selfTestTick();
     bool selfTestRunStep(const QJsonObject& step, QJsonObject& result);
     QJsonObject selfTestDump(int clusterId) const;
+    /** The working stage of Add Residual Spikes, for the reports ({} when there is none). */
+    QJsonObject selfTestWorkingStage() const;
     void selfTestFinish(int code);
     void selfTestNoteRealign(bool ok, int nShifted);
     QString     selfTestRealignLog_;
@@ -637,9 +639,26 @@ public:
     void slotMarkCollisions();
     /** Clusters > Add Residual Spikes as Clusters: the recovered residual spikes of the selected
      *  clusters -- the partners' spikes no row holds -- aligned at their peak, become rows of
-     *  NEW clusters, one per partner named, in a new stage that is then opened
-     *  (KlustersDoc::alignedResidualSpikes, writeResidualStage). */
+     *  NEW clusters, one per partner named, in a working stage that is then opened; Save puts
+     *  them in the open stage (KlustersDoc::alignedResidualSpikes, addResidualSpikesInWorkingStage). */
     void slotAddResidualSpikes();
+    /** Writes @p found as the working stage of the open one (`<target>_rw`, or `_rw2` beside a
+     *  working stage already open; the target is the open stage, `rs` for an untagged session),
+     *  carries the stage's .cli, .cur and template marks into it, and opens it with the displays
+     *  kept, in @p space when given.  The document is then KlustersDoc::inWorkingStage: Save
+     *  makes the rows the target's (finishWorkingStage), a close without saving drops them.
+     *  False when nothing was opened (@p summary says why). */
+    bool addResidualSpikesInWorkingStage(const KlustersDoc::ResidualSpikes& found, const QString& space,
+                                         QString& summary, QMap<int, int>* newClusters = nullptr);
+    /** After the document of a working stage is closed: its files become the target's (saved),
+     *  the target's row-indexed files they do not replace set aside as `.stalebkp`; or they are
+     *  removed (not saved).  @p log gets what was done. */
+    void finishWorkingStage(QString* log = nullptr);
+    /** Refuses @p what in a working stage (false when not in one): it would write or reopen
+     *  files of a stage that is not saved yet. */
+    bool refuseInWorkingStage(const QString& what);
+    /** The window title, with a working stage named as the stage it will be saved into. */
+    void updateDocumentTitle();
     /** Clusters > Rebuild Residual Spikes' Extended Records: the .spkx of a stage Add Residual
      *  Spikes wrote before it kept one, after a confirmation (KlustersDoc::rebuildExtendedRecords). */
     void slotRebuildExtendedRecords();
@@ -647,9 +666,10 @@ public:
      *  residual spikes as rows of new clusters (res, clu, clc/clp when hierarchical, every .spk
      *  method, the shown .fet, the .eap).  Nothing of the open stage is changed.  Returns the
      *  new stage's .clu in @p outCluPath, what was done in @p summary; false when nothing was
-     *  written.  @p newClusters gets partner -> new cluster. */
+     *  written.  @p newClusters gets partner -> new cluster.  @p outStage: the new stage's tag
+     *  (default `<stage>_rs`, `rs` for an untagged session). */
     bool writeResidualStage(const KlustersDoc::ResidualSpikes& found, QString& outCluPath, QString& summary,
-                            QMap<int, int>* newClusters = nullptr);
+                            QMap<int, int>* newClusters = nullptr, const QString& outStage = QString());
     /** Clusters > Remove Duplicate Spikes: rows of a selected cluster (or child) closer in time
      *  than a neuron fires twice are one spike held more than once; after a confirmation all
      *  but one of each are moved to the artefact cluster (KlustersDoc::scanDuplicateSpikes). */

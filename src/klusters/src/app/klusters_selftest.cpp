@@ -80,6 +80,8 @@
  *        {"reopen": true}                close the document and open it again (unsaved changes dropped);
  *                                        {"reopen": {"replace": {file: with}}} overwrites files in between
  *                                        ("keepState": true: the displays and selections put back)
+ *        {"close": true}                 File > Close (its question answered by "answerNo" or the default)
+ *        {"open": "<path.clu>"}          File > Open, with no document open
  *        {"guiState": {...}}             arrange displays ("newDisplay", "addView", "dims", "label",
  *                                        "current") and report what a reload keeps
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
@@ -99,6 +101,7 @@
 #include "klustersview.h"
 #include <qextendtabwidget.h>
 #include <QElapsedTimer>
+#include <QThread>
 #include "clusterview.h"
 #include "waveformview.h"
 #include "clusterpalette.h"
@@ -443,6 +446,47 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             for (int k = 0; k < 4; ++k) QApplication::processEvents();   // the open's own deferred work, then the restore
         }
         return doc && !doc->url().isEmpty();
+    }
+    if (step.contains(QStringLiteral("close"))) {
+        // {"close": true}: File > Close, its question answered as the spec says ("answerNo"
+        // names the box to answer No).  Reports whether the document closed, the working stage
+        // it had and what its close did.
+        const QJsonObject before = selfTestWorkingStage();
+        // The question is asked inside this step, while the tick that would answer it waits:
+        // a timer of the step's own answers it as the tick does.
+        QTimer answer;
+        connect(&answer, &QTimer::timeout, this, [this, &result]() {
+            auto* box = qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            if (!box) return;
+            const QString text = box->windowTitle() + QStringLiteral(": ") + box->text();
+            result.insert(QStringLiteral("dialog"), text);
+            bool no = false;
+            for (const QJsonValue& v : selfTestAnswerNo_) no = no || text.contains(v.toString());
+            if (QAbstractButton* b = no ? box->button(QMessageBox::No) : nullptr) b->click();
+            else if (QPushButton* b = box->defaultButton()) b->click(); else box->reject();
+        });
+        answer.start(50);
+        slotFileClose();
+        answer.stop();
+        // a close the running jobs defer completes when they end (CloseDocumentEvent)
+        QElapsedTimer waited;
+        waited.start();
+        while (mainDock && doc && !doc->url().isEmpty() && waited.elapsed() < 30000) {
+            QApplication::processEvents(QEventLoop::AllEvents, 50);
+            QThread::msleep(20);
+        }
+        for (int k = 0; k < 4; ++k) QApplication::processEvents();
+        result.insert(QStringLiteral("closed"), !mainDock);
+        result.insert(QStringLiteral("workingBefore"), before);
+        result.insert(QStringLiteral("title"), windowTitle());
+        return !mainDock;
+    }
+    if (step.contains(QStringLiteral("open"))) {
+        // {"open": "<path.clu>"}: File > Open of that file (the document closed first).
+        if (mainDock) { result.insert(QStringLiteral("error"), QStringLiteral("a document is open")); return false; }
+        openDocumentFile(step.value(QStringLiteral("open")).toString());
+        result.insert(QStringLiteral("url"), doc->url());
+        return !doc->url().isEmpty();
     }
     if (step.contains(QStringLiteral("guiState"))) {
         // {"guiState": {"newDisplay": type, "addView": [type..], "dims": [x, y], "label": s,
@@ -892,8 +936,9 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     if (step.contains(QStringLiteral("residualSpikes"))) {
         // {"residualSpikes": {"clusters": [..], "children": bool, "apply": bool, "open": bool}}:
         // Clusters > Add Residual Spikes as Clusters without its dialog -- the spikes found, with
-        // "apply" the stage written ("stage": its .clu), and with "open" the stage opened as the
-        // command opens it (reopenKeepingState: the displays, selections and space kept).
+        // "apply" the stage `<stage>_rs` written ("stage": its .clu), and with "open" instead what
+        // the command does: the working stage written and opened, the displays, selections and
+        // space kept (addResidualSpikesInWorkingStage; "working": the working stage).
         const QJsonObject o = step.value(QStringLiteral("residualSpikes")).toObject();
         QList<int> ids;
         for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
@@ -950,6 +995,21 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         for (const int partner : R.doubtful) doubtful.append(partner);
         result.insert(QStringLiteral("doubtful"), doubtful);
         result.insert(QStringLiteral("modified"), doc->isModified());
+        if (R.ok && o.value(QStringLiteral("apply")).toBool(false) && o.value(QStringLiteral("open")).toBool(false)) {
+            QString summary;
+            QMap<int, int> made;
+            const bool opened = addResidualSpikesInWorkingStage(R, shownBefore, summary, &made);
+            for (int k = 0; k < 4; ++k) QApplication::processEvents();
+            QJsonObject clusters;
+            for (auto it = made.constBegin(); it != made.constEnd(); ++it) clusters.insert(QString::number(it.key()), it.value());
+            result.insert(QStringLiteral("newClusters"), clusters);
+            result.insert(QStringLiteral("summary"), summary);
+            result.insert(QStringLiteral("opened"), opened);
+            result.insert(QStringLiteral("written"), opened);
+            result.insert(QStringLiteral("working"), selfTestWorkingStage());
+            result.insert(QStringLiteral("activeAfter"), doc ? doc->activeFeatureMethod() : QString());
+            return R.ok;
+        }
         if (R.ok && o.value(QStringLiteral("apply")).toBool(false)) {
             QString stage, summary;
             QMap<int, int> made;
@@ -960,13 +1020,6 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             QJsonObject clusters;
             for (auto it = made.constBegin(); it != made.constEnd(); ++it) clusters.insert(QString::number(it.key()), it.value());
             result.insert(QStringLiteral("newClusters"), clusters);
-            if (written && o.value(QStringLiteral("open")).toBool(false)) {
-                const bool opened = reopenKeepingState(stage, shownBefore);
-                for (int k = 0; k < 4; ++k) QApplication::processEvents();
-                result.insert(QStringLiteral("opened"), opened && doc && doc->url() == stage);
-                result.insert(QStringLiteral("activeAfter"), doc ? doc->activeFeatureMethod() : QString());
-                return R.ok;
-            }
         }
         if (!shownBefore.isEmpty()) showFeatureSpace(shownBefore, false);   // the stage is written, not opened
         result.insert(QStringLiteral("activeAfter"), doc->activeFeatureMethod());
@@ -2007,9 +2060,22 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
     return false;
 }
 
+QJsonObject KlustersApp::selfTestWorkingStage() const
+{
+    QJsonObject w;
+    if (!doc || !doc->inWorkingStage()) return w;
+    w.insert(QStringLiteral("clu"), doc->workingStage().workClu);
+    w.insert(QStringLiteral("work"), doc->workingStage().work);
+    w.insert(QStringLiteral("target"), doc->workingStage().target);
+    w.insert(QStringLiteral("saved"), doc->workingStage().saved);
+    w.insert(QStringLiteral("title"), windowTitle());
+    return w;
+}
+
 QJsonObject KlustersApp::selfTestDump(int clusterId) const
 {
     QJsonObject d;
+    d.insert(QStringLiteral("working"), selfTestWorkingStage());
     d.insert(QStringLiteral("clu"), doc->url());
     d.insert(QStringLiteral("cluMethod"), doc->cluMethod());
     d.insert(QStringLiteral("active"), doc->activeFeatureMethod());

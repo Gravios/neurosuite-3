@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: Add Residual Spikes saves into the open stage](#2026-11-27--klusters-add-residual-spikes-saves-into-the-open-stage) |
 | 2026-11-27 | [Klusters: a reload keeps the displays and selections](#2026-11-27--klusters-a-reload-keeps-the-displays-and-selections) |
 | 2026-11-27 | [Klusters: closing with three displays or more no longer crashes](#2026-11-27--klusters-closing-with-three-displays-or-more-no-longer-crashes) |
 | 2026-11-27 | [Klusters: Add Residual Spikes from any feature space](#2026-11-27--klusters-add-residual-spikes-from-any-feature-space) |
@@ -346,6 +347,58 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: Add Residual Spikes saves into the open stage
+
+The rows added go to a working stage that opens with the displays kept; Save makes them the open stage's (rs for an untagged session), closing without saving drops them.
+
+<details>
+<summary>Details</summary>
+
+**Before.**  Add Residual Spikes as Clusters wrote a new stage `<stage>_rs` and opened it: every add
+made one more stage (`_rs_rs`, ...), the stage open before was left behind, and the rows were
+on disk before anyone had looked at them.
+
+**Now.**  The rows are written as a *working stage* beside the open one, `<target>_rw`
+(`KlustersApp::addResidualSpikesInWorkingStage`, new `app/klusters_workingstage.cpp`): the same
+files `writeResidualStage` wrote under `_rs` (it now takes the tag), with the stage's `.cli`,
+curation log and template marks copied over.  The session reopens on it with the displays,
+selections and feature space kept; the title names the target as not saved.  The target is the
+open stage; an untagged session's is `rs` (`rs2`, ... when taken).
+
+- **Save** (`customEvent`, the save done): the working stage is marked saved and the target
+  opened with the displays kept; the close (`finishWorkingStage`) gives every working-stage file
+  the target's name (one `rename` each), sets the target's row-indexed files it did not replace
+  (`.res .clu .clc .spk .spkx .spkc .spkr .fet .fetr .col .eap`) aside as `.stalebkp`, and
+  removes what is left of the working stage.
+- **Close / quit / open another file**: `KlustersDoc::canCloseView` asks about the working stage
+  even when nothing was edited since ("Save them into "<target>"?  (No drops them.)"); Yes (the
+  default) saves edits if any and keeps the rows, No removes the working stage.  The answer is kept for a close
+  the running jobs defer.
+- **A second add** before saving writes `<target>_rw2` from the working stage and drops the first.
+- **Refused** in a working stage, with "save first": Save As, Sort Spikes by Time, decollide,
+  plugins, Promote to Hierarchical Session.
+- A session that ends without the close (a crash) leaves the `_rw` files; the next add into the
+  same target removes them first.
+
+**Self-test.**  The `residualSpikes` step's `"open": true` runs the command's path and reports
+`"working"`; new steps `{"close": true}` (its question answered by the spec's `answerNo` or the
+default) and `{"open": path}`; `dump` reports the working stage.
+
+**Test.**  `test_residual_working_stage.py`, against the stage the command used to write (the step
+without `"open"`): untagged, from `alt` -- `rs_rw` open, the title names `...rs` as not saved, no
+`rs` file yet; Save -- `rs` open, every file of the old `rs` with the same rows, no `_rw` file left,
+the session's own files unchanged, the displays and `alt` kept.  A tagged stage `cur` sharing the
+session's rows: closed answering No -- no `cur_rw` file and `cur` unchanged (NEGATIVE CONTROL);
+closed answering Yes -- `cur` holds its own rows, the same as the old `cur_rs`.  Two adds (2, then
+3) and one Save: `rs_rw` then `rs_rw2`, and `rs` is what two adds used to make (`rs`, `rs_rs`).
+Not tested: quitting the application in a working stage, a close deferred by running jobs,
+edits made in the working stage before the Save, a hierarchical session's working stage, the
+refusals.
+
+</details>
 
 ---
 

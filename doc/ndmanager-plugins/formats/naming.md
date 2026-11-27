@@ -41,8 +41,9 @@ sites do not decide strict-vs-fallback resolution themselves.
   with `stagePath(base, type, method, group, stage)`.
 - **A stage's rows.** A stage is usually another labelling of the group's rows: its `.clu`
   (with `.clc` / `.clp`) carries the tag, and it shares the group's `.spk`, `.fet` and `.res`.
-  A stage that *adds* rows — Klusters' decollide (`<stage>_dc`) and Add Residual Spikes as
-  Clusters (`<stage>_rs`) — writes its own `.res`, `.spk` and `.fet` under the same tag
+  A stage that *adds* rows — Klusters' decollide (`<stage>_dc`), and Add Residual Spikes as
+  Clusters once saved (into the open stage, `rs` for an untagged session; until then a working
+  stage `<stage>_rw`) — writes its own `.res`, `.spk` and `.fet` under the same tag
   (`<base>.spk.<method>.<group>.<stage>`). Klusters opens a tagged `.clu` on the tagged
   `.spk` / `.fet` / `.res` when they exist, on the shared ones otherwise.
 
