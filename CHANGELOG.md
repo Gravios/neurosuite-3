@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: a .spkr for every .spk method at Save](#2026-11-27--klusters-a-spkr-for-every-spk-method-at-save) |
 | 2026-11-27 | [Klusters: Add Residual Spikes no longer crashes on a stderiv session](#2026-11-27--klusters-add-residual-spikes-no-longer-crashes-on-a-stderiv-session) |
 | 2026-11-27 | [Klusters: the residual spikes' features, saved as .fetr](#2026-11-27--klusters-the-residual-spikes-features-saved-as-fetr) |
 | 2026-11-27 | [Klusters: Add Residual Spikes grows every feature space](#2026-11-27--klusters-add-residual-spikes-grows-every-feature-space) |
@@ -326,6 +327,34 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: a .spkr for every .spk method at Save
+
+The `.spkr` of a method that was not shown stayed as an earlier Save left it, beside a `.fetr` of another set of rows. Every method's is now written together.
+
+<details>
+<summary>Details</summary>
+
+- **Found on jg05-20120312 group 8:** `.spkr.standard` held 24,607 records from a Save made with
+  the standard space shown, while `.fetr.standard`, written later with `stderiv_C5` shown, held
+  the 20,463 of that Save. Only the shown method's `.spkr` was rewritten, so the two files of one
+  space no longer described the same rows.
+- **Now** a Save writes the `.spkr` of every `.spk` method the recording can be cut in: the
+  shown space's rows, offsets, classes, kinds and twins, each method's own windows (cut again
+  with the same neighbours and displacement — the records the `.fetr` of that method's spaces
+  are projected from). A `.spkr` of the stage in a method no record can be made in (no
+  recording, a super-sampled method) is removed; another stage's or group's is left.
+- The set of rows is the shown space's. Which partners are fitted depends on the waveforms the
+  fit is made in (here 20,465 of 24,679 marks in `stderiv_C5`, about 24,600 in `standard`); the
+  README says so.
+- **Checked** in `test_collision_residuals.py`: a stale `.spkr` of the stage is removed at Save,
+  another stage's and another group's are not. **Not checked:** the `.spkr` of a second method
+  itself — the self-test session has one `.spk` method; the re-cut it uses ran on the real
+  session for the `.fetr` but its values were not verified.
+
+</details>
 
 ---
 

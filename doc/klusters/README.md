@@ -1412,7 +1412,11 @@ spike, every other row as it is.
 - **Kept up to date.** A record is made again when its row's time, cluster, partner or fitted
   lag has changed; while the display is on that happens with every rebuild of the corrected
   rows. Save writes them as [`.spkr`](../ndmanager-plugins/formats/spkr.md), and they are read
-  back when the session opens. Save also writes their features, a
+  back when the session opens. Save writes the same records — the same rows, cut in that method — as a `.spkr` for every
+  other `.spk` method the recording can be cut in, and removes a `.spkr` of the stage in any
+  method it cannot (it would hold the rows of an earlier Save). The set of rows is the shown
+  space's: which partners are fitted depends on the waveforms the fit is made in. Save also
+  writes their features, a
   [`.fetr`](../ndmanager-plugins/formats/fetr.md) for every feature space that has a basis: each
   record through that space's `.pca`, laid out like a row of the space's `.fet` with the
   residual spike's time last (for a space over another `.spk` method the record is cut again

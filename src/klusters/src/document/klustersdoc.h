@@ -2208,9 +2208,17 @@ public:
         QStringList written;        ///< feature spaces whose .fetr was written now
         QStringList current;        ///< ... whose .fetr was written before and still holds these records
         QStringList recut;          ///< .spk methods the records were cut again in (not the shown one)
+        QStringList spkrWritten;    ///< .spk methods besides the shown one whose .spkr was written now
+        QStringList spkrRemoved;    ///< .spkr files of this stage removed: no record could be made in their method
         QStringList skipped;        ///< spaces without a .fetr ("method: why")
     };
-    /** Writes the residual records' features, one .fetr per feature space that is a projection
+    /** Writes the residual records in every OTHER .spk method than the shown one -- the same
+     *  rows, offsets, classes, kinds and twins as the shown method's .spkr, the windows cut in
+     *  that method -- so that each feature space's .fetr has the .spkr it was projected from
+     *  beside it; a .spkr of this stage in a method no record can be made in is removed (it
+     *  would hold another set of rows).  Then writes the features:
+     *
+     *  one .fetr per feature space that is a projection
      *  (formats/fetr.md): each record of the space's waveform method -- the records in memory
      *  for the shown method, cut again from the recording for another -- through the space's
      *  basis, the columns the basis does not give from the row's own .fet row, the residual

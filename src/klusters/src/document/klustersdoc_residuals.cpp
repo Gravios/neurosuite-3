@@ -52,6 +52,7 @@
 
 #include <QDebug>
 #include <QElapsedTimer>
+#include <QDir>
 #include <QFileInfo>
 #include <QTextStream>
 
@@ -711,6 +712,39 @@ KlustersDoc::FetrReport KlustersDoc::writeFetrFiles()
         return &recordsOf.insert(m, std::move(out)).value();
     };
 
+    // ── the .spkr of every other method: what each space's .fetr was projected from ──
+    {
+        const QString shownPath = spkrPathFor(activeFeatureMethod());      // written by writeSpkr
+        QSet<QString> current{shownPath};
+        for (const QString& m : methods) {
+            const QString path = spkrPathFor(m);
+            if (path.isEmpty() || path == shownPath) continue;
+            current.insert(path);
+            if (fetrEpochs.value(path, 0) == residualsEpoch && QFileInfo::exists(path)) continue;
+            const std::vector<int16_t>* recs = rows.empty() ? nullptr : records(m);
+            if (!rows.empty() && !recs) { current.remove(path); continue; }
+            nf::SpkrFile f;
+            f.nSpikes = nSpikes; f.nSamples = nSamp; f.nChannels = nChan; f.group = currentElectrodeGroupID().toInt();
+            f.rows.assign(rows.begin(), rows.end());
+            for (const qint64 row : rows) {
+                const Residual& r = residuals[row];
+                f.offsets.push_back(r.offset); f.classes.push_back(r.classId); f.kinds.push_back(r.kind); f.twins.push_back(r.twin);
+            }
+            if (recs) f.waveforms = *recs;
+            if (!nf::writeSpkr(path.toStdString(), f)) { current.remove(path); continue; }
+            fetrEpochs.insert(path, residualsEpoch);
+            F.spkrWritten << m;
+        }
+        // A .spkr of this stage in any other method was written for another set of rows.
+        const QFileInfo any(spkrPathFor(QStringLiteral("*")));
+        for (const QFileInfo& fi : any.dir().entryInfoList(QStringList{any.fileName()}, QDir::Files)) {
+            if (current.contains(fi.absoluteFilePath()) || fi.fileName().count(QLatin1Char('.')) != QFileInfo(shownPath).fileName().count(QLatin1Char('.')))
+                continue;
+            if (QFile::remove(fi.absoluteFilePath())) F.spkrRemoved << fi.fileName();
+            fetrEpochs.remove(fi.absoluteFilePath());
+        }
+    }
+
     for (qsizetype q = 0; q < spaces.size(); ++q) {
         const ResidualSpace& space = spaces[q];
         const QString path = fetrPathFor(space.method);
@@ -740,6 +774,8 @@ KlustersDoc::FetrReport KlustersDoc::writeFetrFiles()
     qInfo().noquote() << "[residuals]" << F.rows << "records in feature space: .fetr written for" << (F.written.isEmpty() ? QStringLiteral("none") : F.written.join(QStringLiteral(", ")))
                       << (F.current.isEmpty() ? QString() : QStringLiteral("; current: ") + F.current.join(QStringLiteral(", ")))
                       << (F.recut.isEmpty() ? QString() : QStringLiteral("; records cut again in: ") + F.recut.join(QStringLiteral(", ")))
+                      << (F.spkrWritten.isEmpty() ? QString() : QStringLiteral("; .spkr also written for: ") + F.spkrWritten.join(QStringLiteral(", ")))
+                      << (F.spkrRemoved.isEmpty() ? QString() : QStringLiteral("; removed (another set of rows): ") + F.spkrRemoved.join(QStringLiteral(", ")))
                       << (F.skipped.isEmpty() ? QString() : QStringLiteral("; none for: ") + F.skipped.join(QStringLiteral("; ")));
     return F;
 }

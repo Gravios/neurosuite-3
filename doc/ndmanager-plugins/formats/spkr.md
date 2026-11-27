@@ -12,6 +12,11 @@ serve a `.spkr` record as the row's waveform.
 **Naming.** Per method and per stage, like the `.spk` and the `.spkc`:
 `<base>.spkr.<method>.<group>[.<stage>]`.
 
+**One set of rows per stage.** Klusters writes the `.spkr` of every `.spk` method at the same
+Save, with the same index, offsets, classes, kinds and twins — those of the space shown at
+that Save — and each method's own windows. A `.spkr` of the stage in a method no record could
+be made in is removed.
+
 **Companion.** The records' features, per feature space: [`.fetr`](fetr.md).
 
 **Writers / readers.** `neurofileio::readSpkr` / `writeSpkr` / `spkrFind` in

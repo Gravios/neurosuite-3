@@ -113,8 +113,17 @@ def main():
                  {"residuals": {"show": False, "table": 2, "tableSpikes": 400}},
                  {"save": True},
                  {"residuals": {"rows": marked}}]
+        # .spkr files left by an earlier Save in a method no record is made in now: this stage's
+        # is stale (another set of rows); another stage's and another group's are not ours.
+        stale, other_stage, other_group = f"{base}.spkr.other.1", f"{base}.spkr.other.1.st", f"{base}.spkr.other.2"
+        for x in (stale, other_stage, other_group):
+            with open(x, "wb") as fh:
+                fh.write(b"SPR\x01" + b"\x00" * 28)
         ok, st = M.run(klusters, base, steps, d)
         check(ok, "marked, shown, saved")
+        check(not os.path.exists(stale), "a .spkr of this stage in a method no record is made in is removed at Save")
+        check(os.path.exists(other_stage) and os.path.exists(other_group),
+              "NEGATIVE CONTROL: another stage's and another group's .spkr are left")
         if not ok:
             return 1
         r = st[2]
