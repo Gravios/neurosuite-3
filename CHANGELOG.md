@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [NeuroScope: the GPU spectrogram on AMD GPUs (HIP, hipFFT)](#2026-11-27--neuroscope-the-gpu-spectrogram-on-amd-gpus-hip-hipfft) |
 | 2026-11-27 | [KiloKlustaKwik: the fiber stage on AMD GPUs (HIP)](#2026-11-27--kiloklustakwik-the-fiber-stage-on-amd-gpus-hip) |
 | 2026-11-27 | [Plugins: the filters and detectors on AMD GPUs (HIP)](#2026-11-27--plugins-the-filters-and-detectors-on-amd-gpus-hip) |
 | 2026-11-27 | [Klusters: the core cut and the PCA refine on HIP and SYCL](#2026-11-27--klusters-the-core-cut-and-the-pca-refine-on-hip-and-sycl) |
@@ -333,6 +334,30 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — NeuroScope: the GPU spectrogram on AMD GPUs (HIP, hipFFT)
+
+The cuFFT spectrogram is compiled as HIP with hipFFT in a HIP build.
+
+<details>
+<summary>Details</summary>
+
+- **Before,** NeuroScope's GPU multitaper spectrogram (`spectralgpu.cu`) used cuFFT in a CUDA
+  build only.
+- **Now** a HIP build with hipFFT compiles the same file as HIP (`ns_gpu_add_cuda_as_hip`): the
+  shim's new `<cufft.h>` names hipFFT's calls by cuFFT's (batched double real-to-complex plans
+  on a stream), and its `<cuda_runtime.h>` gains streams and pinned host memory. Without hipFFT
+  the CPU path is built, as before.
+- `CMAKE_HIP_LINKER_PREFERENCE_PROPAGATES` is off (`ns_gpu_enable_hip`): the spectral library is
+  static, and its users (NeuroScope, its tests) would otherwise be linked by ROCm's clang, which
+  cannot read the GCC LTO objects.
+- **Checked:** with Ubuntu's ROCm 5.7 and `libhipfft-dev`, the library, NeuroScope and the spectral
+  tests build and link hipFFT; the tests pass on the CPU. **Not checked:** a spectrogram on an
+  AMD GPU.
+
+</details>
 
 ---
 

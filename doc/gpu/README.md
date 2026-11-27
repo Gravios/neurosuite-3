@@ -12,7 +12,7 @@ Several neurosuite-3 components optionally use GPU acceleration:
 | `process_spikegrouper` | CUDA / HIP / OpenMP · Metal (macOS: noise medians + coincidence counts) | Coincidence matrix construction |
 | `process_decomposecollisions` | CUDA | Collision decomposition fit (opt-in with `--gpu true`) |
 | `process_extractemg` | CUDA / HIP / SYCL | EMG extraction (SYCL not on Windows) |
-| `libneurosuite-core` spectral (NeuroScope spectrogram) | CUDA (cuFFT) | FFTs |
+| `libneurosuite-core` spectral (NeuroScope spectrogram) | CUDA (cuFFT) / HIP (hipFFT) | FFTs |
 
 The waveform realignment cross-correlation kernel (`realign_xcorr`) is compiled into both
 `kiloklustakwik` and `klusters` — it is not a separate binary.
@@ -169,8 +169,9 @@ one card only, and faster.
 
 **One kernel file for CUDA and HIP.** The plugins' filters and detectors
 (`process_butterworth`, `process_medianfilter`, `process_medianthreshold`,
-`process_spikegrouper`) and KiloKlustaKwik's fiber stage (`fiber_gpu_cuda.cu`) have one
-kernel file, written for CUDA (`*_cuda.cu`). A HIP build
+`process_spikegrouper`), KiloKlustaKwik's fiber stage (`fiber_gpu_cuda.cu`) and the
+spectral engine (`spectralgpu.cu`, cuFFT; hipFFT through the shim's `<cufft.h>`, from
+`libhipfft-dev` / ROCm's hipfft) have one kernel file, written for CUDA. A HIP build
 compiles that same file as HIP (`ns_gpu_add_cuda_as_hip` in `cmake/GpuBackends.cmake`), with
 the shim `libneurosuite-core/src/neurosuite/gpu/cuda_on_hip/` first on the include path: its
 `<cuda_runtime.h>` names the HIP runtime calls by their CUDA names. The two backends cannot

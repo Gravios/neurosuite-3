@@ -2,7 +2,8 @@
 // pinned-host + multi-stream variant.
 //
 // IMPORTANT: compiled only when USE_CUDA is enabled and the CUDA toolkit is
-// present; NOT built or run in the CPU-only CI. The per-element arithmetic and
+// present -- or, in a HIP build, as HIP with hipFFT (ns_gpu_add_cuda_as_hip and
+// the cuda_on_hip shim's <cufft.h>); NOT built or run in the CPU-only CI. The per-element arithmetic and
 // the window partitioning live in spectralgpu_kernels.h and are unit-tested on
 // the CPU; only the kernel launches, the cuFFT calls and the stream/async
 // plumbing here need real GPU hardware to validate.

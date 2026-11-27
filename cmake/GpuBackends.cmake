@@ -252,6 +252,9 @@ macro(ns_gpu_enable_hip _ns_hip_ok)
             enable_language(HIP)
             set(CMAKE_HIP_STANDARD 17)
             set(CMAKE_HIP_STANDARD_REQUIRED ON)
+            # A static library with HIP objects does not make its users link
+            # with the ROCm clang (see ns_gpu_add_cuda_as_hip on who links).
+            set(CMAKE_HIP_LINKER_PREFERENCE_PROPAGATES FALSE)
             set(${_ns_hip_ok} TRUE)
         else()
             message(STATUS "neurosuite-3: ROCm found (${hip_DIR}) but no HIP compiler -- "
@@ -267,8 +270,8 @@ endmacro()
 #   Compile CUDA kernel files as HIP into <target>: one kernel source for both
 #   backends.  Each .cu gets a one-line HIP wrapper in the build tree that
 #   includes it, compiled by the ROCm clang with the cuda_on_hip shim first on
-#   the include path (its <cuda_runtime.h> maps the CUDA names the kernel
-#   files use to HIP; libneurosuite-core/src/neurosuite/gpu/cuda_on_hip),
+#   the include path (its <cuda_runtime.h> and <cufft.h> map the CUDA names the
+#   kernel files use to HIP; libneurosuite-core/src/neurosuite/gpu/cuda_on_hip),
 #   with <target>'s include directories and definitions and USE_HIP.
 #
 #   The wrappers are an OBJECT library whose objects become sources of
@@ -295,6 +298,9 @@ function(ns_gpu_add_cuda_as_hip _target)
     target_compile_definitions(${_obj} PRIVATE USE_HIP "$<TARGET_PROPERTY:${_target},COMPILE_DEFINITIONS>")
     target_compile_options(${_obj} PRIVATE -Wno-unused-result)
     target_link_libraries(${_obj} PRIVATE hip::host)
+    if(TARGET hip::hipfft)
+        target_link_libraries(${_obj} PRIVATE hip::hipfft)
+    endif()
     set_target_properties(${_obj} PROPERTIES POSITION_INDEPENDENT_CODE ON)
     target_sources(${_target} PRIVATE $<TARGET_OBJECTS:${_obj}>)
     target_compile_definitions(${_target} PRIVATE USE_HIP)

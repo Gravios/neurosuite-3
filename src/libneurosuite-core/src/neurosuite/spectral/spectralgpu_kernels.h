@@ -9,7 +9,7 @@
 // and reduction are checked even though the kernel launches themselves are not
 // built in CPU-only CI.
 
-#ifdef __CUDACC__
+#if defined(__CUDACC__) || defined(__HIP__)   // nvcc, or ROCm clang compiling the .cu as HIP
 #define NS_SPECTRAL_HD __host__ __device__
 #else
 #define NS_SPECTRAL_HD

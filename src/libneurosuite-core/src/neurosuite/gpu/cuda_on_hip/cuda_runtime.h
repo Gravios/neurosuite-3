@@ -9,10 +9,11 @@
  * runtime calls by their CUDA names.
  *
  * One kernel source for both, so the two cannot drift.  What it covers is
- * what those files use: device memory and copies, the device count and
- * properties, errors, synchronisation.  A kernel file that needs more
- * (streams, cuFFT, warp intrinsics with 32 lanes) adds its names here -- or
- * keeps a HIP file of its own, as Klusters' kernels do.
+ * what those files use: device memory and copies (pinned host memory too),
+ * the device count and properties, errors, streams and synchronisation;
+ * <cufft.h> here maps the cuFFT calls of the spectral engine to hipFFT.  A
+ * kernel file that needs more (warp intrinsics with 32 lanes, say) adds its
+ * names here -- or keeps a HIP file of its own, as Klusters' kernels do.
  *
  * NS_GPU_API_NAME is "HIP" here and "CUDA" in a CUDA build: the kernel files
  * use it in their messages.
@@ -43,3 +44,10 @@
 #define cudaPeekAtLastError         hipPeekAtLastError
 #define cudaGetErrorString          hipGetErrorString
 #define cudaDeviceSynchronize       hipDeviceSynchronize
+#define cudaStream_t                hipStream_t
+#define cudaStreamCreate            hipStreamCreate
+#define cudaStreamDestroy           hipStreamDestroy
+#define cudaStreamSynchronize       hipStreamSynchronize
+#define cudaMemcpyAsync             hipMemcpyAsync
+#define cudaMallocHost              hipHostMalloc
+#define cudaFreeHost                hipHostFree
