@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: the core cut and the PCA refine on HIP and SYCL](#2026-11-27--klusters-the-core-cut-and-the-pca-refine-on-hip-and-sycl) |
 | 2026-11-27 | [Build: the HIP backends build](#2026-11-27--build-the-hip-backends-build) |
 | 2026-11-27 | [Klusters: a collision is marked only when it is there in every waveform space](#2026-11-27--klusters-a-collision-is-marked-only-when-it-is-there-in-every-waveform-space) |
 | 2026-11-27 | [Klusters: Add Residual Spikes says whether the spikes look like their partner](#2026-11-27--klusters-add-residual-spikes-says-whether-the-spikes-look-like-their-partner) |
@@ -330,6 +331,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: the core cut and the PCA refine on HIP and SYCL
+
+Both had a CUDA kernel only. Each now has HIP and SYCL kernels, and a test compares whichever backend runs with the CPU.
+
+<details>
+<summary>Details</summary>
+
+- **Before,** the core cut's ordering loop (`corecut_cuda.cu`) and the realignment's PCA refine
+  (`pca_refine_cuda.cu`) had a CUDA kernel only; HIP and SYCL builds ran the CPU loops.
+- **Now** each has a HIP and a SYCL kernel beside it (`corecut_hip.hip`, `corecut_sycl.cpp`,
+  `pca_refine_hip.hip`, `pca_refine_sycl.cpp`), dispatched CUDA → HIP → SYCL. The HIP files are
+  the CUDA kernels line for line (the PCA refine checks AMD's 64 KB of LDS instead of NVIDIA's
+  opt-in). The SYCL core cut keeps the double running products and needs a GPU with fp64 —
+  without it (the Arc iGPU of Meteor Lake) the CPU loop runs. The SYCL PCA refine is float;
+  it sums each candidate's energy in a work-group tree instead of a shared atomic add, so a
+  float near-tie between two shifts may go the other way.
+- **`klusters_test_gpu_parity`** runs both on the backend the dispatcher picks and compares
+  them with the CPU: the core cut with `corecut::detail::orderCpu` (the same order up to a
+  near-tie, steps within 1e-4), the PCA refine with a direct evaluation of the kernel's sum
+  (raw and stderiv). Without a GPU it says so and passes.
+- **Checked:** the HIP kernels compile for gfx1030/gfx1100/gfx90a/gfx908 with Ubuntu's ROCm 5.7
+  and link into Klusters; the CPU build is unchanged. **Not checked:** any of the new kernels
+  running — there is no GPU here; the SYCL files are not compiled (no oneAPI compiler here).
+  Build with oneAPI and run the parity test on the Arc laptop, and on an AMD card if there is one.
+
+</details>
 
 ---
 

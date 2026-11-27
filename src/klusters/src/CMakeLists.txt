@@ -166,10 +166,14 @@ endif()
 if(USE_HIP)
     list(APPEND klusters_SRCS compute/groupingassistant_hip.hip)
     list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_hip.hip)
+    list(APPEND klusters_SRCS compute/pca_refine_hip.hip)
+    list(APPEND klusters_SRCS compute/corecut_hip.hip)
 endif()
 if(USE_SYCL)
     list(APPEND klusters_SRCS compute/groupingassistant_sycl.cpp)
     list(APPEND klusters_SRCS ${_xcorr_dir}/realign_xcorr_sycl.cpp)
+    list(APPEND klusters_SRCS compute/pca_refine_sycl.cpp)
+    list(APPEND klusters_SRCS compute/corecut_sycl.cpp)
 endif()
 
 qt_add_resources(klusters_SRCS klusters-cursors.qrc klusters-icons.qrc klusters-keymaps.qrc klusters-appicon.qrc)
@@ -238,6 +242,8 @@ if(USE_HIP)
         PROPERTIES LANGUAGE HIP COMPILE_OPTIONS "-Wno-unused-result")
     set_source_files_properties(${_xcorr_dir}/realign_xcorr_hip.hip
         PROPERTIES LANGUAGE HIP COMPILE_OPTIONS "-Wno-unused-result")
+    set_source_files_properties(compute/pca_refine_hip.hip compute/corecut_hip.hip
+        PROPERTIES LANGUAGE HIP COMPILE_OPTIONS "-Wno-unused-result")
     target_link_libraries(klusters PRIVATE hip::host)
     # The C++ compiler links (its objects may be LTO objects the ROCm clang cannot read).
     set_target_properties(klusters PROPERTIES LINKER_LANGUAGE CXX)
@@ -257,7 +263,7 @@ if(USE_SYCL)
     #   -fsycl-targets=spir64_gen -Xs "-device xe_hpg"  (or your GPU codename)
     set(SYCL_FLAGS "-fsycl" "-fsycl-targets=spir64")
     if(WIN32)
-        # Windows: -fsycl only on the two SYCL sources (both Qt-free).  With
+        # Windows: -fsycl only on the SYCL sources (all Qt-free).  With
         # -fsycl every source also gets a device pass, and on Windows that
         # pass re-reads Qt's headers, where Qt's __FUNCSIG__-based type-name
         # parsing (qmetatype.h typenameHelper, for qvariant_cast<QIcon> etc.)
@@ -267,6 +273,8 @@ if(USE_SYCL)
         set_source_files_properties(
             compute/groupingassistant_sycl.cpp
             "${_xcorr_dir}/realign_xcorr_sycl.cpp"
+            compute/pca_refine_sycl.cpp
+            compute/corecut_sycl.cpp
             PROPERTIES COMPILE_OPTIONS "${SYCL_FLAGS}")
     else()
         target_compile_options(klusters PRIVATE

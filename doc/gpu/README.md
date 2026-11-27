@@ -5,7 +5,7 @@ Several neurosuite-3 components optionally use GPU acceleration:
 | Component | GPU path | What is accelerated |
 |---|---|---|
 | `kiloklustakwik` | CUDA / HIP / SYCL · Metal (macOS: CEM steps, xcorr) | CEM E-step distance computations + waveform cross-correlation (xcorr) |
-| `klusters` | CUDA / HIP / SYCL · Metal (macOS: realignment xcorr, FP32 error matrix) | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr) |
+| `klusters` | CUDA / HIP / SYCL · Metal (macOS: realignment xcorr, FP32 error matrix) | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr); the realignment's PCA refine and the core cut's ordering loop (CUDA / HIP / SYCL; the core cut on SYCL needs a GPU with double precision) |
 | `process_butterworth` | CUDA · Metal (macOS, single precision) | Butterworth filtering |
 | `process_medianfilter` | CUDA · Metal (macOS) | Median-subtraction high-pass filter |
 | `process_medianthreshold` | CUDA · Metal (macOS) | Per-channel noise threshold estimation |
@@ -16,6 +16,15 @@ Several neurosuite-3 components optionally use GPU acceleration:
 
 The waveform realignment cross-correlation kernel (`realign_xcorr`) is compiled into both
 `kiloklustakwik` and `klusters` — it is not a separate binary.
+
+**Checking a backend on your machine.** `ctest -R klusters_test_gpu_parity --output-on-failure`
+runs Klusters' core-cut and PCA-refine kernels on the backend the dispatcher picks and
+compares them with the CPU; without a usable GPU it says so and passes.
+
+**Intel GPUs without double precision.** The Arc integrated GPUs of Meteor Lake (Core Ultra
+100/200H, Xe-LPG) have no FP64. A SYCL kernel that needs it reports the device as unusable
+and the CPU path runs (Klusters' core cut); the float kernels (PCA refine, realignment)
+run there.
 
 GPU backends are auto-detected by CMake at build time. `kiloklustakwik` and `process_extractemg` compile one GPU backend per build, chosen in the order CUDA > HIP > SYCL. If none is found the build falls back to an OpenMP CPU path automatically — you do not need to set any flag to get a working build. Pass `-DUSE_CUDA=OFF -DUSE_HIP=OFF -DUSE_SYCL=OFF` to force a CPU-only build explicitly.
 

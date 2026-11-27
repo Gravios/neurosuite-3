@@ -41,6 +41,36 @@ foreach(_t klusters_test_selectiongrid2d klusters_test_spikeassignment
     add_test(NAME ${_t} COMMAND ${_t})
 endforeach()
 
+# GPU kernels against their CPU loops (core cut, PCA refine) on whichever backend
+# the build has and the machine can use; passes, saying so, without a GPU.
+add_executable(klusters_test_gpu_parity gpu_parity_test.cpp
+    "${_klu_src}/compute/corecut_gpu_dispatch.cpp"
+    "${_klu_src}/compute/pca_refine_gpu_dispatch.cpp")
+target_compile_features(klusters_test_gpu_parity PRIVATE cxx_std_20)
+target_include_directories(klusters_test_gpu_parity PRIVATE ${_klu_inc} "${_shared}" "${_core}")
+if(USE_CUDA)
+    target_sources(klusters_test_gpu_parity PRIVATE
+        "${_klu_src}/compute/corecut_cuda.cu" "${_klu_src}/compute/pca_refine_cuda.cu")
+    target_compile_definitions(klusters_test_gpu_parity PRIVATE USE_CUDA)
+    target_link_libraries(klusters_test_gpu_parity PRIVATE CUDA::cudart)
+endif()
+if(USE_HIP)
+    set(_klu_hip_parity "${_klu_src}/compute/corecut_hip.hip" "${_klu_src}/compute/pca_refine_hip.hip")
+    set_source_files_properties(${_klu_hip_parity} PROPERTIES LANGUAGE HIP COMPILE_OPTIONS "-Wno-unused-result")
+    target_sources(klusters_test_gpu_parity PRIVATE ${_klu_hip_parity})
+    target_compile_definitions(klusters_test_gpu_parity PRIVATE USE_HIP)
+    target_link_libraries(klusters_test_gpu_parity PRIVATE hip::host)
+    set_target_properties(klusters_test_gpu_parity PROPERTIES LINKER_LANGUAGE CXX)
+endif()
+if(USE_SYCL)
+    target_sources(klusters_test_gpu_parity PRIVATE
+        "${_klu_src}/compute/corecut_sycl.cpp" "${_klu_src}/compute/pca_refine_sycl.cpp")
+    target_compile_definitions(klusters_test_gpu_parity PRIVATE USE_SYCL)
+    target_compile_options(klusters_test_gpu_parity PRIVATE -fsycl -fsycl-targets=spir64)
+    target_link_options(klusters_test_gpu_parity PRIVATE -fsycl -fsycl-targets=spir64)
+endif()
+add_test(NAME klusters_test_gpu_parity COMMAND klusters_test_gpu_parity)
+
 # TemplateLineageStore — the Qt-free manual-lineage model (phase 5).  Unlike the
 # header-only suites above it compiles the store source and LINKS Neurosuite::core
 # (readWtl/writeWti/writeSpk + the renderLineage* engine live out of line there).

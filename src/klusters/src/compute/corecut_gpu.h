@@ -29,11 +29,16 @@
 extern "C" {
 #endif
 
-/* Returns 1 if the backend has a usable device, 0 otherwise. */
+/* Returns 1 if the backend has a usable device, 0 otherwise.  SYCL needs one
+ * with double precision (the running products are double). */
 int cuda_corecut_available();
+int hip_corecut_available();
+int sycl_corecut_available();
 
 /* Returns 0 on success, non-zero on failure (the caller runs the CPU loop). */
 int cuda_corecut_order(long n, int d, const float* x, long seed, long* order, double* step);
+int hip_corecut_order(long n, int d, const float* x, long seed, long* order, double* step);
+int sycl_corecut_order(long n, int d, const float* x, long seed, long* order, double* step);
 
 #ifdef __cplusplus
 }

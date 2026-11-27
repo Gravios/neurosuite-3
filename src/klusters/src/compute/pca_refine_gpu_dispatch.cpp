@@ -1,14 +1,16 @@
 /***************************************************************************
  * pca_refine_gpu_dispatch.cpp
  *
- * Runtime dispatcher for the PCA-projection-energy refine pass.  Probes
+ * Runtime dispatcher for the PCA-projection-energy refine pass
+ * (pca_refine_cuda.cu, pca_refine_hip.hip, pca_refine_sycl.cpp).  Probes
  * CUDA → HIP → SYCL in order and calls the first backend that reports a
  * usable device.  Returns failure if no backend is compiled in or no GPU
  * is available; KlustersDoc::realignSpikes then falls back to the
  * existing CPU per-candidate loop.
  *
  * Which backends are compiled in is controlled by USE_CUDA / USE_HIP /
- * USE_SYCL.  Stubs below cover the not-compiled-in case.
+ * USE_SYCL, each of which adds its kernel file (src/CMakeLists.txt).  Stubs
+ * below cover the not-compiled-in case.
  ***************************************************************************/
 
 #include "pca_refine_gpu.h"
@@ -28,21 +30,21 @@ extern "C" {
 }
 #endif
 
-// HIP and SYCL: no PCA-refine kernel exists yet (only pca_refine_cuda.cu), so
-// these stubs are needed whether or not the backend is compiled in -- keyed on
-// USE_HIP / USE_SYCL they vanished in exactly the builds that call them, and a
-// SYCL or HIP build of Klusters failed to link (undefined sycl_pca_refine,
-// sycl_pca_refine_available).  "Not available" sends realignSpikes to the CPU
-// loop.  When a kernel is added, key its stubs on that kernel's source, as
-// CUDA's are on USE_CUDA (which always adds pca_refine_cuda.cu).
+#ifndef USE_HIP
 extern "C" {
     int hip_pca_refine_available() { return 0; }
     int hip_pca_refine(int,int,int,int,int,int,int,int,int,int,int,int,
                        const int16_t*,const float*,const float*,int*) { return -1; }
+}
+#endif
+
+#ifndef USE_SYCL
+extern "C" {
     int sycl_pca_refine_available() { return 0; }
     int sycl_pca_refine(int,int,int,int,int,int,int,int,int,int,int,int,
                         const int16_t*,const float*,const float*,int*) { return -1; }
 }
+#endif
 
 // ---------------------------------------------------------------------------
 // Public C++ dispatcher
