@@ -2147,13 +2147,22 @@ public:
     /** The residual record of @p row (0-based): false when it has none. */
     bool residualRecord(qint64 row, std::vector<int16_t>& record, int* offset = nullptr, int* classId = nullptr,
                         int* kind = nullptr, qint64* twin = nullptr) const;
+    /** A feature space residual spikes are given a row in. */
+    struct ResidualSpace {
+        QString method;          ///< the space's token (its .fet's)
+        QString spkMethod;       ///< the .spk method whose record is projected
+        QString fetPath;         ///< the table in use (a working copy while one exists)
+        QString fetCommitted;    ///< the .fet on disk
+        int     nDims = 0;       ///< columns of a row, the time included
+        bool    detached = false;///< no basis: a row is its source row's, with the spike's time
+    };
     /** A residual spike made ready to be a row of its own. */
     struct ResidualSpike {
         qint64 sourceRow = 0;             ///< the collision row it was found in (0-based)
         qint64 time = 0;                  ///< its own time: the row's + the fitted lag + the alignment
         int    partner = 0;               ///< the cluster of the partner named
         int    shift = 0;                 ///< samples the alignment moved it from the fitted lag
-        QVector<dataType> features;       ///< a .fet row of the shown space: projected, the time last
+        QHash<QString, std::vector<qint64>> features;   ///< per feature space: its .fet row, projected, the time last
         QHash<QString, std::vector<int16_t>> records;   ///< per .spk method: the record, centred on its peak
     };
     /** What alignedResidualSpikes() found. */
@@ -2170,6 +2179,9 @@ public:
         qint64  withoutNeighbours = 0;       ///< left: its own unit has too few clean spikes now
         qint64  moved = 0;                   ///< spikes the alignment moved
         QStringList methods;                 ///< the .spk methods a record was cut for
+        QStringList methodsSkipped;          ///< .spk methods the recording cannot be cut in ("method: why")
+        QList<ResidualSpace> spaces;         ///< the feature spaces every spike has a row in, the .clu's own first
+        QStringList spacesSkipped;           ///< feature spaces left out ("method: why")
         QString source;                      ///< the recording
     };
     /** The recovered residual spikes of @p clusters (children when @p children), each ALIGNED
@@ -2180,6 +2192,10 @@ public:
      *  another spike of the set, is left out: nothing is made that a row already holds.
      *  Changes nothing; KlustersApp::addResidualSpikes writes them as a new stage. */
     ResidualSpikes alignedResidualSpikes(const QList<int>& clusters, bool children, const QStringList& spkMethods);
+    /** @p shared (a .spk / .fet / .res named without a stage) as the open stage holds it:
+     *  "<shared>.<stage>" when the stage has rows of its own and that file exists, else
+     *  @p shared.  (formats/naming.md, "A stage's rows".) */
+    QString ownOfStage(const QString& shared) const;
     /** <base>.spkr.<method>.<group>[.<stage>] of the open stage. */
     QString spkrPathFor(const QString& method) const;
     /** Writes the residual records as they are to @p path (formats/spkr.md). */

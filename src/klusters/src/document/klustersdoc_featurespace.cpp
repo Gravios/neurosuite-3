@@ -112,11 +112,13 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
             s.spkPath   = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
             s.spkMethod = QString::fromStdString(neurosuite::custody::methodOf(origSpkPath.toStdString()));
         } else {
-            s.fetPath = QString::fromStdString(neurosuite::custody::methodPath(
-                stem.toStdString(), "fet", m.toStdString(), group));
+            // (a stage with rows of its own -- a decollide's, Add Residual Spikes' -- holds its
+            // own .fet and .spk of every space it was grown in: ownOfStage)
+            s.fetPath = ownOfStage(QString::fromStdString(neurosuite::custody::methodPath(
+                stem.toStdString(), "fet", m.toStdString(), group)));
             const neurosuite::custody::Resolved spk = neurosuite::custody::resolve(
                 stem.toStdString(), "spk", group, m.toStdString());
-            s.spkPath   = QString::fromStdString(spk.path);
+            s.spkPath   = ownOfStage(QString::fromStdString(spk.path));
             s.spkMethod = QString::fromStdString(spk.method);
             // A space that reads the .clu space's own waveforms (a _D lag space
             // over the same token, or the standard fallback) must read its live
@@ -420,8 +422,8 @@ KlustersDoc::SpaceFiles KlustersDoc::workingSetOf(const QString& method, QString
         const neurosuite::custody::Resolved spk =
             neurosuite::custody::resolve(stem, "spk", group, method.toStdString());
         if (!spk.found) return fail(tr("no .spk waveform file for %1").arg(method));
-        ws.spkCommitted = QString::fromStdString(spk.path);
-        ws.fetCommitted = QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", method.toStdString(), group));
+        ws.spkCommitted = ownOfStage(QString::fromStdString(spk.path));
+        ws.fetCommitted = ownOfStage(QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", method.toStdString(), group)));
         if (!QFileInfo::exists(ws.fetCommitted)) return fail(tr("no feature file for %1 in this group").arg(method));
         ws.ownsWaveforms = (ws.spkCommitted == origSpkPath);
         if (ws.ownsWaveforms) {
@@ -522,8 +524,8 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
     const int     group = electrodeGroupID.toInt();
     const int     nChan = clusteringData->nbOfChannels();
     auto committedSpkOf = [&](const QString& m) {
-        return QString::fromStdString(
-            neurosuite::custody::resolve(stem, "spk", group, m.toStdString()).path);
+        return ownOfStage(QString::fromStdString(
+            neurosuite::custody::resolve(stem, "spk", group, m.toStdString()).path));
     };
     const QString spkCommitted = committedSpkOf(method);
     const bool    ownWaveforms = (spkCommitted == origSpkPath);
@@ -555,8 +557,8 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
         p.method       = s.method;
         p.detached     = !s.projection;
         p.fetSource    = s.fetPath;
-        p.fetCommitted = QString::fromStdString(neurosuite::custody::methodPath(
-            stem, "fet", s.method.toStdString(), group));
+        p.fetCommitted = ownOfStage(QString::fromStdString(neurosuite::custody::methodPath(
+            stem, "fet", s.method.toStdString(), group)));
         p.pcaPath      = QString::fromStdString(neurosuite::custody::methodPath(
             stem, "pca", s.method.toStdString(), group));
         if (s.method == method) plans.insert(plans.begin(), p);
@@ -922,11 +924,11 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
         sp.isOrigin  = (s.method == originMethod);
         sp.fetSource = s.fetPath;                  // the held table: a working copy when there is one
         sp.fetCommitted = sp.isOrigin ? origFetPath
-                        : QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", s.method.toStdString(), group));
+                        : ownOfStage(QString::fromStdString(neurosuite::custody::methodPath(stem, "fet", s.method.toStdString(), group)));
         sp.fetPending = sp.isOrigin ? pendingFetPath : sp.fetCommitted + QStringLiteral(".pending");
         sp.pcaPath = resolveFeature(dir + QDir::separator() + baseName, QStringLiteral("pca"), electrodeGroupID, s.method);
         const QString spkCommitted = sp.isOrigin ? origSpkPath
-            : QString::fromStdString(neurosuite::custody::resolve(stem, "spk", group, s.method.toStdString()).path);
+            : ownOfStage(QString::fromStdString(neurosuite::custody::resolve(stem, "spk", group, s.method.toStdString()).path));
         Group& g = bySpk[spkCommitted];
         if (g.spkCommitted.isEmpty()) {
             g.spkCommitted = spkCommitted;

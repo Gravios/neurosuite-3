@@ -142,7 +142,115 @@ double medianOf(std::vector<double>& v)
     return v[v.size() / 2];
 }
 
+/** Rows @p rows (0-based, any order) of the binary .fet @p path, one after the other in
+ *  @p out; false when the file is not @p nDims columns by @p nSpikes rows. */
+bool readFetRows(const QString& path, const std::vector<qint64>& rows, int nDims, qint64 nSpikes, std::vector<int64_t>& out)
+{
+    QFile f(path);
+    if (!f.open(QIODevice::ReadOnly)) return false;
+    qint32 header = 0;
+    // reinterpret_cast: the .fet's header is a native int32, its body native int64 rows.
+    if (f.read(reinterpret_cast<char*>(&header), sizeof(header)) != sizeof(header) || header != nDims || nDims < 2) return false;
+    const qint64 rowBytes = static_cast<qint64>(nDims) * static_cast<qint64>(sizeof(int64_t));
+    if (f.size() != static_cast<qint64>(sizeof(header)) + nSpikes * rowBytes) return false;
+    out.assign(rows.size() * static_cast<std::size_t>(nDims), 0);
+    for (std::size_t k = 0; k < rows.size(); ++k) {
+        if (rows[k] < 0 || rows[k] >= nSpikes) return false;
+        if (!f.seek(static_cast<qint64>(sizeof(header)) + rows[k] * rowBytes)) return false;
+        if (f.read(reinterpret_cast<char*>(&out[k * static_cast<std::size_t>(nDims)]), rowBytes) != rowBytes) return false;
+    }
+    return true;
+}
+
+/** The first nCh x nComp columns of @p row: @p record (a .spk record of @p nChan channels)
+ *  through @p pca, as a .fet row is made. */
+void projectRecord(const neurosuite::core::PcaBasis& pca, const int16_t* record, int nChan, qint64* row)
+{
+    std::vector<int64_t> coef(static_cast<std::size_t>(pca.nCh) * static_cast<std::size_t>(pca.nComp));
+    klusters::projectSpikeOntoPca(pca, [&](int ch, int j) {
+        return static_cast<double>(record[static_cast<std::size_t>(pca.recShift + j) * nChan + ch]);
+    }, coef.data());
+    for (std::size_t k = 0; k < coef.size(); ++k) row[k] = coef[k];
+}
+
+/** The feature spaces of @p doc a residual record can be given a row in, the .clu's own
+ *  first: every usable space that is a projection of a .spk method in @p spkMethods through
+ *  a basis fitting records of @p nChan x @p nSamp, and (when @p withDetached) every usable
+ *  space without a basis.  @p bases gets each space's basis (unset for a detached one),
+ *  @p skipped the spaces left out and why. */
+QList<KlustersDoc::ResidualSpace> residualSpacesOf(const KlustersDoc& doc, const QStringList& spkMethods, int nChan, int nSamp,
+                                                   std::vector<neurosuite::core::PcaBasis>& bases, QStringList& skipped,
+                                                   bool withDetached = true)
+{
+    QList<KlustersDoc::ResidualSpace> spaces;
+    bases.clear();
+    const QString stem = QFileInfo(doc.url()).absolutePath() + QLatin1Char('/') + doc.documentBaseName();
+    const QString group = doc.currentElectrodeGroupID();
+    for (const KlustersDoc::FeatureSpace& fs : doc.availableFeatureSpaces()) {
+        if (!fs.usable) { skipped << QObject::tr("%1: %2").arg(fs.method, fs.reason); continue; }
+        KlustersDoc::ResidualSpace space;
+        space.method = fs.method;
+        // (the method of a stage's own .spk is not read off its name by custody::methodOf:
+        // the stage tag follows the group)
+        space.spkMethod = fs.spkMethod.isEmpty() ? featureMethod(fs.spkPath) : fs.spkMethod;
+        space.fetPath = fs.fetPath;
+        space.fetCommitted = fs.method == doc.cluMethod()
+                                 ? doc.origFetFilePath()
+                                 : doc.ownOfStage(QString::fromStdString(neurosuite::custody::methodPath(
+                                       stem.toStdString(), "fet", fs.method.toStdString(), group.toInt())));
+        {
+            QFile f(fs.fetPath);
+            qint32 header = 0;
+            // reinterpret_cast: the .fet's header is a native int32.
+            if (!f.open(QIODevice::ReadOnly) || f.read(reinterpret_cast<char*>(&header), sizeof(header)) != sizeof(header) || header < 2) {
+                skipped << QObject::tr("%1: its .fet cannot be read").arg(fs.method);
+                continue;
+            }
+            space.nDims = header;
+        }
+        neurosuite::core::PcaBasis pca;
+        if (!fs.projection) {
+            if (!withDetached) { skipped << QObject::tr("%1: not a projection of the waveforms (no basis)").arg(fs.method); continue; }
+            space.detached = true;
+        } else {
+            const QString pcaPath = resolveFeature(stem, QStringLiteral("pca"), group, fs.method);
+            if (!neurosuite::core::loadPca(pcaPath.toStdString(), pca) || !pca.valid()) {
+                skipped << QObject::tr("%1: no readable basis %2").arg(fs.method, QFileInfo(pcaPath).fileName());
+                continue;
+            }
+            if (neurosuite::custody::supersampleOf(space.spkMethod.toStdString()) > 1) {
+                skipped << QObject::tr("%1: a super-sampled waveform space").arg(fs.method);
+                continue;
+            }
+            if (!spkMethods.contains(space.spkMethod)) {
+                skipped << QObject::tr("%1: no record in its waveform method (%2)").arg(fs.method, space.spkMethod);
+                continue;
+            }
+            if (pca.nCh > nChan || pca.recShift < 0 || pca.recShift + pca.data2use > nSamp || pca.nCh * pca.nComp > space.nDims - 1) {
+                skipped << QObject::tr("%1: its basis does not fit the records or the .fet").arg(fs.method);
+                continue;
+            }
+            if (neurosuite::core::hasTemporalDiff(pca.method) != methodIsStderiv(space.spkMethod)) {
+                skipped << QObject::tr("%1: its basis and its waveforms are in different domains").arg(fs.method);
+                continue;
+            }
+        }
+        spaces << space;
+        bases.push_back(pca);
+    }
+    return spaces;
+}
+
 } // namespace
+
+QString KlustersDoc::ownOfStage(const QString& shared) const
+{
+    if (docUrl.isEmpty() || shared.isEmpty()) return shared;
+    const neurosuite::custody::Anchor anchor = neurosuite::custody::parseAnchor(QFileInfo(docUrl).fileName().toStdString());
+    if (!anchor.ok || anchor.suffix.empty() || !neurosuite::custody::isClusterIdType(anchor.type)) return shared;
+    const QString own = shared + QLatin1Char('.') + QString::fromStdString(anchor.suffix);
+    return QFileInfo::exists(own) ? own : shared;
+}
 
 QString KlustersDoc::spkrPathFor(const QString& method) const
 {
@@ -530,12 +638,18 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
         QTextStream log(&cutLog);
         if (cuttable) spikeCutSpecFor(m, nullptr, cut, log);
         if (!cuttable || cut.window.nSamp != nSamp || cut.window.nChan != nChan) {
-            S.reason = tr("The .spk of method %1 cannot be cut from the recording (only the standard and the stderiv "
-                          "spaces can), so the new rows would have no record there.").arg(m);
+            if (m != shownMethod) {
+                S.methodsSkipped << tr("%1: cannot be cut from the recording").arg(m);
+                continue;
+            }
+            S.reason = tr("The shown .spk (method %1) cannot be cut from the recording (only the standard and the stderiv "
+                          "spaces can), so the new rows would have no record.").arg(m);
             return S;
         }
         cutOf.insert(m, cut);
     }
+    methods = cutOf.keys();
+    methods.sort();
     S.methods = methods;
 
     // ── the cluster of every row; the rows that are collisions; every row by time ──
@@ -679,31 +793,37 @@ KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>&
         std::fclose(fil);
     }
 
-    // ── a feature row each, in the shown space: the projection of the shown record ──
-    neurosuite::core::PcaBasis pca;
-    const QString pcaPath = resolveFeature(documentDirectory() + QLatin1Char('/') + documentBaseName(),
-                                           QStringLiteral("pca"), currentElectrodeGroupID(), activeFeatureMethod());
-    const bool projected = QFileInfo::exists(pcaPath) && neurosuite::core::loadPca(pcaPath.toStdString(), pca) && pca.valid()
-                           && pca.nCh <= nChan && pca.recShift >= 0 && pca.recShift + pca.data2use <= nSamp && pca.nCh * pca.nComp <= nFeat;
-    if (!projected) {
-        S.reason = tr("The shown space has no PCA basis that fits its records (%1): the new rows would have no features.")
-                       .arg(QFileInfo(pcaPath).fileName());
+    // ── a feature row each, in EVERY space: the projection of the record of the space's waveforms ──
+    std::vector<neurosuite::core::PcaBasis> bases;
+    S.spaces = residualSpacesOf(*this, methods, nChan, nSamp, bases, S.spacesSkipped);
+    if (S.spaces.isEmpty() || S.spaces.front().method != cluMethod()) {
+        S.reason = tr("The session's own feature space (%1) has no basis that fits its records: the new rows would have no features.%2")
+                       .arg(cluMethod(), S.spacesSkipped.isEmpty() ? QString() : QStringLiteral("  ") + S.spacesSkipped.join(QStringLiteral("; ")));
         S.spikes.clear();
         return S;
     }
-    const int nPca = pca.nCh * pca.nComp;
-    std::vector<int64_t> coef(static_cast<std::size_t>(nPca));
-    for (ResidualSpike& spike : S.spikes) {
-        const std::vector<int16_t>& record = spike.records[shownMethod];
-        klusters::projectSpikeOntoPca(pca, [&](int ch, int j) {
-            return static_cast<double>(record[static_cast<std::size_t>(pca.recShift + j) * nChan + ch]);
-        }, coef.data());
-        // The columns a projection does not give (any the space adds after the components)
-        // are the source row's: they describe the same stretch of recording.
-        spike.features.resize(timeDim);
-        for (int d = 0; d < nFeat; ++d) spike.features[d] = clusteringData->featureValue(static_cast<dataType>(spike.sourceRow + 1), d + 1);
-        for (int k = 0; k < nPca; ++k) spike.features[k] = static_cast<dataType>(coef[static_cast<std::size_t>(k)]);
-        spike.features[timeDim - 1] = static_cast<dataType>(spike.time);
+    {
+        std::vector<qint64> sourceRows;
+        for (const ResidualSpike& spike : S.spikes) sourceRows.push_back(spike.sourceRow);
+        for (qsizetype q = 0; q < S.spaces.size(); ++q) {
+            const ResidualSpace& space = S.spaces[q];
+            const std::size_t nd = static_cast<std::size_t>(space.nDims);
+            // The columns a projection does not give (any the space adds after the components)
+            // are the source row's: they describe the same stretch of recording.
+            std::vector<int64_t> rowsOfSource;
+            if (!readFetRows(space.fetPath, sourceRows, space.nDims, nSpikes, rowsOfSource)) {
+                S.reason = tr("Could not read the rows of %1.").arg(QFileInfo(space.fetPath).fileName());
+                S.spikes.clear();
+                return S;
+            }
+            for (std::size_t j = 0; j < S.spikes.size(); ++j) {
+                ResidualSpike& spike = S.spikes[j];
+                std::vector<qint64>& row = spike.features[space.method];
+                row.assign(rowsOfSource.begin() + static_cast<std::ptrdiff_t>(j * nd), rowsOfSource.begin() + static_cast<std::ptrdiff_t>((j + 1) * nd));
+                if (!space.detached) projectRecord(bases[static_cast<std::size_t>(q)], spike.records[space.spkMethod].data(), nChan, row.data());
+                row[nd - 1] = spike.time;
+            }
+        }
     }
     S.ok = true;
     qInfo().noquote() << "[residual spikes]" << S.candidates << "residuals in the selection:" << S.spikes.size() << "spikes ready ("

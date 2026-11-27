@@ -800,6 +800,11 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         QJsonArray methods;
         for (const QString& m : R.methods) methods.append(m);
         result.insert(QStringLiteral("methods"), methods);
+        QJsonArray spaces;
+        for (const KlustersDoc::ResidualSpace& sp : R.spaces) spaces.append(sp.method);
+        result.insert(QStringLiteral("spaces"), spaces);
+        result.insert(QStringLiteral("spacesSkipped"), R.spacesSkipped.join(QStringLiteral("; ")));
+        result.insert(QStringLiteral("methodsSkipped"), R.methodsSkipped.join(QStringLiteral("; ")));
         QJsonArray spikes;
         for (const KlustersDoc::ResidualSpike& s : R.spikes) {
             QJsonObject j;

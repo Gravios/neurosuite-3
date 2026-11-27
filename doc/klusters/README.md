@@ -1442,15 +1442,21 @@ from the files on disk.
   cluster is one child, its self child.
 - **A new stage.** Adding rows changes every row-aligned file, so nothing of the open stage is
   touched: `<stage>_rs` (`rs` on an untagged session) gets its own `.res`, `.clu` (`.clc`,
-  `.clp`), every `.spk` method that can be cut from the recording, the shown `.fet` and the
-  `.eap`, and is opened. Old rows keep their order and content; a new row sits beside the row
-  it was found in, on the side its time says, so a time-sorted session stays sorted. Its
-  features are the projection of its record on the shown space's `.pca`; the columns that
-  space does not compute are copied from the source row. Its `.eap` row names no class. The
-  `.spkc` and `.spkr` are not carried: they are rebuilt.
-- **It needs** a recording, and `.spk` methods of the standard or stderiv kind with the open
-  one's geometry. Only the shown feature space is grown: another space's `.fet` has the old
-  rows and does not fit the new stage until it is computed for it.
+  `.clp`), every `.spk` method that can be cut from the recording, the `.fet` of every feature
+  space and the `.eap`, and is opened. Old rows keep their order and content; a new row sits
+  beside the row it was found in, on the side its time says, so a time-sorted session stays
+  sorted. Its `.eap` row names no class. The `.spkc` and `.spkr` are not carried: they are
+  rebuilt.
+- **Every feature space.** In each space that is a projection (it has a `.pca.<method>`) a new
+  row is its record — of that space's waveform method — through that space's basis; the
+  columns the basis does not give are copied from the source row, the time is the spike's own.
+  In a space with no basis (a detached table) a new row is its source row's with the spike's
+  time: those features describe the source row, not the new spike. In the new stage every
+  space grown is usable; switching and syncing read and write the stage's own files.
+- **Left as they are:** a `.spk` method the recording cannot be cut in (a super-sampled one),
+  and the feature spaces over it; a space whose basis does not fit. Their files keep the old
+  rows and are listed as not usable in the new stage. The status line names them.
+- **It needs** a recording, and the shown `.spk` of the standard or stderiv kind.
 - The confirmation lists the spikes per partner and how many were left out, by reason.
 
 Limits. A partner is found only where the partner's cluster has a template and spikes of its

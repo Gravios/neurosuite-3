@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: Add Residual Spikes grows every feature space](#2026-11-27--klusters-add-residual-spikes-grows-every-feature-space) |
 | 2026-11-27 | [Formats: .fetr, the residual spikes in a feature space](#2026-11-27--formats-fetr-the-residual-spikes-in-a-feature-space) |
 | 2026-11-27 | [Klusters: Add Residual Spikes as Clusters](#2026-11-27--klusters-add-residual-spikes-as-clusters) |
 | 2026-11-27 | [Klusters: a stage that holds its own rows opens on them](#2026-11-27--klusters-a-stage-that-holds-its-own-rows-opens-on-them) |
@@ -323,6 +324,33 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: Add Residual Spikes grows every feature space
+
+The new stage holds the `.fet` of every feature space, not only the `.clu`'s own, and the other spaces of a stage with its own rows read the stage's files.
+
+<details>
+<summary>Details</summary>
+
+- **Before,** the `_rs` stage held the `.fet` of the `.clu`'s own space only; every other
+  space kept the old rows and did not fit the stage.
+- **Now** each new row gets a feature row in every usable space: through the space's own basis
+  (`.pca.<method>`) from the record of the space's waveform method, with the columns the basis
+  does not give copied from the source row; in a space with no basis, the source row's features
+  with the spike's own time. Each space's `.fet` is written under the stage's tag.
+- **In a stage with rows of its own** the feature-space list, a switch and a sync now use the
+  stage's own `.fet` and `.spk` of the other spaces too (`KlustersDoc::ownOfStage`); before,
+  only the `.clu`'s own space did.
+- A `.spk` method the recording cannot be cut in (super-sampled) no longer refuses the whole
+  action: it is left out with the spaces over it, and named in the status line.
+- **Checked** in `test_residual_spikes.py` with three spaces (the session's, a second
+  projection with a column of its own, a detached table): rows of each as described, old rows
+  unchanged, all three usable in the new stage on the stage's files. **Not checked:** a lag
+  (`_D`) space, a stderiv space, a sync or a realign inside an `_rs` stage.
+
+</details>
 
 ---
 

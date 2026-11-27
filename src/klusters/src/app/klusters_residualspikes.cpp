@@ -18,7 +18,7 @@
     Adding rows changes every row-aligned file, so -- as decollide does -- a new
     stage is written beside the open one and opened:
 
-        <base>.res / .clu[.clc .clp] / .spk.<every method> / .fet.<shown> / .eap
+        <base>.res / .clu[.clc .clp] / .spk.<every method> / .fet.<every space> / .eap
         under <stage>_rs ("rs" on an untagged session)
 
     Existing rows keep their order and everything they hold.  A new row is put
@@ -101,10 +101,8 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
     const std::string outTagS = outTag.toStdString();
 
     ClusterResData cr = readClusterRes(cluPath.toStdString(), resPath.toStdString());
-    FetBinaryFile fb = readFetBinary(fetPath.toStdString());
     const std::size_t n = cr.ids.size();
-    if (!cr.ok || !fb.ok || cr.times.size() != n || fb.nSpikes != static_cast<int64_t>(n)
-        || fb.nFeatures != found.spikes.front().features.size()) {
+    if (!cr.ok || cr.times.size() != n || found.spaces.isEmpty() || found.spaces.front().fetCommitted != fetPath) {
         summary = tr("Add residual spikes: could not read consistent res/clu/fet for this group.");
         return false;
     }
@@ -220,21 +218,35 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
         return false;
     }
 
-    // ── the shown .fet ──
-    {
-        const std::size_t nf = static_cast<std::size_t>(fb.nFeatures);
+    // ── every feature space's .fet: the rows as they are, the new rows' feature rows ──
+    QStringList spacesWritten;
+    QStringList spacesSkipped = found.spacesSkipped;
+    for (const KlustersDoc::ResidualSpace& space : found.spaces) {
+        const bool own = space.fetCommitted == fetPath;          // the .clu's own space: it must be grown
+        const FetBinaryFile fb = readFetBinary(space.fetCommitted.toStdString());
+        const std::size_t nf = static_cast<std::size_t>(space.nDims);
+        bool fits = fb.ok && fb.nSpikes == static_cast<int64_t>(n) && fb.nFeatures == space.nDims;
+        for (std::size_t q = 0; fits && q < k; ++q) {
+            const auto row = found.spikes[q].features.constFind(space.method);
+            fits = row != found.spikes[q].features.constEnd() && row->size() == nf;
+        }
+        if (!fits) {
+            if (own) { summary = tr("Add residual spikes: could not read consistent res/clu/fet for this group."); return false; }
+            spacesSkipped << tr("%1: its .fet on disk does not hold this stage's rows").arg(space.method);
+            continue;
+        }
         std::vector<int64_t> grown(total * nf);
         for (std::size_t r = 0; r < total; ++r) {
             if (source[r] >= 0) std::memcpy(&grown[r * nf], &fb.values[static_cast<std::size_t>(source[r]) * nf], nf * sizeof(int64_t));
-            else {
-                const QVector<dataType>& f = found.spikes[static_cast<std::size_t>(-1 - source[r])].features;
-                for (std::size_t d = 0; d < nf; ++d) grown[r * nf + d] = static_cast<int64_t>(f[static_cast<int>(d)]);
-            }
+            else std::memcpy(&grown[r * nf], found.spikes[static_cast<std::size_t>(-1 - source[r])].features.constFind(space.method)->data(),
+                             nf * sizeof(int64_t));
         }
-        if (!writeFetBinary(stagePath(base, "fet", aFet.method, grp, outTagS), fb.nFeatures, grown)) {
-            summary = tr("Add residual spikes: could not write the new stage's .fet.");
+        const std::string method = own ? aFet.method : space.method.toStdString();
+        if (!writeFetBinary(stagePath(base, "fet", method, grp, outTagS), space.nDims, grown)) {
+            summary = tr("Add residual spikes: could not write the new stage's .fet (%1).").arg(space.method);
             return false;
         }
+        spacesWritten << space.method;
     }
 
     // ── the membership: every row keeps what it names; a new row names no class ──
@@ -259,7 +271,9 @@ bool KlustersApp::writeResidualStage(const KlustersDoc::ResidualSpikes& found, Q
     summary = tr("Added %1 residual spike(s) as %2 new cluster(s), partner -> new cluster (spikes): %3.  Stage \"%4\"%5%6.")
                   .arg(k).arg(clusterOf.size()).arg(per.join(QStringLiteral(", "))).arg(outTag)
                   .arg(hierarchical ? tr(", each new cluster its own child") : QString())
-                  .arg(skipped.isEmpty() ? QString() : tr("; .spk not grown for: %1").arg(skipped.join(QStringLiteral(", "))));
+                  .arg((skipped.isEmpty() ? QString() : tr("; .spk not grown for: %1").arg(skipped.join(QStringLiteral(", "))))
+                       + tr("; feature spaces grown: %1").arg(spacesWritten.join(QStringLiteral(", ")))
+                       + (spacesSkipped.isEmpty() ? QString() : tr("; not grown: %1").arg(spacesSkipped.join(QStringLiteral("; ")))));
     qInfo().noquote() << "[residual spikes]" << summary;
     return true;
 }

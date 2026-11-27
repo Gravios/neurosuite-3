@@ -18,6 +18,9 @@ written but not opened):
   - a new row's .spk record is the added spike, centred (median error under 15 % of its energy),
     its features the projection of that record on the session's .pca with its time last, its
     .eap row names no class;
+  - EVERY feature space is grown: a second projection space gets the record through its own
+    basis (a column the projection does not give is the source row's), a space with no basis the
+    source row's features with the new time; in the new stage all three are usable;
   - the open stage's files are not changed;
   - the new stage opens (on its own rows), and asked again adds nothing: every residual of
     cluster 2 is now a row;
@@ -57,15 +60,30 @@ def stage(base, tag):
                 spk=S.read_spk(f"{base}.spk.standard.1.{tag}", S.NSAMP, NCH), fet=S.read_fet(f"{base}.fet.standard.1.{tag}"))
 
 
-def pca_of(base):
-    """means[ch][nsamp], evecs[ch][ncomp * nsamp] of the session's .pca (session.write_pca's layout)."""
-    b = open(f"{base}.pca.standard.1", "rb").read()
+def pca_of(base, method="standard", ncomp=S.NCOMP):
+    """means[ch][nsamp], evecs[ch][ncomp * nsamp] of a .pca of the session (session.write_pca's layout)."""
+    b = open(f"{base}.pca.{method}.1", "rb").read()
     v = np.frombuffer(b, np.float64, offset=36)
     means = [v[c * S.NSAMP:(c + 1) * S.NSAMP] for c in range(NCH)]
     at = NCH * S.NSAMP
-    step = S.NCOMP * S.NSAMP
+    step = ncomp * S.NSAMP
     evecs = [v[at + c * step:at + (c + 1) * step] for c in range(NCH)]
     return means, evecs
+
+
+def add_spaces(base, raw, res):
+    """Two more feature spaces over the same waveforms: `alt`, a projection through a basis of
+    its own (2 components a channel, and a column of its own before the time), and `manifold`,
+    a table with no basis (a detached space)."""
+    means, evecs = S.write_pca(f"{base}.pca.alt.1", raw, NCH, S.NSAMP, 2)
+    extra = (np.arange(len(res), dtype=np.int64) * 7) % 1000
+    alt = np.concatenate([S.project(raw, means, evecs, NCH, S.NSAMP, 2), extra[:, None], res[:, None]], axis=1).astype(np.int64)
+    man = np.concatenate([np.random.default_rng(5).integers(-500, 500, (len(res), 2)), res[:, None]], axis=1).astype(np.int64)
+    for name, table in (("alt", alt), ("manifold", man)):
+        with open(f"{base}.fet.{name}.1", "wb") as fh:
+            np.array([table.shape[1]], np.int32).tofile(fh)
+            table.tofile(fh)
+    return alt, man
 
 
 def main():
@@ -78,6 +96,7 @@ def main():
         rows2, lag2 = plan[2]
         planted = {int(r): int(k) for r, k in zip(rows2, lag2)}
         add = (0.9 * before[clu == 3].mean(0)).reshape(-1)
+        alt, man = add_spaces(base, raw, res)
 
         # (a step that finds nothing ends the run: read its result, not the run's status)
         rep = R.run(klusters, f"{base}.clu.standard.1", [{"residualSpikes": {"clusters": [2, 3], "apply": True}}], d)
@@ -151,6 +170,25 @@ def main():
         check(dev <= 1 and np.array_equal(g["fet"][new][:, -1], g["res"][new]),
               "its features are the projection of that record on the .pca, its time last", f"max deviation {dev}")
 
+        # every feature space
+        check(r.get("spaces") == ["standard", "alt", "manifold"], "every feature space is given the new rows, the session's own first",
+              f"{r.get('spaces')} skipped: {r.get('spacesSkipped')}")
+        if os.path.exists(f"{base}.fet.alt.1.rs") and os.path.exists(f"{base}.fet.manifold.1.rs"):
+            ga, gm = S.read_fet(f"{base}.fet.alt.1.rs"), S.read_fet(f"{base}.fet.manifold.1.rs")
+            check(np.array_equal(ga[old], alt) and np.array_equal(gm[old], man), "the other spaces' old rows are as they were")
+            am, ae = pca_of(base, "alt", 2)
+            pa = S.project(g["spk"][new], am, ae, NCH, S.NSAMP, 2)
+            src = {s["time"]: s["sourceRow"] for s in spikes}
+            rows_src = np.array([src[int(t)] for t in g["res"][new]])
+            check(np.abs(ga[new][:, :2 * NCH] - pa).max() <= 1 and np.array_equal(ga[new][:, -1], g["res"][new]),
+                  "a projection space: a new row is its record through THAT space's basis, its time last")
+            check(np.array_equal(ga[new][:, 2 * NCH], alt[rows_src, 2 * NCH]),
+                  "... a column the projection does not give is the source row's")
+            check(np.array_equal(gm[new][:, :-1], man[rows_src, :-1]) and np.array_equal(gm[new][:, -1], g["res"][new]),
+                  "a space with no basis: a new row is its source row's, with its own time")
+        else:
+            check(False, "the stage holds a .fet of every space")
+
         e0 = read_eap_cells(f"{base}.eap.1", n)
         e1 = read_eap_cells(f"{base}.eap.1.rs", n + k)
         check(e1.shape[1] == e0.shape[1] and np.array_equal(e1[old], e0) and bool(np.all(e1[new] == -128)),
@@ -160,9 +198,9 @@ def main():
 
         # the new stage opens, and has nothing more to add
         rep = R.run(klusters, f"{base}.clu.standard.1.rs", [{"collisionRows": {}}, {"residualSpikes": {"clusters": [2], "apply": True}},
-                                                            {"duplicates": {"clusters": [3, 4]}}], d, timeout=300)
+                                                            {"duplicates": {"clusters": [3, 4]}}, {"dump": True}], d, timeout=300)
         st = [x for x in rep.get("results", []) if "step" in x]
-        ok = rep.get("rc") == 0 and len(st) == 3
+        ok = rep.get("rc") == 0 and len(st) == 4
         check(ok, "the new stage opens")
         if ok:
             check(st[0].get("collisionRows") == len(marked), "its marked rows are the same rows", str(st[0].get("collisionRows")))
@@ -172,6 +210,13 @@ def main():
             check(st[2].get("scanned") == int((clu == 3).sum()) + k and st[2].get("runs") == 0 and "3+4" not in st[2].get("acrossPairs", {}),
                   "no added spike is within the duplicate tolerance of a row of cluster 3",
                   str({x: st[2].get(x) for x in ("scanned", "runs", "acrossPairs")}))
+
+            sp = {x["method"]: x for x in st[3].get("dump", {}).get("spaces", [])}
+            check(sorted(sp) == ["alt", "manifold", "standard"] and all(x["usable"] for x in sp.values())
+                  and all(x["fet"].split(".pending")[0].endswith(".1.rs") for x in sp.values())
+                  and all(x["spk"].split(".pending")[0].endswith(".spk.standard.1.rs") for x in sp.values()),
+                  "in the new stage every feature space is usable, on the stage's own .fet and .spk",
+                  str([(m, x["usable"], os.path.basename(x["fet"]), os.path.basename(x["spk"]), x["reason"]) for m, x in sp.items()]))
 
     # ── both marked: a new cluster per partner ──
     with tempfile.TemporaryDirectory() as d:
