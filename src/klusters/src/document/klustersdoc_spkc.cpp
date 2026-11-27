@@ -440,6 +440,8 @@ void KlustersDoc::resetCollisionRows()
     residuals.clear();
     residualsOn = false;
     residualsRead = false;
+    ++residualsEpoch;
+    fetrEpochs.clear();
     collisionRowsBuiltOn.reset();
     lastCollisionReport = CollisionRowsReport();
 }

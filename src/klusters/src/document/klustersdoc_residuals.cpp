@@ -373,6 +373,7 @@ KlustersDoc::ResidualReport KlustersDoc::rebuildResiduals()
         for (const Want& w : wants) keep.insert(w.row);
         for (auto it = residuals.begin(); it != residuals.end();)
             if (!keep.contains(it.key())) { it = residuals.erase(it); ++R.dropped; } else ++it;
+        if (R.dropped > 0) ++residualsEpoch;
     }
     if (wants.empty()) {
         if (collisionFits.empty() && !configuration().getCorrectCollisionRows())
@@ -492,6 +493,7 @@ KlustersDoc::ResidualReport KlustersDoc::rebuildResiduals()
     if (fil) std::fclose(fil);
     R.edgeOfResiduals = medianOf(edgeNew);
     R.edgeOfRecords = medianOf(edgeOld);
+    if (R.computed > 0 || R.withoutNeighbours > 0) ++residualsEpoch;
 
     // ── is the residual spike a row already? (every record, every time: it depends on the others) ──
     {
@@ -593,6 +595,152 @@ bool KlustersDoc::writeSpkr(const QString& path, QString* error) const
     }
     if (!nf::writeSpkr(path.toStdString(), f)) return fail(QStringLiteral("could not write %1").arg(path));
     return true;
+}
+
+QString KlustersDoc::fetrPathFor(const QString& method) const
+{
+    const QString spkc = spkcPathFor(method);          // <base>.spkc.<method>.<group>[.<stage>]
+    if (spkc.isEmpty()) return QString();
+    const QString marker = QStringLiteral(".spkc.");
+    const int at = spkc.lastIndexOf(marker);
+    if (at < 0) return QString();
+    return spkc.left(at) + QStringLiteral(".fetr.") + spkc.mid(at + marker.size());
+}
+
+KlustersDoc::FetrReport KlustersDoc::writeFetrFiles()
+{
+    namespace nf = neurofileio;
+    FetrReport F;
+    if (!clusteringData) return F;
+    const qint64 nSpikes = static_cast<qint64>(clusteringData->totalNbOfSpikes());
+    const int nSamp = clusteringData->nbSamplesPerWaveform();
+    const int nChan = clusteringData->nbOfChannels();
+    const std::size_t rec = static_cast<std::size_t>(nSamp) * nChan;
+    const int timeDim = clusteringData->nbOfDimensionsTotal();
+    auto timeOf = [&](qint64 row) { return static_cast<qint64>(clusteringData->featureValue(static_cast<dataType>(row + 1), timeDim)); };
+
+    // ── the records, as the .spkr lists them ──
+    std::vector<qint64> rows;
+    {
+        QList<qint64> keys = residuals.keys();
+        std::sort(keys.begin(), keys.end());
+        for (const qint64 row : keys) {
+            const Residual& r = residuals[row];
+            if (r.bytes && static_cast<std::size_t>(r.bytes->size()) == rec * sizeof(int16_t)) rows.push_back(row);
+        }
+    }
+    F.rows = static_cast<qint64>(rows.size());
+
+    // ── the .spk methods a record can be had in: the shown one, and -- when the records are
+    // centred on the partner, cut from the recording -- every one the recording can be cut in ──
+    const QString shownMethod = featureMethod(clusteringData->getSpkFileName());
+    const QString recording = rawRecordingPath();
+    bool fromRecording = QFileInfo::exists(recording);
+    for (const qint64 row : rows) fromRecording = fromRecording && residuals[row].offset == residuals[row].madeFor;
+    QHash<QString, SpikeCutSpec> cutOf;
+    QStringList methods{shownMethod};
+    if (fromRecording) {
+        for (const FeatureSpace& fs : availableFeatureSpaces()) {
+            const QString m = fs.spkMethod.isEmpty() ? featureMethod(fs.spkPath) : fs.spkMethod;
+            if (!fs.usable || methods.contains(m)) continue;
+            const auto token = neurosuite::custody::parseMethodToken(m.toStdString());
+            if (!(methodIsStderiv(m) || (token.family == "standard" && token.kind == '\0' && token.lag == 0))) continue;
+            SpikeCutSpec cut;
+            QString cutLog;
+            QTextStream log(&cutLog);
+            spikeCutSpecFor(m, nullptr, cut, log);
+            if (cut.window.nSamp != nSamp || cut.window.nChan != nChan) continue;
+            cutOf.insert(m, cut);
+            methods << m;
+        }
+    }
+    std::vector<neurosuite::core::PcaBasis> bases;
+    const QList<ResidualSpace> spaces = residualSpacesOf(*this, methods, nChan, nSamp, bases, F.skipped, /*withDetached=*/false);
+
+    // A space that gets no .fetr keeps none from before: it would be read as current.
+    for (const QString& line : F.skipped) {
+        const QString path = fetrPathFor(line.left(line.indexOf(QLatin1Char(':'))));
+        if (!path.isEmpty() && QFileInfo::exists(path)) QFile::remove(path);
+        fetrEpochs.remove(path);
+    }
+
+    // ── the records of a method: those in memory for the shown one, cut again for another ──
+    QHash<QString, std::vector<int16_t>> recordsOf;
+    auto records = [&](const QString& m) -> const std::vector<int16_t>* {
+        const auto have = recordsOf.constFind(m);
+        if (have != recordsOf.constEnd()) return &have.value();
+        std::vector<int16_t> out(rows.size() * rec);
+        if (m == shownMethod) {
+            for (std::size_t k = 0; k < rows.size(); ++k) std::memcpy(&out[k * rec], residuals[rows[k]].bytes->constData(), rec * sizeof(int16_t));
+        } else {
+            // The same neighbours and the same displacement as the record in memory, the
+            // windows in this method's domain.
+            std::vector<int> clu(static_cast<std::size_t>(nSpikes), 0);
+            QHash<int, QVector<int>> cleanOf;
+            for (const dataType id : clusteringData->clusterIds()) {
+                QVector<int> rowsOfIt = clusteringData->clusterSpkIndices(static_cast<int>(id));
+                std::sort(rowsOfIt.begin(), rowsOfIt.end());
+                QVector<int> clean;
+                for (const int r : rowsOfIt) {
+                    if (r < 0 || r >= nSpikes) continue;
+                    clu[static_cast<std::size_t>(r)] = static_cast<int>(id);
+                    if (!residuals.contains(r)) clean.append(r);
+                }
+                cleanOf.insert(static_cast<int>(id), clean);
+            }
+            FILE* fil = std::fopen(recording.toLocal8Bit().constData(), "rb");
+            if (!fil) return nullptr;
+            for (std::size_t c0 = 0; c0 < rows.size(); c0 += kChunk) {
+                const std::size_t c1 = std::min(rows.size(), c0 + kChunk);
+                std::vector<std::vector<qint64>> times(c1 - c0);
+                for (std::size_t k = c0; k < c1; ++k) {
+                    const int offset = residuals[rows[k]].offset;
+                    times[k - c0].push_back(timeOf(rows[k]) + offset);
+                    for (const int nb : residualNeighbours(rows[k], cleanOf.value(clu[static_cast<std::size_t>(rows[k])])))
+                        times[k - c0].push_back(timeOf(nb) + offset);
+                }
+                WindowSet ws;
+                int64_t outOfRange = 0;
+                cutWindows(fil, cutOf[m].window, rec, times, ws, &outOfRange);
+                for (std::size_t k = c0; k < c1; ++k) targetLessMedian(ws, k - c0, rec, &out[k * rec]);
+            }
+            std::fclose(fil);
+            F.recut << m;
+        }
+        return &recordsOf.insert(m, std::move(out)).value();
+    };
+
+    for (qsizetype q = 0; q < spaces.size(); ++q) {
+        const ResidualSpace& space = spaces[q];
+        const QString path = fetrPathFor(space.method);
+        if (path.isEmpty()) continue;
+        if (fetrEpochs.value(path, 0) == residualsEpoch && QFileInfo::exists(path)) { F.current << space.method; continue; }
+        const std::size_t nd = static_cast<std::size_t>(space.nDims);
+        nf::FetrFile f;
+        f.nSpikes = nSpikes; f.nFeatures = space.nDims; f.group = currentElectrodeGroupID().toInt();
+        f.rows.assign(rows.begin(), rows.end());
+        // The columns the basis does not give are the row's own in this space.
+        const std::vector<int16_t>* recs = rows.empty() ? nullptr : records(space.spkMethod);
+        if (!rows.empty() && (!recs || !readFetRows(space.fetPath, rows, space.nDims, nSpikes, f.values))) {
+            F.skipped << tr("%1: its records or its .fet could not be read").arg(space.method);
+            continue;
+        }
+        std::vector<qint64> row(nd);
+        for (std::size_t k = 0; k < rows.size(); ++k) {
+            for (std::size_t d = 0; d < nd; ++d) row[d] = f.values[k * nd + d];
+            projectRecord(bases[static_cast<std::size_t>(q)], &(*recs)[k * rec], nChan, row.data());
+            row[nd - 1] = timeOf(rows[k]) + residuals[rows[k]].offset;
+            for (std::size_t d = 0; d < nd; ++d) f.values[k * nd + d] = row[d];
+        }
+        if (!nf::writeFetr(path.toStdString(), f)) { F.skipped << tr("%1: could not write %2").arg(space.method, QFileInfo(path).fileName()); continue; }
+        fetrEpochs.insert(path, residualsEpoch);
+        F.written << space.method;
+    }
+    qInfo().noquote() << "[residuals]" << F.rows << "records in feature space: .fetr written for" << (F.written.isEmpty() ? QStringLiteral("none") : F.written.join(QStringLiteral(", ")))
+                      << (F.current.isEmpty() ? QString() : QStringLiteral("; current: ") + F.current.join(QStringLiteral(", ")))
+                      << (F.recut.isEmpty() ? QString() : QStringLiteral("; records cut again in: ") + F.recut.join(QStringLiteral(", ")))
+                      << (F.skipped.isEmpty() ? QString() : QStringLiteral("; none for: ") + F.skipped.join(QStringLiteral("; ")));
+    return F;
 }
 
 KlustersDoc::ResidualSpikes KlustersDoc::alignedResidualSpikes(const QList<int>& clusters, bool children, const QStringList& spkMethods)

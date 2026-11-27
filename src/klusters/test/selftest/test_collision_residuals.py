@@ -24,7 +24,11 @@ Through the `residuals` step:
   - the corrected records are untouched by the display;
   - Save writes the .spkr: rows, offsets, classes, kinds, twins and records as reported; opened
     again every record is kept from the file (none recomputed) and is the same;
-  - removing the marks drops the residuals;
+  - Save also writes a .fetr for every feature space with a basis: the .spkr's rows, each record
+    through that space's basis, the columns the basis does not give from the row's own .fet row,
+    the residual spike's time last; none for a space with no basis; a planted residual lies
+    with the partner's cluster in feature space;
+  - removing the marks drops the residuals, and the next Save leaves the files empty;
   - WITHOUT a recording the record is made from the .spk: the row's own window, offset 0 -- the
     partner as far as it lies in that window.
 """
@@ -40,6 +44,7 @@ sys.path.insert(0, HERE)
 import session as S                       # noqa: E402
 import run as R                           # noqa: E402
 import test_mark_collisions as M          # noqa: E402
+import test_residual_spikes as RS        # noqa: E402
 
 check = M.check
 NCH = len(S.CHANS)
@@ -57,6 +62,15 @@ def read_spkr(path):
     wav = np.frombuffer(b, "<i2", n_rows * n_samp * n_chan, at).reshape(n_rows, n_samp * n_chan)
     return dict(magic=b[:4], n_spikes=n_spikes, n_samp=n_samp, n_chan=n_chan, rows=rows, offsets=offsets,
                 classes=classes, kinds=kinds, twins=twins, wav=wav, size=len(b), end=at + wav.size * 2)
+
+
+def read_fetr(path):
+    b = open(path, "rb").read()
+    n_rows, n_feat, n_spikes, group, flags = struct.unpack("<IIIII", b[4:24])
+    rows = np.frombuffer(b, "<i8", n_rows, 32)
+    values = np.frombuffer(b, "<i8", n_rows * n_feat, 32 + 8 * n_rows).reshape(n_rows, n_feat)
+    return dict(magic=b[:4], n_spikes=n_spikes, n_feat=n_feat, group=group, rows=rows, values=values, size=len(b),
+                end=32 + 8 * n_rows + 8 * n_rows * n_feat)
 
 
 def shifted(t, s):
@@ -77,6 +91,8 @@ def main():
         rows2, lag2 = plan[2]
         planted = {int(r): int(k) for r, k in zip(rows2, lag2)}
         add = 0.9 * before[clu == 3].mean(0)                   # what was added at each planted row of cluster 2
+        fet = S.read_fet(f"{base}.fet.standard.1")
+        alt, man = RS.add_spaces(base, raw, res)               # a second projection space, and a table with no basis
 
         steps = [{"residuals": {"show": True}},
                  {"markCollisions": {"clusters": [2], "apply": True}},
@@ -180,8 +196,40 @@ def main():
         check(not os.path.exists(f"{base}.spkc.standard.1") or open(f"{base}.spkc.standard.1", "rb").read()[:4] == b"SPC\x01",
               "the .spkc beside it is still a .spkc")
 
+        # the same records in every feature space: the .fetr files
+        fa, fb, fm = (f"{base}.fetr.{m}.1" for m in ("standard", "alt", "manifold"))
+        check(os.path.exists(fa) and os.path.exists(fb), "Save wrote a .fetr for each feature space with a basis")
+        check(not os.path.exists(fm), "NEGATIVE CONTROL: none for the space with no basis")
+        if os.path.exists(fa) and os.path.exists(fb):
+            a, b2 = read_fetr(fa), read_fetr(fb)
+            check(a["magic"] == b"FTR\x01" and a["n_spikes"] == len(clu) and a["n_feat"] == fet.shape[1] and a["end"] == a["size"]
+                  and b2["n_feat"] == alt.shape[1] and b2["end"] == b2["size"],
+                  "each is as wide as its space's .fet, and exactly as long as its header says")
+            check(list(a["rows"]) == marked and list(b2["rows"]) == marked, "their rows are the .spkr's")
+            means, evecs = RS.pca_of(base)
+            pa = S.project(f["wav"], means, evecs, NCH, S.NSAMP, S.NCOMP)
+            when = res[np.array(marked)] + f["offsets"]
+            check(np.abs(a["values"][:, :-1] - pa).max() <= 1, "a row is the .spkr record through the space's basis")
+            check(np.array_equal(a["values"][:, -1], when) and np.array_equal(b2["values"][:, -1], when),
+                  "its time, last, is the residual spike's: the row's time plus the offset")
+            am, ae = RS.pca_of(base, "alt", 2)
+            pb = S.project(f["wav"], am, ae, NCH, S.NSAMP, 2)
+            check(np.abs(b2["values"][:, :2 * NCH] - pb).max() <= 1, "the second space: the same record through ITS basis")
+            check(np.array_equal(b2["values"][:, 2 * NCH], alt[np.array(marked), 2 * NCH]),
+                  "... a column its basis does not give is the row's own")
+            # not the rows' own features: a residual is another spike
+            own = np.abs(a["values"][:, :-1] - fet[np.array(marked), :-1]).max(1)
+            check(np.median(own) > 20, "NEGATIVE CONTROL: a .fetr row is not the row's own .fet row", f"median max deviation {np.median(own)}")
+            # in the session's own space a planted residual lies with cluster 3, not with cluster 2
+            c2, c3 = fet[clu == 2, :-1].mean(0), fet[clu == 3, :-1].mean(0)
+            isp = np.array([m in planted for m in marked])
+            d2 = np.linalg.norm(a["values"][isp, :-1] - c2, axis=1)
+            d3 = np.linalg.norm(a["values"][isp, :-1] - c3, axis=1)
+            print(f"      planted residuals in feature space: {int((d3 < d2).sum())} of {int(isp.sum())} nearer cluster 3's centre than cluster 2's")
+            check((d3 < d2).mean() > 0.9, "in feature space a planted residual lies with the partner's cluster")
+
         ok, st = M.run(klusters, base, [{"collisionRows": {}}, {"residuals": {"show": True, "rows": marked}},
-                                        {"unmarkCollisions": {"clusters": [2]}}, {"residuals": {"rows": marked}}], d)
+                                        {"unmarkCollisions": {"clusters": [2]}}, {"save": True}, {"residuals": {"rows": marked}}], d)
         check(ok, "opened again")
         if ok:
             r2 = st[1]
@@ -190,8 +238,11 @@ def main():
                   str({k: r2.get(k) for k in ("kept", "computed", "wanted")}))
             check(all(again[m]["has"] and again[m]["record"] == recs[m]["record"] and again[m]["kind"] == recs[m]["kind"] for m in marked),
                   "... and is the same record with the same kind")
-            check(st[2].get("removed") == len(marked) and st[3].get("count") == 0 and st[3].get("wanted") == 0,
-                  "removing the marks drops the residuals", str({k: st[3].get(k) for k in ("count", "wanted")}))
+            check(st[2].get("removed") == len(marked) and st[4].get("count") == 0 and st[4].get("wanted") == 0,
+                  "removing the marks drops the residuals", str({k: st[4].get(k) for k in ("count", "wanted")}))
+            left = [read_fetr(x) for x in (fa, fb) if os.path.exists(x)]
+            check(len(left) == 2 and all(len(x["rows"]) == 0 for x in left) and len(read_spkr(path)["rows"]) == 0,
+                  "... and the next Save leaves the .spkr and the .fetr files empty")
 
     # ── both clusters marked: the two rows of a detected pair name each other ──
     with tempfile.TemporaryDirectory() as d:
@@ -241,6 +292,14 @@ def main():
                     err.append(((rec - truth) ** 2).sum() / (truth ** 2).sum())
             print(f"      from the .spk: error against the part of the added spike inside the row's window, median {np.median(err):.3f}")
             check(np.median(err) < 0.2, "the record is the partner as far as it lies in the row's window")
+            rep = R.run(klusters, f"{base}.clu.standard.1", steps + [{"save": True}], d)
+            fa = f"{base}.fetr.standard.1"
+            check(os.path.exists(fa), "without a recording Save still writes the .fetr, from the records it has")
+            if os.path.exists(fa):
+                a = read_fetr(fa)
+                res = S.read_res(f"{base}.res.standard.1")
+                check(len(a["rows"]) == len(marked) and np.array_equal(a["values"][:, -1], res[a["rows"]]),
+                      "... its times the rows' own (offset 0)")
 
     print("FAILED" if M.fails else "PASSED", f"({M.fails} failure(s))" if M.fails else "")
     return 1 if M.fails else 0

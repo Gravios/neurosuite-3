@@ -2200,6 +2200,22 @@ public:
     QString spkrPathFor(const QString& method) const;
     /** Writes the residual records as they are to @p path (formats/spkr.md). */
     bool writeSpkr(const QString& path, QString* error = nullptr) const;
+    /** <base>.fetr.<method>.<group>[.<stage>] of the open stage, @p method a feature space's token. */
+    QString fetrPathFor(const QString& method) const;
+    /** What writeFetrFiles() did. */
+    struct FetrReport {
+        qint64      rows = 0;       ///< residual records
+        QStringList written;        ///< feature spaces whose .fetr was written now
+        QStringList current;        ///< ... whose .fetr was written before and still holds these records
+        QStringList recut;          ///< .spk methods the records were cut again in (not the shown one)
+        QStringList skipped;        ///< spaces without a .fetr ("method: why")
+    };
+    /** Writes the residual records' features, one .fetr per feature space that is a projection
+     *  (formats/fetr.md): each record of the space's waveform method -- the records in memory
+     *  for the shown method, cut again from the recording for another -- through the space's
+     *  basis, the columns the basis does not give from the row's own .fet row, the residual
+     *  spike's time last.  A space that gets none loses a .fetr left from before. */
+    FetrReport writeFetrFiles();
 
     // ── collisions no sorter named (klustersdoc_collisionscan.cpp) ──
     /** One collision the scan found: row @p row (0-based) of cluster @p cluster holds a spike of
@@ -3460,6 +3476,8 @@ private:
     };
     QHash<qint64, Residual> residuals;
     bool residualsOn = false;        // shown in the waveform view
+    quint64 residualsEpoch = 1;      // raised whenever a record is made or dropped
+    QHash<QString, quint64> fetrEpochs;   // .fetr path -> the epoch it was written for
     bool residualsRead = false;      // the stage's .spkr was looked for
     /** The neighbours a row's own unit is taken from: of the clean rows of its cluster
      *  (@p clean, ascending) nearest in time, the nearest in waveform to its corrected record.

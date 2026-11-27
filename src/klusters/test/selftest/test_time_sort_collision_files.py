@@ -155,6 +155,11 @@ def main():
         for path in (spkr_mine, spkr_staged, spkr_group2):
             with open(path, "wb") as fh:
                 fh.write(b"SPR\x01" + b"\x00" * 28)
+        # ... and so are their features, the .fetr of each feature space.
+        fetr_mine, fetr_staged, fetr_group2 = f"{base}.fetr.standard.1", f"{base}.fetr.alt.1.st", f"{base}.fetr.standard.2"
+        for path in (fetr_mine, fetr_staged, fetr_group2):
+            with open(path, "wb") as fh:
+                fh.write(b"FTR\x01" + b"\x00" * 28)
 
         out = R.run(klusters, f"{base}.clu.standard.1", [{"timeSort": {}}, {"collisionRows": {"rows": [int(at[i]) for i in coll]}}], d)
         t, r1 = (out.get("results") or [{}, {}])[:2]
@@ -173,6 +178,8 @@ def main():
               "NEGATIVE CONTROL: ... and are byte for byte as they were; another group's .spkc is not touched")
         check(not os.path.exists(spkr_mine) and not os.path.exists(spkr_staged) and os.path.exists(spkr_group2),
               "the group's .spkr files are removed (their rows were renumbered; Save rebuilds them); another group's is left")
+        check(not os.path.exists(fetr_mine) and not os.path.exists(fetr_staged) and os.path.exists(fetr_group2),
+              "... and so are the group's .fetr files; another group's is left")
         check(r1.get("corrected") == 40 and all(x["served"] == served0[int(final[x["row"]])] for x in r1.get("records", []))
               and len(r1.get("records", [])) == 40,
               "reopened by the sort: the same 40 rows are corrected and served as before the shuffle",

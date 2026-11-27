@@ -12,6 +12,8 @@ serve a `.spkr` record as the row's waveform.
 **Naming.** Per method and per stage, like the `.spk` and the `.spkc`:
 `<base>.spkr.<method>.<group>[.<stage>]`.
 
+**Companion.** The records' features, per feature space: [`.fetr`](fetr.md).
+
 **Writers / readers.** `neurofileio::readSpkr` / `writeSpkr` / `spkrFind` in
 `libneurosuite-core`. Klusters builds the records for the waveform view's
 residual display and writes the file at Save. fiber-kit does not read or write

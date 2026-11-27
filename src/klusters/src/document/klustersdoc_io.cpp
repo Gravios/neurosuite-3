@@ -1089,7 +1089,10 @@ void KlustersDoc::finishSave(bool ok){
                 QString why;
                 rebuildResiduals();
                 if (!writeSpkr(residualPath, &why)) qWarning().noquote() << "[residuals]" << why;
-                else if (residualsOn) pushResiduals();
+                else {
+                    writeFetrFiles();              // the same records in every feature space (formats/fetr.md)
+                    if (residualsOn) pushResiduals();
+                }
             }
         });
         unitsInfoModified = false;

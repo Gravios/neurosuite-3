@@ -219,7 +219,8 @@ bool KlustersDoc::planTimeSort(TimeSortPlan& plan, QString& errorInformation) co
         // Sparse residual waveforms (<base>.spkr.<method>.<group>[.<stage>]): the index names
         // rows too, but the file is rebuilt from the recording at any Save, so it is not
         // carried: it is removed once the sort is in.
-        const QString spkrPrefix = baseName + QStringLiteral(".spkr.");
+        // (and so are their features, <base>.fetr.<method>.<group>[.<stage>])
+        const QString spkrPrefix = baseName + (name.startsWith(baseName + QStringLiteral(".fetr.")) ? QStringLiteral(".fetr.") : QStringLiteral(".spkr."));
         if (name.startsWith(spkrPrefix)) {
             const QStringList toks = name.mid(spkrPrefix.size()).split(QLatin1Char('.'));
             int gi = -1;

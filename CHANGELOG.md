@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: the residual spikes' features, saved as .fetr](#2026-11-27--klusters-the-residual-spikes-features-saved-as-fetr) |
 | 2026-11-27 | [Klusters: Add Residual Spikes grows every feature space](#2026-11-27--klusters-add-residual-spikes-grows-every-feature-space) |
 | 2026-11-27 | [Formats: .fetr, the residual spikes in a feature space](#2026-11-27--formats-fetr-the-residual-spikes-in-a-feature-space) |
 | 2026-11-27 | [Klusters: Add Residual Spikes as Clusters](#2026-11-27--klusters-add-residual-spikes-as-clusters) |
@@ -324,6 +325,38 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: the residual spikes' features, saved as .fetr
+
+Save writes, beside the `.spkr`, a `.fetr` for every feature space: the residual records projected as the space's `.fet` rows are.
+
+<details>
+<summary>Details</summary>
+
+- **At Save,** beside the `.spkr`, Klusters writes `<base>.fetr.<method>.<group>[.<stage>]` for
+  every feature space of the group that has a basis: the `.spkr`'s rows, each record through
+  that space's `.pca`, the columns the basis does not give from the row's own `.fet` row, the
+  residual spike's time (row time + offset) last.
+- **A space over another `.spk` method** gets the record cut again from the recording in that
+  method — same neighbours, same displacement. Without a recording only the spaces over the
+  shown waveforms get a `.fetr`.
+- **No `.fetr`** for a space with no basis, a super-sampled one, or one whose basis does not fit;
+  a file left there from before is removed. With no residual left the files are written empty,
+  like the `.spkr`.
+- A `.fetr` is not rewritten while the records it was written for are unchanged. Sort Spikes
+  by Time removes the group's `.fetr` files with its `.spkr`.
+- `KlustersDoc::writeFetrFiles`, `fetrPathFor`. Nothing reads the files yet.
+- **Checked** in `test_collision_residuals.py` with three spaces: a `.fetr` for the two with a
+  basis and none for the third; rows are the `.spkr`'s; values equal the projection of the
+  `.spkr` records through each basis; times; the carried column; 39 of 39 planted residuals lie
+  nearer the partner's cluster centre than the row's own; empty after the marks are removed;
+  written without a recording. `test_time_sort_collision_files.py`: removed by the sort.
+  **Not checked:** a space over a second `.spk` method (the recut path), a lag or stderiv
+  space, the cost at Save on a real session.
+
+</details>
 
 ---
 

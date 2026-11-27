@@ -1412,8 +1412,13 @@ spike, every other row as it is.
 - **Kept up to date.** A record is made again when its row's time, cluster, partner or fitted
   lag has changed; while the display is on that happens with every rebuild of the corrected
   rows. Save writes them as [`.spkr`](../ndmanager-plugins/formats/spkr.md), and they are read
-  back when the session opens. Sort Spikes by Time removes the file (its rows are renumbered);
-  the next Save rebuilds it.
+  back when the session opens. Save also writes their features, a
+  [`.fetr`](../ndmanager-plugins/formats/fetr.md) for every feature space that has a basis: each
+  record through that space's `.pca`, laid out like a row of the space's `.fet` with the
+  residual spike's time last (for a space over another `.spk` method the record is cut again
+  in that method). Nothing in Klusters reads a `.fetr` yet; it is there for clustering the
+  residuals or placing them beside the partner's cluster. Sort Spikes by Time removes these
+  files (their rows are renumbered); the next Save rebuilds them.
 - **It needs** the preference *Subtract the partner from collision rows* (no partner is fitted
   without it), and a recording to be whole: without one a record is made from the `.spk` — the
   row's own window, the partner as far as it lies in it.
