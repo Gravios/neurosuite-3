@@ -635,6 +635,18 @@ public:
      *  child view) for rows holding a second cluster's spike and, on confirmation, name the
      *  partners in the stage's membership (KlustersDoc::scanCollisions / markCollisions). */
     void slotMarkCollisions();
+    /** Clusters > Add Residual Spikes as Clusters: the recovered residual spikes of the selected
+     *  clusters -- the partners' spikes no row holds -- aligned at their peak, become rows of
+     *  NEW clusters, one per partner named, in a new stage that is then opened
+     *  (KlustersDoc::alignedResidualSpikes, writeResidualStage). */
+    void slotAddResidualSpikes();
+    /** Writes @p found as a new stage beside the open one: every existing row as it is and the
+     *  residual spikes as rows of new clusters (res, clu, clc/clp when hierarchical, every .spk
+     *  method, the shown .fet, the .eap).  Nothing of the open stage is changed.  Returns the
+     *  new stage's .clu in @p outCluPath, what was done in @p summary; false when nothing was
+     *  written.  @p newClusters gets partner -> new cluster. */
+    bool writeResidualStage(const KlustersDoc::ResidualSpikes& found, QString& outCluPath, QString& summary,
+                            QMap<int, int>* newClusters = nullptr);
     /** Clusters > Remove Duplicate Spikes: rows of a selected cluster (or child) closer in time
      *  than a neuron fires twice are one spike held more than once; after a confirmation all
      *  but one of each are moved to the artefact cluster (KlustersDoc::scanDuplicateSpikes). */
@@ -1669,6 +1681,7 @@ private:
     QAction *mPreviousFeatureSpace = nullptr;   ///< View > Previous Feature Space (Ctrl+Shift+Tab)
     QAction *mLocalPcaSpace        = nullptr;   ///< View > Local PCA of the Selection (Shift+Y)
     QAction *mMarkCollisions       = nullptr;   ///< Clusters > Mark Collisions
+    QAction *mAddResidualSpikes    = nullptr;   ///< Clusters > Add Residual Spikes as Clusters
     QAction *mRemoveDuplicateSpikes = nullptr;  ///< Clusters > Remove Duplicate Spikes
     QAction *mResidualWaveforms    = nullptr;   ///< Waveforms > Residual of Collision Rows (checkable)
     QAction *mCollisionRowsToChild = nullptr;   ///< Clusters > Collision Rows to a Child

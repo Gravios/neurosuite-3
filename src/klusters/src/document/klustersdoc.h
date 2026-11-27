@@ -2147,6 +2147,39 @@ public:
     /** The residual record of @p row (0-based): false when it has none. */
     bool residualRecord(qint64 row, std::vector<int16_t>& record, int* offset = nullptr, int* classId = nullptr,
                         int* kind = nullptr, qint64* twin = nullptr) const;
+    /** A residual spike made ready to be a row of its own. */
+    struct ResidualSpike {
+        qint64 sourceRow = 0;             ///< the collision row it was found in (0-based)
+        qint64 time = 0;                  ///< its own time: the row's + the fitted lag + the alignment
+        int    partner = 0;               ///< the cluster of the partner named
+        int    shift = 0;                 ///< samples the alignment moved it from the fitted lag
+        QVector<dataType> features;       ///< a .fet row of the shown space: projected, the time last
+        QHash<QString, std::vector<int16_t>> records;   ///< per .spk method: the record, centred on its peak
+    };
+    /** What alignedResidualSpikes() found. */
+    struct ResidualSpikes {
+        bool    ok = false;
+        QString reason;
+        std::vector<ResidualSpike> spikes;   ///< ascending time
+        QHash<int, qint64> perPartner;       ///< per partner cluster: spikes
+        qint64  candidates = 0;              ///< residuals of the selection
+        qint64  known = 0;                   ///< left: the spike is a row already, or repeats another residual (rebuildResiduals)
+        qint64  unmatched = 0;               ///< left: the partner's class has no cluster
+        qint64  alreadyRow = 0;              ///< left: aligned, it lies on a row
+        qint64  repeated = 0;                ///< left: aligned, it lies on another spike of this set
+        qint64  withoutNeighbours = 0;       ///< left: its own unit has too few clean spikes now
+        qint64  moved = 0;                   ///< spikes the alignment moved
+        QStringList methods;                 ///< the .spk methods a record was cut for
+        QString source;                      ///< the recording
+    };
+    /** The recovered residual spikes of @p clusters (children when @p children), each ALIGNED
+     *  AT ITS PEAK and cut again there: on the channel and with the sign of the partner's
+     *  template peak, the residual's extremum is brought to where the template has its own
+     *  (within 6 samples), and the window -- and the own unit's median -- is cut anew at that
+     *  time, in every method of @p spkMethods.  A spike that then lies on a row (0.2 ms), or on
+     *  another spike of the set, is left out: nothing is made that a row already holds.
+     *  Changes nothing; KlustersApp::addResidualSpikes writes them as a new stage. */
+    ResidualSpikes alignedResidualSpikes(const QList<int>& clusters, bool children, const QStringList& spkMethods);
     /** <base>.spkr.<method>.<group>[.<stage>] of the open stage. */
     QString spkrPathFor(const QString& method) const;
     /** Writes the residual records as they are to @p path (formats/spkr.md). */
@@ -3412,6 +3445,10 @@ private:
     QHash<qint64, Residual> residuals;
     bool residualsOn = false;        // shown in the waveform view
     bool residualsRead = false;      // the stage's .spkr was looked for
+    /** The neighbours a row's own unit is taken from: of the clean rows of its cluster
+     *  (@p clean, ascending) nearest in time, the nearest in waveform to its corrected record.
+     *  Empty when there are too few. */
+    std::vector<int> residualNeighbours(qint64 row, const QVector<int>& clean) const;
     /** Hands the residual records (or nothing) to both Data layers and refreshes the views. */
     void pushResiduals();
     /** The stage's membership as it is now: the .eap read from @p path with the pending marks

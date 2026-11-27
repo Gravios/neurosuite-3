@@ -777,6 +777,53 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         return true;
     }
+    if (step.contains(QStringLiteral("residualSpikes"))) {
+        // {"residualSpikes": {"clusters": [..], "children": bool, "apply": bool}}: Clusters > Add
+        // Residual Spikes as Clusters without its dialog and WITHOUT opening the new stage -- the
+        // spikes found, and with "apply" the stage written ("stage": its .clu).
+        const QJsonObject o = step.value(QStringLiteral("residualSpikes")).toObject();
+        QList<int> ids;
+        for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
+        const bool children = o.value(QStringLiteral("children")).toBool(false);
+        if (children) { QString err; if (!doc->loadChildClustering(err)) { result.insert(QStringLiteral("error"), err); return false; } }
+        const KlustersDoc::ResidualSpikes R = doc->alignedResidualSpikes(ids, children, availableSpkVariants());
+        result.insert(QStringLiteral("ok"), R.ok);
+        result.insert(QStringLiteral("reason"), R.reason);
+        result.insert(QStringLiteral("candidates"), static_cast<double>(R.candidates));
+        result.insert(QStringLiteral("known"), static_cast<double>(R.known));
+        result.insert(QStringLiteral("unmatched"), static_cast<double>(R.unmatched));
+        result.insert(QStringLiteral("alreadyRow"), static_cast<double>(R.alreadyRow));
+        result.insert(QStringLiteral("repeated"), static_cast<double>(R.repeated));
+        result.insert(QStringLiteral("withoutNeighbours"), static_cast<double>(R.withoutNeighbours));
+        result.insert(QStringLiteral("moved"), static_cast<double>(R.moved));
+        result.insert(QStringLiteral("source"), R.source);
+        QJsonArray methods;
+        for (const QString& m : R.methods) methods.append(m);
+        result.insert(QStringLiteral("methods"), methods);
+        QJsonArray spikes;
+        for (const KlustersDoc::ResidualSpike& s : R.spikes) {
+            QJsonObject j;
+            j.insert(QStringLiteral("sourceRow"), static_cast<double>(s.sourceRow));
+            j.insert(QStringLiteral("time"), static_cast<double>(s.time));
+            j.insert(QStringLiteral("partner"), s.partner);
+            j.insert(QStringLiteral("shift"), s.shift);
+            spikes.append(j);
+        }
+        result.insert(QStringLiteral("spikes"), spikes);
+        result.insert(QStringLiteral("modified"), doc->isModified());
+        if (R.ok && o.value(QStringLiteral("apply")).toBool(false)) {
+            QString stage, summary;
+            QMap<int, int> made;
+            const bool written = writeResidualStage(R, stage, summary, &made);
+            result.insert(QStringLiteral("written"), written);
+            result.insert(QStringLiteral("stage"), stage);
+            result.insert(QStringLiteral("summary"), summary);
+            QJsonObject clusters;
+            for (auto it = made.constBegin(); it != made.constEnd(); ++it) clusters.insert(QString::number(it.key()), it.value());
+            result.insert(QStringLiteral("newClusters"), clusters);
+        }
+        return R.ok;
+    }
     if (step.contains(QStringLiteral("duplicates"))) {
         // {"duplicates": {"clusters": [..], "children": bool, "toleranceMs": 0.2, "apply": bool}}:
         // Clusters > Remove Duplicate Spikes without its dialog -- the scan, and with "apply"

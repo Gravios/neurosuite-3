@@ -1138,6 +1138,7 @@ line says how many were left.
 | Clusters ▸ Collision Rows to a Child | — | Makes the rows of the selected clusters (or children) that name a partner one child of their cluster, to be looked at beside its other spikes. No row leaves its cluster |
 | Clusters ▸ Remove Collision Marks… | — | Takes the partners out of the rows of the selected clusters (or children) that name one, after a confirmation; written at Save |
 | Waveforms ▸ Residual of Collision Rows | — | Toggle: rows that name a partner are drawn as the partner's spike — re-cut from the recording around the partner, the row's own unit subtracted — and written as `.spkr` at Save |
+| Clusters ▸ Add Residual Spikes as Clusters… | — | The residual spikes of the selected clusters' collision rows that no row holds, each aligned at its own peak, become rows of new clusters — one per partner named — in a new stage (`<stage>_rs`) that is then opened. See [Adding the residual spikes](#adding-the-residual-spikes) |
 | Clusters ▸ Mark Collisions… | — | Searches the selected clusters (in the child view: the selected children) for rows that hold a second cluster's spike and, after a confirmation, names the partner in the `.eap`: the rows are then shown with the partner subtracted. See [Mark Collisions](#mark-collisions--the-collisions-no-sorter-named) |
 | Clusters ▸ Purge Small Clusters… | — | Moves every cluster with fewer spikes than the number you enter to noise (1), after a confirmation In the **child view** it purges children instead: the children, below that number, of the parents being curated (the ones the child palette lists) are dropped to noise as **Drop to Noise** does, in one undo step; other parents' children are not touched. |
 | Split ▸ Strip Feature Outliers (5σ)… | — | Moves spikes more than 5σ from their cluster's mean in any feature dimension to artifact (0), after a confirmation |
@@ -1416,6 +1417,41 @@ spike, every other row as it is.
 - **It needs** the preference *Subtract the partner from collision rows* (no partner is fitted
   without it), and a recording to be whole: without one a record is made from the `.spk` — the
   row's own window, the partner as far as it lies in it.
+
+##### Adding the residual spikes
+
+The detector does not fire twice within its dead time, so the second spike of a collision is
+nearly always a row of no cluster: it is missing from its unit's train. **Clusters → Add
+Residual Spikes as Clusters…** makes rows of those spikes. Select the clusters (in the child
+view: the children) whose collision rows are meant, and save first — the new stage is written
+from the files on disk.
+
+- **Which spikes.** The *recovered* residuals of the selection whose partner class has a
+  cluster. A *detected* or *repeated* one is a row already and is left out.
+- **Aligned at the peak.** The fitted lag puts a residual within a few samples of the partner's
+  spike. Each is moved to its own peak: on the channel and with the sign of the partner
+  template's peak (the mean of the partner's ~200 clean rows nearest in time), the extremum of
+  the residual within 6 samples. The new row's time is the source row's time plus the lag plus
+  that shift, and its record is cut from the recording there, less the source row's own unit
+  (the median of its neighbours, as for the residual display). A spike that after the alignment
+  lies within 6 samples of any row, or of another new spike of the same partner, is left out.
+- **New clusters, one per partner.** The spikes named for cluster 64 go to one new cluster,
+  those named for 68 to another: not into 64 and 68. The name comes from a fit; whether a new
+  cluster is that unit's is seen in its waveforms and features beside the partner's, and the
+  two are then merged by hand (or the new cluster discarded). In a hierarchical session a new
+  cluster is one child, its self child.
+- **A new stage.** Adding rows changes every row-aligned file, so nothing of the open stage is
+  touched: `<stage>_rs` (`rs` on an untagged session) gets its own `.res`, `.clu` (`.clc`,
+  `.clp`), every `.spk` method that can be cut from the recording, the shown `.fet` and the
+  `.eap`, and is opened. Old rows keep their order and content; a new row sits beside the row
+  it was found in, on the side its time says, so a time-sorted session stays sorted. Its
+  features are the projection of its record on the shown space's `.pca`; the columns that
+  space does not compute are copied from the source row. Its `.eap` row names no class. The
+  `.spkc` and `.spkr` are not carried: they are rebuilt.
+- **It needs** a recording, and `.spk` methods of the standard or stderiv kind with the open
+  one's geometry. Only the shown feature space is grown: another space's `.fet` has the old
+  rows and does not fit the new stage until it is computed for it.
+- The confirmation lists the spikes per partner and how many were left out, by reason.
 
 Limits. A partner is found only where the partner's cluster has a template and spikes of its
 own nearby in time: a unit the sort missed, one with fewer than 200 rows, or one whose spikes of

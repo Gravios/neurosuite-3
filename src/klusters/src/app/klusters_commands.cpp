@@ -132,6 +132,13 @@ QList<CommandSpec> KlustersApp::commandTable()
                      "row of the same cluster -- one spike detected more than once -- and move all but one of\n"
                      "each to the artefact cluster.  The row kept is the one most like the cluster's template.\n"
                      "Undoable.")).editing();
+    // The partners' spikes that no row holds, as rows of new clusters -- one per partner named,
+    // to be looked at and merged by hand.  Grows a new stage and opens it, like decollide.
+    t << CommandSpec("action.addResidualSpikes", "Clusters", tr("Add Residual Spikes as C&lusters…"), ON(triggered, slotAddResidualSpikes))
+            .toolTip(tr("Take the residual spikes of the selected clusters' collision rows that no row holds,\n"
+                     "align each at its peak, and add them as rows of new clusters -- one new cluster per\n"
+                     "partner named.  Written as a new stage (<stage>_rs), which is then opened; the open\n"
+                     "stage is not changed.  Save first.")).editing();
     t << CommandSpec("action.purgeSmallClusters", "Clusters", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
             .editing();
     // Bulk artifact removal: move every spike more than 5 sigma from its cluster's

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: Add Residual Spikes as Clusters](#2026-11-27--klusters-add-residual-spikes-as-clusters) |
 | 2026-11-27 | [Klusters: a stage that holds its own rows opens on them](#2026-11-27--klusters-a-stage-that-holds-its-own-rows-opens-on-them) |
 | 2026-11-26 | [Decollide does not grow a spike that is a row already](#2026-11-26--decollide-does-not-grow-a-spike-that-is-a-row-already) |
 | 2026-11-26 | [Klusters: Remove Duplicate Spikes](#2026-11-26--klusters-remove-duplicate-spikes) |
@@ -321,6 +322,48 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: Add Residual Spikes as Clusters
+
+The partners' spikes that collision rows hold and no row of their own — the second spike of a collision, lost to the detector's dead time — are aligned at their peak and added as rows of new clusters, one per partner, in a new stage.
+
+<details>
+<summary>Details</summary>
+
+- **Why.** A collision row holds its own unit's spike and a partner's. The detector does not fire
+  twice within its dead time, so the partner's is nearly always a row of no cluster — on session
+  jg05-20120312 group 8, about 99 % of cluster 78's residuals. The residual display showed those
+  spikes; nothing made rows of them.
+- **Clusters → Add Residual Spikes as Clusters…** takes the *recovered* residuals of the selected
+  clusters (children, in the child view), aligns each at its own peak — the extremum, within 6
+  samples, on the channel and with the sign of the partner template's peak — cuts it from the
+  recording at that time, less the source row's own unit, and adds it as a row.
+- **New clusters, one per partner named**, not the partners' clusters: the name comes from a
+  fit, and the new cluster is to be looked at beside the partner before the two are merged. In
+  a hierarchical session each new cluster is one child, its self child.
+- **A new stage, `<stage>_rs`**, with its own `.res`, `.clu` (`.clc`, `.clp`), every `.spk`
+  method, the shown `.fet` and the `.eap`; it is opened, the open stage is not changed. Old
+  rows keep order and content; a new row sits beside its source row on the side its time says.
+  Features: the record projected on the shown space's `.pca`. A new row's `.eap` row names no
+  class.
+- **Not added:** a residual that is a row already (*detected*, *repeated*), one that after the
+  alignment lies within 6 samples of any row or of another new spike of the same partner, one
+  whose class has no cluster. The confirmation counts each.
+- `KlustersDoc::alignedResidualSpikes` (the spikes), `KlustersApp::writeResidualStage` (the
+  files); the residual code's window cutting and neighbour choice are shared with the display
+  (`cutWindows`, `targetLessMedian`, `residualNeighbours`). A record made from the `.spk` is
+  now made again once a recording is there.
+- **Checked** by `test_residual_spikes.py` on planted spikes: one new row per marked planted
+  spike, within 1 sample of where it was planted; its record is the planted spike (median
+  error 11 % of its energy); features equal the projection; spikes that are rows already are
+  not added; old rows byte for byte; the stage opens and, asked again, adds nothing; two
+  partners give two clusters; the child layer is written. **Not checked:** a real recording
+  (the test session's `.fil` is synthetic), stderiv methods, more than one `.spk` method,
+  the dialog itself.
+
+</details>
 
 ---
 
