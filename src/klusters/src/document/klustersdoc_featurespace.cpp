@@ -381,9 +381,20 @@ bool KlustersDoc::reloadShownSpace(QString& error)
 // Before a realign or nudge in the shown space: its working copies exist
 // (seeded now if not) and the Data reads them, so the in-place rewrite lands in
 // what is on screen.  The .clu's own space is always ready (initPendingFiles).
+bool KlustersDoc::ensureWorkingCopies(QString* error)
+{
+    // Opened without working copies (openNextWithoutWorkingCopies), or their seed failed:
+    // a realign or nudge writes into them, so they are made now (the late seed).
+    if (!clusteringData || docUrl.isEmpty() || !pendingCluPath.isEmpty()) return true;
+    if (initPendingFiles()) return true;
+    if (error) *error = tr("Could not make the working copies of the .spk, .res, .fet and .clu.");
+    return false;
+}
+
 bool KlustersDoc::prepareShownSpaceForRealign(QString* error)
 {
     if (!clusteringData) { if (error) *error = tr("No document is open."); return false; }
+    if (!ensureWorkingCopies(error)) return false;
     if (activeMethod == originMethod) return true;
     if (neurosuite::custody::parseMethodToken(activeMethod.toStdString()).lag >= 1) {
         if (error) *error = tr("Realign and nudge do not run in a lag (_D) feature space; show its waveform space (%1) first.")

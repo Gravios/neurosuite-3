@@ -163,7 +163,9 @@ bool KlustersApp::addResidualSpikesInWorkingStage(const KlustersDoc::ResidualSpi
         if (QFileInfo::exists(from) && !QFileInfo::exists(to)) QFile::copy(from, to);
     }
     if (replacing) doc->dropWorkingStageOnClose();              // the new working stage holds its rows too
+    doc->openNextWithoutWorkingCopies();                        // its files are disposable: not copied again
     if (!reopenKeepingState(workClu, space)) {
+        doc->openNextWithoutWorkingCopies(false);
         if (replacing) doc->setWorkingStage(before.workClu, before.work, before.target);   // still open, still to ask about
         removeStage(c, work);
         summary = tr("Add residual spikes: the document could not be closed; nothing was added.");

@@ -148,6 +148,14 @@ public:
     /** Replaced by another working stage (a second Add): the next close drops it, without asking. */
     void dropWorkingStageOnClose() { working.saved = false; working.answered = true; }
     void clearWorkingStage() { working = WorkingStage(); }
+    /** The next openDocument makes no working copies (.pending) of the .spk, .res, .fet and .clu:
+     *  the files opened are themselves disposable (Add Residual Spikes' working stage, written a
+     *  moment before).  The session then reads and saves them directly, and a realign or nudge
+     *  makes the copies when it first needs them (prepareShownSpaceForRealign). */
+    void openNextWithoutWorkingCopies(bool on = true) { noSeedOnNextOpen = on; }
+    /** The working copies of the .spk, .res, .fet and .clu, made now when the session has none
+     *  (opened without them, or their seed failed).  Before anything writes into them. */
+    bool ensureWorkingCopies(QString* error = nullptr);
     /** Opens the document by filename and format.
     * @return an OpenSaveCreateReturnMessage enum giving the open status.
     */
@@ -3335,6 +3343,7 @@ private:
      * clears it only if no edit set it after the save's snapshot (DirtyFlag). */
     DirtyFlag modified;
     WorkingStage working;               // Add Residual Spikes' stage not saved yet (workingStage())
+    bool noSeedOnNextOpen = false;      // openNextWithoutWorkingCopies
 
     /** Cached PCA basis for realignSpikes.  A PCA-Center Align All batch shares
      *  one group's basis, so it is read from .pca/.pcaD once and reused for every

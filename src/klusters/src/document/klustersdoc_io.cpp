@@ -650,7 +650,13 @@ int KlustersDoc::openDocument(const QString &url,QString& errorInformation, cons
         "res", electrodeGroupID, sessionMethod));
     origFetPath = fetFileUrl;
     // clu original == docUrl (set above); clu pending set in initPendingFiles.
-    if (!initPendingFiles()) {
+    // Files that are themselves a working copy (openNextWithoutWorkingCopies) are not copied
+    // again: the session reads and saves them directly until a realign needs the copies.
+    if (noSeedOnNextOpen) {
+        noSeedOnNextOpen = false;
+        pendingSpkPath.clear(); pendingResPath.clear();
+        pendingFetPath.clear(); pendingCluPath.clear();
+    } else if (!initPendingFiles()) {
         qWarning() << "[openDocument] could not create pending files";
     }
     // Feature space: the .clu's own method is loaded (see switchFeatureSpace),

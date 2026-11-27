@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: the residual-spike working stage is not copied again at open](#2026-11-27--klusters-the-residual-spike-working-stage-is-not-copied-again-at-open) |
 | 2026-11-27 | [Klusters: Add Residual Spikes saves into the open stage](#2026-11-27--klusters-add-residual-spikes-saves-into-the-open-stage) |
 | 2026-11-27 | [Klusters: a reload keeps the displays and selections](#2026-11-27--klusters-a-reload-keeps-the-displays-and-selections) |
 | 2026-11-27 | [Klusters: closing with three displays or more no longer crashes](#2026-11-27--klusters-closing-with-three-displays-or-more-no-longer-crashes) |
@@ -347,6 +348,42 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: the residual-spike working stage is not copied again at open
+
+Opening Add Residual Spikes' working stage no longer makes .pending copies of files written a moment before; a realign or nudge makes them when it starts.
+
+<details>
+<summary>Details</summary>
+
+**Before.**  An open copies the `.spk`, `.res`, `.fet` and `.clu` it reads to `.pending` working
+copies, so that nothing edited reaches the files before Save.  Add Residual Spikes' working stage
+(`<target>_rw`) is itself disposable -- Save renames it into the target, a close without saving
+removes it -- so opening it copied, again, files written a moment before: on 0312 group 8
+(815,728 spikes, 8 channels x 52 samples) about 680 MB of `.spk` plus the `.fet` and `.res` per
+add.
+
+**Now.**  `KlustersDoc::openNextWithoutWorkingCopies()` makes the next open skip `initPendingFiles`;
+`addResidualSpikesInWorkingStage` sets it before the reopen.  The session then runs in the mode a
+failed seed already left it in (it reads the files, Save writes the `.clu` directly,
+`stagePendingFiles` has nothing to commit).  That mode had a hole: a realign wrote into
+`pendingResPath` without making it (only the nudge seeded late).
+`KlustersDoc::ensureWorkingCopies()` makes the copies when missing; `enterClusterSpaceForRealign`
+(every realign, Align All, nudge) and `prepareShownSpaceForRealign` call it first.  The selftest
+`dump` lists the `.pending` files on disk.
+
+Not changed: the add itself still writes every grown file once, and opening the target after
+Save makes its copies as any open does.
+
+**Test.**  `test_residual_working_copies.py`: an ordinary open has its `.pending` copies on disk
+(NEGATIVE CONTROL); the working stage `rs_rw` opens with none of its own; a realign of cluster 3
+in it runs and Save puts it in `rs` -- its `.res` differs from the one the add wrote, on cluster
+3's rows only.  `test_residual_working_stage.py` and `test_reload_keeps_state.py` unchanged and
+passing.
+
+</details>
 
 ---
 

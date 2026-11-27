@@ -475,6 +475,17 @@ void KlustersApp::applySupersampleMode()
 
 bool KlustersApp::enterClusterSpaceForRealign(const QString& what, bool silent)
 {
+    if (doc && !doc->url().isEmpty()) {
+        // a session opened without working copies (Add Residual Spikes' working stage) makes them now
+        QString err;
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        const bool copies = doc->ensureWorkingCopies(&err);
+        QApplication::restoreOverrideCursor();
+        if (!copies) {
+            if (!silent) statusBar()->showMessage(tr("%1: %2").arg(what, err), 8000);
+            return false;
+        }
+    }
     if (!doc || !doc->isBorrowedSpace()) return true;
     // The local PCA space is a view of the selection, not a space with files: realign and
     // nudge leave it for the space it was entered from, and run as they would have there.

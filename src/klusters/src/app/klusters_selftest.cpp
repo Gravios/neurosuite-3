@@ -100,6 +100,7 @@
 #include "klustersdoc.h"
 #include "klustersview.h"
 #include <qextendtabwidget.h>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QThread>
 #include "clusterview.h"
@@ -2076,6 +2077,13 @@ QJsonObject KlustersApp::selfTestDump(int clusterId) const
 {
     QJsonObject d;
     d.insert(QStringLiteral("working"), selfTestWorkingStage());
+    {   // the working copies on disk now, beside the open .clu
+        QJsonArray pending;
+        const QFileInfo clu(doc->url());
+        for (const QString& f : QDir(clu.absolutePath()).entryList({QStringLiteral("*.pending")}, QDir::Files))
+            pending.append(f);
+        d.insert(QStringLiteral("pendingFiles"), pending);
+    }
     d.insert(QStringLiteral("clu"), doc->url());
     d.insert(QStringLiteral("cluMethod"), doc->cluMethod());
     d.insert(QStringLiteral("active"), doc->activeFeatureMethod());

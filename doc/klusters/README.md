@@ -1486,7 +1486,10 @@ from the files on disk.
   `.clp`), every `.spk` method that can be cut from the recording, the `.fet` of every feature
   space and the `.eap`, with the stage's `.cli`, curation log and template marks carried over.
   The session reopens on it with the displays, selections and feature space as they were
-  ([a reload keeps the displays](#views)); the title names the stage as not saved. Nothing of
+  ([a reload keeps the displays](#views)); the title names the stage as not saved. It is
+  read and saved directly, without the `.pending` copies an open makes (they would be a
+  second copy of files that are themselves disposable); a realign or nudge makes them when
+  it starts. Nothing of
   the open stage is touched until **Save**: then the working stage's files take the stage's
   names, the stage's row-indexed files they do not replace (an old `.spkc`, `.spkr`, `.fetr`,
   `.col`) are set aside as `.stalebkp`, and the stage is opened. **Closing without saving**
