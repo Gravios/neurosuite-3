@@ -718,6 +718,12 @@ public:
     bool containsResidualMatrixView() const {return isThereResidualMatrixView;}
     bool containsDriftMatrixView() const {return isThereDriftMatrixView;}
 
+    /** The type the display was created as, and the views added to it since (in order) --
+     *  what a reload of the document re-creates (KlustersApp::reopenKeepingState). */
+    DisplayType createdAs() const { return createdType; }
+    const QList<DisplayType>& addedViews() const { return viewsAdded; }
+    void noteAddedView(DisplayType t) { if (!viewsAdded.contains(t)) viewsAdded.append(t); }
+
     /**Push the marked-node template columns (from the lineage overlay) onto this
      * display's curation matrices, which append them as cluster×template cells.
      * Called by ClusterView whenever the marks change.  Also (re)connects each
@@ -974,6 +980,8 @@ private:
     /**True if the view contains a DriftMatrix view, false otherwise.
      *  NSDMI-initialised, as isThereResidualMatrixView above.*/
     bool isThereDriftMatrixView = false;
+    DisplayType createdType = OVERVIEW;      ///< createdAs()
+    QList<DisplayType> viewsAdded;           ///< addedViews()
     
     /**True if the view contains a Trace view, false otherwise.*/
     bool isThereTraceView;

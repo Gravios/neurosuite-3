@@ -587,6 +587,15 @@ indicator, checked when the open session is
 
 All views are synchronized: selecting a cluster in any view highlights it in all others.
 
+**A reload keeps the displays.** Add Residual Spikes, decollide, Sort Spikes by Time and a
+plugin that rewrites the session's files close the document and open it (or the stage written)
+again. What was arranged comes back: every display -- its type, the matrices and other views
+added to it, its clusters, its feature dimensions, its name --, their order, the current one, the
+feature space shown, the parents selected, and the child view (the child palette shown, the
+children selected). Clusters the reopened files do not have are left out. Not kept: the undo
+history (every step names rows of the files closed), dock sizes, waveform and correlogram
+settings.
+
 ### Cluster Display (scatter plot)
 
 Displays spike feature vectors as a 2-D scatter plot. The x and y axes are selected from drop-down menus in the **Parameters** toolbar.

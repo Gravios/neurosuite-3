@@ -79,6 +79,9 @@
  *        {"save": true}                  File > Save
  *        {"reopen": true}                close the document and open it again (unsaved changes dropped);
  *                                        {"reopen": {"replace": {file: with}}} overwrites files in between
+ *                                        ("keepState": true: the displays and selections put back)
+ *        {"guiState": {...}}             arrange displays ("newDisplay", "addView", "dims", "label",
+ *                                        "current") and report what a reload keeps
  *        {"saveas": "<path.clu>"}        File > Save As (a Save As under a token whose
  *                                        space exists adopts it and reopens there)
  *        {"dump": true, "cluster": <id>} the spaces, their files, whether each is held
@@ -419,8 +422,12 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         // {"reopen": true | {"replace": {file: with, ...}}}: File > Close, then open the same file
         // again, in this process.  Unsaved changes are dropped without the question File > Close
         // would ask.  "replace": while it is closed, each file is overwritten with a copy of
-        // another (what a tool run between the two does).
+        // another (what a tool run between the two does).  "keepState": the displays and
+        // selections put back as a reload does (captureGuiState / restoreGuiStateLater).
         const QString url = doc->url();
+        const bool keepState = step.value(QStringLiteral("reopen")).toObject()
+                                   .value(QStringLiteral("keepState")).toBool(false);
+        const GuiState state = keepState ? captureGuiState() : GuiState();
         doc->setModified(false);
         slotFileClose();
         if (mainDock) return false;                 // the close did not complete
@@ -431,7 +438,83 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             if (!QFile::copy(it.value().toString(), it.key())) return false;
         }
         openDocumentFile(url);
+        if (keepState && doc && !doc->url().isEmpty()) {
+            restoreGuiStateLater(state);
+            for (int k = 0; k < 4; ++k) QApplication::processEvents();   // the open's own deferred work, then the restore
+        }
         return doc && !doc->url().isEmpty();
+    }
+    if (step.contains(QStringLiteral("guiState"))) {
+        // {"guiState": {"newDisplay": type, "addView": [type..], "dims": [x, y], "label": s,
+        //  "current": i}}: arrange the displays (each key optional, in that order) and report
+        // what a reload would keep (captureGuiState).  Types: clusters waveforms correlations
+        // overview groupingAssistant traces templateLibrary errorMatrix templateMatrix
+        // residualMatrix driftMatrix.
+        static const QMap<QString, KlustersView::DisplayType> types{
+            {QStringLiteral("clusters"), KlustersView::CLUSTERS}, {QStringLiteral("waveforms"), KlustersView::WAVEFORMS},
+            {QStringLiteral("correlations"), KlustersView::CORRELATIONS}, {QStringLiteral("overview"), KlustersView::OVERVIEW},
+            {QStringLiteral("groupingAssistant"), KlustersView::GROUPING_ASSISTANT_VIEW},
+            {QStringLiteral("traces"), KlustersView::TRACES}, {QStringLiteral("templateLibrary"), KlustersView::TEMPLATE_LIBRARY},
+            {QStringLiteral("errorMatrix"), KlustersView::ERROR_MATRIX}, {QStringLiteral("templateMatrix"), KlustersView::TEMPLATE_MATRIX},
+            {QStringLiteral("residualMatrix"), KlustersView::RESIDUAL_MATRIX}, {QStringLiteral("driftMatrix"), KlustersView::DRIFT_MATRIX}};
+        const QJsonObject o = step.value(QStringLiteral("guiState")).toObject();
+        if (o.contains(QStringLiteral("newDisplay"))) {
+            const QString t = o.value(QStringLiteral("newDisplay")).toString();
+            if (!types.contains(t)) { result.insert(QStringLiteral("error"), QStringLiteral("unknown display type ") + t); return false; }
+            switch (types.value(t)) {
+            case KlustersView::CLUSTERS:                slotWindowNewClusterDisplay(); break;
+            case KlustersView::WAVEFORMS:               slotWindowNewWaveformDisplay(); break;
+            case KlustersView::CORRELATIONS:            slotWindowNewCrosscorrelationDisplay(); break;
+            case KlustersView::OVERVIEW:                slotWindowNewOverViewDisplay(); break;
+            case KlustersView::GROUPING_ASSISTANT_VIEW: slotWindowNewGroupingAssistantDisplay(); break;
+            case KlustersView::TRACES:                  slotNewTraceDisplay(); break;
+            case KlustersView::TEMPLATE_LIBRARY:        slotWindowNewTemplateLibraryDisplay(); break;
+            default:                                    createDisplay(types.value(t)); break;
+            }
+            if (tabsParent) tabsParent->setCurrentIndex(tabsParent->count() - 1);   // the new display is the one arranged next
+            QApplication::processEvents();
+        }
+        for (const QJsonValue& v : o.value(QStringLiteral("addView")).toArray()) {
+            if (!types.contains(v.toString()) || !activeView()) continue;
+            widgetAddToDisplay(types.value(v.toString()));
+            QApplication::processEvents();
+        }
+        const QJsonArray dims = o.value(QStringLiteral("dims")).toArray();
+        if (dims.size() == 2 && dimensionX && dimensionY) {
+            dimensionX->setValue(dims.at(0).toInt());
+            dimensionY->setValue(dims.at(1).toInt());
+            QApplication::processEvents();
+        }
+        if (o.contains(QStringLiteral("label")) && tabsParent)
+            tabsParent->setTabText(tabsParent->currentIndex(), o.value(QStringLiteral("label")).toString());
+        if (o.contains(QStringLiteral("current")) && tabsParent) {
+            tabsParent->setCurrentIndex(o.value(QStringLiteral("current")).toInt());
+            QApplication::processEvents();
+        }
+        const GuiState s = captureGuiState();
+        auto ints = [](const QList<int>& l) { QJsonArray a; for (const int i : l) a.append(i); return a; };
+        QJsonArray displays;
+        for (const GuiState::Display& d : s.displays) {
+            QJsonObject j;
+            j.insert(QStringLiteral("label"), d.label);
+            j.insert(QStringLiteral("type"), types.key(d.createdAs));
+            QJsonArray added;
+            for (const KlustersView::DisplayType t : d.added) added.append(types.key(t));
+            j.insert(QStringLiteral("added"), added);
+            j.insert(QStringLiteral("clusters"), ints(d.clusters));
+            j.insert(QStringLiteral("dims"), QJsonArray{d.dimX, d.dimY});
+            displays.append(j);
+        }
+        result.insert(QStringLiteral("displays"), displays);
+        result.insert(QStringLiteral("current"), s.current);
+        result.insert(QStringLiteral("featureSpace"), s.featureSpace);
+        result.insert(QStringLiteral("childPaletteShown"), s.childPaletteShown);
+        result.insert(QStringLiteral("childView"), s.childView);
+        result.insert(QStringLiteral("childSelection"), ints(s.childSelection));
+        result.insert(QStringLiteral("matrixScope"), s.matrixScope);
+        result.insert(QStringLiteral("valid"), s.valid);
+        result.insert(QStringLiteral("ok"), true);
+        return true;
     }
     if (step.contains(QStringLiteral("save"))) {
         if (doc->isBorrowedSpace()) {
@@ -807,9 +890,10 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         return X.ok;
     }
     if (step.contains(QStringLiteral("residualSpikes"))) {
-        // {"residualSpikes": {"clusters": [..], "children": bool, "apply": bool}}: Clusters > Add
-        // Residual Spikes as Clusters without its dialog and WITHOUT opening the new stage -- the
-        // spikes found, and with "apply" the stage written ("stage": its .clu).
+        // {"residualSpikes": {"clusters": [..], "children": bool, "apply": bool, "open": bool}}:
+        // Clusters > Add Residual Spikes as Clusters without its dialog -- the spikes found, with
+        // "apply" the stage written ("stage": its .clu), and with "open" the stage opened as the
+        // command opens it (reopenKeepingState: the displays, selections and space kept).
         const QJsonObject o = step.value(QStringLiteral("residualSpikes")).toObject();
         QList<int> ids;
         for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
@@ -876,6 +960,13 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
             QJsonObject clusters;
             for (auto it = made.constBegin(); it != made.constEnd(); ++it) clusters.insert(QString::number(it.key()), it.value());
             result.insert(QStringLiteral("newClusters"), clusters);
+            if (written && o.value(QStringLiteral("open")).toBool(false)) {
+                const bool opened = reopenKeepingState(stage, shownBefore);
+                for (int k = 0; k < 4; ++k) QApplication::processEvents();
+                result.insert(QStringLiteral("opened"), opened && doc && doc->url() == stage);
+                result.insert(QStringLiteral("activeAfter"), doc ? doc->activeFeatureMethod() : QString());
+                return R.ok;
+            }
         }
         if (!shownBefore.isEmpty()) showFeatureSpace(shownBefore, false);   // the stage is written, not opened
         result.insert(QStringLiteral("activeAfter"), doc->activeFeatureMethod());

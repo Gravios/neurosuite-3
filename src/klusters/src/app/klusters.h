@@ -1082,6 +1082,39 @@ private:
      *  slotFileClose() + openDocumentFile() path (hierarchy-reload).  @p reason
      *  names what rewrote it in the status message (default: the plugin run). */
     void reopenCurrentDocument(const QString& reason = QString());
+    /** What a reload of the document keeps (klusters_reload.cpp): the displays -- each
+     *  one's type, the views added to it, its clusters and feature dimensions, their order
+     *  and the current one --, the feature space shown, the parent and child selections,
+     *  the child palette and the matrices' child scope.  Not kept: the undo history, dock
+     *  sizes, waveform and correlogram settings. */
+    struct GuiState {
+        struct Display {
+            QString label;
+            KlustersView::DisplayType createdAs = KlustersView::OVERVIEW;
+            QList<KlustersView::DisplayType> added;
+            QList<int> clusters;
+            int dimX = 1, dimY = 2;
+        };
+        bool valid = false;
+        QList<Display> displays;
+        int current = 0;
+        QString featureSpace;
+        QList<int> parentSelection;     // the parent palette's (in the child view: whose children are listed)
+        bool childPaletteShown = false;
+        bool childView = false;
+        QList<int> childSelection;
+        bool matrixScope = false;
+    };
+    GuiState captureGuiState() const;
+    /** Puts @p s back on the document just opened: ids it no longer has are left out. */
+    void restoreGuiState(const GuiState& s);
+    /** restoreGuiState on the next event-loop turn: after what an open queues itself (the
+     *  matrices, the template library).  Call right after openDocumentFile. */
+    void restoreGuiStateLater(const GuiState& s);
+    /** Closes the document and opens @p url with the displays, selections and space shown
+     *  as they were; @p space, when given, is shown in place of the space captured.  False
+     *  when the close did not complete (nothing is opened then). */
+    bool reopenKeepingState(const QString& url, const QString& space = QString());
     /** Starts a save of the open document to @p url on the SaveThread: takes the
      *  document's save snapshot (KlustersDoc::prepareSave) here, on the GUI
      *  thread, then hands the writing to the thread.  Returns false, having told
@@ -1549,6 +1582,7 @@ private:
     QAction* mExportBaseRate = nullptr;              // Actions: a _U session's .clu under its base-rate token
     QString  mReopenUrlAfterClose;                   // reopenCurrentDocument: a reopen waiting for a deferred close
     QString  mReopenReasonAfterClose;
+    GuiState mReopenStateAfterClose;                  // ... and the displays and selections it puts back
     QAction* mShowTemplatePalette = nullptr;   // View: show the template palette
     QAction* mMergeParents = nullptr;        // Hierarchy: merge selected parents
     QAction* mPromoteChild = nullptr;       // Hierarchy: promote selected child(ren)

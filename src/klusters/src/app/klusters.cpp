@@ -3663,8 +3663,10 @@ void KlustersApp::customEvent (QEvent* event){
                 // A reopen that was waiting for this deferred close (reopenCurrentDocument).
                 if(!mReopenUrlAfterClose.isEmpty() && !mainDock){
                     const QString url = mReopenUrlAfterClose, why = mReopenReasonAfterClose;
-                    mReopenUrlAfterClose.clear(); mReopenReasonAfterClose.clear();
+                    const GuiState state = mReopenStateAfterClose;
+                    mReopenUrlAfterClose.clear(); mReopenReasonAfterClose.clear(); mReopenStateAfterClose = GuiState();
                     openDocumentFile(url);
+                    restoreGuiStateLater(state);
                     statusBar()->showMessage(tr("Reloaded \"%1\" after %2.").arg(QFileInfo(url).fileName(), why), 5000);
                 }
             }
@@ -8132,7 +8134,7 @@ void KlustersApp::updateUndoRedoDisplay(){
 void KlustersApp::widgetAddToDisplay(KlustersView::DisplayType displayType){
     KlustersView* view = activeView();
     bool newWidgetType = view->addView(displayType,backgroundColor,statusBar(),displayTimeInterval,waveformsGain,channelPositions);
-
+    if (newWidgetType) view->noteAddedView(displayType);
     isInit = true; //prevent the spine boxes or the lineedit and the editline to trigger during initialisation.
 
     if(newWidgetType)
@@ -9419,7 +9421,9 @@ void KlustersApp::reopenCurrentDocument(const QString& reason)
     // every display, closes the document, resetState), then openDocumentFile()
     // re-runs the complete .clu/.clc/.clp detection and hierarchy build.
     // mPluginProcess is one of the tabs slotFileClose deletes, so it clears our
-    // pointer there; nothing to null here.
+    // pointer there; nothing to null here.  The displays and selections are put
+    // back on the reopened document (captureGuiState / restoreGuiStateLater).
+    const GuiState state = captureGuiState();
     slotFileClose();
     // slotFileClose() clears mainDock only on its success path (the
     // canCloseView/canCloseDocument gates passed and the teardown ran); a
@@ -9427,6 +9431,7 @@ void KlustersApp::reopenCurrentDocument(const QString& reason)
     // reopen but tell the user how to.
     if (!mainDock) {
         openDocumentFile(url);
+        restoreGuiStateLater(state);
         statusBar()->showMessage(
             tr("Reloaded \"%1\" after %2.")
                 .arg(QFileInfo(url).fileName(),
@@ -9439,6 +9444,7 @@ void KlustersApp::reopenCurrentDocument(const QString& reason)
         // the new .clu was a geometry mismatch waiting to happen.
         mReopenUrlAfterClose = url;
         mReopenReasonAfterClose = reason.isEmpty() ? mRunningPlugin.name : reason;
+        mReopenStateAfterClose = state;
         statusBar()->showMessage(tr("Reopening \"%1\" after %2 once the running job is done…")
                                      .arg(QFileInfo(url).fileName(), mReopenReasonAfterClose), 8000);
     }
@@ -10127,10 +10133,8 @@ void KlustersApp::decollideCommit(const std::vector<neurosuite::decollide::Decom
     const int nResolved = static_cast<int>(decomps.size());
     QApplication::restoreOverrideCursor();
 
-    // Reopen the new stage to display the decollided clustering (proven open path).
-    slotFileClose();
-    if (!mainDock) {
-        openDocumentFile(outCluPath);
+    // Reopen the new stage to display the decollided clustering, the displays kept.
+    if (reopenKeepingState(outCluPath)) {
         statusBar()->showMessage(
             tr("Decollided %1 collision(s) -> stage \"%2\".").arg(nResolved).arg(outTag)
                 + skippedNote, 8000);

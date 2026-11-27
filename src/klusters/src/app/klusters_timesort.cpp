@@ -92,6 +92,7 @@ int KlustersApp::sortSpikesByTime(const KlustersDoc::TimeSortPlan& plan, QString
     // later Save would copy back over the sorted files).  A close that does
     // not complete (a job still stopping) sorts nothing.
     const QString url = doc->url();
+    const GuiState state = captureGuiState();                // put back on the sorted document
     slotFileClose();
     if (mainDock) return -1;
 
@@ -101,6 +102,7 @@ int KlustersApp::sortSpikesByTime(const KlustersDoc::TimeSortPlan& plan, QString
     QApplication::restoreOverrideCursor();
 
     openDocumentFile(url);
+    restoreGuiStateLater(state);
     if (ok)
         statusBar()->showMessage(tr("Spikes sorted by time; \"%1\" reopened.")
                                      .arg(QFileInfo(url).fileName()), 6000);

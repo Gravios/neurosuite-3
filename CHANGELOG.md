@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: a reload keeps the displays and selections](#2026-11-27--klusters-a-reload-keeps-the-displays-and-selections) |
 | 2026-11-27 | [Klusters: closing with three displays or more no longer crashes](#2026-11-27--klusters-closing-with-three-displays-or-more-no-longer-crashes) |
 | 2026-11-27 | [Klusters: Add Residual Spikes from any feature space](#2026-11-27--klusters-add-residual-spikes-from-any-feature-space) |
 | 2026-11-27 | [Formats: a fiber-kit dedup sets the .spkx, .spkr and .fetr aside](#2026-11-27--formats-a-fiber-kit-dedup-sets-the-spkx-spkr-and-fetr-aside) |
@@ -345,6 +346,52 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: a reload keeps the displays and selections
+
+Add Residual Spikes, decollide, Sort Spikes by Time and a plugin's rewrite reopen the document; the displays, their clusters, the feature space and the child view now come back as they were.
+
+<details>
+<summary>Details</summary>
+
+**Before.**  Every action that changes the rows closes the document and opens it again (or opens the
+stage it wrote): Add Residual Spikes as Clusters, decollide, Sort Spikes by Time, a plugin that
+rewrites the session's files.  That left a fresh Overview with one cluster shown: the displays the
+curator had made, their clusters, the feature space and the child view were gone.
+
+**Now.**  `KlustersApp::captureGuiState()` (new `app/klusters_reload.cpp`) records, before the
+close, each display's type (`KlustersView::createdAs`), the views added to it
+(`addedViews`, noted by `widgetAddToDisplay`), its clusters, feature dimensions and name, their
+order and the current one, the feature space shown, the parent palette's selection, the child
+palette and child selection, and the matrices' child scope.  `restoreGuiState()` puts it back on
+the next event-loop turn after the open (`restoreGuiStateLater`), after what the open queues itself
+(the matrices of the Overview, the Template Library): displays of the same type are re-used, the
+others made, views added, clusters selected as a palette click selects them, dimensions set, tabs
+put in order, displays the open made that were not there closed; then the space, the child layer,
+the parents and the children.  Ids the reopened clustering does not have are left out.
+`reopenKeepingState(url, space)` wraps close, open and restore; Add Residual Spikes passes the space
+that was shown before it switched to the .clu's own (`enterCluSpace`), so the stage opens in it.
+The deferred reopen of a plugin run (`mReopenUrlAfterClose`) carries the state too.
+
+Not kept: the undo history (every step names rows of the files closed), dock sizes, waveform and
+correlogram settings.
+
+**Self-test.**  New steps `{"guiState": {...}}` (arrange displays: `newDisplay`, `addView`, `dims`,
+`label`, `current`; report what a reload keeps) and `{"reopen": {"keepState": true}}`; the
+`residualSpikes` step takes `"open": true` (the stage opened as the command opens it).
+
+**Test.**  `test_reload_keeps_state.py`: five displays in `alt` (Overview, Template Library, a
+renamed cluster display with dimensions 2/3, a waveform display, a grouping assistant), the third
+current.  NEGATIVE CONTROL: a plain reopen loses them; a reopen keeping the state brings back the
+same displays, order, clusters, views, dimensions, current one and space; Add Residual Spikes from
+`alt` opens the stage with the same; in a hierarchical session, child 20001 clicked in the child
+palette -- a plain reopen leaves the child view (NEGATIVE CONTROL), a reopen keeping the state
+selects it again.  Not tested: tab reordering (the displays come back in the order the open makes
+them), the matrices' child scope, decollide and the time sort through the GUI.
+
+</details>
 
 ---
 

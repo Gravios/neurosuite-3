@@ -405,9 +405,10 @@ void KlustersApp::slotAddResidualSpikes()
     const bool ok = writeResidualStage(R, outCluPath, summary);
     QApplication::restoreOverrideCursor();
     if (!ok) { QMessageBox::warning(this, tr("Add Residual Spikes as Clusters"), summary); return; }
-    back.method.clear();                                         // the new stage opens on its own space
-    slotFileClose();
-    if (!mainDock) openDocumentFile(outCluPath);
+    // the new stage opens with the displays and selections as they were, in the space shown before
+    const QString shown = back.method;
+    back.method.clear();
+    reopenKeepingState(outCluPath, shown);
     statusBar()->showMessage(summary, 15000);
 }
 

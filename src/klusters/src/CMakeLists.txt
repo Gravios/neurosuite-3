@@ -75,6 +75,7 @@ set(klusters_SRCS
     app/klusters_featurespace.cpp   # KlustersApp feature-space switcher (Parameters toolbar combo)
     app/klusters_collisions.cpp     # KlustersApp Mark Collisions (scan the selection, confirm, mark)
     app/klusters_residualspikes.cpp # KlustersApp Add Residual Spikes as Clusters (grow a stage)
+    app/klusters_reload.cpp         # KlustersApp the displays and selections kept across a reload
     app/klusters_selftest.cpp       # headless self-test driver (NS3_KLUSTERS_SELFTEST=<spec.json>)
     app/klusters_radialmenu.cpp     # KlustersApp radial context menu (Right-click; proof of concept)
     app/radialmenu.cpp              # hierarchical radial / marking menu widget over a QMenu tree

@@ -98,6 +98,7 @@ KlustersView::KlustersView(KlustersApp& app,KlustersDoc& pDoc,const QColor& back
       duration(traceDuration),
       labelsDisplay(showLabels)
 {
+    createdType = type;
     setObjectName(name);
     setAutoFillBackground(true);
     // Keep the shared app status bar for the trace spike-pick diagnostic (onTraceClusterActivated).
