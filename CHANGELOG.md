@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: the method of a stage's own .spk](#2026-11-27--klusters-the-method-of-a-stages-own-spk) |
 | 2026-11-27 | [Formats: .spkx, the extended records of rows the recording does not hold](#2026-11-27--formats-spkx-the-extended-records-of-rows-the-recording-does-not-hold) |
 | 2026-11-27 | [NeuroScope: the GPU spectrogram on AMD GPUs (HIP, hipFFT)](#2026-11-27--neuroscope-the-gpu-spectrogram-on-amd-gpus-hip-hipfft) |
 | 2026-11-27 | [KiloKlustaKwik: the fiber stage on AMD GPUs (HIP)](#2026-11-27--kiloklustakwik-the-fiber-stage-on-amd-gpus-hip) |
@@ -335,6 +336,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: the method of a stage's own .spk
+
+A stage's own file was read as the standard method.
+
+<details>
+<summary>Details</summary>
+
+- `custody::methodOfLive` reads the method of a stage's own file, whose stage
+  tag follows the group (`<base>.spk.stderiv_C5.8.fc_unmix_t2_h_rs`), as well
+  as of a `.pending` working copy.  `methodOf` wants the group last and gave
+  "" for it, so Klusters read the `.spk` of a stage that holds its own rows
+  (Add Residual Spikes' `_rs` stage) as standard: Realign and Re-extract in
+  that stage cut raw windows for a stderiv `.spk`, and `isStderivSession` was
+  false there.  Every Klusters parse of the shown `.spk`'s method now goes
+  through `methodOfLive`.  Test: `supersample_test`.
+
+</details>
 
 ---
 

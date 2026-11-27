@@ -381,8 +381,8 @@ inline std::string stripWorkingSuffix(const std::string& path)
     }
     return path;
 }
-inline std::string methodOfLive(const std::string& path)
-{ return methodOf(stripWorkingSuffix(path)); }
+// methodOfLive() is defined after parseAnchor(), below: a stage's own file
+// (<base>.<type>.<method>.<group>.<stage>) is read with it.
 
 // ── full anchor parse ───────────────────────────────────────────────────────
 
@@ -435,6 +435,21 @@ inline Anchor parseAnchor(const std::string& path)
     }
     a.ok = true;
     return a;
+}
+
+// The method of a file Klusters has open: methodOf() of the file a working copy
+// stands for (stripWorkingSuffix), and of a stage's OWN file, whose stage tag
+// follows the group (<base>.spk.stderiv_C5.8.fc_unmix_t2_h_rs, Klusters'
+// ownOfStage).  methodOf() wants the group last and returned "" for both --
+// which read a stage's stderiv .spk as standard, so a realign or a re-extract
+// in that stage cut raw windows for it.
+inline std::string methodOfLive(const std::string& path)
+{
+    const std::string p = stripWorkingSuffix(path);
+    const std::string m = methodOf(p);
+    if (!m.empty()) return m;
+    const Anchor a = parseAnchor(p);
+    return (a.ok && !a.suffix.empty()) ? a.method : std::string();
 }
 
 // ── resolution ──────────────────────────────────────────────────────────────

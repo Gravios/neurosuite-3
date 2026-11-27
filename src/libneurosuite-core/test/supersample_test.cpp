@@ -62,6 +62,9 @@ int main()
         check(methodOfLive("s.fet.stderiv_C5_D34.6.saving") == "stderiv_C5_D34", "... and of a commit's staged file");
         check(methodOfLive("s.spk.standard.6") == "standard" && methodOfLive("s.spk.6").empty(), "methodOfLive() is methodOf() on a committed path");
         check(supersampledToken(methodOfLive("s.spk.stderiv_C5.7.pending"), 4) == "stderiv_C5_U4", "the super-sampled token of the shown (pending) stderiv_C5 .spk is stderiv_C5_U4");
+        check(methodOfLive("/p/s.spk.stderiv_C5.8.fc_unmix_t2_h_rs") == "stderiv_C5", "methodOfLive() of a stage's own .spk is its token (the stage tag follows the group)");
+        check(methodOfLive("s.fet.stderiv_C5_D34.8.fc_unmix_t2_h_rs.pending") == "stderiv_C5_D34", "... and of that stage's working copy");
+        check(methodOfLive("s.res.8.fc_unmix_t2_h_rs").empty() && methodOfLive("s.spk.8.drift").empty(), "... and an untagged staged file is still untagged");
     }
 
     // ── the interpolators on one channel ─────────────────────────────────

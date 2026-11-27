@@ -238,13 +238,12 @@ public:
     bool isStderivSession() const
         { // The LOADED space decides (a borrowed standard space is not stderiv
           // even when the .clu is).
-          // (Strip a ".pending" working-copy suffix first: methodOf needs the
-          // group as the last token.)
+          // (methodOfLive reads a ".pending" working copy and a stage's own
+          // .spk, whose stage tag follows the group, as the file they name.)
           const QString& path = isBorrowedSpace() ? activeSpkPath : origSpkPath;
-          const QString spk = path.endsWith(QStringLiteral(".pending")) ? path.chopped(8) : path;
           return neurosuite::custody::isStderivMethod(
-                     neurosuite::custody::methodOf(spk.toStdString()))
-              || spk.contains(QStringLiteral(".spkD.")); }
+                     neurosuite::custody::methodOfLive(path.toStdString()))
+              || path.contains(QStringLiteral(".spkD.")); }
 
     /**Returns the reference on the list of ClusterColor objects.
     * @return ItemColors containing the information on the clusters and their associated color.

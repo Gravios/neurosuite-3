@@ -1962,7 +1962,7 @@ bool KlustersDoc::realignSpikes(int clusterId, QString& logOut, int& nShifted,
             if (s.method == activeMethod && !s.projection) {
                 logOut = tr("Realign does not run in the %1 space: its features are not a projection of waveforms "
                             "(no basis); show a waveform space (%2) first.\n")
-                             .arg(activeMethod, QString::fromStdString(neurosuite::custody::methodOf(ws.spkCommitted.toStdString())));
+                             .arg(activeMethod, QString::fromStdString(neurosuite::custody::methodOfLive(ws.spkCommitted.toStdString())));
                 if (liveLog) liveLog(logOut, true);
                 return false;
             }

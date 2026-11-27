@@ -83,7 +83,7 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
     // _U<factor> .spk holds factor x the samples.
     const qint64  spkBytes = QFileInfo(origSpkPath).size();
     const int     origFactor = std::max(1, neurosuite::custody::supersampleOf(
-                                               neurosuite::custody::methodOf(origSpkPath.toStdString())));
+                                               neurosuite::custody::methodOfLive(origSpkPath.toStdString())));
     const qint64  spkBytesBase = spkBytes / origFactor;
 
     // Methods with a .fet for this group.  Strict MethodSpecific naming, so the
@@ -110,7 +110,7 @@ QList<KlustersDoc::FeatureSpace> KlustersDoc::availableFeatureSpaces() const
             // The pending copies carry this session's unsaved realign / nudge.
             s.fetPath   = QFileInfo::exists(pendingFetPath) ? pendingFetPath : origFetPath;
             s.spkPath   = QFileInfo::exists(pendingSpkPath) ? pendingSpkPath : origSpkPath;
-            s.spkMethod = QString::fromStdString(neurosuite::custody::methodOf(origSpkPath.toStdString()));
+            s.spkMethod = QString::fromStdString(neurosuite::custody::methodOfLive(origSpkPath.toStdString()));
         } else {
             // (a stage with rows of its own -- a decollide's, Add Residual Spikes' -- holds its
             // own .fet and .spk of every space it was grown in: ownOfStage)
@@ -448,7 +448,7 @@ KlustersDoc::SpaceFiles KlustersDoc::workingSetOf(const QString& method, QString
                 // ... and, super-sampled, the session's phases (the loaded or held
                 // _U<f> table's; its own when it is the only one, which is current).
                 const int factor = std::max(1, neurosuite::custody::supersampleOf(
-                                                   neurosuite::custody::methodOf(ws.spkCommitted.toStdString())));
+                                                   neurosuite::custody::methodOfLive(ws.spkCommitted.toStdString())));
                 const std::vector<int64_t> ticks = factor > 1 ? supersampledTicks(factor) : std::vector<int64_t>{};
                 const bool withPhase = static_cast<int64_t>(ticks.size()) == n;
                 for (int64_t r = 0; r < n && current; ++r) {
@@ -492,7 +492,7 @@ KlustersDoc::SpaceFiles KlustersDoc::workingSetOf(const QString& method, QString
     }
     ws.pcaPath = resolveFeature(stemQ, QStringLiteral("pca"), electrodeGroupID, method);
     ws.factor  = std::max(1, neurosuite::custody::supersampleOf(
-                                  neurosuite::custody::methodOf(ws.spkCommitted.toStdString())));
+                                  neurosuite::custody::methodOfLive(ws.spkCommitted.toStdString())));
     ws.spkTransformed = methodIsStderiv(featureMethod(ws.spkCommitted));
     ws.fetStderiv     = methodIsStderiv(method);
     ws.valid = QFileInfo::exists(ws.spkWork) && QFileInfo::exists(ws.fetWork);
@@ -532,7 +532,7 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
     // The target's waveform geometry: the group's, times its super-sampling factor
     // (a _U<factor> .spk), whatever space is shown.
     const int     spkFactor = std::max(1, neurosuite::custody::supersampleOf(
-                                              neurosuite::custody::methodOf(spkCommitted.toStdString())));
+                                              neurosuite::custody::methodOfLive(spkCommitted.toStdString())));
     const int     nSamp = clusteringData->baseNbSamplesPerWaveform() * spkFactor;
 
     // ── Who is synced together ───────────────────────────────────────────
@@ -567,7 +567,7 @@ bool KlustersDoc::syncOneSpace(const QString& method, QSet<QString>& methodsDone
 
     // ── Checks first: nothing is written unless every space can be ────────
     const bool spkIsStderiv = neurosuite::custody::isStderivMethod(
-        neurosuite::custody::methodOf(spkCommitted.toStdString()));
+        neurosuite::custody::methodOfLive(spkCommitted.toStdString()));
     for (Plan& p : plans) {
         const QString who = p.method == method
             ? method
@@ -935,11 +935,11 @@ bool KlustersDoc::followMovedSpikes(QString& logOut, const QString& writtenMetho
             g.isOrigin     = (spkCommitted == origSpkPath);
             g.spkPending   = g.isOrigin ? pendingSpkPath : spkCommitted + QStringLiteral(".pending");
             g.factor       = std::max(1, neurosuite::custody::supersampleOf(
-                                             neurosuite::custody::methodOf(spkCommitted.toStdString())));
+                                             neurosuite::custody::methodOfLive(spkCommitted.toStdString())));
         }
         const int nSampG = nSampBase * g.factor;
         const bool spkStderiv = neurosuite::custody::isStderivMethod(
-            neurosuite::custody::methodOf(spkCommitted.toStdString()));
+            neurosuite::custody::methodOfLive(spkCommitted.toStdString()));
         sp.table = featuresInMemory(sp.fetSource);
         sp.detached = !s.projection;
         sp.fits = sp.table && sp.table->nSpikes == nSpikes && sp.detached
