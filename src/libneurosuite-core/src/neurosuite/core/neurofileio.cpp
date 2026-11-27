@@ -1178,6 +1178,114 @@ int64_t fetrFind(const FetrFile& f, int64_t row)
     return (it != f.rows.end() && *it == row) ? static_cast<int64_t>(it - f.rows.begin()) : -1;
 }
 
+// ── .spkx ──
+namespace {
+constexpr unsigned char kSpkxVersion = 1;
+bool spkxSourcesValid(const std::vector<int64_t>& sources, int64_t nSpikes)
+{
+    for (const int64_t r : sources) if (r < -1 || r >= nSpikes) return false;
+    return true;
+}
+} // namespace
+
+SpkxFile readSpkx(const std::string& path)
+{
+    SpkxFile f;
+    std::ifstream in(path, std::ios::binary);
+    if (!in) return f;
+    unsigned char magic[4] = {0, 0, 0, 0};
+    in.read(reinterpret_cast<char*>(magic), 4);
+    if (!in || magic[0] != 'S' || magic[1] != 'P' || magic[2] != 'X' || magic[3] != kSpkxVersion)
+        return f;
+    uint32_t nRows = 0, nSamples = 0, nChannels = 0, nSpikes = 0, group = 0, margin = 0, flags = 0;
+    auto rdU32 = [&](uint32_t& v) { in.read(reinterpret_cast<char*>(&v), 4); };
+    rdU32(nRows); rdU32(nSamples); rdU32(nChannels); rdU32(nSpikes); rdU32(group); rdU32(margin); rdU32(flags);
+    if (!in) return f;
+
+    // The header is untrusted: check the file holds the tables BEFORE allocating them.
+    const std::streampos bodyStart = in.tellg();
+    in.seekg(0, std::ios::end);
+    const std::streamoff fileBytes = in.tellg();
+    in.seekg(bodyStart);
+    if (!in || fileBytes < 0 || bodyStart < 0 || fileBytes < static_cast<std::streamoff>(bodyStart)) return f;
+    const uint64_t avail = static_cast<uint64_t>(fileBytes - static_cast<std::streamoff>(bodyStart));
+    const uint64_t maxInt = static_cast<uint64_t>(std::numeric_limits<int>::max()) / 4;
+    if (nSamples == 0 || nChannels == 0 || nSamples > maxInt || nChannels > maxInt || margin > maxInt) return f;
+    const uint64_t rec = (static_cast<uint64_t>(nSamples) + 2ull * margin) * nChannels;
+    if (rec > (std::numeric_limits<uint64_t>::max() - 32) / 2) return f;
+    const uint64_t perRow = 8 + 8 + 8 + rec * 2;              // index, time, source, record
+    if (static_cast<uint64_t>(nRows) > avail / perRow) return f;
+
+    f.rows.resize(nRows); f.times.resize(nRows); f.sources.resize(nRows);
+    if (nRows) {
+        in.read(reinterpret_cast<char*>(f.rows.data()), static_cast<std::streamsize>(nRows * 8ull));
+        in.read(reinterpret_cast<char*>(f.times.data()), static_cast<std::streamsize>(nRows * 8ull));
+        in.read(reinterpret_cast<char*>(f.sources.data()), static_cast<std::streamsize>(nRows * 8ull));
+    }
+    f.records.resize(static_cast<std::size_t>(nRows * rec));
+    if (!f.records.empty())
+        in.read(reinterpret_cast<char*>(f.records.data()), static_cast<std::streamsize>(f.records.size() * 2));
+    if (!in || !spkcIndexValid(f.rows, static_cast<int64_t>(nSpikes)) || !spkxSourcesValid(f.sources, static_cast<int64_t>(nSpikes))) {
+        f.rows.clear(); f.times.clear(); f.sources.clear(); f.records.clear();
+        return f;
+    }
+    f.nSpikes = static_cast<int64_t>(nSpikes);
+    f.nSamples = static_cast<int>(nSamples);
+    f.nChannels = static_cast<int>(nChannels);
+    f.margin = static_cast<int>(margin);
+    f.group = static_cast<int>(group);
+    f.flags = flags;
+    f.ok = true;
+    return f;
+}
+
+bool writeSpkx(const std::string& path, const SpkxFile& f)
+{
+    if (f.nSpikes < 0 || f.nSamples <= 0 || f.nChannels <= 0 || f.margin < 0) return false;
+    if (f.nSpikes > static_cast<int64_t>(std::numeric_limits<uint32_t>::max())) return false;
+    const std::size_t rec = static_cast<std::size_t>(f.extendedSamples()) * static_cast<std::size_t>(f.nChannels);
+    if (f.records.size() != f.rows.size() * rec) return false;
+    if (f.times.size() != f.rows.size() || f.sources.size() != f.rows.size()) return false;
+    if (!spkcIndexValid(f.rows, f.nSpikes) || !spkxSourcesValid(f.sources, f.nSpikes)) return false;
+    ReplacingFile file(path, std::ios::binary);
+    std::ofstream& out = file.out;
+    if (!out) return false;
+    const unsigned char magic[4] = {'S', 'P', 'X', kSpkxVersion};
+    out.write(reinterpret_cast<const char*>(magic), 4);
+    auto wrU32 = [&](uint32_t v) { out.write(reinterpret_cast<const char*>(&v), 4); };
+    wrU32(static_cast<uint32_t>(f.rows.size())); wrU32(static_cast<uint32_t>(f.nSamples));
+    wrU32(static_cast<uint32_t>(f.nChannels));   wrU32(static_cast<uint32_t>(f.nSpikes));
+    wrU32(static_cast<uint32_t>(f.group));       wrU32(static_cast<uint32_t>(f.margin));
+    wrU32(f.flags);
+    if (!f.rows.empty()) {
+        out.write(reinterpret_cast<const char*>(f.rows.data()), static_cast<std::streamsize>(f.rows.size() * 8));
+        out.write(reinterpret_cast<const char*>(f.times.data()), static_cast<std::streamsize>(f.times.size() * 8));
+        out.write(reinterpret_cast<const char*>(f.sources.data()), static_cast<std::streamsize>(f.sources.size() * 8));
+    }
+    if (!f.records.empty())
+        out.write(reinterpret_cast<const char*>(f.records.data()), static_cast<std::streamsize>(f.records.size() * 2));
+    return file.commit();
+}
+
+int64_t spkxFind(const SpkxFile& f, int64_t row)
+{
+    const auto it = std::lower_bound(f.rows.begin(), f.rows.end(), row);
+    return (it != f.rows.end() && *it == row) ? static_cast<int64_t>(it - f.rows.begin()) : -1;
+}
+
+bool spkxCut(const SpkxFile& f, int64_t k, int64_t t, int16_t* out)
+{
+    if (!f.ok || k < 0 || k >= static_cast<int64_t>(f.rows.size()) || !out) return false;
+    const int64_t d = t - f.times[static_cast<std::size_t>(k)];
+    if (d < -f.margin || d > f.margin) return false;
+    const std::size_t nc = static_cast<std::size_t>(f.nChannels);
+    const std::size_t rec = static_cast<std::size_t>(f.extendedSamples()) * nc;
+    const int16_t* from = f.records.data() + static_cast<std::size_t>(k) * rec
+                        + static_cast<std::size_t>(d + f.margin) * nc;
+    std::copy(from, from + static_cast<std::size_t>(f.nSamples) * nc, out);
+    return true;
+}
+
 EapFile growEap(const EapFile& in, int newT)
 {
     if (!in.ok || newT <= in.nClasses) return in;           // no-op: already wide enough

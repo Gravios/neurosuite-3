@@ -562,6 +562,51 @@ NEUROSUITE_CORE_EXPORT bool     writeFetr(const std::string& path, const FetrFil
 // Position of @p row in f.rows, or -1.
 NEUROSUITE_CORE_EXPORT int64_t  fetrFind(const FetrFile& f, int64_t row);
 
+// ── .spkx — sparse EXTENDED records: rows the recording does not hold as they are ──
+// A row of the .spk is normally the window of the recording at the row's .res
+// time, and every tool that moves a spike (realign, nudge, re-extract on save)
+// cuts it again from the recording.  A row added by Klusters' Add Residual
+// Spikes is not: it is a window LESS another unit's waveform (the residual of a
+// collision row).  The .spkx holds such a row's record over a WIDER window -- the
+// .spk window and `margin` samples either side, in the .spk's own space -- so it
+// can be cut again at any time within +-margin of the time it was made for, the
+// way the recording would be.  One file per .spk method and stage.
+//   Header 32 B: magic 'S','P','X',version(1); nRows, nSamples (the .spk's
+//               window), nChannels, nSpikes (rows of the .spk), group, margin:
+//               u32 each; flags (0): u32
+//   Index:      nRows × int64, the 0-based .spk rows, STRICTLY ASCENDING
+//   Times:      nRows × int64, the time the record is centred on (the row's .res
+//               time when it was made)
+//   Sources:    nRows × int64, the row it was made from (the collision row), or -1
+//   Body:       nRows × (nSamples + 2 margin) × nChannels int16, sample-major,
+//               channel-fastest like a .spk record
+// For a row at time t, |t - time| <= margin, the .spk record is samples
+// [t - time + margin, t - time + margin + nSamples) of the body record.
+struct SpkxFile {
+    int64_t              nSpikes   = 0;
+    int                  nSamples  = 0;   ///< the .spk window
+    int                  nChannels = 0;
+    int                  margin    = 0;   ///< samples either side of the window
+    int                  group     = 0;
+    uint32_t             flags     = 0;
+    std::vector<int64_t> rows;            ///< strictly ascending 0-based .spk rows
+    std::vector<int64_t> times;           ///< rows.size(): the time each record is centred on
+    std::vector<int64_t> sources;         ///< rows.size(): the row it was made from, or -1
+    std::vector<int16_t> records;         ///< rows.size() * (nSamples + 2 margin) * nChannels
+    bool                 ok = false;
+    int extendedSamples() const { return nSamples + 2 * margin; }
+};
+// readSpkx rejects a bad magic or version, a short file, an index that is not
+// strictly ascending or names a row beyond nSpikes, and a source beyond nSpikes;
+// writeSpkx refuses the same and tables of the wrong length.
+NEUROSUITE_CORE_EXPORT SpkxFile readSpkx(const std::string& path);
+NEUROSUITE_CORE_EXPORT bool     writeSpkx(const std::string& path, const SpkxFile& f);
+// Position of @p row in f.rows, or -1.
+NEUROSUITE_CORE_EXPORT int64_t  spkxFind(const SpkxFile& f, int64_t row);
+// The .spk record of entry @p k for the row at time @p t (sample-major, nSamples x
+// nChannels into @p out); false when t is more than margin from the entry's time.
+NEUROSUITE_CORE_EXPORT bool     spkxCut(const SpkxFile& f, int64_t k, int64_t t, int16_t* out);
+
 // ── .tcl — template-class registry (see claude/eap-template-class-design) ────
 // Session+group, STAGE-INDEPENDENT (a class id means the same .eap column across
 // a session's stages).  One entry per column: its lifecycle status and the

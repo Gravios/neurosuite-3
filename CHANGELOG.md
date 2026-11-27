@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Formats: .spkx, the extended records of rows the recording does not hold](#2026-11-27--formats-spkx-the-extended-records-of-rows-the-recording-does-not-hold) |
 | 2026-11-27 | [NeuroScope: the GPU spectrogram on AMD GPUs (HIP, hipFFT)](#2026-11-27--neuroscope-the-gpu-spectrogram-on-amd-gpus-hip-hipfft) |
 | 2026-11-27 | [KiloKlustaKwik: the fiber stage on AMD GPUs (HIP)](#2026-11-27--kiloklustakwik-the-fiber-stage-on-amd-gpus-hip) |
 | 2026-11-27 | [Plugins: the filters and detectors on AMD GPUs (HIP)](#2026-11-27--plugins-the-filters-and-detectors-on-amd-gpus-hip) |
@@ -334,6 +335,31 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Formats: .spkx, the extended records of rows the recording does not hold
+
+A residual spike added as a row is not a window of the recording; the `.spkx` keeps its record half a window wider either side, so a tool that moves the row can cut it again.
+
+<details>
+<summary>Details</summary>
+
+- **What it is.** A row the recording does not hold as it is — a residual spike Add Residual Spikes
+  added as a row: a window *less* another unit's waveform — cannot be cut again from the recording
+  when it moves (realign, nudge, re-extract on save): that would give back the mixed waveform. The
+  `.spkx` holds such rows' records over a wider window: the `.spk` window and `margin` samples
+  either side, in the `.spk`'s own space. A row moved by up to `margin` samples is cut from it.
+- **Layout.** 32-byte header (`SPX\x01`; nRows, nSamples, nChannels, nSpikes, group, margin,
+  flags), then per row the `.spk` row (ascending), the time the record is centred on, the row it
+  was made from; then the records, `nSamples + 2·margin` samples each. One file per `.spk`
+  method and stage.
+- `neurofileio::readSpkx` / `writeSpkx` / `spkxFind` / `spkxCut`; `formats/spkx.md`. Nothing
+  writes it yet.
+- **Checked** in `core_test_neurofileio_robust`: round trip, size, the slice at the row's own
+  time and at ±margin, nothing beyond, the refusals, an empty file.
+
+</details>
 
 ---
 

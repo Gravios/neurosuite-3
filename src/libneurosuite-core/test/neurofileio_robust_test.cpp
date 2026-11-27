@@ -440,6 +440,56 @@ static void testReplacingWrites()
     fs::remove_all(dir, ec);
 }
 
+// ── .spkx: extended records of rows the recording does not hold ──
+static void testSpkx()
+{
+    using namespace neurofileio;
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::temp_directory_path() / ("nfio_spkx_" + std::to_string(std::rand()));
+    fs::create_directories(dir);
+    const std::string path = (dir / "s.spkx.standard.1").string();
+
+    SpkxFile f;
+    f.nSpikes = 10; f.nSamples = 3; f.nChannels = 2; f.margin = 2; f.group = 1;
+    f.rows = {2, 7}; f.times = {1000, 5000}; f.sources = {1, -1};
+    // 7 samples x 2 channels a record: sample s, channel c = 100 r + 10 s + c
+    for (int r = 0; r < 2; ++r)
+        for (int sm = 0; sm < 7; ++sm)
+            for (int ch = 0; ch < 2; ++ch) f.records.push_back(static_cast<int16_t>(100 * r + 10 * sm + ch));
+    check(writeSpkx(path, f), "spkx: written");
+    const SpkxFile g = readSpkx(path);
+    check(g.ok && g.nSpikes == 10 && g.nSamples == 3 && g.nChannels == 2 && g.margin == 2 && g.group == 1, "spkx: the header reads back");
+    check(g.rows == f.rows && g.times == f.times && g.sources == f.sources && g.records == f.records, "spkx: rows, times, sources, records read back");
+    check(fs::file_size(fs::path(path)) == 32u + 2u * (8u + 8u + 8u + 7u * 2u * 2u), "spkx: 32-byte header, then 52 bytes a row here");
+    check(spkxFind(g, 7) == 1 && spkxFind(g, 3) == -1, "spkx: a row is found by its index, another is not");
+    int16_t out[6] = {};
+    check(spkxCut(g, 1, 5000, out) && out[0] == 120 && out[1] == 121 && out[5] == 141, "spkx: at its own time a row is the middle of its record");
+    check(spkxCut(g, 1, 4998, out) && out[0] == 100 && spkxCut(g, 1, 5002, out) && out[4] == 160 && out[5] == 161,
+          "spkx: moved by up to the margin it is the record that many samples earlier or later");
+    check(!spkxCut(g, 1, 5003, out) && !spkxCut(g, 1, 4997, out), "spkx: beyond the margin there is no record");
+    check(!readSpkr(path).ok && !readSpkc(path).ok && !readFetr(path).ok, "spkx: not read as a .spkr, .spkc or .fetr");
+
+    SpkxFile bad = f; bad.times.pop_back();
+    check(!writeSpkx(path, bad) && readSpkx(path).ok, "spkx: a table of the wrong length is refused, the file kept");
+    bad = f; bad.records.pop_back();
+    check(!writeSpkx(path, bad), "spkx: records of the wrong length are refused");
+    bad = f; bad.rows = {7, 2};
+    check(!writeSpkx(path, bad), "spkx: an index that is not ascending is refused");
+    bad = f; bad.sources = {1, 10};
+    check(!writeSpkx(path, bad), "spkx: a source beyond the .spk is refused");
+    {
+        std::fstream io(path, std::ios::in | std::ios::out | std::ios::binary);
+        const uint32_t many = 1000000;
+        io.seekp(4);
+        io.write(reinterpret_cast<const char*>(&many), 4);
+    }
+    check(!readSpkx(path).ok, "spkx: a header naming more rows than the file holds is rejected");
+    SpkxFile none;
+    none.nSpikes = 10; none.nSamples = 3; none.nChannels = 2; none.margin = 2;
+    check(writeSpkx(path, none) && readSpkx(path).ok && readSpkx(path).rows.empty(), "spkx: an empty one is valid");
+    fs::remove_all(dir);
+}
+
 // ── .fetr: the residual spikes' features ──
 static void testFetr()
 {
@@ -554,6 +604,7 @@ int main()
     testReplacingWrites();
     testSpkr();
     testFetr();
+    testSpkx();
 
     if (g_fail == 0) std::printf("OK: %d checks, 0 failed\n", g_ran);
     else             std::printf("FAILED: %d of %d checks\n", g_fail, g_ran);
