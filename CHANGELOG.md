@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Plugins: the filters and detectors on AMD GPUs (HIP)](#2026-11-27--plugins-the-filters-and-detectors-on-amd-gpus-hip) |
 | 2026-11-27 | [Klusters: the core cut and the PCA refine on HIP and SYCL](#2026-11-27--klusters-the-core-cut-and-the-pca-refine-on-hip-and-sycl) |
 | 2026-11-27 | [Build: the HIP backends build](#2026-11-27--build-the-hip-backends-build) |
 | 2026-11-27 | [Klusters: a collision is marked only when it is there in every waveform space](#2026-11-27--klusters-a-collision-is-marked-only-when-it-is-there-in-every-waveform-space) |
@@ -331,6 +332,32 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Plugins: the filters and detectors on AMD GPUs (HIP)
+
+The butterworth, median filter, median threshold and spike grouper plugins had CUDA and Metal paths. A HIP build now compiles their CUDA kernel files as HIP, one source for both.
+
+<details>
+<summary>Details</summary>
+
+- **Before,** `process_butterworth`, `process_medianfilter`, `process_medianthreshold` and
+  `process_spikegrouper` had a CUDA and a Metal path; an AMD machine ran them on the CPU.
+- **Now** a HIP build compiles each plugin's CUDA kernel file *as HIP*: `ns_gpu_add_cuda_as_hip`
+  (`cmake/GpuBackends.cmake`) wraps the `.cu` in a one-line `.hip` file in the build tree,
+  compiled by ROCm's clang with the shim `libneurosuite-core/src/neurosuite/gpu/cuda_on_hip/`
+  first on the include path; its `<cuda_runtime.h>` names the HIP runtime calls by their CUDA
+  names. One kernel source for both backends: they cannot drift. The plugins' `.cpp` files take
+  the CUDA path in a HIP build (the same entry points), and their messages say which API runs
+  (`NS_GPU_API_NAME`). `butterworth_core.h` marks its filter `__host__ __device__` for HIP too.
+- Build choice per plugin: CUDA, else HIP, else Metal, else the CPU.
+- **Checked:** the four plugins build with HIP for gfx1030/gfx1100/gfx90a/gfx908 with Ubuntu's
+  ROCm 5.7, link the HIP runtime, and pass their tests on the CPU (no GPU here). **Not
+  checked:** a run on an AMD GPU; the CUDA build of the edited `.cu` files (only messages
+  changed there).
+
+</details>
 
 ---
 

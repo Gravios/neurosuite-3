@@ -23,6 +23,9 @@
  ***************************************************************************/
 
 #include <cuda_runtime.h>
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"   // "HIP" when compiled as HIP (cuda_on_hip/cuda_runtime.h)
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -32,7 +35,7 @@
     do {                                                                   \
         cudaError_t _e = (call);                                           \
         if (_e != cudaSuccess) {                                           \
-            fprintf(stderr, "CUDA error %s:%d  %s\n",                     \
+            fprintf(stderr, NS_GPU_API_NAME " error %s:%d  %s\n",                     \
                     __FILE__, __LINE__, cudaGetErrorString(_e));           \
             exit(EXIT_FAILURE);                                            \
         }                                                                  \
@@ -151,7 +154,7 @@ extern "C" void runCudaMedianThreshold(const short* hostData,
     cudaDeviceProp prop; cudaGetDeviceProperties(&prop, dev);
 
     if (verbose) {
-        printf("[CUDA medianthreshold]\n");
+        printf("[" NS_GPU_API_NAME " medianthreshold]\n");
         printf("  GPU:     %s\n", prop.name);
         printf("  Data:    %.2f MB (%d channels x %ld samples)\n",
                dataBytes / 1e6, nChannels, nSamplesPerChannel);

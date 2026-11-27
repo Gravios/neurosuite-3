@@ -261,3 +261,46 @@ macro(ns_gpu_enable_hip _ns_hip_ok)
         message(STATUS "neurosuite-3: ROCm not found at ${ROCM_PATH} -- building without HIP")
     endif()
 endmacro()
+
+# -----------------------------------------------------------------------------
+# ns_gpu_add_cuda_as_hip(<target> <file.cu>...)
+#   Compile CUDA kernel files as HIP into <target>: one kernel source for both
+#   backends.  Each .cu gets a one-line HIP wrapper in the build tree that
+#   includes it, compiled by the ROCm clang with the cuda_on_hip shim first on
+#   the include path (its <cuda_runtime.h> maps the CUDA names the kernel
+#   files use to HIP; libneurosuite-core/src/neurosuite/gpu/cuda_on_hip),
+#   with <target>'s include directories and definitions and USE_HIP.
+#
+#   The wrappers are an OBJECT library whose objects become sources of
+#   <target>, which the C++ compiler links.  <target> gets USE_HIP and
+#   hip::host.  Call after ns_gpu_enable_hip() succeeded.
+# -----------------------------------------------------------------------------
+set(NS_GPU_CUDA_ON_HIP_DIR "${CMAKE_CURRENT_LIST_DIR}/../src/libneurosuite-core/src/neurosuite/gpu/cuda_on_hip"
+    CACHE INTERNAL "the CUDA-names-on-HIP shim")
+function(ns_gpu_add_cuda_as_hip _target)
+    set(_wrappers "")
+    foreach(_cu IN LISTS ARGN)
+        get_filename_component(_abs "${_cu}" ABSOLUTE)
+        get_filename_component(_name "${_cu}" NAME_WE)
+        set(_wrapper "${CMAKE_CURRENT_BINARY_DIR}/cuda_as_hip/${_name}.hip")
+        file(CONFIGURE OUTPUT "${_wrapper}"
+             CONTENT "// Generated: ${_name}.cu compiled as HIP (ns_gpu_add_cuda_as_hip).\n#include \"${_abs}\"\n")
+        set_source_files_properties("${_wrapper}" PROPERTIES LANGUAGE HIP OBJECT_DEPENDS "${_abs}")
+        list(APPEND _wrappers "${_wrapper}")
+    endforeach()
+    set(_obj "${_target}_cuda_as_hip")
+    add_library(${_obj} OBJECT ${_wrappers})
+    target_include_directories(${_obj} BEFORE PRIVATE "${NS_GPU_CUDA_ON_HIP_DIR}")
+    target_include_directories(${_obj} PRIVATE "$<TARGET_PROPERTY:${_target},INCLUDE_DIRECTORIES>")
+    target_compile_definitions(${_obj} PRIVATE USE_HIP "$<TARGET_PROPERTY:${_target},COMPILE_DEFINITIONS>")
+    target_compile_options(${_obj} PRIVATE -Wno-unused-result)
+    target_link_libraries(${_obj} PRIVATE hip::host)
+    set_target_properties(${_obj} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    target_sources(${_target} PRIVATE $<TARGET_OBJECTS:${_obj}>)
+    target_compile_definitions(${_target} PRIVATE USE_HIP)
+    target_link_libraries(${_target} PRIVATE hip::host)
+    # The C++ compiler links: the target's objects may be GCC LTO objects,
+    # which the ROCm clang cannot read, and HIP objects without relocatable
+    # device code need only the HIP runtime.
+    set_target_properties(${_target} PROPERTIES LINKER_LANGUAGE CXX)
+endfunction()

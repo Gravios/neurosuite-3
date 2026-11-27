@@ -9,6 +9,16 @@
 #define _LARGEFILE_SOURCE64
 #define _FILE_OFFSET_BITS 64
 
+// A HIP build compiles the CUDA kernel file as HIP (ns_gpu_add_cuda_as_hip):
+// the same entry points, so the CUDA path of this file serves it.
+#if defined(USE_HIP) && !defined(USE_CUDA)
+#  define USE_CUDA 1
+#  define NS_GPU_API_NAME "HIP"
+#endif
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"
+#endif
+
 #include <iostream>
 #include <neurosuite/core/fileio64.hpp>
 #include <cstdint>
@@ -192,7 +202,7 @@ int main(int argc, char *argv[])
 #if defined(USE_CUDA) || defined(USE_METAL)
     bool useGpu = !forceCPU;
 #if defined(USE_CUDA)
-    if (verbose) cout << (useGpu ? "Using CUDA GPU path\n" : "Using CPU path (-c)\n");
+    if (verbose) cout << (useGpu ? "Using " NS_GPU_API_NAME " GPU path\n" : "Using CPU path (-c)\n");
 #else
     if (verbose) cout << (useGpu ? "Using Metal GPU path\n" : "Using CPU path (-c)\n");
 #endif

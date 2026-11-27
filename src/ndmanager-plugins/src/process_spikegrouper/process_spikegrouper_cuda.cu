@@ -34,6 +34,9 @@
  ***************************************************************************/
 
 #include <cuda_runtime.h>
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"   // "HIP" when compiled as HIP (cuda_on_hip/cuda_runtime.h)
+#endif
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -44,7 +47,7 @@
     do {                                                                       \
         cudaError_t _e = (call);                                               \
         if (_e != cudaSuccess) {                                               \
-            fprintf(stderr, "[CUDA] %s:%d  %s\n",                             \
+            fprintf(stderr, "[" NS_GPU_API_NAME "] %s:%d  %s\n",                             \
                     __FILE__, __LINE__, cudaGetErrorString(_e));               \
             exit(EXIT_FAILURE);                                                \
         }                                                                       \
@@ -283,7 +286,7 @@ extern "C" void runCudaSpikeGrouper(
     int dev; cudaGetDevice(&dev);
     cudaDeviceProp prop; cudaGetDeviceProperties(&prop, dev);
     if (verbose)
-        printf("  [CUDA] GPU: %s  (%.0f MB VRAM)\n",
+        printf("  [" NS_GPU_API_NAME "] GPU: %s  (%.0f MB VRAM)\n",
                prop.name, prop.totalGlobalMem / 1.0e6);
 
     // --- Upload interleaved data -------------------------------------------

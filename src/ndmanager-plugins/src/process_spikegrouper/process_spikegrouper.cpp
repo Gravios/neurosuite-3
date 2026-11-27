@@ -53,6 +53,16 @@
 #define _LARGEFILE_SOURCE64
 #define _FILE_OFFSET_BITS 64
 
+// A HIP build compiles the CUDA kernel file as HIP (ns_gpu_add_cuda_as_hip):
+// the same entry points, so the CUDA path of this file serves it.
+#if defined(USE_HIP) && !defined(USE_CUDA)
+#  define USE_CUDA 1
+#  define NS_GPU_API_NAME "HIP"
+#endif
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"
+#endif
+
 #include "process_spikegrouper.h"
 #include <utility>
 #include <neurosuite/core/fileio64.hpp>
@@ -849,8 +859,8 @@ int main(int argc, char* argv[])
     bool useCUDA = !args.forceCPU;
     if (useCUDA) {
         if (cudaHasDevice() == 0) { useCUDA = false; }
-        if (args.verbose && useCUDA) printf("  using CUDA GPU path\n");
-        if (args.verbose && !useCUDA) printf("  no CUDA device — falling back to CPU\n");
+        if (args.verbose && useCUDA) printf("  using " NS_GPU_API_NAME " GPU path\n");
+        if (args.verbose && !useCUDA) printf("  no " NS_GPU_API_NAME " device — falling back to CPU\n");
     }
 #endif
 

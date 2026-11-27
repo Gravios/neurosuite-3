@@ -15,6 +15,9 @@
     (at your option) any later version.
  ***************************************************************************/
 #include <cuda_runtime.h>
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"   // "HIP" when compiled as HIP (cuda_on_hip/cuda_runtime.h)
+#endif
 #include <cstdio>
 #include <cstdlib>
 
@@ -24,7 +27,7 @@
     do {                                                                      \
         cudaError_t e_ = (call);                                              \
         if (e_ != cudaSuccess) {                                              \
-            fprintf(stderr, "process_butterworth: CUDA error at %s:%d: %s\n", \
+            fprintf(stderr, "process_butterworth: " NS_GPU_API_NAME " error at %s:%d: %s\n", \
                     __FILE__, __LINE__, cudaGetErrorString(e_));              \
             exit(EXIT_FAILURE);                                               \
         }                                                                     \
@@ -60,13 +63,13 @@ extern "C" int bwCudaAvailable(int verbose)
     int n = 0;
     if (cudaGetDeviceCount(&n) != cudaSuccess || n < 1) {
         cudaGetLastError();                                  // clear the error state
-        if (verbose) printf("  no usable CUDA device; using the CPU path\n");
+        if (verbose) printf("  no usable " NS_GPU_API_NAME " device; using the CPU path\n");
         return 0;
     }
     if (verbose) {
         cudaDeviceProp p;
         if (cudaGetDeviceProperties(&p, 0) == cudaSuccess)
-            printf("  CUDA device: %s (%d SMs, %.1f GB)\n", p.name, p.multiProcessorCount,
+            printf("  " NS_GPU_API_NAME " device: %s (%d SMs, %.1f GB)\n", p.name, p.multiProcessorCount,
                    p.totalGlobalMem / 1073741824.0);
     }
     return 1;

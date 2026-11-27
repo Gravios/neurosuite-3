@@ -18,6 +18,12 @@ if(CMAKE_CUDA_COMPILER)
     set_target_properties(process_medianthreshold PROPERTIES
         CUDA_SEPARABLE_COMPILATION ON)
     message(STATUS "process_medianthreshold: CUDA build (${CMAKE_CUDA_ARCHITECTURES})")
+elseif(USE_HIP AND CMAKE_HIP_COMPILER AND COMMAND ns_gpu_add_cuda_as_hip)
+    # AMD GPU (HIP): the CUDA kernel file compiled as HIP, one kernel source for
+    # both (ns_gpu_add_cuda_as_hip, cmake/GpuBackends.cmake).
+    add_executable(process_medianthreshold process_medianthreshold.cpp)
+    ns_gpu_add_cuda_as_hip(process_medianthreshold process_medianthreshold_cuda.cu)
+    message(STATUS "process_medianthreshold: HIP build (${CMAKE_HIP_ARCHITECTURES})")
 elseif(TARGET Neurosuite::metal)
     # Apple GPU (Metal), doc/design/metal-backend.md.  The kernel source is
     # embedded and compiled at run time; with no Metal device at run time the

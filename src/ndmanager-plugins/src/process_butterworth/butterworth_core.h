@@ -39,7 +39,7 @@
 #ifndef BUTTERWORTH_CORE_H
 #define BUTTERWORTH_CORE_H
 
-#ifdef __CUDACC__
+#if defined(__CUDACC__) || defined(__HIP__)   // nvcc, or ROCm clang compiling the .cu as HIP
 #  define BW_HD __host__ __device__
 #else
 #  define BW_HD
@@ -124,7 +124,7 @@ BW_HD void bwFilterBlock(const short* chunk, long long row0, long long nRows,
     }
 }
 
-#ifndef __CUDACC__
+#if !defined(__CUDACC__) && !defined(__HIP__)
 // ---------------------------------------------------------------------------
 // Host-only design helpers (double precision)
 // ---------------------------------------------------------------------------
@@ -214,6 +214,6 @@ inline BwCoefs<T> bwToCoefs(const std::vector<BwSection>& sos)
     }
     return c;
 }
-#endif  // !__CUDACC__
+#endif  // !__CUDACC__ && !__HIP__
 
 #endif  // BUTTERWORTH_CORE_H

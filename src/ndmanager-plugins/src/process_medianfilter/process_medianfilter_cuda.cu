@@ -58,6 +58,9 @@
  ***************************************************************************/
 
 #include <cuda_runtime.h>
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"   // "HIP" when compiled as HIP (cuda_on_hip/cuda_runtime.h)
+#endif
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
@@ -70,7 +73,7 @@
     do {                                                                        \
         cudaError_t _e = (call);                                               \
         if (_e != cudaSuccess) {                                               \
-            fprintf(stderr, "process_medianfilter: CUDA error at %s:%d: %s\n", \
+            fprintf(stderr, "process_medianfilter: " NS_GPU_API_NAME " error at %s:%d: %s\n", \
                     __FILE__, __LINE__, cudaGetErrorString(_e));               \
             return false;                                                       \
         }                                                                       \
@@ -268,7 +271,7 @@ extern "C" bool cudaMedianFilterChunk(const short* data, short* filtered, long l
     if (!ensure(buffers.out, buffers.outBytes, outBytes)) return false;
 
     if (verbose && !buffers.reported) {
-        printf("[CUDA medianfilter] %s: block %dx%d, %.1f KB shared, %d samples per tile\n",
+        printf("[" NS_GPU_API_NAME " medianfilter] %s: block %dx%d, %.1f KB shared, %d samples per tile\n",
                prop.name, bx, by, smem / 1024.0, TILE_SAMPLES);
         buffers.reported = true;
     }

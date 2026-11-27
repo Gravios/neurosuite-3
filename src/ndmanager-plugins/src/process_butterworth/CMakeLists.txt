@@ -17,6 +17,12 @@ if(CMAKE_CUDA_COMPILER)
         process_butterworth_cuda.cu)
     target_compile_definitions(process_butterworth PRIVATE USE_CUDA)
     message(STATUS "process_butterworth: CUDA build (${CMAKE_CUDA_ARCHITECTURES})")
+elseif(USE_HIP AND CMAKE_HIP_COMPILER AND COMMAND ns_gpu_add_cuda_as_hip)
+    # AMD GPU (HIP): the CUDA kernel file compiled as HIP, one kernel source for
+    # both (ns_gpu_add_cuda_as_hip, cmake/GpuBackends.cmake).
+    add_executable(process_butterworth process_butterworth.cpp)
+    ns_gpu_add_cuda_as_hip(process_butterworth process_butterworth_cuda.cu)
+    message(STATUS "process_butterworth: HIP build (${CMAKE_HIP_ARCHITECTURES})")
 elseif(TARGET Neurosuite::metal)
     # Apple GPU (Metal, single precision), doc/design/metal-backend.md; the
     # kernel is embedded and compiled at run time; no device: the CPU path.

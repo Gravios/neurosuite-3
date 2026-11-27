@@ -139,9 +139,9 @@ Optional and detected at build time; the CPU (OpenMP) path is always built.
 | kiloklustakwik | ✓ | ✓ | ✓ | ✓ | CEM E-step, waveform realignment |
 | klusters | ✓ | ✓ | ✓ | ✓ | Grouping Assistant, interactive realignment |
 | neuroscope | ✓ | | | | Spectrogram FFT (cuFFT) |
-| `ndm_hipass` | ✓¹ | | | ✓ | Butterworth and median high-pass filters |
-| `ndm_detectspikes` | ✓ | | | ✓ | Noise thresholds |
-| `ndm_spikegrouper` | ✓ | | | ✓ | Channel grouping |
+| `ndm_hipass` | ✓¹ | ✓ | | ✓ | Butterworth and median high-pass filters |
+| `ndm_detectspikes` | ✓ | ✓ | | ✓ | Noise thresholds |
+| `ndm_spikegrouper` | ✓ | ✓ | | ✓ | Channel grouping |
 | `ndm_extractemg` | ✓ | ✓ | ✓ | | EMG extraction |
 | `ndm_decomposecollisions` | opt-in | | | | Collision decomposition fit |
 

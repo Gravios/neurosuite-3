@@ -22,6 +22,15 @@ if(CMAKE_CUDA_COMPILER)
         target_link_libraries(process_medianfilter PRIVATE OpenMP::OpenMP_CXX)
     endif()
     message(STATUS "process_medianfilter: CUDA build (${CMAKE_CUDA_ARCHITECTURES})")
+elseif(USE_HIP AND CMAKE_HIP_COMPILER AND COMMAND ns_gpu_add_cuda_as_hip)
+    # AMD GPU (HIP): the CUDA kernel file compiled as HIP, one kernel source for
+    # both (ns_gpu_add_cuda_as_hip, cmake/GpuBackends.cmake).
+    add_executable(process_medianfilter process_medianfilter.cpp)
+    ns_gpu_add_cuda_as_hip(process_medianfilter process_medianfilter_cuda.cu)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(process_medianfilter PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "process_medianfilter: HIP build (${CMAKE_HIP_ARCHITECTURES})")
 elseif(TARGET Neurosuite::metal)
     # Apple GPU (Metal), doc/design/metal-backend.md: the kernel source is
     # embedded and compiled at run time; with no Metal device the CPU path runs.

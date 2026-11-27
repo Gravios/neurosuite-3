@@ -34,6 +34,16 @@
  ***************************************************************************/
 #define _LARGEFILE_SOURCE64
 #define _FILE_OFFSET_BITS 64
+// A HIP build compiles the CUDA kernel file as HIP (ns_gpu_add_cuda_as_hip):
+// the same entry points, so the CUDA path of this file serves it.
+#if defined(USE_HIP) && !defined(USE_CUDA)
+#  define USE_CUDA 1
+#  define NS_GPU_API_NAME "HIP"
+#endif
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"
+#endif
+
 #include "process_medianthreshold.h"
 #include <fstream>
 #include <neurosuite/core/fileio64.hpp>

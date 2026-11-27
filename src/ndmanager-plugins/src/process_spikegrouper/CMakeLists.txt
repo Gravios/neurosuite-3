@@ -22,6 +22,15 @@ if(CMAKE_CUDA_COMPILER)
         target_link_libraries(process_spikegrouper PRIVATE OpenMP::OpenMP_CXX)
     endif()
     message(STATUS "process_spikegrouper: CUDA build (${CMAKE_CUDA_ARCHITECTURES})")
+elseif(USE_HIP AND CMAKE_HIP_COMPILER AND COMMAND ns_gpu_add_cuda_as_hip)
+    # AMD GPU (HIP): the CUDA kernel file compiled as HIP, one kernel source for
+    # both (ns_gpu_add_cuda_as_hip, cmake/GpuBackends.cmake).
+    add_executable(process_spikegrouper process_spikegrouper.cpp)
+    ns_gpu_add_cuda_as_hip(process_spikegrouper process_spikegrouper_cuda.cu)
+    if(OpenMP_CXX_FOUND)
+        target_link_libraries(process_spikegrouper PRIVATE OpenMP::OpenMP_CXX)
+    endif()
+    message(STATUS "process_spikegrouper: HIP build (${CMAKE_HIP_ARCHITECTURES})")
 elseif(TARGET Neurosuite::metal)
     # Apple GPU (Metal), doc/design/metal-backend.md: noise medians and
     # coincidence counts on the GPU; no device at run time: the CPU path.

@@ -6,10 +6,10 @@ Several neurosuite-3 components optionally use GPU acceleration:
 |---|---|---|
 | `kiloklustakwik` | CUDA / HIP / SYCL · Metal (macOS: CEM steps, xcorr) | CEM E-step distance computations + waveform cross-correlation (xcorr) |
 | `klusters` | CUDA / HIP / SYCL · Metal (macOS: realignment xcorr, FP32 error matrix) | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr); the realignment's PCA refine and the core cut's ordering loop (CUDA / HIP / SYCL; the core cut on SYCL needs a GPU with double precision) |
-| `process_butterworth` | CUDA · Metal (macOS, single precision) | Butterworth filtering |
-| `process_medianfilter` | CUDA · Metal (macOS) | Median-subtraction high-pass filter |
-| `process_medianthreshold` | CUDA · Metal (macOS) | Per-channel noise threshold estimation |
-| `process_spikegrouper` | CUDA / OpenMP · Metal (macOS: noise medians + coincidence counts) | Coincidence matrix construction |
+| `process_butterworth` | CUDA / HIP · Metal (macOS, single precision) | Butterworth filtering |
+| `process_medianfilter` | CUDA / HIP · Metal (macOS) | Median-subtraction high-pass filter |
+| `process_medianthreshold` | CUDA / HIP · Metal (macOS) | Per-channel noise threshold estimation |
+| `process_spikegrouper` | CUDA / HIP / OpenMP · Metal (macOS: noise medians + coincidence counts) | Coincidence matrix construction |
 | `process_decomposecollisions` | CUDA | Collision decomposition fit (opt-in with `--gpu true`) |
 | `process_extractemg` | CUDA / HIP / SYCL | EMG extraction (SYCL not on Windows) |
 | `libneurosuite-core` spectral (NeuroScope spectrogram) | CUDA (cuFFT) | FFTs |
@@ -166,6 +166,15 @@ Supported GPU families: RDNA2 (gfx1030), RDNA3 (gfx1100), CDNA2 (gfx90a), CDNA3 
 Every component compiles its HIP sources for the same list, `CMAKE_HIP_ARCHITECTURES`
 (default `gfx1030;gfx1100;gfx90a;gfx908`): `-DCMAKE_HIP_ARCHITECTURES="gfx1100"` builds for
 one card only, and faster.
+
+**One kernel file for CUDA and HIP.** The plugins' filters and detectors
+(`process_butterworth`, `process_medianfilter`, `process_medianthreshold`,
+`process_spikegrouper`) have one kernel file, written for CUDA (`*_cuda.cu`). A HIP build
+compiles that same file as HIP (`ns_gpu_add_cuda_as_hip` in `cmake/GpuBackends.cmake`), with
+the shim `libneurosuite-core/src/neurosuite/gpu/cuda_on_hip/` first on the include path: its
+`<cuda_runtime.h>` names the HIP runtime calls by their CUDA names. The two backends cannot
+drift; a change to a kernel is a change to both. Klusters' and KiloKlustaKwik's E-step kernels
+keep HIP files of their own.
 
 **How it is built.** The top-level configure enables CMake's HIP language once
 (`ns_gpu_enable_hip`, `cmake/GpuBackends.cmake`), before the packages: the `.hip` sources

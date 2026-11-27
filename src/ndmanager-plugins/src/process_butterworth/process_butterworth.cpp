@@ -18,6 +18,16 @@
     the Free Software Foundation; either version 3 of the License, or
     (at your option) any later version.
  ***************************************************************************/
+// A HIP build compiles the CUDA kernel file as HIP (ns_gpu_add_cuda_as_hip):
+// the same entry points, so the CUDA path of this file serves it.
+#if defined(USE_HIP) && !defined(USE_CUDA)
+#  define USE_CUDA 1
+#  define NS_GPU_API_NAME "HIP"
+#endif
+#ifndef NS_GPU_API_NAME
+#  define NS_GPU_API_NAME "CUDA"
+#endif
+
 #include <cerrno>
 #include <neurosuite/core/fileio64.hpp>
 #include <cstdint>
@@ -219,7 +229,7 @@ int main(int argc, char* argv[])
     const char* gpuName = "";
 #if defined(USE_CUDA)
     if (!forceCPU) gpu = bwCudaAvailable(verbose ? 1 : 0) != 0;
-    gpuName = "CUDA GPU";
+    gpuName = NS_GPU_API_NAME " GPU";
 #elif defined(USE_METAL)
     if (!forceCPU) gpu = bwMetalAvailable(verbose);
     gpuName = "Metal GPU";
