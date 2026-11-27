@@ -156,8 +156,11 @@ itself optional and degrades to single-threaded if absent (see
   CUDA and prints how to enable it (`nvcc` on PATH, or
   `-DCMAKE_CUDA_COMPILER=/usr/local/cuda/bin/nvcc`). Select architectures with
   `-DCMAKE_CUDA_ARCHITECTURES`.
-- **HIP** (`USE_HIP`) — handled inside the packages that use it; behaves like
-  CUDA for configure purposes.
+- **HIP** (`USE_HIP`) — the top-level configure enables CMake's HIP language once,
+  after `project()` and before the packages (`ns_gpu_enable_hip` in
+  `cmake/GpuBackends.cmake`), when ROCm is found (`/opt/rocm`, else `-DROCM_PATH=`).
+  HIP kernel files are compiled by ROCm's clang for `CMAKE_HIP_ARCHITECTURES`;
+  the C++ compiler compiles and links the rest. See [doc/gpu](gpu/README.md#amd-rocm--hip).
 - **SYCL** (`USE_SYCL`) — **has one monorepo constraint**: the top-level
   `project()` locks the C++ compiler for all subdirectories, so kiloklustakwik
   cannot probe for `icpx` on its own. To build the SYCL backend, select the

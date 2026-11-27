@@ -83,7 +83,6 @@ struct KK_GPU {
     void allocate(int nP, int nD, int nD2, int maxC);
     void free_all();
 };
-    bool initialised = false;
 
 // ---------------------------------------------------------------------------
 // Host-callable wrappers (defined in KK_hip.cpp, called from KK.cpp).

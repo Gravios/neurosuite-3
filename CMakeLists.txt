@@ -66,7 +66,7 @@ cmake_minimum_required(VERSION 3.22...3.31)
 # CMake requires all project languages to be declared in project().  We
 # probe for the CUDA toolkit before calling project() so that the CUDA
 # language is only enabled when the toolkit is actually present.
-# HIP and SYCL are handled inside the packages that need them.
+# HIP is enabled after project() (below); SYCL inside the packages that need it.
 # ---------------------------------------------------------------------------
 include(CheckLanguage)
 
@@ -140,6 +140,17 @@ set(CMAKE_C_EXTENSIONS          OFF)
 if(_cuda_lang)
     set(CMAKE_CUDA_STANDARD          17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+endif()
+
+# HIP (AMD ROCm): enabled here, before the packages, so that every .hip source
+# is compiled by the same ROCm clang (ns_gpu_enable_hip, cmake/GpuBackends.cmake).
+if(USE_HIP)
+    ns_gpu_enable_hip(_hip_lang_ok)
+    if(_hip_lang_ok)
+        message(STATUS "neurosuite-3: HIP compiler — ${CMAKE_HIP_COMPILER} (${CMAKE_HIP_ARCHITECTURES})")
+    else()
+        set(USE_HIP OFF CACHE BOOL "" FORCE)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------

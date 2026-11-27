@@ -12,7 +12,7 @@
 //
 // HIP vs CUDA differences:
 //   cuda_runtime.h        -> hip/hip_runtime.h
-//   __logf()              -> hipLogf()
+//   __logf()              -> __logf() (HIP has the same fast intrinsic)
 //   cudaMalloc/Free/cpy   -> hipMalloc/Free/cpy
 //   cudaMemset/Async      -> hipMemset/Async
 //   cudaDeviceSynchronize -> hipDeviceSynchronize
@@ -150,7 +150,7 @@ __global__ void kk_estep_kernel(
 
             d_LogP[c * nPoints + p] = mahal * 0.5f
                                     + d_LogRootDet[c]
-                                    - hipLogf(d_Weight[c])
+                                    - __logf(d_Weight[c])
                                     + log2piHalf;
         }
         __syncthreads();

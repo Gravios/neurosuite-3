@@ -46,34 +46,16 @@ if(USE_CUDA)
 endif()
 
 # --- HIP (AMD ROCm) ---------------------------------------------------------
+# ns_gpu_enable_hip (cmake/GpuBackends.cmake): the HIP language, the ROCm root,
+# the architectures.  In the monorepo the top level has done it already.
 option(USE_HIP "Enable HIP GPU backend (AMD ROCm)" ON)
 if(USE_HIP)
-    # ROCm ships its own CMake package. ROCM_PATH is the conventional env var.
-    if(NOT DEFINED ROCM_PATH AND DEFINED ENV{ROCM_PATH})
-        set(ROCM_PATH "$ENV{ROCM_PATH}")
-    endif()
-    if(NOT DEFINED ROCM_PATH)
-        set(ROCM_PATH "/opt/rocm")
-    endif()
-
-    list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}")
-    find_package(hip QUIET)
-
-    if(hip_FOUND)
-        # Enable HIP as a CMake language so .hip files are compiled by hipcc.
-        include(CheckLanguage)
-        check_language(HIP)
-        if(CMAKE_HIP_COMPILER)
-            enable_language(HIP)
-            set(CMAKE_HIP_STANDARD 17)
-            message(STATUS "HIP backend enabled — compiler: ${CMAKE_HIP_COMPILER}")
-        else()
-            set(USE_HIP OFF)
-            message(STATUS "HIP backend: hipcc not found, disabled")
-        endif()
+    ns_gpu_enable_hip(_klusters_hip_ok)
+    if(_klusters_hip_ok)
+        message(STATUS "HIP backend enabled — compiler: ${CMAKE_HIP_COMPILER}")
     else()
         set(USE_HIP OFF)
-        message(STATUS "HIP backend: ROCm not found at ${ROCM_PATH}, disabled")
+        message(STATUS "HIP backend: disabled")
     endif()
 endif()
 

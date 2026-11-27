@@ -94,20 +94,15 @@ endif()
 # =============================================================================
 set(_HIP_ACTIVE FALSE)
 if(USE_HIP AND NOT _CUDA_ACTIVE)
-    find_program(_HIPCC hipcc
-        HINTS $ENV{ROCM_PATH}/bin /opt/rocm/bin /usr/bin)
-    if(_HIPCC)
-        # Prefer the CMake-native hip package when available
-        find_package(hip QUIET
-            PATHS $ENV{ROCM_PATH}/lib/cmake/hip /opt/rocm/lib/cmake/hip)
+    # The HIP language (ns_gpu_enable_hip, cmake/GpuBackends.cmake); in the
+    # monorepo the top level has enabled it already.
+    ns_gpu_enable_hip(_kk_hip_ok)
+    if(_kk_hip_ok)
         set(_HIP_ACTIVE TRUE)
-        message(STATUS "KiloKlustaKwik: HIP available — ${_HIPCC}")
-        if(hip_FOUND)
-            message(STATUS "  ROCm CMake package version: ${hip_VERSION}")
-        endif()
+        message(STATUS "KiloKlustaKwik: HIP available — ${CMAKE_HIP_COMPILER}")
     else()
         message(STATUS
-            "KiloKlustaKwik: HIP requested but hipcc not found — "
+            "KiloKlustaKwik: HIP requested but not available — "
             "install ROCm: https://rocm.docs.amd.com/")
     endif()
 endif()
@@ -291,48 +286,21 @@ endif()
 # HIP build  (AMD ROCm)
 # =============================================================================
 if(_HIP_ACTIVE)
-    # GPU architecture targets — override with -DKK_HIP_ARCHS="gfx1100;gfx90a"
-    # RDNA2: gfx1030/1031/1032  RDNA3: gfx1100/1101/1102
-    # CDNA1: gfx908              CDNA2: gfx90a
-    set(KK_EXP_HIP_ARCHS "gfx1030;gfx1031;gfx1100;gfx1101;gfx90a;gfx908"
-        CACHE STRING "HIP GPU architectures to target")
-    string(REPLACE ";" "," _hip_archs_comma "${KK_EXP_HIP_ARCHS}")
-
-    # src/KK_hip.cpp contains __global__ kernels and must be compiled by hipcc.
-    # Build it as an OBJECT library under hipcc, then link the objects into
-    # the main executable compiled with the system CXX — avoids changing
-    # CMAKE_CXX_COMPILER globally.
-    add_library(kk_exp_hip_kernels OBJECT src/KK_hip.cpp)
-    set_property(TARGET kk_exp_hip_kernels PROPERTY CXX_COMPILER "${_HIPCC}")
-    set_target_properties(kk_exp_hip_kernels PROPERTIES CXX_COMPILER_LAUNCHER "")
-    target_compile_options(kk_exp_hip_kernels PRIVATE
-        -O3
-        --offload-arch=${_hip_archs_comma}
-        -fgpu-rdc
-        -Wall -Wextra)
+    # The kernels are compiled by the ROCm clang (LANGUAGE HIP), for
+    # CMAKE_HIP_ARCHITECTURES; the rest by the C++ compiler, linked with the HIP
+    # runtime (hip::host).  No relocatable device code: no kernel calls a device
+    # function of another file.
+    set_source_files_properties(src/KK_hip.cpp ${_xcorr_dir}/realign_xcorr_hip.hip
+        PROPERTIES LANGUAGE HIP)
+    add_library(kk_exp_hip_kernels OBJECT src/KK_hip.cpp ${_xcorr_dir}/realign_xcorr_hip.hip)
+    # (-Wno-unused-result: the HIP runtime calls are [[nodiscard]]; they are checked where it matters)
+    target_compile_options(kk_exp_hip_kernels PRIVATE -O3 -Wall -Wextra -Wno-unused-result)
     target_compile_definitions(kk_exp_hip_kernels PRIVATE
         USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
     target_include_directories(kk_exp_hip_kernels PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/src"
-        "${_xcorr_dir}"
-        $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
-        /opt/rocm/include)
-
-    # xcorr HIP kernels — compiled the same way as kk_exp_hip_kernels
-    add_library(xcorr_hip_kernels_exp OBJECT ${_xcorr_dir}/realign_xcorr_hip.hip)
-    set_property(TARGET xcorr_hip_kernels_exp PROPERTY CXX_COMPILER "${_HIPCC}")
-    set_target_properties(xcorr_hip_kernels_exp PROPERTIES CXX_COMPILER_LAUNCHER "")
-    target_compile_options(xcorr_hip_kernels_exp PRIVATE
-        -O3
-        --offload-arch=${_hip_archs_comma}
-        -fgpu-rdc
-        -Wall -Wextra)
-    target_compile_definitions(xcorr_hip_kernels_exp PRIVATE
-        USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
-    target_include_directories(xcorr_hip_kernels_exp PRIVATE
-        "${_xcorr_dir}"
-        $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
-        /opt/rocm/include)
+        "${_xcorr_dir}")
+    target_link_libraries(kk_exp_hip_kernels PRIVATE hip::host)
 
     # src/shiftprobe_hip.cpp is no longer compiled — see src/shiftprobe_disabled.cpp
     # for the rationale.
@@ -340,32 +308,19 @@ if(_HIP_ACTIVE)
     add_executable(KiloKlustaKwik ${_cpu_srcs} ${_headers})
     target_compile_definitions(KiloKlustaKwik PRIVATE
         USE_HIP $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
-    target_include_directories(KiloKlustaKwik PRIVATE
-        $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
-        /opt/rocm/include)
     target_link_libraries(KiloKlustaKwik PRIVATE
         _kk_exp_cxx_flags
         kk_exp_hip_kernels
-        xcorr_hip_kernels_exp
+        hip::host
         yaml-cpp)
-    if(hip_FOUND)
-        target_link_libraries(KiloKlustaKwik PRIVATE hip::host)
-    else()
-        # Fall back to raw flags when the CMake package is unavailable
-        target_link_options(KiloKlustaKwik PRIVATE
-            $<$<BOOL:$ENV{ROCM_PATH}>:-L$ENV{ROCM_PATH}/lib>
-            -L/opt/rocm/lib -lamdhip64)
-    endif()
     if(OpenMP_CXX_FOUND)
         target_link_libraries(KiloKlustaKwik PRIVATE OpenMP::OpenMP_CXX)
     endif()
-    # hipcc must drive the final link step when -fgpu-rdc is used
-    target_link_options(KiloKlustaKwik PRIVATE
-        -fgpu-rdc --offload-arch=${_hip_archs_comma})
-    set_target_properties(KiloKlustaKwik PROPERTIES LINKER "${_HIPCC}")
+    # The C++ compiler links (its objects may be LTO objects the ROCm clang cannot read).
+    set_target_properties(KiloKlustaKwik PROPERTIES LINKER_LANGUAGE CXX)
 
     install(TARGETS KiloKlustaKwik DESTINATION "${CMAKE_INSTALL_BINDIR}")
-    message(STATUS "  HIP architectures  : ${KK_EXP_HIP_ARCHS}")
+    message(STATUS "  HIP architectures  : ${CMAKE_HIP_ARCHITECTURES}")
 endif()
 
 # =============================================================================

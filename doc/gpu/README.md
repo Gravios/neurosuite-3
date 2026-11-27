@@ -153,13 +153,22 @@ hipcc --version
 rocm-smi
 ```
 
-Supported GPU families: RDNA2 (gfx1030), RDNA3 (gfx1100), CDNA2 (gfx90a), CDNA3 (gfx940/gfx942). Default targets per component:
+Supported GPU families: RDNA2 (gfx1030), RDNA3 (gfx1100), CDNA2 (gfx90a), CDNA3 (gfx940/gfx942).
+Every component compiles its HIP sources for the same list, `CMAKE_HIP_ARCHITECTURES`
+(default `gfx1030;gfx1100;gfx90a;gfx908`): `-DCMAKE_HIP_ARCHITECTURES="gfx1100"` builds for
+one card only, and faster.
 
-| Component | Default architectures | Override |
-|---|---|---|
-| `klusters` | `gfx1100;gfx1030;gfx90a;gfx908` | fixed in `src/klusters/src/CMakeLists.txt` |
-| `kiloklustakwik` | `gfx1030;gfx1031;gfx1100;gfx1101;gfx90a;gfx908` | `-DKK_EXP_HIP_ARCHS=…` |
-| `process_extractemg` | `gfx1030;gfx1100;gfx90a;gfx908` | `-DEXTRACTEMG_HIP_ARCHS=…` |
+**How it is built.** The top-level configure enables CMake's HIP language once
+(`ns_gpu_enable_hip`, `cmake/GpuBackends.cmake`), before the packages: the `.hip` sources
+(and the HIP kernel files named `*_hip.cpp`) are compiled by ROCm's clang, everything else
+by the C++ compiler, which also links, with the HIP runtime (`hip::host`). ROCm in
+`/opt/rocm` is found by itself; elsewhere pass `-DROCM_PATH=<root>`. Ubuntu's own ROCm
+packages work too:
+
+```sh
+sudo apt install hipcc libamdhip64-dev rocm-device-libs-17   # + librocblas-dev for process_extractemg
+cmake -B build -DROCM_PATH=/usr -DCMAKE_HIP_COMPILER=/usr/lib/llvm-17/bin/clang++
+```
 
 ### Windows
 
@@ -245,7 +254,7 @@ If only the CPU path is selected you will see messages such as:
 ```
 -- neurosuite-3: CUDA toolkit not found — building without CUDA
 -- KiloKlustaKwik: CUDA requested but nvcc not found
--- KiloKlustaKwik: HIP requested but hipcc not found — install ROCm: https://rocm.docs.amd.com/
+-- KiloKlustaKwik: HIP requested but not available — install ROCm: https://rocm.docs.amd.com/
 -- KiloKlustaKwik: SYCL requested but icpx not found — install oneAPI: …
 -- KiloKlustaKwik: active backend → CPU only (no GPU toolkit found)
 ```

@@ -204,3 +204,60 @@ function(ns_gpu_select_sycl_compiler)
     endif()
     unset(_ns_icpx_early CACHE)
 endfunction()
+
+# -----------------------------------------------------------------------------
+# NS_GPU_HIP_ARCH_DEFAULT — HIP (AMD) targets when CMAKE_HIP_ARCHITECTURES is
+# not given: RDNA2 (gfx1030), RDNA3 (gfx1100), CDNA1 (gfx908), CDNA2 (gfx90a).
+# -----------------------------------------------------------------------------
+set(NS_GPU_HIP_ARCH_DEFAULT "gfx1030;gfx1100;gfx90a;gfx908"
+    CACHE STRING "HIP architectures to target when CMAKE_HIP_ARCHITECTURES is not set")
+
+# -----------------------------------------------------------------------------
+# ns_gpu_enable_hip(<ok_var>)
+#   Enable CMake's HIP language when ROCm is installed, and set <ok_var> TRUE.
+#   A MACRO: enable_language() must run at directory scope, and the top-level
+#   build calls this before add_subdirectory() so that every package compiles
+#   its .hip sources with the same compiler.  Post-project().
+#
+#   HIP sources are marked LANGUAGE HIP and compiled by the ROCm clang; host
+#   code stays with the C++ compiler and links hip::host (the HIP runtime).
+#   hip::device must NOT be linked to a target with C++ sources: it adds
+#   "-x hip" and --offload-arch to every C++ compile, which g++ does not take.
+#
+#   ROCm in /opt/rocm is found by itself.  Elsewhere pass -DROCM_PATH=<root>;
+#   Ubuntu's own packages (hipcc, libamdhip64-dev, rocm-device-libs-17) are
+#   -DROCM_PATH=/usr -DCMAKE_HIP_COMPILER=/usr/lib/llvm-17/bin/clang++.
+# -----------------------------------------------------------------------------
+macro(ns_gpu_enable_hip _ns_hip_ok)
+    set(${_ns_hip_ok} FALSE)
+    if(NOT DEFINED ROCM_PATH)
+        if(DEFINED ENV{ROCM_PATH})
+            set(ROCM_PATH "$ENV{ROCM_PATH}")
+        else()
+            set(ROCM_PATH "/opt/rocm")
+        endif()
+    endif()
+    list(APPEND CMAKE_PREFIX_PATH "${ROCM_PATH}")
+    find_package(hip QUIET)
+    if(hip_FOUND)
+        if(NOT CMAKE_HIP_COMPILER_ROCM_ROOT)
+            set(CMAKE_HIP_COMPILER_ROCM_ROOT "${ROCM_PATH}" CACHE PATH "ROCm root the HIP compiler uses")
+        endif()
+        if(NOT DEFINED CMAKE_HIP_ARCHITECTURES)
+            set(CMAKE_HIP_ARCHITECTURES "${NS_GPU_HIP_ARCH_DEFAULT}" CACHE STRING "HIP architectures to target")
+        endif()
+        include(CheckLanguage)
+        check_language(HIP)
+        if(CMAKE_HIP_COMPILER)
+            enable_language(HIP)
+            set(CMAKE_HIP_STANDARD 17)
+            set(CMAKE_HIP_STANDARD_REQUIRED ON)
+            set(${_ns_hip_ok} TRUE)
+        else()
+            message(STATUS "neurosuite-3: ROCm found (${hip_DIR}) but no HIP compiler -- "
+                           "pass -DCMAKE_HIP_COMPILER=<ROCm clang++>")
+        endif()
+    else()
+        message(STATUS "neurosuite-3: ROCm not found at ${ROCM_PATH} -- building without HIP")
+    endif()
+endmacro()

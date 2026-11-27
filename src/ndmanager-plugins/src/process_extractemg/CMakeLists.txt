@@ -57,17 +57,19 @@ endif()
 # =============================================================================
 set(_emg_hip_active FALSE)
 if(USE_HIP AND NOT _emg_cuda_active)
-    find_program(_HIPCC hipcc HINTS $ENV{ROCM_PATH}/bin /opt/rocm/bin /usr/bin)
-    if(_HIPCC)
-        find_package(hip      QUIET PATHS $ENV{ROCM_PATH}/lib/cmake/hip
-                                          /opt/rocm/lib/cmake/hip)
-        find_package(rocblas  QUIET PATHS $ENV{ROCM_PATH}/lib/cmake/rocblas
-                                          /opt/rocm/lib/cmake/rocblas)
-        set(_emg_hip_active TRUE)
-        message(STATUS "process_extractemg: HIP available — ${_HIPCC}")
+    # The HIP language (ns_gpu_enable_hip, cmake/GpuBackends.cmake), enabled by
+    # the top-level build; rocBLAS for the gemv.
+    if(CMAKE_HIP_COMPILER)
+        find_package(rocblas QUIET PATHS ${ROCM_PATH}/lib/cmake/rocblas)
+        if(rocblas_FOUND)
+            set(_emg_hip_active TRUE)
+            message(STATUS "process_extractemg: HIP available — ${CMAKE_HIP_COMPILER}")
+        else()
+            message(STATUS "process_extractemg: HIP available but rocBLAS not found — CPU path")
+        endif()
     else()
         message(STATUS
-            "process_extractemg: HIP requested but hipcc not found — "
+            "process_extractemg: HIP requested but not available — "
             "install ROCm: https://rocm.docs.amd.com/")
     endif()
 endif()
@@ -132,8 +134,7 @@ set(_emg_srcs
 if(_emg_cuda_active)
     list(APPEND _emg_srcs process_extractemg_cuda.cu)
 endif()
-# HIP / SYCL sources are compiled by hipcc / icpx via OBJECT libraries
-# below — same pattern as KlustaKwik's KK_hip.cpp / KK_sycl.cpp.
+# HIP / SYCL sources are compiled as HIP / by icpx via OBJECT libraries below.
 
 # Stage progress bar: the canonical klustersshared progressbar source,
 # compiled in (Qt-free) as the other CLI plugins do -- linking the Qt
@@ -176,36 +177,22 @@ if(_emg_cuda_active)
 endif()
 
 # =============================================================================
-# HIP wiring (AMD ROCm) — OBJECT lib compiled by hipcc, linked into the
-# main executable compiled with the system CXX.  Mirrors KlustaKwik's
-# kk_hip_kernels pattern; avoids changing CMAKE_CXX_COMPILER globally.
+# HIP wiring (AMD ROCm) — the kernel file compiled as HIP, linked into the
+# main executable compiled with the system CXX.
 # =============================================================================
 if(_emg_hip_active)
-    set(EXTRACTEMG_HIP_ARCHS "gfx1030;gfx1100;gfx90a;gfx908"
-        CACHE STRING "HIP GPU architectures for process_extractemg")
-    string(REPLACE ";" "," _hip_archs_comma "${EXTRACTEMG_HIP_ARCHS}")
-
+    # Compiled by the ROCm clang (LANGUAGE HIP) for CMAKE_HIP_ARCHITECTURES;
+    # the executable links the HIP runtime and rocBLAS.
+    set_source_files_properties(process_extractemg_hip.cpp PROPERTIES LANGUAGE HIP)
     add_library(extractemg_hip_kernels OBJECT process_extractemg_hip.cpp)
-    set_property(TARGET extractemg_hip_kernels PROPERTY CXX_COMPILER "${_HIPCC}")
-    set_target_properties(extractemg_hip_kernels PROPERTIES CXX_COMPILER_LAUNCHER "")
-    target_compile_options(extractemg_hip_kernels PRIVATE
-        -O3
-        --offload-arch=${_hip_archs_comma}
-        -fgpu-rdc -Wall -Wextra)
+    target_compile_options(extractemg_hip_kernels PRIVATE -O3 -Wall -Wextra)
     target_compile_definitions(extractemg_hip_kernels PRIVATE USE_HIP)
-    target_include_directories(extractemg_hip_kernels PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}"
-        $<$<BOOL:$ENV{ROCM_PATH}>:$ENV{ROCM_PATH}/include>
-        /opt/rocm/include)
+    target_include_directories(extractemg_hip_kernels PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(extractemg_hip_kernels PRIVATE hip::host roc::rocblas)
 
     target_compile_definitions(process_extractemg PRIVATE USE_HIP)
-    target_link_libraries(process_extractemg PRIVATE extractemg_hip_kernels)
-    if(hip_FOUND)
-        target_link_libraries(process_extractemg PRIVATE hip::host)
-    endif()
-    if(rocblas_FOUND)
-        target_link_libraries(process_extractemg PRIVATE roc::rocblas)
-    endif()
+    target_link_libraries(process_extractemg PRIVATE extractemg_hip_kernels hip::host roc::rocblas)
+    set_target_properties(process_extractemg PROPERTIES LINKER_LANGUAGE CXX)
 endif()
 
 # =============================================================================

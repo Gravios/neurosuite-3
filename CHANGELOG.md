@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Build: the HIP backends build](#2026-11-27--build-the-hip-backends-build) |
 | 2026-11-27 | [Klusters: a collision is marked only when it is there in every waveform space](#2026-11-27--klusters-a-collision-is-marked-only-when-it-is-there-in-every-waveform-space) |
 | 2026-11-27 | [Klusters: Add Residual Spikes says whether the spikes look like their partner](#2026-11-27--klusters-add-residual-spikes-says-whether-the-spikes-look-like-their-partner) |
 | 2026-11-27 | [Klusters: a .spkr for every .spk method at Save](#2026-11-27--klusters-a-spkr-for-every-spk-method-at-save) |
@@ -329,6 +330,35 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Build: the HIP backends build
+
+With ROCm installed the configure failed, and the HIP code of KiloKlustaKwik had never compiled. HIP is now one CMake language for the whole build.
+
+<details>
+<summary>Details</summary>
+
+- **Before,** a build with ROCm installed did not configure: the HIP object libraries set
+  `CXX_COMPILER` as a target property, which CMake does not have, so their kernel files went to
+  the C++ compiler; KiloKlustaKwik's `.hip` file had no language in its directory ("can not
+  determine linker language"); Klusters linked `hip::device`, which adds `-x hip` to every C++
+  source. Behind that, `KK_hip.cpp` called `hipLogf` (no such function) and `KK_hip.h` had a
+  member line outside its struct: the HIP code of KiloKlustaKwik had not been compiled.
+- **Now** the top-level configure enables CMake's HIP language once, before the packages
+  (`ns_gpu_enable_hip` in `cmake/GpuBackends.cmake`). Kernel files are `LANGUAGE HIP`, compiled
+  by ROCm's clang for `CMAKE_HIP_ARCHITECTURES` (one list for every package, default
+  `gfx1030;gfx1100;gfx90a;gfx908`; `KK_EXP_HIP_ARCHS` and `EXTRACTEMG_HIP_ARCHS` are gone); the
+  C++ compiler compiles and links the rest with `hip::host`. No relocatable device code.
+  `process_extractemg` builds its HIP path only when rocBLAS is found.
+- **Checked** with Ubuntu 24.04's ROCm 5.7 packages (`-DROCM_PATH=/usr
+  -DCMAKE_HIP_COMPILER=/usr/lib/llvm-17/bin/clang++`): KiloKlustaKwik and Klusters compile for
+  the four targets and link against `libamdhip64`; both start without a GPU. The CPU build is
+  unchanged. **Not checked:** a run on an AMD GPU; `process_extractemg` with rocBLAS (not
+  installed here).
+
+</details>
 
 ---
 

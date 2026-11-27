@@ -230,20 +230,17 @@ endif()
 # ---------------------------------------------------------------------------
 if(USE_HIP)
     target_compile_definitions(klusters PRIVATE USE_HIP)
-    set_target_properties(klusters PROPERTIES
-        # GFX targets:
-        #   gfx1100 = RDNA 3 (RX 7900)
-        #   gfx1030 = RDNA 2 (RX 6000)
-        #   gfx90a  = CDNA 2 (MI210/250)
-        #   gfx908  = CDNA 1 (MI100)
-        HIP_ARCHITECTURES "gfx1100;gfx1030;gfx90a;gfx908"
-    )
-    # hipcc needs to know the target when compiling .hip files.
+    # The architectures are CMAKE_HIP_ARCHITECTURES (ns_gpu_enable_hip).  The
+    # .hip sources are compiled by the ROCm clang, everything else by the C++
+    # compiler; hip::host is the runtime (hip::device would add -x hip to every
+    # C++ source).
     set_source_files_properties(compute/groupingassistant_hip.hip
-        PROPERTIES LANGUAGE HIP)
+        PROPERTIES LANGUAGE HIP COMPILE_OPTIONS "-Wno-unused-result")
     set_source_files_properties(${_xcorr_dir}/realign_xcorr_hip.hip
-        PROPERTIES LANGUAGE HIP)
-    target_link_libraries(klusters PRIVATE hip::device)
+        PROPERTIES LANGUAGE HIP COMPILE_OPTIONS "-Wno-unused-result")
+    target_link_libraries(klusters PRIVATE hip::host)
+    # The C++ compiler links (its objects may be LTO objects the ROCm clang cannot read).
+    set_target_properties(klusters PROPERTIES LINKER_LANGUAGE CXX)
 endif()
 
 # ---------------------------------------------------------------------------
