@@ -192,6 +192,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mResidualWaveforms->setChecked(false);       // a new session shows its rows as they are
         mCollisionRowsToChild->setEnabled(false);
         mRemoveCollisionMarks->setEnabled(false);
+        mRemoveUnconfirmedMarks->setEnabled(false);
         nudgeMinusAction->setEnabled(false);
         nudgePlusAction->setEnabled(false);
         mGenerateProbeDrift->setEnabled(false);
@@ -274,6 +275,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mResidualWaveforms->setChecked(doc && doc->residualsShown());
         mCollisionRowsToChild->setEnabled(true);
         mRemoveCollisionMarks->setEnabled(true);
+        mRemoveUnconfirmedMarks->setEnabled(true);
         nudgeMinusAction->setEnabled(true);
         nudgePlusAction->setEnabled(true);
         mGenerateProbeDrift->setEnabled(true);

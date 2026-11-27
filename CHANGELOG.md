@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Klusters: a collision is marked only when it is there in every waveform space](#2026-11-27--klusters-a-collision-is-marked-only-when-it-is-there-in-every-waveform-space) |
 | 2026-11-27 | [Klusters: Add Residual Spikes says whether the spikes look like their partner](#2026-11-27--klusters-add-residual-spikes-says-whether-the-spikes-look-like-their-partner) |
 | 2026-11-27 | [Klusters: a .spkr for every .spk method at Save](#2026-11-27--klusters-a-spkr-for-every-spk-method-at-save) |
 | 2026-11-27 | [Klusters: Add Residual Spikes no longer crashes on a stderiv session](#2026-11-27--klusters-add-residual-spikes-no-longer-crashes-on-a-stderiv-session) |
@@ -328,6 +329,48 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Klusters: a collision is marked only when it is there in every waveform space
+
+A partner fitted in the shown space and absent from another is no spike. Mark Collisions now confirms in every space, and marks made before can be cleaned by the same rule.
+
+<details>
+<summary>Details</summary>
+
+- **What was wrong.** A collision was confirmed in the shown waveform space alone. On
+  jg05-20120312 group 8, of 24,679 marked rows 20,465 had their partner fitted with `stderiv_C5`
+  shown and about 24,600 with `standard` shown: which rows were corrected, and which residual
+  spikes existed, depended on the view.
+- **What the difference is.** The stderiv transform is linear, so a partner's spike found in
+  the standard `.spk` is in the stderiv `.spk` at the same lag and amplitude. Measured on that
+  session (4,998 marked rows, the waveform files of 19 Nov): 76.3 % accepted in both spaces,
+  19.0 % in `standard` only, 0.3 % in `stderiv_C5` only. For the rows accepted in both, the
+  standard fit applied in stderiv removes 13.2 % of the residual energy there (the stderiv fit:
+  15.6 %); for the standard-only rows it removes nothing (median −1.4 %, 2.8 % of them reach
+  5 %). What the standard fit explained in those rows is no spike. They name mostly a few small
+  clusters (72 % of the marks naming cluster 14, 57 % of 59, 43 % of 8, 41 % of 9) — the ones
+  whose residuals did not lie with them in feature space.
+- **Mark Collisions** now fits each confirmed hit again in every other `.spk` of the group's
+  rows and keeps it only when it is accepted in all of them (the fit and bounds the corrected
+  rows are made with). The dialog says how many were left out, for which partners.
+  `CollisionScanOptions::everySpace` (on).
+- **Clusters → Remove Collision Marks Not in Every Space…** (`action.removeUnconfirmedCollisionMarks`)
+  does the same for the marks a selection already holds: fitted in every space, the shown one
+  included; the rows not accepted in all are offered for removal, counted by space and by
+  partner. Written at Save.
+- `KlustersDoc::confirmCollisionsInSpaces`, `unconfirmedCollisionRows`
+  (`klustersdoc_collisionspaces.cpp`).
+- **Checked** in `test_collision_spaces.py` with a second waveform space: identical records —
+  the same hits, none left out (the control); the partner missing from the second space in 20
+  planted rows — the scan leaves out exactly those 20, the cleanup finds exactly those 20, all
+  counted against the second space, every other mark stands, the `.eap` is written; one space —
+  nothing is called unconfirmed. **Not checked:** the action on the real session (the numbers
+  above come from the same fit computed outside Klusters on older waveform files); a stderiv
+  space in the self-test (its second space is another copy of standard-domain records).
+
+</details>
 
 ---
 

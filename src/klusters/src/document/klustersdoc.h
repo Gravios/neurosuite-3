@@ -2261,6 +2261,10 @@ public:
         qint64  notPresent = 0;              ///< (row, cluster) pairs not tried: the cluster has no spike near the row's time
         QHash<int, int> stretchesOf;         ///< per cluster with a template: how many it has along the session
         QHash<int, double> expectedOf;       ///< per partner tried: the collisions independent firing would give in the rows searched
+        qint64  notInEverySpace = 0;         ///< hits left out: confirmed in the shown space, not in another
+        QStringList otherSpaces;             ///< the other .spk methods the hits were fitted in
+        QHash<QString, qint64> rejectedIn;   ///< per such space: hits not accepted there
+        QHash<int, qint64> droppedOf;        ///< per partner cluster: hits left out for it
         qint64  milliseconds = 0;
     };
     /** How scanCollisions() searches. */
@@ -2268,6 +2272,7 @@ public:
         double falseRate = 0.01;             ///< share of the rows the control may put over the threshold
         double presenceSeconds = 300.0;      ///< a cluster is tried only where it has a spike of its own this near in time (0 = anywhere)
         double stretchSeconds = 600.0;       ///< a template stands for at most this long of a cluster's life (0 = by rows only)
+        bool   everySpace = true;            ///< a hit must be confirmed in every waveform space of the group, not the shown one alone
     };
     /** Searches the rows of @p clusters (children of the child layer when @p children) for another
      *  cluster's spike: collisionscan.h on every row, the threshold taken where the control
@@ -2303,6 +2308,32 @@ public:
      *  corrected rows read it) and names no other.  In memory, like a mark: shown at once,
      *  written at Save, dropped when the session is closed unsaved.  Returns the rows changed. */
     int removeCollisionMarks(const std::vector<qint64>& rows);
+
+    // ── is a collision there in every waveform space? (klustersdoc_collisionspaces.cpp) ──
+    /** One collision to check: row @p row of @p cluster (its own template @p ownOffset samples off
+     *  the row's time) holds a spike of @p partner about @p tau samples later. */
+    struct CollisionCheck { qint64 row = 0; int cluster = 0; int ownOffset = 0; int partner = 0; int tau = 0; };
+    /** What confirmCollisionsInSpaces() found. */
+    struct CollisionSpaceReport {
+        QStringList spaces;                  ///< the .spk methods the collisions were fitted in
+        std::vector<char> confirmed;         ///< per check: accepted in every space it could be fitted in
+        QHash<QString, qint64> checkedIn;    ///< per space: checks fitted
+        QHash<QString, qint64> rejectedIn;   ///< per space: ... and not accepted
+        qint64 unchecked = 0;                ///< fits not made: a cluster without a template there
+        qint64 milliseconds = 0;
+    };
+    /** Fits every collision of @p checks in each waveform space of the group (every .spk of
+     *  these rows; the shown one too when @p withShown), with the fit and bounds the corrected
+     *  rows are made with.  The stderiv transform is linear, so a partner's spike is there in
+     *  every space; a fit accepted in one and not in another explained something that is no
+     *  spike.  Changes nothing. */
+    CollisionSpaceReport confirmCollisionsInSpaces(const std::vector<CollisionCheck>& checks, bool withShown) const;
+    /** The rows of @p clusters (children when @p children) that name a partner which is NOT
+     *  confirmed in every waveform space.  @p perPartner: per partner cluster, the collisions
+     *  not confirmed; @p marked: the rows of the selection that name a partner. */
+    std::vector<qint64> unconfirmedCollisionRows(const QList<int>& clusters, bool children,
+                                                 CollisionSpaceReport* report = nullptr,
+                                                 QHash<int, qint64>* perPartner = nullptr, qint64* marked = nullptr) const;
 
     /** The .spk the shown space reads (a pending copy when there is one). */
     const QString& activeSpkFilePath() const { return activeSpkPath; }

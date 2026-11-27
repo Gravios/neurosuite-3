@@ -104,6 +104,7 @@ set(klusters_SRCS
     document/klustersdoc_strip.cpp       # KlustersDoc template strip (kernel-weighted residual)
     document/klustersdoc_spkc.cpp        # KlustersDoc collision rows with the .eap partner subtracted
     document/klustersdoc_collisionscan.cpp # KlustersDoc collisions no sorter named: scan and mark
+    document/klustersdoc_collisionspaces.cpp # KlustersDoc is a collision there in every waveform space
     document/klustersdoc_residuals.cpp   # KlustersDoc the partner's spike of a collision row (.spkr)
     document/klustersdoc_duplicates.cpp  # KlustersDoc one spike held by more than one row: scan
     document/klustersdoc_watershed.cpp   # KlustersDoc 2D density-watershed split (split from klustersdoc.cpp)

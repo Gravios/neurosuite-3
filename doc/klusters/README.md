@@ -1136,6 +1136,7 @@ line says how many were left.
 | Split ▸ Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
 | Clusters ▸ Remove Duplicate Spikes… | — | Finds the rows of the selected clusters (or children) within 0.2 ms of another row of the same cluster — one spike detected more than once — and, after a confirmation, moves all but one of each to the artefact cluster. See [Duplicate spikes](#duplicate-spikes--one-spike-held-by-more-than-one-row) |
 | Clusters ▸ Collision Rows to a Child | — | Makes the rows of the selected clusters (or children) that name a partner one child of their cluster, to be looked at beside its other spikes. No row leaves its cluster |
+| Clusters ▸ Remove Collision Marks Not in Every Space… | — | Fits the marked rows of the selected clusters (or children) in every waveform space of the group and, after a confirmation, takes the partner out of those where it is not accepted in all of them; written at Save |
 | Clusters ▸ Remove Collision Marks… | — | Takes the partners out of the rows of the selected clusters (or children) that name one, after a confirmation; written at Save |
 | Waveforms ▸ Residual of Collision Rows | — | Toggle: rows that name a partner are drawn as the partner's spike — re-cut from the recording around the partner, the row's own unit subtracted — and written as `.spkr` at Save |
 | Clusters ▸ Add Residual Spikes as Clusters… | — | The residual spikes of the selected clusters' collision rows that no row holds, each aligned at its own peak, become rows of new clusters — one per partner named — in a new stage (`<stage>_rs`) that is then opened. See [Adding the residual spikes](#adding-the-residual-spikes) |
@@ -1326,6 +1327,18 @@ its own; bind one in **Preferences → Input**.
 - **The confirmation.** Each candidate is fitted jointly with the row's own template — the fit
   the corrected rows are made with — and kept when the partner comes out at 0.5–1.6 of its
   template and removes at least a fifth of what the own template leaves.
+- **In every waveform space.** A partner's spike is in the row whatever the waveforms are
+  looked at in: the stderiv transform is linear, so a spike found in the standard `.spk` is,
+  transformed, in the stderiv `.spk` at the same lag and amplitude. Each confirmed hit is
+  therefore fitted again in every *other* `.spk` of the group's rows (templates the mean of the
+  cluster's 300 clean rows nearest in time, read from that file; the fit and bounds the
+  corrected rows are made with: amplitude 0.3–2.5, at least 5 % of what the own template
+  leaves), and kept only when it is accepted in all of them. A partner that fits in one space
+  and removes nothing in another explained something that is no spike — a slow or common-mode
+  deflection, which the temporal derivative and the spatial difference take out. The dialog
+  says how many were left out and for which partners. A group with one `.spk` has nothing to
+  confirm in. For marks made before, see
+  **Clusters → Remove Collision Marks Not in Every Space…** below.
 - **Templates** follow the session: a cluster's rows are cut into stretches and a template is
   the mean of up to 300 rows spread over one. A stretch is at most about 3000 rows and at most
   ten minutes of the cluster's life, but never fewer than 100 rows, and a cluster has at most 64.
@@ -1382,6 +1395,15 @@ its own; bind one in **Preferences → Input**.
   exactly the rows you looked at.
 
 Neither has a key of its own.
+
+**Marks that are not there in every space.** **Clusters → Remove Collision Marks Not in Every
+Space…** applies the rule above to the marks a selection already holds, whoever made them: each
+marked row's partner is fitted in every waveform space of the group, the shown one included, and
+the rows where it is not accepted in all of them are offered for removal — counted by space and
+by partner named. A row whose cluster or partner has no template in a space is not judged
+there. Like Remove Collision Marks it is written at Save and not undone by Undo. After it, the
+rows that are corrected, and so the `.spkc`, `.spkr` and `.fetr`, no longer depend on which
+space was shown.
 
 **Looking at the collided spike: the residual.**
 

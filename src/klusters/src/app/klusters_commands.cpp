@@ -125,6 +125,11 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Take the partners out of the rows of the selected clusters (or children) that name\n"
                      "one: each row keeps its own cluster's class and is shown as the .spk holds it.\n"
                      "Written at Save.")).editing();
+    t << CommandSpec("action.removeUnconfirmedCollisionMarks", "Clusters", tr("Remove Collision Marks Not in E&very Space…"),
+                     ON(triggered, slotRemoveUnconfirmedCollisionMarks))
+            .toolTip(tr("Fit the marked rows of the selected clusters (or children) in every waveform space of the\n"
+                     "group and take the partner out of those where it is not accepted in all of them: a\n"
+                     "partner's spike is there whatever the space.  Written at Save.")).editing();
     // One spike held by two rows of a cluster (a double detection, or two detections a
     // realignment brought to one peak): scan -> confirm -> the extras to the artefact cluster.
     t << CommandSpec("action.removeDuplicateSpikes", "Clusters", tr("Remove &Duplicate Spikes…"), ON(triggered, slotRemoveDuplicateSpikes))

@@ -100,6 +100,16 @@ void KlustersApp::slotMarkCollisions()
     if (R.notPresent > 0)
         notes << tr("A cluster is tried as a partner only where it has spikes of its own within 5 minutes of the row.");
     if (R.alreadyNamed > 0) notes << tr("%1 rows already name a partner and were left out.").arg(R.alreadyNamed);
+    if (!R.otherSpaces.isEmpty()) {
+        QStringList dropped;
+        QList<int> who = R.droppedOf.keys();
+        std::sort(who.begin(), who.end(), [&](int x, int y) { return R.droppedOf.value(x) > R.droppedOf.value(y); });
+        for (int i = 0; i < who.size() && i < 8; ++i) dropped << tr("%1: %2").arg(who[i]).arg(R.droppedOf.value(who[i]));
+        notes << tr("Each is confirmed in every waveform space (%1 as well as the shown one): a spike is there in all of them.  "
+                    "%2 more fitted here and not there, and were left out%3.")
+                     .arg(R.otherSpaces.join(QStringLiteral(", "))).arg(R.notInEverySpace)
+                     .arg(dropped.isEmpty() ? QString() : tr(" (partner: rows -- %1)").arg(dropped.join(QStringLiteral(", "))));
+    }
     if (!configuration().getCorrectCollisionRows())
         notes << tr("Preferences > Cluster view > Subtract the partner from collision rows is off: the rows "
                     "are marked but shown as they are until it is turned on.");
@@ -227,6 +237,63 @@ void KlustersApp::slotRemoveCollisionMarks()
     const int changed = doc->removeCollisionMarks(rows);
     QApplication::restoreOverrideCursor();
     slotStatusMsg(tr("Removed the partners of %1 row(s).  Written at Save.").arg(changed));
+}
+
+void KlustersApp::slotRemoveUnconfirmedCollisionMarks()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish first."), 5000);
+        return;
+    }
+    KlustersView* view = activeView();
+    if (!view) return;
+    bool childScope = false;
+    const QList<int> selected = collisionSelection(doc, view, childPaletteA, childScope);
+    if (selected.isEmpty()) { slotStatusMsg(tr("Remove unconfirmed collision marks: select one or more clusters first.")); return; }
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    slotStatusMsg(tr("Fitting the marked rows in every waveform space…"));
+    QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    KlustersDoc::CollisionSpaceReport R;
+    QHash<int, qint64> perPartner;
+    qint64 marked = 0;
+    const std::vector<qint64> rows = doc->unconfirmedCollisionRows(selected, childScope, &R, &perPartner, &marked);
+    QApplication::restoreOverrideCursor();
+    if (marked == 0) { slotStatusMsg(tr("Remove unconfirmed collision marks: the selection holds no row that names a partner.")); return; }
+    if (R.spaces.size() < 2) {
+        slotStatusMsg(tr("Remove unconfirmed collision marks: this group has one waveform space only (%1); there is no other to confirm in.")
+                          .arg(R.spaces.join(QStringLiteral(", "))));
+        return;
+    }
+    QStringList per;
+    for (const QString& m : R.spaces) per << tr("%1: %2 of %3").arg(m).arg(R.rejectedIn.value(m)).arg(R.checkedIn.value(m));
+    if (rows.empty()) {
+        slotStatusMsg(tr("All %1 marked row(s) of the selection are confirmed in every waveform space (%2).")
+                          .arg(marked).arg(R.spaces.join(QStringLiteral(", "))));
+        return;
+    }
+    QStringList who;
+    QList<int> partners = perPartner.keys();
+    std::sort(partners.begin(), partners.end(), [&](int x, int y) { return perPartner.value(x) > perPartner.value(y); });
+    for (int i = 0; i < partners.size() && i < 12; ++i) who << tr("%1: %2").arg(partners[i]).arg(perPartner.value(partners[i]));
+    if (partners.size() > 12) who << tr("… and %1 more").arg(partners.size() - 12);
+    QMessageBox box(QMessageBox::Question, tr("Remove Collision Marks Not in Every Space"),
+        tr("%1 of the %2 marked row(s) of the selection name a partner that is not there in every waveform space.  "
+           "Take those partners out?").arg(rows.size()).arg(marked),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box.setInformativeText(
+        tr("A partner's spike is in the row whatever the waveform space: the stderiv transform is linear.  "
+           "A partner fitted in one space that removes nothing in another explained something that is no "
+           "spike (a slow or common-mode deflection).\n\nNot accepted, by space: %1.\n\nBy partner named "
+           "(cluster: rows): %2.\n\nEach row keeps its own cluster's class and is shown as the .spk holds it "
+           "again.  Written at Save; Undo does not bring the marks back.")
+            .arg(per.join(QStringLiteral("; ")), who.join(QStringLiteral(", "))));
+    box.setDefaultButton(QMessageBox::No);
+    if (box.exec() != QMessageBox::Yes) return;
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const int changed = doc->removeCollisionMarks(rows);
+    QApplication::restoreOverrideCursor();
+    slotStatusMsg(tr("Removed the partners of %1 row(s) not confirmed in every waveform space.  Written at Save.").arg(changed));
 }
 
 void KlustersApp::slotResidualWaveforms()

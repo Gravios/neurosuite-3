@@ -952,6 +952,34 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         return R.ok;
     }
+    if (step.contains(QStringLiteral("unconfirmedMarks"))) {
+        // {"unconfirmedMarks": {"clusters": [..], "children": bool, "apply": bool}}: Clusters > Remove
+        // Collision Marks Not in Every Space without its dialog: the marked rows of the selection
+        // whose partner is not accepted in every waveform space; with "apply" their partners go.
+        const QJsonObject o = step.value(QStringLiteral("unconfirmedMarks")).toObject();
+        QList<int> ids;
+        for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
+        const bool children = o.value(QStringLiteral("children")).toBool(false);
+        if (children) { QString err; if (!doc->loadChildClustering(err)) { result.insert(QStringLiteral("error"), err); return false; } }
+        KlustersDoc::CollisionSpaceReport R;
+        QHash<int, qint64> perPartner;
+        qint64 marked = 0;
+        const std::vector<qint64> rows = doc->unconfirmedCollisionRows(ids, children, &R, &perPartner, &marked);
+        QJsonArray list;
+        for (const qint64 r : rows) list.append(static_cast<double>(r));
+        result.insert(QStringLiteral("rows"), list);
+        result.insert(QStringLiteral("marked"), static_cast<double>(marked));
+        result.insert(QStringLiteral("unchecked"), static_cast<double>(R.unchecked));
+        QJsonArray spaces;
+        QJsonObject rejected;
+        for (const QString& m : R.spaces) { spaces.append(m); rejected.insert(m, static_cast<double>(R.rejectedIn.value(m))); }
+        result.insert(QStringLiteral("spaces"), spaces);
+        result.insert(QStringLiteral("rejectedIn"), rejected);
+        if (o.value(QStringLiteral("apply")).toBool(false))
+            result.insert(QStringLiteral("removed"), doc->removeCollisionMarks(rows));
+        result.insert(QStringLiteral("modified"), doc->isModified());
+        return true;
+    }
     if (step.contains(QStringLiteral("collisionChild")) || step.contains(QStringLiteral("unmarkCollisions"))) {
         // {"collisionChild": {"clusters": [..], "children": bool}}: Clusters > Collision Rows to a Child.
         // {"unmarkCollisions": {"clusters": [..], "children": bool}}: Clusters > Remove Collision Marks,
@@ -1025,8 +1053,11 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         how.falseRate = o.value(QStringLiteral("falseRate")).toDouble(how.falseRate);
         how.presenceSeconds = o.value(QStringLiteral("presenceSeconds")).toDouble(how.presenceSeconds);
         how.stretchSeconds = o.value(QStringLiteral("stretchSeconds")).toDouble(how.stretchSeconds);
+        how.everySpace = o.value(QStringLiteral("everySpace")).toBool(how.everySpace);
         const KlustersDoc::CollisionScan scan = doc->scanCollisions(ids, children, how);
         result.insert(QStringLiteral("notPresent"), static_cast<double>(scan.notPresent));
+        result.insert(QStringLiteral("notInEverySpace"), static_cast<double>(scan.notInEverySpace));
+        result.insert(QStringLiteral("otherSpaces"), scan.otherSpaces.join(QStringLiteral(",")));
         QJsonObject stretches;
         for (auto it = scan.stretchesOf.constBegin(); it != scan.stretchesOf.constEnd(); ++it)
             stretches.insert(QString::number(it.key()), it.value());

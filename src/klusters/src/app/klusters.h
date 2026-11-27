@@ -661,6 +661,10 @@ public:
     /** Clusters > Remove Collision Marks: the rows of the selection that name a partner keep
      *  their own class only (KlustersDoc::removeCollisionMarks). */
     void slotRemoveCollisionMarks();
+    /** Clusters > Remove Collision Marks Not in Every Space: the marked rows of the selection
+     *  whose partner is not accepted in every waveform space (KlustersDoc::unconfirmedCollisionRows)
+     *  lose their partners, after a confirmation. */
+    void slotRemoveUnconfirmedCollisionMarks();
     /** The work of slotCollisionRowsToChild: returns the children made, @p summary what was done. */
     QList<int> collisionRowsToChildren(const QList<int>& ids, bool children, QString& summary);
     /** Spikes > Sort Spikes by Time: put the group's spike rows back in time
@@ -1686,6 +1690,7 @@ private:
     QAction *mResidualWaveforms    = nullptr;   ///< Waveforms > Residual of Collision Rows (checkable)
     QAction *mCollisionRowsToChild = nullptr;   ///< Clusters > Collision Rows to a Child
     QAction *mRemoveCollisionMarks = nullptr;   ///< Clusters > Remove Collision Marks
+    QAction *mRemoveUnconfirmedMarks = nullptr; ///< Clusters > Remove Collision Marks Not in Every Space
     QAction *mDipSplit;
     QAction *mGenerateProbeDrift;
     QAction *mApplyDriftSiblings;

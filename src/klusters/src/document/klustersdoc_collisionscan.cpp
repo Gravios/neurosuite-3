@@ -326,6 +326,7 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
     df::Params fit;
     fit.radius = 2; fit.ampMin = params.ampMin; fit.ampMax = params.ampMax; fit.minGain = kMinGain;
     std::vector<float> w(rec);
+    std::vector<int> hitGroup;                               // per hit: the cluster (or child) it was searched under
     for (std::size_t i = 0; i < jobs.size(); ++i) {
         const Out& o = out[i];
         if (!o.searched) continue;
@@ -343,12 +344,34 @@ KlustersDoc::CollisionScan KlustersDoc::scanCollisions(const QList<int>& cluster
         if (!f.accepted) continue;
         R.hits.push_back(CollisionHit{row, cluster, theirs.cluster, f.tau, f.amp, f.residBefore - f.residAfter});
         ++R.hitsOf[jobs[i].group];
+        hitGroup.push_back(jobs[i].group);
+    }
+    // ── ... and in every other waveform space: a spike is there in all of them ──
+    if (options.everySpace && !R.hits.empty()) {
+        std::vector<CollisionCheck> checks;
+        checks.reserve(R.hits.size());
+        for (const CollisionHit& h : R.hits) checks.push_back(CollisionCheck{h.row, h.cluster, 0, h.partner, h.tau});
+        const CollisionSpaceReport other = confirmCollisionsInSpaces(checks, /*withShown=*/false);
+        R.otherSpaces = other.spaces;
+        R.rejectedIn = other.rejectedIn;
+        std::vector<CollisionHit> kept;
+        for (std::size_t i = 0; i < R.hits.size(); ++i) {
+            if (other.confirmed[i]) { kept.push_back(R.hits[i]); continue; }
+            ++R.notInEverySpace;
+            ++R.droppedOf[R.hits[i].partner];
+            const int group = hitGroup[i];                   // per searched cluster, or per child
+            if (R.hitsOf.contains(group) && R.hitsOf[group] > 0) --R.hitsOf[group];
+        }
+        R.hits.swap(kept);
     }
     R.ok = true;
     R.milliseconds = timer.elapsed();
     qInfo().noquote() << "[mark collisions]" << R.scanned << "rows searched against" << R.partnerUnits << "clusters,"
                       << R.candidates << "over the threshold (the control:" << R.controlOver << "),"
-                      << R.hits.size() << "confirmed;" << R.notPresent << "row-cluster pairs not tried, the cluster"
+                      << R.hits.size() << "confirmed"
+                      << (R.otherSpaces.isEmpty() ? QStringLiteral("(no other waveform space to confirm in);")
+                                                  : QStringLiteral("in every waveform space (%1 more left out: not in %2);")
+                                                        .arg(R.notInEverySpace).arg(R.otherSpaces.join(QStringLiteral(", ")))) << R.notPresent << "row-cluster pairs not tried, the cluster"
                       << "having no spike within" << options.presenceSeconds << "s;" << R.milliseconds << "ms";
     return R;
 }
