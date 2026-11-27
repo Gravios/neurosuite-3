@@ -52,9 +52,9 @@ cmake --install build
 
 | Platform | CI | Notes |
 |---|---|---|
-| **Linux** | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-linux.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml) | Ubuntu 24.04 and newer, Debian 12, WSL2. |
-| **Windows** | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-windows.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml) | Visual Studio 2022. The `ndm_*` steps run from cmd and PowerShell through Git Bash. |
-| **macOS** | [![CI](https://img.shields.io/github/actions/workflow/status/Gravios/neurosuite-3/ci-macos.yml?branch=main&label=CI&labelColor=0E2236&logo=github&logoColor=white)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml) | Apple silicon, Homebrew. Metal (Apple GPU) and Accelerate paths. |
+| **Linux** | [![linux CI](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-linux.yml) | Ubuntu 24.04 and newer, Debian 12, WSL2. |
+| **Windows** | [![windows CI](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-windows.yml) | Visual Studio 2022. The `ndm_*` steps run from cmd and PowerShell through Git Bash. |
+| **macOS** | [![macos CI](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml/badge.svg?branch=main)](https://github.com/Gravios/neurosuite-3/actions/workflows/ci-macos.yml) | Apple silicon, Homebrew. Metal (Apple GPU) and Accelerate paths. |
 
 ## The programs
 
@@ -100,6 +100,7 @@ Manual: [doc/kiloklustakwik/README.md](doc/kiloklustakwik/README.md)
 - One electrode group at a time in synchronized views: inspect, split, merge and reassign clusters, every edit undoable.
 - [Hierarchical clustering](doc/klusters/hierarchical-clustering.md) into fibers and atoms, template curation, t-SNE and oblique views, multi-lasso, DipSplit and watershed splits, merge recommendations, drift / template / residual matrices, waveform realignment.
 - Rebindable keys and mouse, and a right-click radial menu.
+- Collisions: **Mark Collisions** finds the rows that also hold a second unit's spike (it must be there in every waveform space) and names that unit; the row is then shown with it subtracted, and **Add Residual Spikes as Clusters** makes rows of the partners' spikes that no row held, in a new stage.
 - All-or-nothing saves that skip unchanged files, autosave for crash recovery, and a curation log (`.cur`) that the curation and prior-training tools learn from.
 
 Manual: [doc/klusters/README.md](doc/klusters/README.md)
@@ -137,15 +138,23 @@ Optional and detected at build time; the CPU (OpenMP) path is always built.
 | Component | CUDA | HIP | SYCL | Metal | Accelerates |
 |---|:-:|:-:|:-:|:-:|---|
 | kiloklustakwik | ✓ | ✓ | ✓ | ✓ | CEM E-step, waveform realignment |
-| klusters | ✓ | ✓ | ✓ | ✓ | Grouping Assistant, interactive realignment |
-| neuroscope | ✓ | ✓ | | | Spectrogram FFT (cuFFT, hipFFT) |
-| `ndm_hipass` | ✓¹ | ✓ | | ✓ | Butterworth and median high-pass filters |
-| `ndm_detectspikes` | ✓ | ✓ | | ✓ | Noise thresholds |
-| `ndm_spikegrouper` | ✓ | ✓ | | ✓ | Channel grouping |
+| kiloklustakwik, fiber stage | ✓ | ✓² | | | Fiber clustering of a group |
+| klusters | ✓ | ✓ | ✓ | ✓ | Grouping Assistant |
+| klusters | ✓ | ✓² | ✓³ | | Core cut (Split Off Spurious Spikes), the realignment's PCA refine |
+| neuroscope | ✓ | ✓² | | | Spectrogram FFT (cuFFT, hipFFT) |
+| `ndm_hipass` | ✓ | ✓² | | ✓¹ | Butterworth and median high-pass filters |
+| `ndm_detectspikes` | ✓ | ✓² | | ✓¹ | Noise thresholds |
+| `ndm_spikegrouper` | ✓ | ✓² | | ✓¹ | Channel grouping |
 | `ndm_extractemg` | ✓ | ✓ | ✓ | | EMG extraction |
 | `ndm_decomposecollisions` | opt-in | | | | Collision decomposition fit |
 
 ¹ Metal results are still to be compared with the CPU on a Mac (`scripts/metal_validate.sh`).
+
+² Built with ROCm (5.7) and compiled for gfx1030, gfx1100, gfx90a and gfx908, but not yet run on an AMD GPU. These kernels are the CUDA sources compiled as HIP, except Klusters' own `.hip` files.
+
+³ Not yet compiled with oneAPI. The core cut needs double precision: on a GPU without it (the Arc integrated GPUs) it runs on the CPU.
+
+On a machine with a GPU, `ctest -R klusters_test_gpu_parity --output-on-failure` compares Klusters' GPU kernels with their CPU loops on whichever backend the build picks.
 
 Toolkit setup (CUDA including Blackwell / sm_120, ROCm, oneAPI): [BUILD.md §4](doc/BUILD.md) · [doc/gpu](doc/gpu/README.md).
 

@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [README: the CI badges, the GPU table, Klusters' collision tools](#2026-11-27--readme-the-ci-badges-the-gpu-table-klusters-collision-tools) |
 | 2026-11-27 | [Klusters: a failed realign check in a residual stage names the rebuild](#2026-11-27--klusters-a-failed-realign-check-in-a-residual-stage-names-the-rebuild) |
 | 2026-11-27 | [Core: the .eap and .spkc readers take every version from 1 up](#2026-11-27--core-the-eap-and-spkc-readers-take-every-version-from-1-up) |
 | 2026-11-27 | [Formats: the .tcl and .wtl pages say what fiber-kit reads](#2026-11-27--formats-the-tcl-and-wtl-pages-say-what-fiber-kit-reads) |
@@ -341,6 +342,27 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — README: the CI badges, the GPU table, Klusters' collision tools
+
+The front page catches up.
+
+<details>
+<summary>Details</summary>
+
+- The platform table's CI badges are GitHub's own workflow badges
+  (`actions/workflows/ci-<os>.yml/badge.svg`) instead of shields.io's: the
+  Linux one showed as a broken image.
+- The GPU table says what each backend does now: the KiloKlustaKwik fiber
+  stage, Klusters' core cut and PCA refine on their own rows; which HIP paths
+  are built but not yet run on an AMD GPU, which SYCL path is not yet
+  compiled, and the parity test to run on a GPU machine.  The Metal footnote
+  sits on the Metal marks.
+- Klusters' summary names the collision tools.
+
+</details>
 
 ---
 
