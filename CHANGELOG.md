@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [Formats: a fiber-kit dedup sets the .spkx, .spkr and .fetr aside](#2026-11-27--formats-a-fiber-kit-dedup-sets-the-spkx-spkr-and-fetr-aside) |
 | 2026-11-27 | [README: the CI badges, the GPU table, Klusters' collision tools](#2026-11-27--readme-the-ci-badges-the-gpu-table-klusters-collision-tools) |
 | 2026-11-27 | [Klusters: a failed realign check in a residual stage names the rebuild](#2026-11-27--klusters-a-failed-realign-check-in-a-residual-stage-names-the-rebuild) |
 | 2026-11-27 | [Core: the .eap and .spkc readers take every version from 1 up](#2026-11-27--core-the-eap-and-spkc-readers-take-every-version-from-1-up) |
@@ -342,6 +343,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — Formats: a fiber-kit dedup sets the .spkx, .spkr and .fetr aside
+
+The three pages say what a fiber-kit dedup does with them and how Klusters makes them again.
+
+<details>
+<summary>Details</summary>
+
+- From fiber-kit 0.71.24 its dedup renames the group's `.spkx`, `.spkr` and `.fetr` to
+  `<file>.stalebkp`: their row numbers would name other spikes once rows are dropped. Before, it
+  left them in place with a warning about a type it did not know.
+- `spkx.md`: *Clusters ▸ Rebuild Residual Spikes' Extended Records* makes it again from the `.eap`
+  marks the dedup keeps. `spkr.md` / `fetr.md`: the next Save with *Preferences ▸ Cluster view ▸
+  Subtract the partner from collision rows* on writes them again (`spkr.md` now names that
+  preference).
+- **Checked:** against fiber-kit's `neuro_io.apply_spike_keep` at 0.71.24.
+
+</details>
 
 ---
 

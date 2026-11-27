@@ -21,8 +21,10 @@ be made in is removed.
 
 **Writers / readers.** `neurofileio::readSpkr` / `writeSpkr` / `spkrFind` in
 `libneurosuite-core`. Klusters builds the records for the waveform view's
-residual display and writes the file at Save. fiber-kit does not read or write
-it yet.
+residual display and writes the file at Save, with *Preferences ▸ Cluster view ▸
+Subtract the partner from collision rows* on. fiber-kit does not read or write it;
+its dedup, which drops rows, renames the group's to `<file>.stalebkp` (fiber-kit
+0.71.24), and the next such Save writes it again.
 
 ## Layout
 

@@ -19,7 +19,9 @@ the features of the row it is indexed by. That row's features are in the `.fet`.
 **Writers / readers.** `neurofileio::readFetr` / `writeFetr` / `fetrFind` in
 `libneurosuite-core`. Klusters writes one at Save for every feature space of
 the group that has a basis (`.pca.<method>`), beside the `.spkr`. fiber-kit
-does not read or write it yet.
+does not read or write it; its dedup, which drops rows, renames the group's to
+`<file>.stalebkp` (fiber-kit 0.71.24), and the next Save that writes the `.spkr`
+writes it again.
 
 ## Layout
 

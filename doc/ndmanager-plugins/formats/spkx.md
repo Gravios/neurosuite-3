@@ -21,7 +21,10 @@ would be.
 `spkxCut` in `libneurosuite-core`. Klusters writes it with every stage Add
 Residual Spikes makes (carrying the rows of the stage it was made from), and
 reads it wherever it would cut a row from the recording. Sort Spikes by Time
-reorders it with the rows. fiber-kit does not read or write it.
+reorders it with the rows. fiber-kit does not read or write it; its dedup, which
+drops rows, renames the group's to `<file>.stalebkp` (fiber-kit 0.71.24), and
+*Clusters ▸ Rebuild Residual Spikes' Extended Records* makes it again from the
+`.eap` marks the dedup keeps.
 
 ## Layout
 
