@@ -125,6 +125,13 @@ QList<CommandSpec> KlustersApp::commandTable()
             .toolTip(tr("Take the partners out of the rows of the selected clusters (or children) that name\n"
                      "one: each row keeps its own cluster's class and is shown as the .spk holds it.\n"
                      "Written at Save.")).editing();
+    // One spike held by two rows of a cluster (a double detection, or two detections a
+    // realignment brought to one peak): scan -> confirm -> the extras to the artefact cluster.
+    t << CommandSpec("action.removeDuplicateSpikes", "Clusters", tr("Remove &Duplicate Spikes…"), ON(triggered, slotRemoveDuplicateSpikes))
+            .toolTip(tr("Find the rows of the selected clusters (or children) that lie within 0.2 ms of another\n"
+                     "row of the same cluster -- one spike detected more than once -- and move all but one of\n"
+                     "each to the artefact cluster.  The row kept is the one most like the cluster's template.\n"
+                     "Undoable.")).editing();
     t << CommandSpec("action.purgeSmallClusters", "Clusters", tr("&Purge Small Clusters…"), ON(triggered, slotPurgeSmallClusters))
             .editing();
     // Bulk artifact removal: move every spike more than 5 sigma from its cluster's

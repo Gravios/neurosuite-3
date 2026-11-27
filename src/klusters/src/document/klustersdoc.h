@@ -2092,6 +2092,27 @@ public:
     /** <base>.spkc.<method>.<group>[.<stage>] of the open stage. */
     QString spkcPathFor(const QString& method) const;
 
+    // ── one spike held by more than one row (klustersdoc_duplicates.cpp) ──
+    /** What scanDuplicateSpikes() found.  Nothing is changed by the scan. */
+    struct DuplicateScan {
+        bool    ok = false;
+        QString reason;
+        qint64  scanned = 0;              ///< rows looked at
+        qint64  toleranceSamples = 0;     ///< rows of a cluster this near in time are one spike
+        qint64  runs = 0;                 ///< spikes held by more than one row
+        qint64  atOneTime = 0;            ///< ... of which the rows have the very same time
+        QSet<dataType> extras;            ///< the rows too many (1-based feature rows): every row of a run but the one kept
+        QHash<int, qint64> extrasOf;      ///< per selected cluster (or child)
+        QList<QList<qint64>> runRows;     ///< each run's rows (0-based), the one kept first
+        qint64  acrossClusters = 0;       ///< pairs of rows this near in time in two different clusters (not changed)
+        QHash<QString, qint64> acrossPairs;  ///< "a+b" -> pairs, for the selected clusters
+    };
+    /** Looks in each of @p clusters (children of the child layer when @p children) for rows
+     *  within @p toleranceMs of each other: closer than a neuron fires twice, so one spike
+     *  detected more than once (duplicatespikes.h).  Of each run the row most like the
+     *  cluster's template around it is kept, the lowest row when they tie. */
+    DuplicateScan scanDuplicateSpikes(const QList<int>& clusters, bool children, double toleranceMs = 0.2);
+
     // ── the partner's spike of a collision row (klustersdoc_residuals.cpp, formats/spkr.md) ──
     /** What rebuildResiduals() did. */
     struct ResidualReport {

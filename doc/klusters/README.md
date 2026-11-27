@@ -1128,6 +1128,7 @@ cuts the new cluster, `Esc` discards the lasso, and `D` instead
 | Entry | Key | What it does |
 |---|---|---|
 | Split ▸ Partition Cluster by Time… | `Shift+T` | Cuts the selected cluster into consecutive blocks of the length you enter (minutes), counted from the start of the session |
+| Clusters ▸ Remove Duplicate Spikes… | — | Finds the rows of the selected clusters (or children) within 0.2 ms of another row of the same cluster — one spike detected more than once — and, after a confirmation, moves all but one of each to the artefact cluster. See [Duplicate spikes](#duplicate-spikes--one-spike-held-by-more-than-one-row) |
 | Clusters ▸ Collision Rows to a Child | — | Makes the rows of the selected clusters (or children) that name a partner one child of their cluster, to be looked at beside its other spikes. No row leaves its cluster |
 | Clusters ▸ Remove Collision Marks… | — | Takes the partners out of the rows of the selected clusters (or children) that name one, after a confirmation; written at Save |
 | Waveforms ▸ Residual of Collision Rows | — | Toggle: rows that name a partner are drawn as the partner's spike — re-cut from the recording around the partner, the row's own unit subtracted — and written as `.spkr` at Save |
@@ -1272,6 +1273,32 @@ of such a row — the waveform view, the mean and median waveforms, the tools th
   whose basis does not fit the records, keeps the raw features (reported as skipped).
 
 Not done yet: a super-sampled space shows the raw records.
+
+#### Duplicate spikes — one spike held by more than one row
+
+A detector that fires twice on one spike, or two detections that a realignment brings to the
+same peak, leave two rows for one spike. In a cluster each counts as a spike of the unit: in its
+rate, at the centre of its autocorrelogram, in its mean waveform. **Clusters → Remove Duplicate
+Spikes…** finds them in the selected clusters — in the child view, in the selected children —
+and after a confirmation moves all but one row of each to the artefact cluster (0). It is an
+ordinary edit: Undo brings them back.
+
+- **What counts.** Rows of one cluster within 0.2 ms of each other (6–7 samples at 32.5 kHz, 4
+  at 20 kHz): no neuron fires twice in that time. A run is counted from its first row, so three
+  rows 0.15 ms apart are a spike held twice and a spike, not one spike 0.3 ms long.
+- **Which row is kept.** The one whose waveform is most like the cluster's template around it
+  (the mean of up to 300 rows of the cluster nearest in time, the duplicates left out); the
+  lowest row when they tie, as rows with the very same time do. A cluster with fewer than 30
+  other rows keeps the lowest row.
+- **Not touched: two clusters.** Rows that near in time in two *different* clusters are either
+  one spike sorted twice or a collision of two units, and which row is wrong is not for this to
+  say. The dialog counts them by pair of clusters; [Mark Collisions](#mark-collisions--the-collisions-no-sorter-named)
+  and the residual display are the tools for those.
+- **In the child view** a run is looked for inside each selected child. A spike held by rows of
+  two different children of one cluster is found from the parent view.
+
+The residual records say the same of the spikes they hold (*detected*, *repeated*: below), so
+that nothing built from them adds a spike that is a row already.
 
 #### Mark Collisions — the collisions no sorter named
 

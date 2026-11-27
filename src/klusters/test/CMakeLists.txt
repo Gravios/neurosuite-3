@@ -21,6 +21,7 @@ add_executable(klusters_test_burstfollowers burstfollowers_test.cpp)
 add_executable(klusters_test_corecut corecut_test.cpp)
 add_executable(klusters_test_waveformquality waveformquality_test.cpp)
 add_executable(klusters_test_residualtwins residualtwins_test.cpp)
+add_executable(klusters_test_duplicatespikes duplicatespikes_test.cpp)
 
 set(_core "${CMAKE_CURRENT_SOURCE_DIR}/../../libneurosuite-core/src")
 # Input binding core now lives in libklustersshared (moved there in the neuroscope
@@ -31,7 +32,8 @@ set(_shared_root "${CMAKE_CURRENT_SOURCE_DIR}/../../libklustersshared/src")
 
 foreach(_t klusters_test_selectiongrid2d klusters_test_spikeassignment
           klusters_test_pcarowprojection klusters_test_burstfollowers klusters_test_corecut
-          klusters_test_waveformquality klusters_test_residualtwins)
+          klusters_test_waveformquality klusters_test_residualtwins
+          klusters_test_duplicatespikes)
     target_compile_features(${_t} PRIVATE cxx_std_20)
     # _core carries the header-only PcaBasis the projection kernel reads; it is
     # an include path only, no library and no contract change.

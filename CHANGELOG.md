@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-26 | [Klusters: Remove Duplicate Spikes](#2026-11-26--klusters-remove-duplicate-spikes) |
 | 2026-11-26 | [Klusters: the residual of a collision row, shown and saved as .spkr](#2026-11-26--klusters-the-residual-of-a-collision-row-shown-and-saved-as-spkr) |
 | 2026-11-26 | [Formats: .spkr, the residual spike of a collision row](#2026-11-26--formats-spkr-the-residual-spike-of-a-collision-row) |
 | 2026-11-26 | [Klusters: Mark Collisions shows what chance would give for each partner](#2026-11-26--klusters-mark-collisions-shows-what-chance-would-give-for-each-partner) |
@@ -318,6 +319,43 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-26 — Klusters: Remove Duplicate Spikes
+
+Rows of a cluster closer in time than a neuron fires twice are one spike held more than once. A new action finds them and moves all but one of each to the artefact cluster.
+
+<details>
+<summary>Details</summary>
+
+**Clusters → Remove Duplicate Spikes…** (`action.removeDuplicateSpikes`, no key), on the selected
+clusters or, in the child view, the selected children.
+
+- **Scan** (`KlustersDoc::scanDuplicateSpikes`, `document/duplicatespikes.h`): rows of one
+  cluster within 0.2 ms of the first of their run are one spike held more than once. Of each run
+  the row most like the cluster's template around it is kept (mean of up to 300 rows nearest in
+  time, the runs' own left out), the lowest row on a tie.
+- **Apply**: after a confirmation the rows too many go to the artefact cluster through
+  `deleteArtifact` — an ordinary edit, undoable, in either scope.
+- **Counted, not touched**: rows that near in time in two different clusters, by pair of clusters.
+
+Measured.
+
+- `test_duplicate_spikes` (synthetic, rows added to the session): 20 of 20 added duplicates found
+  (12 at the very same time, 8 cut 3 samples late), none of the 4 cut 9 samples late, none in the
+  cluster without duplicates, 12 with a tolerance of 0; the 24 near pairs across the two clusters
+  are counted and left; after apply and Save exactly the 20 rows are in cluster 0.
+  `klusters_test_duplicatespikes` covers the runs.
+- sirotaA-jg-000005-20120312 group 8, every cluster of the `fc_unmix_t2_h` curation, on a session
+  assembled here from an older `.fet` (its times predate the realigns): 18 spikes held twice, 10
+  at the very same time, 14 of them in cluster 78; 85 near pairs across clusters, 22 of them
+  between clusters 20 and 78. Counted on the curation's own `.res` instead: 38 pairs within 6
+  samples in one cluster, 37 at the very same time, 28 in cluster 78. The scan takes under a second.
+
+Not tested: apply on the real group; the child-scope apply.
+
+</details>
 
 ---
 

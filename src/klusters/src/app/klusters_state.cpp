@@ -186,6 +186,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mPreviousFeatureSpace->setEnabled(false);
         mLocalPcaSpace->setEnabled(false);
         mMarkCollisions->setEnabled(false);
+        mRemoveDuplicateSpikes->setEnabled(false);
         mResidualWaveforms->setEnabled(false);
         mResidualWaveforms->setChecked(false);       // a new session shows its rows as they are
         mCollisionRowsToChild->setEnabled(false);
@@ -266,6 +267,7 @@ void KlustersApp::slotStateChanged(const QString& state)
         mPreviousFeatureSpace->setEnabled(true);
         mLocalPcaSpace->setEnabled(true);
         mMarkCollisions->setEnabled(true);
+        mRemoveDuplicateSpikes->setEnabled(true);
         mResidualWaveforms->setEnabled(true);
         mResidualWaveforms->setChecked(doc && doc->residualsShown());
         mCollisionRowsToChild->setEnabled(true);

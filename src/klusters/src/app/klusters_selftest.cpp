@@ -777,6 +777,52 @@ bool KlustersApp::selfTestRunStep(const QJsonObject& step, QJsonObject& result)
         }
         return true;
     }
+    if (step.contains(QStringLiteral("duplicates"))) {
+        // {"duplicates": {"clusters": [..], "children": bool, "toleranceMs": 0.2, "apply": bool}}:
+        // Clusters > Remove Duplicate Spikes without its dialog -- the scan, and with "apply"
+        // the move of the rows too many to the artefact cluster.
+        const QJsonObject o = step.value(QStringLiteral("duplicates")).toObject();
+        QList<int> ids;
+        for (const QJsonValue& v : o.value(QStringLiteral("clusters")).toArray()) ids.append(v.toInt());
+        const bool children = o.value(QStringLiteral("children")).toBool(false);
+        if (children) {
+            QString err;
+            if (!doc->loadChildClustering(err)) { result.insert(QStringLiteral("error"), err); return false; }
+            if (o.contains(QStringLiteral("childOfRow"))) {
+                const int row = o.value(QStringLiteral("childOfRow")).toInt();
+                for (const dataType id : doc->childClusterData().clusterIds())
+                    if (doc->childClusterData().clusterSpkIndices(static_cast<int>(id)).contains(row)) ids.append(static_cast<int>(id));
+            }
+            if (!doc->isChildClusteringActive()) doc->setActiveClustering(true);
+        }
+        const KlustersDoc::DuplicateScan R = doc->scanDuplicateSpikes(ids, children, o.value(QStringLiteral("toleranceMs")).toDouble(0.2));
+        result.insert(QStringLiteral("ok"), R.ok);
+        result.insert(QStringLiteral("reason"), R.reason);
+        result.insert(QStringLiteral("scanned"), static_cast<double>(R.scanned));
+        result.insert(QStringLiteral("toleranceSamples"), static_cast<double>(R.toleranceSamples));
+        result.insert(QStringLiteral("runs"), static_cast<double>(R.runs));
+        result.insert(QStringLiteral("atOneTime"), static_cast<double>(R.atOneTime));
+        result.insert(QStringLiteral("acrossClusters"), static_cast<double>(R.acrossClusters));
+        QJsonObject across;
+        for (auto it = R.acrossPairs.constBegin(); it != R.acrossPairs.constEnd(); ++it) across.insert(it.key(), static_cast<double>(it.value()));
+        result.insert(QStringLiteral("acrossPairs"), across);
+        QJsonArray runs;
+        for (const QList<qint64>& run : R.runRows) {
+            QJsonArray rows;
+            for (const qint64 r : run) rows.append(static_cast<double>(r));
+            runs.append(rows);
+        }
+        result.insert(QStringLiteral("runRows"), runs);
+        QJsonArray extras;
+        QList<dataType> sorted = R.extras.values();
+        std::sort(sorted.begin(), sorted.end());
+        for (const dataType r : sorted) extras.append(static_cast<double>(r - 1));
+        result.insert(QStringLiteral("extras"), extras);
+        if (R.ok && o.value(QStringLiteral("apply")).toBool(false) && !R.extras.isEmpty())
+            doc->deleteArtifact(SpikeSelection(R.extras, QStringLiteral("duplicate_spikes")), ids);
+        result.insert(QStringLiteral("modified"), doc->isModified());
+        return R.ok;
+    }
     if (step.contains(QStringLiteral("residuals"))) {
         // {"residuals": {"show": bool, "rows": [..], "table": cluster, "tableSpikes": n}}:
         // Waveforms > Residual of Collision Rows.  "show" switches the display (omitted: only

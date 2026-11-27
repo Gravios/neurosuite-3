@@ -252,3 +252,58 @@ void KlustersApp::slotResidualWaveforms()
                       .arg(R.recovered).arg(R.detected).arg(R.repeated)
                       .arg(R.withoutNeighbours > 0 ? tr("  %1 rows have too few clean neighbours.").arg(R.withoutNeighbours) : QString()));
 }
+
+void KlustersApp::slotRemoveDuplicateSpikes()
+{
+    if (!doc || doc->url().isEmpty()) return;
+    if ((featureSpaceCombo && !featureSpaceCombo->isEnabled()) || fileJobRunning()) {
+        statusBar()->showMessage(tr("Wait for the running job to finish first."), 5000);
+        return;
+    }
+    KlustersView* view = activeView();
+    if (!view) return;
+    bool childScope = false;
+    QList<int> selected = collisionSelection(doc, view, childPaletteA, childScope);
+    if (!childScope) doc->leaveOutReserved(selected, tr("Remove duplicate spikes"));
+    if (selected.isEmpty()) { slotStatusMsg(tr("Remove duplicate spikes: select one or more clusters first.")); return; }
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const KlustersDoc::DuplicateScan R = doc->scanDuplicateSpikes(selected, childScope);
+    QApplication::restoreOverrideCursor();
+    if (!R.ok) { slotStatusMsg(tr("Remove duplicate spikes: %1").arg(R.reason)); return; }
+    QStringList across;
+    {
+        QStringList keys = R.acrossPairs.keys();
+        std::sort(keys.begin(), keys.end(), [&](const QString& x, const QString& y) { return R.acrossPairs.value(x) > R.acrossPairs.value(y); });
+        for (int i = 0; i < keys.size() && i < 6; ++i) across << tr("%1: %2").arg(keys[i]).arg(R.acrossPairs.value(keys[i]));
+    }
+    const QString acrossNote = R.acrossClusters > 0
+        ? tr("%1 pair(s) of rows this near in time are in two DIFFERENT clusters (%2).  They are one spike "
+             "sorted twice or a collision of two units, and are left as they are.").arg(R.acrossClusters).arg(across.join(QStringLiteral(", ")))
+        : QString();
+    if (R.extras.isEmpty()) {
+        slotStatusMsg(tr("Remove duplicate spikes: none in the %1 rows of the selection (within %2 samples).%3")
+                          .arg(R.scanned).arg(R.toleranceSamples).arg(acrossNote.isEmpty() ? QString() : QStringLiteral("  ") + acrossNote));
+        return;
+    }
+    QStringList lines;
+    QList<int> ids = R.extrasOf.keys();
+    std::sort(ids.begin(), ids.end(), [&](int x, int y) { return R.extrasOf.value(x) > R.extrasOf.value(y); });
+    for (int i = 0; i < ids.size() && i < 12; ++i)
+        lines << tr("%1 %2: %3 row(s) too many").arg(childScope ? tr("child") : tr("cluster")).arg(ids[i]).arg(R.extrasOf.value(ids[i]));
+    if (ids.size() > 12) lines << tr("… and %1 more").arg(ids.size() - 12);
+    QMessageBox box(QMessageBox::Question, tr("Remove Duplicate Spikes"),
+        tr("%1 spike(s) are held by more than one row.  Move the %2 row(s) too many to the artefact cluster?")
+            .arg(R.runs).arg(R.extras.size()),
+        QMessageBox::Yes | QMessageBox::No, this);
+    box.setInformativeText(
+        tr("Rows of one cluster within %1 samples (0.2 ms) of each other are one spike detected more than "
+           "once; %2 of the %3 have the very same time.  Of each, the row most like the cluster's template "
+           "is kept.  The others go to cluster 0 and can be brought back with Undo.\n\n%4%5")
+            .arg(R.toleranceSamples).arg(R.atOneTime).arg(R.runs).arg(lines.join(QLatin1Char('\n')))
+            .arg(acrossNote.isEmpty() ? QString() : QStringLiteral("\n\n") + acrossNote));
+    box.setDefaultButton(QMessageBox::No);
+    if (box.exec() != QMessageBox::Yes) return;
+    doc->deleteArtifact(SpikeSelection(R.extras, QStringLiteral("duplicate_spikes")), selected);
+    slotStatusMsg(tr("Moved %1 duplicate row(s) of %2 spike(s) to the artefact cluster.").arg(R.extras.size()).arg(R.runs));
+}

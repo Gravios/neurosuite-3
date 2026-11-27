@@ -635,6 +635,10 @@ public:
      *  child view) for rows holding a second cluster's spike and, on confirmation, name the
      *  partners in the stage's membership (KlustersDoc::scanCollisions / markCollisions). */
     void slotMarkCollisions();
+    /** Clusters > Remove Duplicate Spikes: rows of a selected cluster (or child) closer in time
+     *  than a neuron fires twice are one spike held more than once; after a confirmation all
+     *  but one of each are moved to the artefact cluster (KlustersDoc::scanDuplicateSpikes). */
+    void slotRemoveDuplicateSpikes();
     /** Waveforms > Residual of Collision Rows (checkable): the rows that name a partner are shown
      *  as the PARTNER's spike -- re-cut around the partner, the row's own unit subtracted
      *  (KlustersDoc::showResiduals, formats/spkr.md) -- every other row as it is. */
@@ -1665,6 +1669,7 @@ private:
     QAction *mPreviousFeatureSpace = nullptr;   ///< View > Previous Feature Space (Ctrl+Shift+Tab)
     QAction *mLocalPcaSpace        = nullptr;   ///< View > Local PCA of the Selection (Shift+Y)
     QAction *mMarkCollisions       = nullptr;   ///< Clusters > Mark Collisions
+    QAction *mRemoveDuplicateSpikes = nullptr;  ///< Clusters > Remove Duplicate Spikes
     QAction *mResidualWaveforms    = nullptr;   ///< Waveforms > Residual of Collision Rows (checkable)
     QAction *mCollisionRowsToChild = nullptr;   ///< Clusters > Collision Rows to a Child
     QAction *mRemoveCollisionMarks = nullptr;   ///< Clusters > Remove Collision Marks
