@@ -4,7 +4,7 @@ Several neurosuite-3 components optionally use GPU acceleration:
 
 | Component | GPU path | What is accelerated |
 |---|---|---|
-| `kiloklustakwik` | CUDA / HIP / SYCL · Metal (macOS: CEM steps, xcorr) | CEM E-step distance computations + waveform cross-correlation (xcorr) |
+| `kiloklustakwik` | CUDA / HIP / SYCL · Metal (macOS: CEM steps, xcorr) | CEM E-step distance computations + waveform cross-correlation (xcorr); the fiber stage's mean shift and assignment (CUDA / HIP) |
 | `klusters` | CUDA / HIP / SYCL · Metal (macOS: realignment xcorr, FP32 error matrix) | Grouping Assistant posterior probability matrix + interactive spike realignment (xcorr); the realignment's PCA refine and the core cut's ordering loop (CUDA / HIP / SYCL; the core cut on SYCL needs a GPU with double precision) |
 | `process_butterworth` | CUDA / HIP · Metal (macOS, single precision) | Butterworth filtering |
 | `process_medianfilter` | CUDA / HIP · Metal (macOS) | Median-subtraction high-pass filter |
@@ -169,7 +169,8 @@ one card only, and faster.
 
 **One kernel file for CUDA and HIP.** The plugins' filters and detectors
 (`process_butterworth`, `process_medianfilter`, `process_medianthreshold`,
-`process_spikegrouper`) have one kernel file, written for CUDA (`*_cuda.cu`). A HIP build
+`process_spikegrouper`) and KiloKlustaKwik's fiber stage (`fiber_gpu_cuda.cu`) have one
+kernel file, written for CUDA (`*_cuda.cu`). A HIP build
 compiles that same file as HIP (`ns_gpu_add_cuda_as_hip` in `cmake/GpuBackends.cmake`), with
 the shim `libneurosuite-core/src/neurosuite/gpu/cuda_on_hip/` first on the include path: its
 `<cuda_runtime.h>` names the HIP runtime calls by their CUDA names. The two backends cannot

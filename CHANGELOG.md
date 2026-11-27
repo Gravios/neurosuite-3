@@ -9,6 +9,7 @@ Each entry is folded — click **Details** to expand it. Newest first.
 
 | Date | Change |
 |---|---|
+| 2026-11-27 | [KiloKlustaKwik: the fiber stage on AMD GPUs (HIP)](#2026-11-27--kiloklustakwik-the-fiber-stage-on-amd-gpus-hip) |
 | 2026-11-27 | [Plugins: the filters and detectors on AMD GPUs (HIP)](#2026-11-27--plugins-the-filters-and-detectors-on-amd-gpus-hip) |
 | 2026-11-27 | [Klusters: the core cut and the PCA refine on HIP and SYCL](#2026-11-27--klusters-the-core-cut-and-the-pca-refine-on-hip-and-sycl) |
 | 2026-11-27 | [Build: the HIP backends build](#2026-11-27--build-the-hip-backends-build) |
@@ -332,6 +333,26 @@ Each entry is folded — click **Details** to expand it. Newest first.
 | earlier | [KlustaKwik](#earlier-changes--klustakwik) |
 | earlier | [ndmanager-plugins](#earlier-changes--ndmanager-plugins) |
 | earlier | [jg05-20120316.yaml (sample session)](#earlier-changes--jg05-20120316yaml-sample-session) |
+
+---
+
+## 2026-11-27 — KiloKlustaKwik: the fiber stage on AMD GPUs (HIP)
+
+The fiber stage's CUDA kernels are compiled as HIP in a HIP build.
+
+<details>
+<summary>Details</summary>
+
+- **Before,** the fiber stage's mean shift and assignment (`fiber_gpu_cuda.cu`) ran on the GPU in
+  a CUDA build only; a HIP build of KiloKlustaKwik ran them on the CPU.
+- **Now** a HIP build compiles the same file as HIP (`ns_gpu_add_cuda_as_hip`); the shim gains
+  `<device_launch_parameters.h>`. `fiber_stage_kk.cpp` calls the kernels in a CUDA or a HIP build
+  (`FIBER_GPU_BUILT`) and says which API runs.
+- **Checked:** KiloKlustaKwik builds with HIP (Ubuntu ROCm 5.7) with the three fiber entry points
+  in it, and its tests pass on the CPU. **Not checked:** a run on an AMD GPU. The kernels are
+  double precision; consumer AMD cards run double at a fraction of float speed.
+
+</details>
 
 ---
 

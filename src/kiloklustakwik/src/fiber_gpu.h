@@ -3,13 +3,14 @@
  *
  * GPU backend interface for the standalone fiber clusterer.  Mirrors the
  * realign_xcorr / KK_cuda pattern: a C-linkage API with a CUDA backend
- * (fiber_gpu_cuda.cu); HIP/SYCL backends drop in behind the same symbols.
+ * (fiber_gpu_cuda.cu), which a HIP build compiles as HIP (ns_gpu_add_cuda_as_hip,
+ * cmake/GpuBackends.cmake); a SYCL backend would drop in behind the same symbols.
  * The caller probes fiber_gpu_available() and falls back to the CPU path
  * (fiberstage::meanshift_inband) on any non-zero return.
  *
  * All pointers are HOST arrays; the backend copies to device internally.
- * GPU calls are made only under #ifdef USE_CUDA, so when no GPU toolkit is
- * built these symbols are never referenced and need no definition.
+ * GPU calls are made only in a CUDA or HIP build (FIBER_GPU_BUILT in
+ * fiber_stage_kk.cpp), so without one these symbols are never referenced.
  ***************************************************************************/
 #ifndef FIBER_GPU_H
 #define FIBER_GPU_H
@@ -22,7 +23,7 @@
 extern "C" {
 #endif
 
-// 1 if a usable CUDA device is present, else 0.
+// 1 if a usable CUDA (or, compiled as HIP, AMD) device is present, else 0.
 int fiber_gpu_available(void);
 
 // In-band directional mean-shift; numerically matches fiberstage::meanshift_inband.

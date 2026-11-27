@@ -1,8 +1,8 @@
 /***************************************************************************
  * cuda_on_hip/cuda_runtime.h -- a CUDA kernel file compiled as HIP
  *
- * Several GPU paths (the ndmanager plugins' filters and detectors) have one
- * kernel file, written for CUDA.  A HIP
+ * Several GPU paths (the ndmanager plugins' filters and detectors,
+ * KiloKlustaKwik's fiber pass) have one kernel file, written for CUDA.  A HIP
  * build compiles that same file with ROCm's clang (ns_gpu_add_cuda_as_hip in
  * cmake/GpuBackends.cmake), with this directory first on the include path:
  * its <cuda_runtime.h> is this header, which brings in HIP and names the HIP

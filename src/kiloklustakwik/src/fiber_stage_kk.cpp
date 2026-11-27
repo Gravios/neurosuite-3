@@ -233,6 +233,16 @@ void KK::FiberStagePerChunk(
 #include <unordered_map>
 #include <string>
 #include "fiber_gpu.h"
+// The fiber kernels (fiber_gpu_cuda.cu) are built in a CUDA build, and in a HIP
+// build compiled as HIP (ns_gpu_add_cuda_as_hip): the same entry points.
+#if defined(USE_CUDA) || defined(USE_HIP)
+#  define FIBER_GPU_BUILT 1
+#endif
+#if defined(USE_HIP) && !defined(USE_CUDA)
+#  define FIBER_GPU_API "HIP"
+#else
+#  define FIBER_GPU_API "CUDA"
+#endif
 #ifdef _OPENMP
 #include <omp.h>
 #endif
@@ -266,7 +276,7 @@ struct ChunkFiberResult {
 };
 static int ufFind(std::vector<int>& uf, int x){ while(uf[x]!=x){ uf[x]=uf[uf[x]]; x=uf[x]; } return x; }
 
-#ifdef USE_CUDA
+#ifdef FIBER_GPU_BUILT
 // GPU whiteness-assignment callback for consolidate(); gated, returns non-zero
 // to trigger the CPU fallback inside consolidate().
 static int fiberAssignGPU(const double* X,int N,int p,const double* grids,const int* gridLen,const int* gridOff,
@@ -315,7 +325,7 @@ static ChunkFiberResult clusterChunkFibers(
     for(int j=0;j<nsup;j++){ int idx=(int)((long)j*N/nsup); rsup[j]=rad[idx]; for(int k=0;k<p;k++) dsup[(size_t)j*p+k]=dir[(size_t)idx*p+k]; }
     for(int s=0;s<S;s++){ int idx=(int)((long)s*N/S); rs[s]=rad[idx]; for(int k=0;k<p;k++) ds[(size_t)s*p+k]=dir[(size_t)idx*p+k]; }
     bool gpuDone=false;
-#ifdef USE_CUDA
+#ifdef FIBER_GPU_BUILT
     if(FiberGPUEnable && p<=FIBER_GPU_MAXP && S>=256 && fiber_gpu_available())
         gpuDone = (fiber_gpu_meanshift(dsup.data(),rsup.data(),nsup,p,ds.data(),rs.data(),S,FiberMSKappa,dr,15)==0);
 #endif
@@ -347,7 +357,7 @@ static ChunkFiberResult clusterChunkFibers(
     int nFib=0; for(int v:fmap) nFib=std::max(nFib,v+1); if(nFib<1) return R;
     std::vector<int> seed(N); for(int i=0;i<N;i++) seed[i]=fmap[lab2[i]];
     fiberstage::Result CR=fiberstage::consolidate(waves,N,nsamp,nch,masklo,maskhi,W,nm,p,seed,nFib,3
-#ifdef USE_CUDA
+#ifdef FIBER_GPU_BUILT
         ,&fiberAssignGPU
 #endif
         );
@@ -442,11 +452,11 @@ float KK::RunFiberStandalone(const std::vector<float>& chunkBoundsSec, float sam
     if(FiberThreads>0) omp_set_num_threads(FiberThreads);
 #endif
     if(FiberGPUEnable){
-#ifdef USE_CUDA
-        Output(fiber_gpu_available()? "[FiberStandalone] CUDA mean-shift backend active\n"
-                                    : "[FiberStandalone] GPU requested but no CUDA device — CPU\n");
+#ifdef FIBER_GPU_BUILT
+        Output(fiber_gpu_available()? "[FiberStandalone] " FIBER_GPU_API " mean-shift backend active\n"
+                                    : "[FiberStandalone] GPU requested but no " FIBER_GPU_API " device — CPU\n");
 #else
-        Output("[FiberStandalone] GPU requested but USE_CUDA not built — CPU (OpenMP)\n");
+        Output("[FiberStandalone] GPU requested but no GPU backend built (CUDA or HIP) — CPU (OpenMP)\n");
 #endif
     }
     std::vector<ChunkFiberResult> res(nChunks);

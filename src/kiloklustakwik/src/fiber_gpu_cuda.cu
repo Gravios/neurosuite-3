@@ -16,7 +16,7 @@
  * (acc[p], sw, sr); that changes the summation order (FP non-associative), so
  * re-audit at ~1e-12 rather than bit-exact.  Kept simple/correct here first.
  ***************************************************************************/
-#ifdef USE_CUDA
+#if defined(USE_CUDA) || defined(USE_HIP)   // a HIP build compiles this file as HIP (ns_gpu_add_cuda_as_hip)
 
 #include "fiber_gpu.h"
 
@@ -220,4 +220,4 @@ acleanup:
     return rc;
 }
 
-#endif // USE_CUDA
+#endif // USE_CUDA || USE_HIP

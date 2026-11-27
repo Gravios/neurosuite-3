@@ -318,6 +318,8 @@ if(_HIP_ACTIVE)
     endif()
     # The C++ compiler links (its objects may be LTO objects the ROCm clang cannot read).
     set_target_properties(KiloKlustaKwik PROPERTIES LINKER_LANGUAGE CXX)
+    # The fiber kernels: the CUDA file compiled as HIP, one source for both.
+    ns_gpu_add_cuda_as_hip(KiloKlustaKwik src/fiber_gpu_cuda.cu)
 
     install(TARGETS KiloKlustaKwik DESTINATION "${CMAKE_INSTALL_BINDIR}")
     message(STATUS "  HIP architectures  : ${CMAKE_HIP_ARCHITECTURES}")
